@@ -18,6 +18,8 @@ class AnimeTitle extends Equatable {
   final String status;
   final String? playerHost;
   final List<EpisodeItem> episodes;
+  final String? trailerUrl;
+  final String? shikimoriUrl;
 
   const AnimeTitle({
     required this.id,
@@ -36,10 +38,18 @@ class AnimeTitle extends Equatable {
     required this.status,
     this.playerHost,
     this.episodes = const [],
+    this.trailerUrl,
+    this.shikimoriUrl,
   });
 
   /// Отображаемое название (русское или fallback на английское)
   String get displayTitle => russianTitle.isNotEmpty ? russianTitle : englishTitle;
+
+  /// Опенинг первого доступного эпизода
+  TimecodeRange? get primaryOpening => episodes.isNotEmpty ? episodes.first.opening : null;
+
+  /// Эндинг первого доступного эпизода
+  TimecodeRange? get primaryEnding => episodes.isNotEmpty ? episodes.first.ending : null;
 
   /// Краткая строка серии: "12 эп." или "Выпуск завершен"
   String get episodesBadgeText {
@@ -73,6 +83,7 @@ class AnimeTitle extends Equatable {
         status,
         playerHost,
         episodes,
+        trailerUrl,
+        shikimoriUrl,
       ];
 }
-

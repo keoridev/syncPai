@@ -5,6 +5,7 @@ import '../theme/app_typography.dart';
 
 enum SyncStatus {
   active,
+  aligning,
   buffering,
   disconnected,
 }
@@ -27,6 +28,10 @@ class SyncBadge extends StatelessWidget {
       SyncStatus.active => (
         AppColors.syncActive,
         peerName != null ? 'Синхрон ($peerName)' : 'В синхроне',
+      ),
+      SyncStatus.aligning => (
+        AppColors.syncWaiting,
+        'Выравнивание…',
       ),
       SyncStatus.buffering => (
         AppColors.syncWaiting,

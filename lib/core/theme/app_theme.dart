@@ -3,25 +3,50 @@ import 'package:flutter/services.dart';
 import 'app_colors.dart';
 import 'app_dimensions.dart';
 import 'app_typography.dart';
+import 'theme_preset.dart';
 
-/// Главная конфигурация темы приложения SyncPai (Cinema Dark / Nordic Dark).
+/// Конфигурация темы приложения SyncPai с поддержкой динамических цветовых палитр
 abstract final class AppTheme {
-  static ThemeData get cinemaDark {
+  /// Тема по умолчанию: Cinema Dark (Мандарин Сенпай)
+  static ThemeData get cinemaDark => fromPreset(ThemePreset.all.first);
+
+  /// Генерация темы на основе выбранного пресета
+  static ThemeData fromPreset(ThemePreset preset) {
+    return createTheme(
+      primaryColor: preset.primaryColor,
+      backgroundColor: preset.backgroundColor,
+      surfaceColor: preset.surfaceColor,
+      surfaceElevatedColor: preset.surfaceElevatedColor,
+    );
+  }
+
+  /// Гибкий фабричный конструктор темы под любой акцентный цвет
+  static ThemeData createTheme({
+    Color? primaryColor,
+    Color? backgroundColor,
+    Color? surfaceColor,
+    Color? surfaceElevatedColor,
+  }) {
+    final primary = primaryColor ?? AppColors.primary;
+    final bg = backgroundColor ?? AppColors.background;
+    final surf = surfaceColor ?? AppColors.surface;
+    final surfElevated = surfaceElevatedColor ?? AppColors.surfaceElevated;
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.background,
-      primaryColor: AppColors.primary,
-      canvasColor: AppColors.background,
+      scaffoldBackgroundColor: bg,
+      primaryColor: primary,
+      canvasColor: bg,
 
       // ColorScheme
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.primary,
+      colorScheme: ColorScheme.dark(
+        primary: primary,
         onPrimary: AppColors.textPrimary,
-        primaryContainer: AppColors.primaryVariant,
-        surface: AppColors.surface,
+        primaryContainer: primary.withValues(alpha: 0.8),
+        surface: surf,
         onSurface: AppColors.textPrimary,
-        surfaceContainerHighest: AppColors.surfaceElevated,
+        surfaceContainerHighest: surfElevated,
         outline: AppColors.stroke,
         outlineVariant: AppColors.strokeMedium,
         error: AppColors.syncError,
@@ -30,23 +55,23 @@ abstract final class AppTheme {
 
       // AppBar
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.background,
+        backgroundColor: bg,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: AppTypography.titleLarge,
         iconTheme: const IconThemeData(color: AppColors.textPrimary, size: 22),
-        systemOverlayStyle: const SystemUiOverlayStyle(
+        systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.light,
-          systemNavigationBarColor: AppColors.background,
+          systemNavigationBarColor: bg,
           systemNavigationBarIconBrightness: Brightness.light,
         ),
       ),
 
       // Card
       cardTheme: CardThemeData(
-        color: AppColors.surface,
+        color: surf,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
@@ -58,7 +83,7 @@ abstract final class AppTheme {
       // Buttons
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: primary,
           foregroundColor: AppColors.textPrimary,
           elevation: 0,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
@@ -85,7 +110,7 @@ abstract final class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.primary,
+          foregroundColor: primary,
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
           textStyle: AppTypography.labelLarge,
         ),
@@ -94,7 +119,7 @@ abstract final class AppTheme {
       // Input Decoration (Поле поиска, поля ввода кода)
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surfaceElevated,
+        fillColor: surfElevated,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppDimensions.spacingLg,
           vertical: AppDimensions.spacingMd,
@@ -112,7 +137,7 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+          borderSide: BorderSide(color: primary, width: 1.2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: AppDimensions.borderRadiusMedium,
@@ -121,19 +146,19 @@ abstract final class AppTheme {
       ),
 
       // BottomSheet
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: AppColors.surface,
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: surf,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusExtraLarge)),
         ),
       ),
 
       // Progress Indicator
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: AppColors.primary,
-        linearTrackColor: AppColors.surfaceElevated,
-        circularTrackColor: AppColors.surfaceElevated,
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: primary,
+        linearTrackColor: surfElevated,
+        circularTrackColor: surfElevated,
       ),
 
       // Divider

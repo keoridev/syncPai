@@ -55,14 +55,18 @@ class AppButton extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation<Color>(AppColors.textPrimary),
             ),
           ),
-          const SizedBox(width: AppDimensions.spacingMd),
+          const SizedBox(width: AppDimensions.spacingSm),
         ] else if (icon != null) ...[
           Icon(icon, size: AppDimensions.iconSizeMedium, color: AppColors.textPrimary),
-          const SizedBox(width: AppDimensions.spacingSm + 2),
+          const SizedBox(width: AppDimensions.spacingSm),
         ],
-        Text(
-          label,
-          style: AppTypography.labelLarge.copyWith(color: AppColors.textPrimary),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelLarge.copyWith(color: AppColors.textPrimary),
+          ),
         ),
       ],
     );

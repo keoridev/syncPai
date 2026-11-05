@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/anime_title.dart';
+import '../../domain/entities/catalog_settings.dart';
 
 sealed class CatalogState extends Equatable {
   const CatalogState();
@@ -22,6 +23,11 @@ class CatalogLoaded extends CatalogState {
   final String? selectedGenre;
   final String searchQuery;
   final bool isSearching;
+  final CatalogViewMode viewMode;
+  final CatalogGridDensity gridDensity;
+  final int currentPage;
+  final bool hasMore;
+  final bool isLoadingMore;
 
   const CatalogLoaded({
     required this.titles,
@@ -29,6 +35,11 @@ class CatalogLoaded extends CatalogState {
     this.selectedGenre,
     this.searchQuery = '',
     this.isSearching = false,
+    this.viewMode = CatalogViewMode.grid,
+    this.gridDensity = CatalogGridDensity.standard,
+    this.currentPage = 1,
+    this.hasMore = true,
+    this.isLoadingMore = false,
   });
 
   CatalogLoaded copyWith({
@@ -38,6 +49,11 @@ class CatalogLoaded extends CatalogState {
     bool clearGenre = false,
     String? searchQuery,
     bool? isSearching,
+    CatalogViewMode? viewMode,
+    CatalogGridDensity? gridDensity,
+    int? currentPage,
+    bool? hasMore,
+    bool? isLoadingMore,
   }) {
     return CatalogLoaded(
       titles: titles ?? this.titles,
@@ -45,11 +61,27 @@ class CatalogLoaded extends CatalogState {
       selectedGenre: clearGenre ? null : (selectedGenre ?? this.selectedGenre),
       searchQuery: searchQuery ?? this.searchQuery,
       isSearching: isSearching ?? this.isSearching,
+      viewMode: viewMode ?? this.viewMode,
+      gridDensity: gridDensity ?? this.gridDensity,
+      currentPage: currentPage ?? this.currentPage,
+      hasMore: hasMore ?? this.hasMore,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     );
   }
 
   @override
-  List<Object?> get props => [titles, filteredTitles, selectedGenre, searchQuery, isSearching];
+  List<Object?> get props => [
+        titles,
+        filteredTitles,
+        selectedGenre,
+        searchQuery,
+        isSearching,
+        viewMode,
+        gridDensity,
+        currentPage,
+        hasMore,
+        isLoadingMore,
+      ];
 }
 
 class CatalogError extends CatalogState {

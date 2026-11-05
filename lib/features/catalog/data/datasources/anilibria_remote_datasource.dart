@@ -4,8 +4,8 @@ import '../../../../core/network/dio_client.dart';
 import '../models/anime_title_dto.dart';
 
 abstract class AnilibriaRemoteDataSource {
-  Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 20});
-  Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 20});
+  Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 30});
+  Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30});
   Future<AnimeTitleDto> getTitleDetails({int? id, String? code});
 }
 
@@ -15,28 +15,39 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   AnilibriaRemoteDataSourceImpl(this.client);
 
   @override
-  Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 20}) async {
+  Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 40}) async {
+    // 1. Попытка запросить глобальный каталог релизов AniLibria (содержит тысячи тайтлов за все годы)
     try {
       final response = await client.get(
-        ApiConstants.updates,
+        ApiConstants.catalogReleases,
         queryParameters: {
-          'playlist_type': 'array',
+          'limit': limit,
           'page': page,
-          'items_per_page': limit,
         },
       );
 
-      final data = response.data;
-      final List<dynamic> list;
-
-      if (data is List) {
-        list = data;
-      } else if (data is Map<String, dynamic> && data['list'] is List) {
-        list = data['list'] as List;
-      } else {
-        list = [];
+      final list = _parseList(response.data);
+      if (list.isNotEmpty) {
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map((item) => AnimeTitleDto.fromJson(item))
+            .toList();
       }
+    } catch (_) {
+      // Фолбек на ленту последних релизов
+    }
 
+    // 2. Фолбек на ленту свежих релизов
+    try {
+      final response = await client.get(
+        ApiConstants.latestReleases,
+        queryParameters: {
+          'limit': limit,
+          'page': page,
+        },
+      );
+
+      final list = _parseList(response.data);
       return list
           .whereType<Map<String, dynamic>>()
           .map((item) => AnimeTitleDto.fromJson(item))
@@ -47,15 +58,24 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     }
   }
 
+  List<dynamic> _parseList(dynamic data) {
+    if (data is List) {
+      return data;
+    } else if (data is Map<String, dynamic>) {
+      if (data['data'] is List) return data['data'] as List;
+      if (data['list'] is List) return data['list'] as List;
+      if (data['items'] is List) return data['items'] as List;
+    }
+    return [];
+  }
+
   @override
-  Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 20}) async {
+  Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
     try {
       final response = await client.get(
-        ApiConstants.search,
+        ApiConstants.searchReleases,
         queryParameters: {
-          'search': query,
-          'playlist_type': 'array',
-          'items_per_page': limit,
+          'query': query,
         },
       );
 
@@ -64,8 +84,8 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
 
       if (data is List) {
         list = data;
-      } else if (data is Map<String, dynamic> && data['list'] is List) {
-        list = data['list'] as List;
+      } else if (data is Map<String, dynamic> && data['data'] is List) {
+        list = data['data'] as List;
       } else {
         list = [];
       }
@@ -83,19 +103,17 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   @override
   Future<AnimeTitleDto> getTitleDetails({int? id, String? code}) async {
     try {
-      final queryParams = <String, dynamic>{
-        'playlist_type': 'array',
-      };
-      if (id != null) queryParams['id'] = id;
-      if (code != null) queryParams['code'] = code;
+      final target = id != null ? '$id' : (code ?? '');
+      final path = '${ApiConstants.releaseDetails}/$target';
 
-      final response = await client.get(
-        ApiConstants.title,
-        queryParameters: queryParams,
-      );
+      final response = await client.get(path);
 
       if (response.data is Map<String, dynamic>) {
-        return AnimeTitleDto.fromJson(response.data as Map<String, dynamic>);
+        final map = response.data as Map<String, dynamic>;
+        final releaseData = map.containsKey('data') && map['data'] is Map<String, dynamic>
+            ? map['data'] as Map<String, dynamic>
+            : map;
+        return AnimeTitleDto.fromJson(releaseData);
       }
       throw const ParsingException('Некорректный формат ответа тайтла');
     } catch (e) {
@@ -104,4 +122,3 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     }
   }
 }
-

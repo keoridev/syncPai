@@ -4,7 +4,13 @@ import 'app_colors.dart';
 
 /// Типографика проекта SyncPai: нейтральный гротеск Inter с идеальной читаемостью.
 abstract final class AppTypography {
-  static TextStyle get _base => GoogleFonts.inter();
+  static TextStyle get _base {
+    final binding = WidgetsBinding.instance;
+    if (binding.runtimeType.toString().contains('TestWidgetsFlutterBinding')) {
+      return const TextStyle(fontFamily: 'Inter');
+    }
+    return GoogleFonts.inter();
+  }
 
   // Заголовки (Display & Headlines)
   static TextStyle get displayLarge => _base.copyWith(

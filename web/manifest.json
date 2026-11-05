@@ -1,11 +1,11 @@
 {
-    "name": "sync_pai",
-    "short_name": "sync_pai",
+    "name": "SyncPai — Совместный просмотр аниме",
+    "short_name": "SyncPai",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#121316",
+    "theme_color": "#E06C53",
+    "description": "Синхронный кинотеатр для совместного просмотра аниме секунда в секунду.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -18,6 +18,7 @@ abstract final class AppColors {
   static const primary = Color(0xFFE06C53);
   static const primaryVariant = Color(0xFFC85840);
   static const primaryLight = Color(0xFFF18A74);
+  static const accentPrimary = primary;
 
   // Вторичный акцент (мягкий лавандово-серый индиго для тегов или вторичных индикаторов)
   static const accentSecondary = Color(0xFF7C83FD);
@@ -35,4 +36,3 @@ abstract final class AppColors {
   static const overlaySubtle = Color(0x4D000000);    // 30% затемнение (при буферизации у друга)
   static const frostedWhite = Color(0x14FFFFFF);     // rgba(255, 255, 255, 0.08) - матовое стекло
 }
-

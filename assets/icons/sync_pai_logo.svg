@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Градиент фона бейджа -->
+    <radialGradient id="badgeGlow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#242730"/>
+      <stop offset="100%" stop-color="#121316"/>
+    </radialGradient>
+
+    <!-- Акцентный градиент SyncPai -->
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F18A74"/>
+      <stop offset="100%" stop-color="#E06C53"/>
+    </linearGradient>
+
+    <!-- Неоновое свечение наушников -->
+    <filter id="accentGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#E06C53" flood-opacity="0.35"/>
+    </filter>
+
+    <!-- Тень маскота -->
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Внешний скругленный контейнер (App Icon Background) -->
+  <rect width="512" height="512" rx="140" fill="url(#badgeGlow)" filter="url(#cardShadow)"/>
+  <rect width="508" height="508" x="2" y="2" rx="138" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>
+
+  <!-- Внутреннее свечение фона -->
+  <circle cx="256" cy="270" r="160" fill="#E06C53" opacity="0.08" filter="blur(40px)"/>
+
+  <!-- 1. АНИМЕ-УШКИ (NEKO EARS) -->
+  <!-- Левое ушко: внешняя часть -->
+  <polygon points="92,184 60,40 204,112" fill="#242730" stroke="rgba(255,255,255,0.2)" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Левое ушко: внутренняя акцентная часть -->
+  <polygon points="107,163 87,71 184,122" fill="url(#primaryGrad)"/>
+
+  <!-- Правое ушко: внешняя часть -->
+  <polygon points="420,184 452,40 308,112" fill="#242730" stroke="rgba(255,255,255,0.2)" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Правое ушко: внутренняя акцентная часть -->
+  <polygon points="405,163 425,71 328,122" fill="url(#primaryGrad)"/>
+
+  <!-- 2. ОГОЛОВЬЕ НАУШНИКОВ (HEADPHONE BAND) -->
+  <path d="M 82 235 C 82 70, 430 70, 430 235" fill="none" stroke="#8A909E" stroke-width="28" stroke-linecap="round"/>
+  <path d="M 120 220 C 120 100, 392 100, 392 220" fill="none" stroke="#2C303B" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- 3. ЛИЦО МАСКОТА (NEKO-SENPAI FACE) -->
+  <rect x="87" y="163" width="338" height="266" rx="112" fill="#2C303B" stroke="rgba(255,255,255,0.12)" stroke-width="3" filter="url(#cardShadow)"/>
+
+  <!-- 4. ЧАШИ СТРИМИНГОВЫХ НАУШНИКОВ (DJ EARCUPS) -->
+  <!-- Левая чаша -->
+  <rect x="42" y="230" width="62" height="134" rx="26" fill="url(#primaryGrad)" filter="url(#accentGlow)"/>
+  <rect x="52" y="246" width="16" height="102" rx="8" fill="#FFFFFF" opacity="0.3"/>
+
+  <!-- Правая чаша -->
+  <rect x="408" y="230" width="62" height="134" rx="26" fill="url(#primaryGrad)" filter="url(#accentGlow)"/>
+  <rect x="444" y="246" width="16" height="102" rx="8" fill="#FFFFFF" opacity="0.3"/>
+
+  <!-- 5. ГЛАЗА МАСКОТА -->
+  <!-- Левый глаз: Подмигивающий аниме-глаз (Wink Arc) -->
+  <path d="M 164 296 Q 194 260 226 296" fill="none" stroke="#ECEFF4" stroke-width="24" stroke-linecap="round"/>
+
+  <!-- Правый глаз: Символ воспроизведения (Play Triangle ▶) -->
+  <polygon points="292,246 364,286 292,326" fill="url(#primaryGrad)" filter="url(#accentGlow)"/>
+
+  <!-- 6. ЩЕЧКИ / РУМЯНЕЦ (BLUSH) -->
+  <ellipse cx="154" cy="340" rx="26" ry="13" fill="#E06C53" opacity="0.38"/>
+  <ellipse cx="358" cy="340" rx="26" ry="13" fill="#E06C53" opacity="0.38"/>
+
+  <!-- 7. АНИМЕ-РОТИК (CAT SMILE :3 / ω) -->
+  <path d="M 225 348 Q 240 368 256 348 Q 272 368 287 348" fill="none" stroke="#ECEFF4" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+  <!-- 8. ИСКОРКА СИНХРОНИЗАЦИИ (SYNC SPARKLE ✦) -->
+  <path d="M 440 112 Q 440 138 466 138 Q 440 138 440 164 Q 440 138 414 138 Q 440 138 440 112" fill="#4EAA7A" filter="drop-shadow(0 0 10px #4EAA7A)"/>
+</svg>

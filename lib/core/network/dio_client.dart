@@ -1,7 +1,9 @@
 import 'dart:developer';
 import 'package:dio/dio.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
+import 'package:flutter/foundation.dart';
 import 'api_constants.dart';
+import 'smart_mirror_interceptor.dart';
 import '../error/exceptions.dart';
 
 class DioClient {
@@ -17,11 +19,12 @@ class DioClient {
                 sendTimeout: ApiConstants.sendTimeout,
                 headers: {
                   'Accept': 'application/json',
-                  'User-Agent': 'SyncPai/1.0.0 (Flutter; Cross-Platform)',
+                  if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Flutter; Cross-Platform)',
                 },
               ),
             ) {
     dio.interceptors.addAll([
+      SmartMirrorInterceptor(dio: dio),
       RetryInterceptor(
         dio: dio,
         logPrint: (message) => log('[DioRetry] $message'),

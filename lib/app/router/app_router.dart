@@ -2,28 +2,48 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../di/injection.dart';
+import '../../features/anime_details/domain/entities/anime_video_item.dart';
 import '../../features/anime_details/presentation/screens/anime_details_screen.dart';
+import '../../features/anime_details/presentation/screens/anime_videos_screen.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
+import '../../features/catalog/domain/entities/episode_item.dart';
 import '../../features/catalog/presentation/cubit/catalog_cubit.dart';
-import '../../features/catalog/presentation/screens/catalog_screen.dart';
+import '../../features/main/presentation/screens/main_screen.dart';
+import '../../features/player/domain/entities/player_quality.dart';
+import '../../features/player/presentation/screens/player_screen.dart';
+import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/shorts/presentation/screens/anime_shorts_screen.dart';
+import '../../features/splash/presentation/screens/splash_screen.dart';
+import '../../features/sync_room/presentation/screens/join_room_screen.dart';
+import '../../features/sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
-  initialLocation: '/',
+  initialLocation: '/splash',
   routes: [
     GoRoute(
+      path: '/splash',
+      name: 'splash',
+      builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
       path: '/',
-      name: 'catalog',
+      name: 'main',
       builder: (context, state) => BlocProvider(
         create: (context) => getIt<CatalogCubit>(),
-        child: CatalogScreen(
+        child: MainScreen(
           onTitleSelected: (title) {
             context.pushNamed('details', extra: title);
           },
         ),
       ),
+    ),
+    GoRoute(
+      path: '/catalog',
+      name: 'catalog',
+      redirect: (context, state) => '/',
     ),
     GoRoute(
       path: '/details',
@@ -37,25 +57,106 @@ final GoRouter appRouter = GoRouter(
         }
         return AnimeDetailsScreen(
           title: title,
-          onPlayEpisode: (t, ep) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Запуск: ${t.displayTitle} — Серия ${ep.episode}'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+          onPlayEpisode: (t, ep, quality) {
+            context.pushNamed('player', extra: {
+              'title': t,
+              'episode': ep,
+              'quality': quality,
+            });
+          },
+          onResumeEpisode: (t, ep, quality, position) {
+            context.pushNamed('player', extra: {
+              'title': t,
+              'episode': ep,
+              'quality': quality,
+              'initialPosition': position,
+            });
           },
           onStartSyncRoom: (t, ep) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Создание комнаты совместного просмотра: Серия ${ep.episode}'),
-                behavior: SnackBarBehavior.floating,
-              ),
+            SyncRoomLobbySheet.show(
+              context,
+              title: t,
+              episode: ep,
+              initialQuality: PlayerQuality.hd,
+              onStartPlayback: (room, isHost) {
+                context.pushNamed('player', extra: {
+                  'title': room.title,
+                  'episode': room.episode,
+                  'quality': room.quality,
+                  'roomCode': room.code,
+                  'isHost': isHost,
+                });
+              },
             );
           },
         );
       },
     ),
+    GoRoute(
+      path: '/profile',
+      name: 'profile',
+      builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/shorts',
+      name: 'shorts',
+      builder: (context, state) => AnimeShortsScreen(
+        showBackButton: true,
+        onTitleSelected: (title) {
+          context.pushNamed('details', extra: title);
+        },
+      ),
+    ),
+    GoRoute(
+      path: '/anime-videos',
+      name: 'anime-videos',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final title = extra?['title'] as String? ?? 'Тайтл';
+        final backdrop = extra?['backdrop'] as String? ?? '';
+        final videos = extra?['videos'] as List<AnimeVideoItem>? ?? [];
+        return AnimeVideosScreen(
+          animeTitle: title,
+          backdropUrl: backdrop,
+          videos: videos,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/room/:code',
+      name: 'join_room',
+      builder: (context, state) {
+        final code = state.pathParameters['code'] ?? '';
+        return JoinRoomScreen(code: code);
+      },
+    ),
+    GoRoute(
+      path: '/player',
+      name: 'player',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final title = extra?['title'] as AnimeTitle?;
+        final episode = extra?['episode'] as EpisodeItem?;
+        final quality = extra?['quality'] as PlayerQuality? ?? PlayerQuality.fhd;
+        final roomCode = extra?['roomCode'] as String?;
+        final isHost = extra?['isHost'] as bool? ?? false;
+        final initialPosition = extra?['initialPosition'] as Duration?;
+
+        if (title == null || episode == null) {
+          return const Scaffold(
+            body: Center(child: Text('Видеопоток не найден')),
+          );
+        }
+
+        return PlayerScreen(
+          title: title,
+          initialEpisode: episode,
+          initialQuality: quality,
+          roomCode: roomCode,
+          isHost: isHost,
+          initialPosition: initialPosition,
+        );
+      },
+    ),
   ],
 );
-

@@ -19,6 +19,8 @@ class AnimeTitleDto {
   final String status;
   final String? playerHost;
   final List<EpisodeItem> episodes;
+  final String? trailerUrl;
+  final String? shikimoriUrl;
 
   const AnimeTitleDto({
     required this.id,
@@ -37,53 +39,128 @@ class AnimeTitleDto {
     required this.status,
     this.playerHost,
     this.episodes = const [],
+    this.trailerUrl,
+    this.shikimoriUrl,
   });
 
   factory AnimeTitleDto.fromJson(Map<String, dynamic> json) {
-    // Названия
-    final names = json['names'] as Map<String, dynamic>? ?? {};
-    final ruTitle = names['ru'] as String? ?? '';
-    final enTitle = names['en'] as String? ?? '';
+    // 1. Названия (Поддержка API v1 "name: {main, english}" и legacy v3 "names: {ru, en}")
+    String ruTitle = '';
+    String enTitle = '';
 
-    // Постеры
-    final posters = json['posters'] as Map<String, dynamic>? ?? {};
-    final smallUrl = _formatPosterUrl(posters['small']?['url'] as String?);
-    final mediumUrl = _formatPosterUrl(posters['medium']?['url'] as String?);
-    final origUrl = _formatPosterUrl(posters['original']?['url'] as String?);
+    if (json['name'] is Map<String, dynamic>) {
+      final nameMap = json['name'] as Map<String, dynamic>;
+      ruTitle = nameMap['main'] as String? ?? '';
+      enTitle = nameMap['english'] as String? ?? '';
+    } else if (json['names'] is Map<String, dynamic>) {
+      final namesMap = json['names'] as Map<String, dynamic>;
+      ruTitle = namesMap['ru'] as String? ?? '';
+      enTitle = namesMap['en'] as String? ?? '';
+    }
 
-    // Серии и тип
-    final type = json['type'] as Map<String, dynamic>? ?? {};
-    final episodesTotal = type['episodes'] as int?;
+    // 2. Идентификатор и алиас
+    final id = json['id'] as int? ?? 0;
+    final code = (json['alias'] as String?) ?? (json['code'] as String?) ?? '$id';
 
-    // Сезон / год
-    final seasonObj = json['season'] as Map<String, dynamic>?;
-    final seasonStr = seasonObj?['string'] as String?;
-    final year = seasonObj?['year'] as int?;
+    // 3. Постеры
+    String smallUrl = '';
+    String mediumUrl = '';
+    String origUrl = '';
 
-    // Жанры
+    final posterObj = json['poster'];
+    if (posterObj is Map<String, dynamic>) {
+      final opt = posterObj['optimized'] as Map<String, dynamic>?;
+      final optSrc = opt?['src'] as String?;
+      final optThumb = opt?['thumbnail'] as String?;
+      final rawSrc = posterObj['src'] as String?;
+      final rawThumb = posterObj['thumbnail'] as String?;
+
+      // Отдаём приоритет стандартному формату JPG (rawSrc) перед экспериментальным WebP (optSrc),
+      // чтобы избежать системной ошибки декодирования Android HWUI 'unimplemented' ImageDecoder
+      final bestSrc = rawSrc ?? optSrc;
+      final bestThumb = rawThumb ?? rawSrc ?? optThumb ?? optSrc;
+
+      origUrl = _formatPosterUrl(bestSrc);
+      mediumUrl = _formatPosterUrl(bestSrc);
+      smallUrl = _formatPosterUrl(bestThumb);
+    } else if (json['posters'] is Map<String, dynamic>) {
+      final posters = json['posters'] as Map<String, dynamic>;
+      smallUrl = _formatPosterUrl(posters['small']?['url'] as String?);
+      mediumUrl = _formatPosterUrl(posters['medium']?['url'] as String?);
+      origUrl = _formatPosterUrl(posters['original']?['url'] as String?);
+    }
+
+    // 4. Сезон и год
+    int? year = json['year'] as int?;
+    String? seasonStr;
+
+    final seasonObj = json['season'];
+    if (seasonObj is Map<String, dynamic>) {
+      seasonStr = seasonObj['description'] as String? ?? seasonObj['value'] as String?;
+      year ??= seasonObj['year'] as int?;
+    } else if (seasonObj is String) {
+      seasonStr = seasonObj;
+    }
+
+    // 5. Количество эпизодов
+    int? episodesTotal = json['episodes_total'] as int?;
+    if (episodesTotal == null && json['type'] is Map<String, dynamic>) {
+      episodesTotal = (json['type'] as Map<String, dynamic>)['episodes'] as int?;
+    }
+
+    // 6. Жанры
+    final genres = <String>[];
     final rawGenres = json['genres'] as List<dynamic>? ?? [];
-    final genres = rawGenres.map((g) => g.toString()).toList();
+    for (final g in rawGenres) {
+      if (g is Map<String, dynamic>) {
+        final name = g['name'] as String?;
+        if (name != null && name.isNotEmpty) genres.add(name);
+      } else if (g is String && g.isNotEmpty) {
+        genres.add(g);
+      }
+    }
 
-    // Статус
-    final statusObj = json['status'] as Map<String, dynamic>?;
-    final status = statusObj?['string'] as String? ?? 'Неизвестно';
+    // 7. Статус (Онгоинг / Завершен)
+    String status = 'Завершен';
+    if (json['is_ongoing'] == true || json['is_in_production'] == true) {
+      status = 'Онгоинг';
+    } else if (json['status'] is Map<String, dynamic>) {
+      status = (json['status'] as Map<String, dynamic>)['name'] as String? ??
+          (json['status'] as Map<String, dynamic>)['value'] as String? ??
+          'Завершен';
+    }
 
-    // Описание
+    // 8. Описание
     final description = (json['description'] as String? ?? '').trim();
 
-    // Плеер
-    final player = json['player'] as Map<String, dynamic>? ?? {};
-    final host = player['host'] as String?;
+    // 9. Shikimori & Трейлер
+    final shikimoriObj = json['shikimori'] as Map<String, dynamic>?;
+    final shikimoriUrl = shikimoriObj?['url'] as String?;
+    String? trailerUrl;
+
+    if (json['trailer'] is Map<String, dynamic>) {
+      final t = json['trailer'] as Map<String, dynamic>;
+      final yId = t['youtube_id'] as String?;
+      trailerUrl = t['url'] as String? ?? (yId != null ? 'https://www.youtube.com/watch?v=$yId' : null);
+    } else if (json['trailer'] is String) {
+      trailerUrl = json['trailer'] as String;
+    }
+
+    // 10. Эпизоды с опенингами, эндингами и видеопотоками
     final episodes = <EpisodeItem>[];
     int? maxEpisode;
 
-    final rawList = player['list'];
-    if (rawList is List) {
-      for (final item in rawList) {
+    // Вариант А: API v1 массив "episodes"
+    final rawEpisodes = json['episodes'];
+    if (rawEpisodes is List) {
+      for (final item in rawEpisodes) {
         if (item is Map<String, dynamic>) {
-          final ep = _parseEpisode(item, host);
+          final ep = _parseV1Episode(item);
           if (ep != null) {
             episodes.add(ep);
+            if (trailerUrl == null && ep.youtubeId != null && ep.youtubeId!.isNotEmpty) {
+              trailerUrl = 'https://www.youtube.com/watch?v=${ep.youtubeId}';
+            }
             final currentMax = maxEpisode;
             if (currentMax == null || ep.episode > currentMax) {
               maxEpisode = ep.episode;
@@ -91,26 +168,46 @@ class AnimeTitleDto {
           }
         }
       }
-    } else if (rawList is Map<String, dynamic>) {
-      rawList.forEach((key, value) {
-        if (value is Map<String, dynamic>) {
-          final ep = _parseEpisode(value, host);
-          if (ep != null) {
-            episodes.add(ep);
-            final currentMax = maxEpisode;
-            if (currentMax == null || ep.episode > currentMax) {
-              maxEpisode = ep.episode;
+    }
+
+    // Вариант B: API v1 объект "latest_episode" из ленты новинок
+    if (episodes.isEmpty && json['latest_episode'] is Map<String, dynamic>) {
+      final ep = _parseV1Episode(json['latest_episode'] as Map<String, dynamic>);
+      if (ep != null) {
+        episodes.add(ep);
+        maxEpisode = ep.episode;
+        if (trailerUrl == null && ep.youtubeId != null && ep.youtubeId!.isNotEmpty) {
+          trailerUrl = 'https://www.youtube.com/watch?v=${ep.youtubeId}';
+        }
+      }
+    }
+
+    // Вариант C: Legacy API v3 объект "player"
+    final playerObj = json['player'];
+    if (episodes.isEmpty && playerObj is Map<String, dynamic>) {
+      final host = playerObj['host'] as String?;
+      final rawList = playerObj['list'];
+      if (rawList is List) {
+        for (final item in rawList) {
+          if (item is Map<String, dynamic>) {
+            final ep = _parseLegacyEpisode(item, host);
+            if (ep != null) {
+              episodes.add(ep);
+              final currentMax = maxEpisode;
+              if (currentMax == null || ep.episode > currentMax) {
+                maxEpisode = ep.episode;
+              }
             }
           }
         }
-      });
+      }
     }
 
     episodes.sort((a, b) => a.episode.compareTo(b.episode));
 
     return AnimeTitleDto(
-      id: json['id'] as int? ?? 0,
-      code: json['code'] as String? ?? '',
+      id: id,
+      code: code,
       russianTitle: ruTitle,
       englishTitle: enTitle,
       posterSmall: smallUrl,
@@ -123,19 +220,73 @@ class AnimeTitleDto {
       genres: genres,
       description: description,
       status: status,
-      playerHost: host,
+      playerHost: null,
       episodes: episodes,
+      trailerUrl: trailerUrl,
+      shikimoriUrl: shikimoriUrl,
     );
   }
 
-  static EpisodeItem? _parseEpisode(Map<String, dynamic> item, String? host) {
-    final epNum = item['episode'] as int? ?? (item['ordinal'] as int?) ?? 1;
+  static EpisodeItem? _parseV1Episode(Map<String, dynamic> item) {
+    final ordinal = item['ordinal'] as int? ?? (item['sort_order'] as int?) ?? 1;
+    final name = item['name'] as String?;
+    final hls1080 = item['hls_1080'] as String?;
+    final hls720 = item['hls_720'] as String?;
+    final hls480 = item['hls_480'] as String?;
+    final youtubeId = item['youtube_id'] as String?;
+    final rutubeId = item['rutube_id'] as String?;
+
+    String? previewUrl;
+    final prevObj = item['preview'];
+    if (prevObj is Map<String, dynamic>) {
+      final src = prevObj['src'] as String? ?? prevObj['thumbnail'] as String?;
+      previewUrl = _formatPosterUrl(src);
+    } else if (prevObj is String) {
+      previewUrl = _formatPosterUrl(prevObj);
+    }
+
+    TimecodeRange? opening;
+    final opObj = item['opening'];
+    if (opObj is Map<String, dynamic>) {
+      final start = opObj['start'] as int?;
+      final stop = opObj['stop'] as int?;
+      if (start != null && stop != null && stop > start) {
+        opening = TimecodeRange(start: start, stop: stop);
+      }
+    }
+
+    TimecodeRange? ending;
+    final endObj = item['ending'];
+    if (endObj is Map<String, dynamic>) {
+      final start = endObj['start'] as int?;
+      final stop = endObj['stop'] as int?;
+      if (start != null && stop != null && stop > start) {
+        ending = TimecodeRange(start: start, stop: stop);
+      }
+    }
+
+    return EpisodeItem(
+      episode: ordinal,
+      name: name,
+      previewUrl: previewUrl,
+      sdUrl: hls480,
+      hdUrl: hls720,
+      fhdUrl: hls1080,
+      opening: opening,
+      ending: ending,
+      youtubeId: youtubeId,
+      rutubeId: rutubeId,
+    );
+  }
+
+  static EpisodeItem? _parseLegacyEpisode(Map<String, dynamic> item, String? host) {
+    final epNum = item['episode'] as int? ?? 1;
     final name = item['name'] as String?;
     final hls = item['hls'] as Map<String, dynamic>? ?? {};
 
     String? buildStreamUrl(String? path) {
       if (path == null || path.isEmpty) return null;
-      if (path.startsWith('http://') || path.startsWith('https://')) return path;
+      if (path.startsWith('http')) return path;
       if (host != null && host.isNotEmpty) {
         final cleanHost = host.startsWith('http') ? host : 'https://$host';
         final cleanPath = path.startsWith('/') ? path : '/$path';
@@ -180,6 +331,8 @@ class AnimeTitleDto {
       status: status,
       playerHost: playerHost,
       episodes: episodes,
+      trailerUrl: trailerUrl,
+      shikimoriUrl: shikimoriUrl,
     );
   }
 }

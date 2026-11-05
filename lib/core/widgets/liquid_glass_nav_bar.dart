@@ -33,6 +33,11 @@ class LiquidGlassNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themePrimary = Theme.of(context).colorScheme.primary;
+    final themePrimaryLight = HSLColor.fromColor(themePrimary)
+        .withLightness((HSLColor.fromColor(themePrimary).lightness + 0.15).clamp(0.0, 1.0))
+        .toColor();
+
     return SafeArea(
       bottom: true,
       minimum: const EdgeInsets.only(bottom: 12),
@@ -52,7 +57,7 @@ class LiquidGlassNavBar extends StatelessWidget {
               ),
               // Легкое янтарно-акцентное свечение
               BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.08),
+                color: themePrimary.withValues(alpha: 0.12),
                 blurRadius: 18,
                 offset: const Offset(0, 2),
               ),
@@ -94,7 +99,7 @@ class LiquidGlassNavBar extends StatelessWidget {
                       child: TvFocusable(
                         borderRadius: BorderRadius.circular(22),
                         scaleFactor: 1.05,
-                        glowColor: AppColors.primary,
+                        glowColor: themePrimary,
                         onPressed: () {
                           if (!isSelected) {
                             HapticFeedback.lightImpact();
@@ -108,12 +113,12 @@ class LiquidGlassNavBar extends StatelessWidget {
                           decoration: BoxDecoration(
                             // Жидкая акцентная капсула активной вкладки
                             color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.18)
+                                ? themePrimary.withValues(alpha: 0.20)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(22),
                             border: isSelected
                                 ? Border.all(
-                                    color: AppColors.primary.withValues(alpha: 0.45),
+                                    color: themePrimary.withValues(alpha: 0.50),
                                     width: 1.0,
                                   )
                                 : null,
@@ -126,7 +131,7 @@ class LiquidGlassNavBar extends StatelessWidget {
                                 isSelected ? item.selectedIcon : item.icon,
                                 size: 20,
                                 color: isSelected
-                                    ? AppColors.primaryLight
+                                    ? themePrimaryLight
                                     : AppColors.textSecondary,
                               ),
                               const SizedBox(height: 2),

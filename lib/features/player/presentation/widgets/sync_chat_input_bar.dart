@@ -183,7 +183,7 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
                       const SizedBox(width: AppDimensions.spacingSm),
                       IconButton.filled(
                         style: IconButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                           minimumSize: const Size(44, 44),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),

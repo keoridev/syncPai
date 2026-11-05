@@ -119,7 +119,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
                     const SizedBox(height: 24),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         foregroundColor: AppColors.textPrimary,
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

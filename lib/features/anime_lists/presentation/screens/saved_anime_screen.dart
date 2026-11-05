@@ -305,7 +305,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       height: 24,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: isSelected ? AppColors.primary : Colors.black.withValues(alpha: 0.6),
+        color: isSelected ? Theme.of(context).colorScheme.primary : Colors.black.withValues(alpha: 0.6),
         border: Border.all(
           color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.8),
           width: 2,
@@ -1057,12 +1057,12 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? AppColors.primary
+                                    ? Theme.of(context).colorScheme.primary
                                     : AppColors.surfaceElevated.withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: isSelected
-                                      ? AppColors.primary
+                                      ? Theme.of(context).colorScheme.primary
                                       : AppColors.strokeMedium,
                                 ),
                               ),
@@ -1156,7 +1156,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                 const SizedBox(height: 18),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
+                                    backgroundColor: Theme.of(context).colorScheme.primary,
                                     foregroundColor: AppColors.textPrimary,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),

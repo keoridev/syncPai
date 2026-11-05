@@ -445,7 +445,7 @@ class _EpisodeQualitySheetState extends State<EpisodeQualitySheet> {
                         widget.onQualitySelected(_selectedQuality);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         foregroundColor: AppColors.textPrimary,
                         elevation: 0,
                         shape: RoundedRectangleBorder(

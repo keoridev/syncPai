@@ -830,7 +830,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                     ? null
                     : () => _onPinChanged(_pinController.text),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),

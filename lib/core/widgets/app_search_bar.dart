@@ -48,7 +48,7 @@ class AppSearchBar extends StatelessWidget {
               color: AppColors.textPrimary,
               fontSize: 14,
             ),
-            cursorColor: AppColors.primary,
+            cursorColor: Theme.of(context).colorScheme.primary,
             decoration: InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.zero,

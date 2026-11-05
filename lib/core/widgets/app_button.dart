@@ -18,6 +18,7 @@ class AppButton extends StatelessWidget {
   final AppButtonVariant variant;
   final bool isLoading;
   final double? width;
+  final Color? backgroundColor;
 
   const AppButton({
     super.key,
@@ -27,6 +28,7 @@ class AppButton extends StatelessWidget {
     this.variant = AppButtonVariant.primary,
     this.isLoading = false,
     this.width,
+    this.backgroundColor,
   });
 
   const AppButton.frosted({
@@ -36,6 +38,7 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.width,
+    this.backgroundColor,
   }) : variant = AppButtonVariant.secondaryFrosted;
 
   @override
@@ -75,10 +78,11 @@ class AppButton extends StatelessWidget {
 
     switch (variant) {
       case AppButtonVariant.primary:
+        final effectiveColor = backgroundColor ?? Theme.of(context).colorScheme.primary;
         button = ElevatedButton(
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
+            backgroundColor: effectiveColor,
             foregroundColor: AppColors.textPrimary,
             elevation: 0,
             minimumSize: Size(width ?? 0, effectiveHeight),

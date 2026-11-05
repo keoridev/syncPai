@@ -141,7 +141,7 @@ Future<void> configureDependencies() async {
   );
 
   // Features: Catalog - Presentation Cubit
-  getIt.registerFactory<CatalogCubit>(
+  getIt.registerLazySingleton<CatalogCubit>(
     () => CatalogCubit(
       getUpdates: getIt<GetUpdates>(),
       searchTitles: getIt<SearchTitles>(),

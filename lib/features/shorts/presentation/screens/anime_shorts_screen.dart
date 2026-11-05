@@ -295,7 +295,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
               ElevatedButton(
                 onPressed: _loadClips,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Обновить'),

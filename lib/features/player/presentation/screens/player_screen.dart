@@ -406,7 +406,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
                             ),
                             icon: const Icon(Icons.refresh_rounded),
                             label: const Text('Повторить'),

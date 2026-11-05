@@ -21,7 +21,8 @@ class AppChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor = isSelected ? AppColors.primary : AppColors.surfaceElevated;
+    final primary = Theme.of(context).colorScheme.primary;
+    final backgroundColor = isSelected ? primary : AppColors.surfaceElevated;
     final textColor = isSelected ? AppColors.textPrimary : AppColors.textSecondary;
     final borderColor = isSelected ? Colors.transparent : AppColors.stroke;
 

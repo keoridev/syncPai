@@ -100,7 +100,7 @@ class ResumeProgressCard extends StatelessWidget {
                 flex: 3,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: AppColors.textPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

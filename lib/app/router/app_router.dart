@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../di/injection.dart';
 import '../../features/anime_details/domain/entities/anime_video_item.dart';
 import '../../features/anime_details/presentation/screens/anime_details_screen.dart';
 import '../../features/anime_details/presentation/screens/anime_videos_screen.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import '../../features/catalog/domain/entities/episode_item.dart';
-import '../../features/catalog/presentation/cubit/catalog_cubit.dart';
 import '../../features/main/presentation/screens/main_screen.dart';
 import '../../features/player/domain/entities/player_quality.dart';
 import '../../features/player/presentation/screens/player_screen.dart';
@@ -31,13 +28,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/',
       name: 'main',
-      builder: (context, state) => BlocProvider(
-        create: (context) => getIt<CatalogCubit>(),
-        child: MainScreen(
-          onTitleSelected: (title) {
-            context.pushNamed('details', extra: title);
-          },
-        ),
+      builder: (context, state) => MainScreen(
+        onTitleSelected: (title) {
+          context.pushNamed('details', extra: title);
+        },
       ),
     ),
     GoRoute(

@@ -13,6 +13,7 @@ import '../../../../core/theme/cubit/theme_cubit.dart';
 import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
@@ -1195,8 +1196,22 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           Builder(
             builder: (context) {
               final q = _favAnimeController.text.toLowerCase().trim();
-              final catalogState = context.read<CatalogCubit>().state;
-              final savedEntries = context.read<AnimeListCubit>().state.allEntries;
+              CatalogState? catalogState;
+              try {
+                catalogState = context.read<CatalogCubit?>()?.state;
+              } catch (_) {
+                if (getIt.isRegistered<CatalogCubit>()) {
+                  catalogState = getIt<CatalogCubit>().state;
+                }
+              }
+              List<UserAnimeEntry> savedEntries = const [];
+              try {
+                savedEntries = context.read<AnimeListCubit?>()?.state.allEntries ?? const [];
+              } catch (_) {
+                if (getIt.isRegistered<AnimeListCubit>()) {
+                  savedEntries = getIt<AnimeListCubit>().state.allEntries;
+                }
+              }
 
               // Объединяем результаты: живой поиск API AniLibria, сохраненные списки, кэш каталога
               final Map<int, AnimeTitle> combined = {};

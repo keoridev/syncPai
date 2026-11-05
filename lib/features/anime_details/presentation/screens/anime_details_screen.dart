@@ -798,13 +798,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                     ? () => _requestPlayEpisode(currentEpisode)
                                     : () => _loadFullDetails()),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: currentEpisode != null ? AppColors.primary : AppColors.surfaceElevated,
+                              backgroundColor: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.surfaceElevated,
                               foregroundColor: AppColors.textPrimary,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 side: BorderSide(
-                                  color: currentEpisode != null ? AppColors.primary : AppColors.strokeMedium,
+                                  color: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.strokeMedium,
                                 ),
                               ),
                               padding: const EdgeInsets.symmetric(horizontal: 12),

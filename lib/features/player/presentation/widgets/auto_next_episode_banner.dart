@@ -131,7 +131,7 @@ class AutoNextEpisodeBanner extends StatelessWidget {
                             const SizedBox(width: 8),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
+                                backgroundColor: Theme.of(context).colorScheme.primary,
                                 foregroundColor: AppColors.textPrimary,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 minimumSize: Size.zero,

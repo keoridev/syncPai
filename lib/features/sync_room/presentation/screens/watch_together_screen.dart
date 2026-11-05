@@ -294,7 +294,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                   height: 48,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
@@ -418,7 +418,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 46),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -541,7 +541,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
               height: 48,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -783,7 +783,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           const SizedBox(width: 8),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: AppColors.textPrimary,
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

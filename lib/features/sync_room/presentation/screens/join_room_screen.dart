@@ -44,8 +44,8 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
 
       if (!mounted) return;
 
-      // Мгновенный переход на экран плеера
-      context.goNamed('player', extra: {
+      // Мгновенный переход на экран плеера с сохранением предыдущего экрана в истории
+      context.pushReplacementNamed('player', extra: {
         'title': room.title,
         'episode': room.episode,
         'quality': room.quality,

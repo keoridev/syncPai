@@ -15,8 +15,7 @@ import '../../../sync_room/presentation/screens/watch_together_screen.dart';
 /// 3. Вместе (Совместный просмотр, друзья, комнаты)
 /// 4. Списки (Закладки, «В планах», «Смотрю»)
 /// 5. Профиль & Настройки (Кастомизация, статистика, импорт, плеер)
-/// На широких экранах (планшеты, десктоп, альбомная ориентация) отображается боковой сайдбар слева,
-/// а на мобильных устройствах — парящая панель Liquid Glass внизу.
+/// Поддерживает плавный горизонтальный свайп между экранами (PageView) с сохранением состояния.
 class MainScreen extends StatefulWidget {
   final int initialTab;
   final ValueChanged<AnimeTitle>? onTitleSelected;
@@ -33,16 +32,33 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late int _currentIndex;
+  late final PageController _pageController;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialTab.clamp(0, 4);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   void switchTab(int index) {
-    if (index >= 0 && index < 5 && index != _currentIndex) {
-      setState(() => _currentIndex = index);
+    if (index >= 0 && index < 5) {
+      if (_currentIndex != index) {
+        setState(() => _currentIndex = index);
+      }
+      if (_pageController.hasClients && _pageController.page?.round() != index) {
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
   }
 
@@ -50,37 +66,53 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final themePrimary = Theme.of(context).colorScheme.primary;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final isWide = screenWidth >= 720;
+    final isWide = screenWidth >= 900;
 
-    final bodyContent = IndexedStack(
-      index: _currentIndex,
+    final bodyContent = PageView(
+      controller: _pageController,
+      physics: const BouncingScrollPhysics(),
+      onPageChanged: (index) {
+        if (_currentIndex != index) {
+          setState(() => _currentIndex = index);
+        }
+      },
       children: [
         // Вкладка 1: Каталог
-        CatalogScreen(
-          onTitleSelected: widget.onTitleSelected,
+        _KeepAlivePage(
+          child: CatalogScreen(
+            onTitleSelected: widget.onTitleSelected,
+          ),
         ),
 
         // Вкладка 2: Лента Моментов (Shorts / Reels)
-        AnimeShortsScreen(
-          showBackButton: false,
-          isActive: _currentIndex == 1,
-          onTitleSelected: widget.onTitleSelected,
+        _KeepAlivePage(
+          child: AnimeShortsScreen(
+            showBackButton: false,
+            isActive: _currentIndex == 1,
+            onTitleSelected: widget.onTitleSelected,
+          ),
         ),
 
         // Вкладка 3: Смотреть вместе & Добавить друга
-        WatchTogetherScreen(
-          onCreateRoomTap: () => switchTab(0),
+        _KeepAlivePage(
+          child: WatchTogetherScreen(
+            onCreateRoomTap: () => switchTab(0),
+          ),
         ),
 
         // Вкладка 4: Мои списки & Закладки (В планах / Смотрю)
-        SavedAnimeScreen(
-          onTitleSelected: widget.onTitleSelected,
-          onGoToCatalog: () => switchTab(0),
+        _KeepAlivePage(
+          child: SavedAnimeScreen(
+            onTitleSelected: widget.onTitleSelected,
+            onGoToCatalog: () => switchTab(0),
+          ),
         ),
 
         // Вкладка 5: Профиль & Кастомизация
-        const ProfileScreen(
-          showBackButton: false,
+        const _KeepAlivePage(
+          child: ProfileScreen(
+            showBackButton: false,
+          ),
         ),
       ],
     );
@@ -103,13 +135,13 @@ class _MainScreenState extends State<MainScreen> {
               onTap: switchTab,
               items: const [
                 LiquidGlassNavItem(
-                  icon: Icons.explore_outlined,
-                  selectedIcon: Icons.explore_rounded,
+                  icon: Icons.movie_outlined,
+                  selectedIcon: Icons.movie_rounded,
                   label: 'Каталог',
                 ),
                 LiquidGlassNavItem(
-                  icon: Icons.movie_filter_outlined,
-                  selectedIcon: Icons.movie_filter_rounded,
+                  icon: Icons.play_circle_outline_rounded,
+                  selectedIcon: Icons.play_circle_filled_rounded,
                   label: 'Моменты',
                 ),
                 LiquidGlassNavItem(
@@ -118,7 +150,7 @@ class _MainScreenState extends State<MainScreen> {
                   label: 'Вместе',
                 ),
                 LiquidGlassNavItem(
-                  icon: Icons.bookmark_outline_rounded,
+                  icon: Icons.bookmark_border_rounded,
                   selectedIcon: Icons.bookmark_rounded,
                   label: 'Списки',
                 ),
@@ -132,126 +164,114 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Боковой сайдбар на широких экранах (планшеты, десктоп)
   Widget _buildLeftSidebar(BuildContext context, Color themePrimary) {
-    final navItems = [
-      (Icons.explore_outlined, Icons.explore_rounded, 'Каталог'),
-      (Icons.movie_filter_outlined, Icons.movie_filter_rounded, 'Моменты'),
-      (Icons.people_outline_rounded, Icons.people_alt_rounded, 'Вместе'),
-      (Icons.bookmark_outline_rounded, Icons.bookmark_rounded, 'Списки'),
-      (Icons.person_outline_rounded, Icons.person_rounded, 'Профиль'),
-    ];
-
     return Container(
       width: 220,
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(
-          right: BorderSide(color: AppColors.strokeMedium, width: 1.0),
+          right: BorderSide(
+            color: AppColors.stroke,
+            width: 1.0,
+          ),
         ),
       ),
       child: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 16),
-            // Логотип приложения в сайдбаре
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                children: [
-                  SyncPaiLogo(size: 34, accentColor: themePrimary),
-                  const SizedBox(width: 10),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        const TextSpan(
-                          text: 'Sync',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        TextSpan(
-                          text: 'Pai',
-                          style: TextStyle(
-                            color: themePrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Divider(color: AppColors.stroke, height: 1),
-            const SizedBox(height: 14),
-
-            // Элементы навигации сайдбара
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: navItems.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  final item = navItems[index];
-                  final isSelected = _currentIndex == index;
-
-                  return InkWell(
-                    onTap: () => switchTab(index),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: isSelected ? themePrimary.withValues(alpha: 0.16) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isSelected ? themePrimary.withValues(alpha: 0.4) : Colors.transparent,
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isSelected ? item.$2 : item.$1,
-                            size: 22,
-                            color: isSelected ? themePrimary : Colors.white70,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            item.$3,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.white70,
-                              fontSize: 14,
-                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // Нижний статус
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'SyncPai Nordic Dark v1.0',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  fontSize: 11,
+            const SizedBox(height: 20),
+            // Логотип приложения
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SyncPaiLogo(
+                  size: 32,
+                  accentColor: themePrimary,
                 ),
-              ),
+                const SizedBox(width: 10),
+                const Text(
+                  'SyncPai',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 30),
+            _buildSidebarItem(0, Icons.movie_outlined, Icons.movie_rounded, 'Каталог', themePrimary),
+            _buildSidebarItem(1, Icons.play_circle_outline_rounded, Icons.play_circle_filled_rounded, 'Моменты', themePrimary),
+            _buildSidebarItem(2, Icons.people_outline_rounded, Icons.people_alt_rounded, 'Вместе', themePrimary),
+            _buildSidebarItem(3, Icons.bookmark_border_rounded, Icons.bookmark_rounded, 'Списки', themePrimary),
+            _buildSidebarItem(4, Icons.person_outline_rounded, Icons.person_rounded, 'Профиль', themePrimary),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildSidebarItem(
+    int index,
+    IconData icon,
+    IconData selectedIcon,
+    String label,
+    Color themePrimary,
+  ) {
+    final isSelected = _currentIndex == index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: InkWell(
+        onTap: () => switchTab(index),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? themePrimary.withValues(alpha: 0.16) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? selectedIcon : icon,
+                color: isSelected ? themePrimary : AppColors.textSecondary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Вспомогательный виджет для сохранения состояния страницы при свайпах
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAlivePage({required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

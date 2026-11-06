@@ -2,7 +2,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/tv_focusable.dart';
@@ -13,7 +12,7 @@ import '../../domain/entities/anime_title.dart';
 /// - Чистый арт без технических коробок и плашек поверх картинки
 /// - Название аккуратно под постером молочно-белым цветом
 /// - Метаданные (год, серии, жанры) через точку
-/// - Поддержка Android TV / D-pad с плавной подсветкой фокуса
+/// - Высокая частота обновления (60-120 FPS): изоляция слоев через RepaintBoundary
 class AnimePosterCard extends StatelessWidget {
   final AnimeTitle title;
   final VoidCallback onTap;
@@ -37,31 +36,25 @@ class AnimePosterCard extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isNarrow = screenWidth <= 360;
 
-    return TvFocusable(
-      onPressed: onTap,
-      borderRadius: BorderRadius.circular(cardRadius),
-      scaleFactor: 1.04,
-      glowColor: AppColors.accentPrimary,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Чистый постер с большим радиусом (18px)
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(cardRadius),
-                border: Border.all(
-                  color: AppColors.stroke,
-                  width: 1.0,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+    return RepaintBoundary(
+      child: TvFocusable(
+        onPressed: onTap,
+        borderRadius: BorderRadius.circular(cardRadius),
+        scaleFactor: 1.04,
+        glowColor: AppColors.accentPrimary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Чистый постер с большим радиусом (18px)
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(cardRadius),
+                  border: Border.all(
+                    color: AppColors.stroke,
+                    width: 1.0,
                   ),
-                ],
-              ),
+                ),
                 clipBehavior: Clip.antiAlias,
                 child: Stack(
                   fit: StackFit.expand,
@@ -70,10 +63,12 @@ class AnimePosterCard extends StatelessWidget {
                       CachedNetworkImage(
                         imageUrl: wrapCorsSafeUrl(posterUrl),
                         fit: BoxFit.cover,
-                        memCacheWidth: 360,
-                        memCacheHeight: 540,
-                        maxWidthDiskCache: 600,
-                        maxHeightDiskCache: 900,
+                        memCacheWidth: 320,
+                        memCacheHeight: 480,
+                        maxWidthDiskCache: 500,
+                        maxHeightDiskCache: 750,
+                        fadeInDuration: const Duration(milliseconds: 140),
+                        filterQuality: FilterQuality.low,
                         placeholder: (context, url) =>
                             const ShimmerPlaceholder.card(),
                         errorWidget: (context, url, error) => Container(
@@ -114,7 +109,7 @@ class AnimePosterCard extends StatelessWidget {
                       ),
                     ),
 
-                    // Минималистичный индикатор онгоинга/серий внизу постера (деликатная точка или лаконичный бейдж)
+                    // Минималистичный индикатор онгоинга/серий внизу постера
                     if (title.latestEpisode != null)
                       Positioned(
                         bottom: 8,
@@ -158,39 +153,45 @@ class AnimePosterCard extends StatelessWidget {
               ),
             ),
 
-            SizedBox(height: isNarrow ? 5 : AppDimensions.spacingSm + 2),
+            const SizedBox(height: 7),
 
-            // Название аккуратно под постером в молочно-белом цвете (до 2 строк для читаемости сезонов)
-            Text(
-              title.displayTitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.titleSmall.copyWith(
-                color: AppColors.textPrimary,
-                fontSize: isNarrow ? 12.0 : 13.5,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.2,
-                height: 1.20,
+            // Название тайтла прямо под постером молочно-белым текстом (строго до 2 строк)
+            SizedBox(
+              height: isNarrow ? 30 : 33,
+              child: Text(
+                title.displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+                style: AppTypography.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: isNarrow ? 11.0 : 11.5,
+                  height: 1.25,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.1,
+                ),
               ),
             ),
 
             const SizedBox(height: 2),
 
-            // Метаданные через точку: Год • Жанры
+            // Метаданные через точку: Год • Серии • Жанры
             Text(
               _buildMetaSubtitle(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: isNarrow ? 10.5 : 11.5,
+              style: AppTypography.caption.copyWith(
+                fontSize: 10.5,
                 fontWeight: FontWeight.w400,
+                color: AppColors.textMuted,
+                letterSpacing: 0.1,
               ),
             ),
           ],
         ),
-      );
-    }
+      ),
+    );
+  }
 
   String _buildMetaSubtitle() {
     final parts = <String>[];

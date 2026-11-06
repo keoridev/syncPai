@@ -487,10 +487,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 16),
-            child: Column(
+        child: Material(
+          color: Colors.transparent,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 16),
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -565,6 +567,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
             ],
           ),
           ),
+        ),
         ),
       ),
     );

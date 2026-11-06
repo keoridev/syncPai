@@ -159,12 +159,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _handleExit() {
+    _saveWatchProgress();
+
     // Восстанавливаем системные панели UI Android/iOS при выходе
     SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: SystemUiOverlay.values,
+      SystemUiMode.edgeToEdge,
     );
-    if (Navigator.of(context).canPop()) {
+
+    if (context.canPop()) {
+      context.pop();
+    } else if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
       context.go('/');
@@ -300,10 +304,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
 
     return PopScope(
-      canPop: false,
+      canPop: true,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          _handleExit();
+        if (didPop) {
+          _saveWatchProgress();
+          SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.edgeToEdge,
+          );
         }
       },
       child: Focus(

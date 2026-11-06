@@ -35,12 +35,14 @@ class QualitySelectionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppDimensions.spacingXl,
-          vertical: AppDimensions.spacingLg,
-        ),
-        child: Column(
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.spacingXl,
+            vertical: AppDimensions.spacingLg,
+          ),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -83,6 +85,7 @@ class QualitySelectionSheet extends StatelessWidget {
             }),
           ],
         ),
+      ),
       ),
     );
   }

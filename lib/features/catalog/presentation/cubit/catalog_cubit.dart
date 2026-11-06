@@ -85,9 +85,17 @@ class CatalogCubit extends Cubit<CatalogState> {
       final combined = List<AnimeTitle>.from(current.titles)..addAll(uniqueNew);
       _cachedUpdates = combined;
 
+      final filtered = _applyFiltersAndSorting(
+        combined,
+        genres: current.selectedGenres,
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
+
       emit(current.copyWith(
         titles: combined,
-        filteredTitles: _filterByGenreList(combined, current.selectedGenre),
+        filteredTitles: filtered,
         currentPage: nextPage,
         hasMore: newTitles.length >= 10,
         isLoadingMore: false,
@@ -129,10 +137,17 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (trimmed.isEmpty) {
       if (state is CatalogLoaded) {
         final current = state as CatalogLoaded;
+        final filtered = _applyFiltersAndSorting(
+          _cachedUpdates,
+          genres: current.selectedGenres,
+          sortBy: current.sortBy,
+          matchAll: current.matchAllGenres,
+          statusFilter: current.statusFilter,
+        );
         emit(current.copyWith(
           searchQuery: '',
           isSearching: false,
-          filteredTitles: _filterByGenreList(_cachedUpdates, current.selectedGenre),
+          filteredTitles: filtered,
           titles: _cachedUpdates,
         ));
       }
@@ -152,12 +167,28 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
 
     try {
-      final results = await searchTitles(query, limit: 30);
-      final currentGenre = (state is CatalogLoaded) ? (state as CatalogLoaded).selectedGenre : null;
+      final results = await searchTitles(query, limit: 40);
+      final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+      final genres = current?.selectedGenres ?? const {};
+      final sort = current?.sortBy ?? CatalogSort.updates;
+      final matchAll = current?.matchAllGenres ?? false;
+      final status = current?.statusFilter;
+
+      final filtered = _applyFiltersAndSorting(
+        results,
+        genres: genres,
+        sortBy: sort,
+        matchAll: matchAll,
+        statusFilter: status,
+      );
+
       emit(CatalogLoaded(
         titles: results,
-        filteredTitles: _filterByGenreList(results, currentGenre),
-        selectedGenre: currentGenre,
+        filteredTitles: filtered,
+        selectedGenres: genres,
+        sortBy: sort,
+        matchAllGenres: matchAll,
+        statusFilter: status,
         searchQuery: query,
         isSearching: false,
         viewMode: _currentViewMode,
@@ -168,27 +199,213 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
-  void selectGenre(String? genre) {
+  /// Переключение конкретного жанра в мульти-выборе
+  void toggleGenre(String genre) {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
 
-    final newGenre = current.selectedGenre == genre ? null : genre;
-    final filtered = _filterByGenreList(current.titles, newGenre);
+    final nextGenres = Set<String>.from(current.selectedGenres);
+    if (nextGenres.contains(genre)) {
+      nextGenres.remove(genre);
+    } else {
+      nextGenres.add(genre);
+    }
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: nextGenres,
+      sortBy: current.sortBy,
+      matchAll: current.matchAllGenres,
+      statusFilter: current.statusFilter,
+    );
 
     emit(current.copyWith(
-      selectedGenre: newGenre,
-      clearGenre: newGenre == null,
+      selectedGenres: nextGenres,
       filteredTitles: filtered,
     ));
   }
 
-  List<AnimeTitle> _filterByGenreList(List<AnimeTitle> list, String? genre) {
+  /// Одиночный выбор жанра (для совместимости)
+  void selectGenre(String? genre) {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    Set<String> nextGenres;
     if (genre == null || genre.isEmpty || genre == 'Все') {
-      return list;
+      nextGenres = const {};
+    } else if (current.selectedGenres.contains(genre) && current.selectedGenres.length == 1) {
+      nextGenres = const {};
+    } else {
+      nextGenres = {genre};
     }
-    return list.where((title) => title.genres.any(
-      (g) => g.toLowerCase().contains(genre.toLowerCase())
-    )).toList();
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: nextGenres,
+      sortBy: current.sortBy,
+      matchAll: current.matchAllGenres,
+      statusFilter: current.statusFilter,
+    );
+
+    emit(current.copyWith(
+      selectedGenres: nextGenres,
+      clearGenre: nextGenres.isEmpty,
+      filteredTitles: filtered,
+    ));
+  }
+
+  /// Очистить все фильтры жанров
+  void clearGenres() {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: const {},
+      sortBy: current.sortBy,
+      matchAll: current.matchAllGenres,
+      statusFilter: current.statusFilter,
+    );
+
+    emit(current.copyWith(
+      selectedGenres: const {},
+      clearGenre: true,
+      filteredTitles: filtered,
+    ));
+  }
+
+  /// Установить сортировку каталога
+  void setSortBy(CatalogSort sort) {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: current.selectedGenres,
+      sortBy: sort,
+      matchAll: current.matchAllGenres,
+      statusFilter: current.statusFilter,
+    );
+
+    emit(current.copyWith(
+      sortBy: sort,
+      filteredTitles: filtered,
+    ));
+  }
+
+  /// Переключить режим совпадения: все выбранные жанры или хотя бы один
+  void setMatchAllGenres(bool matchAll) {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: current.selectedGenres,
+      sortBy: current.sortBy,
+      matchAll: matchAll,
+      statusFilter: current.statusFilter,
+    );
+
+    emit(current.copyWith(
+      matchAllGenres: matchAll,
+      filteredTitles: filtered,
+    ));
+  }
+
+  /// Установить фильтр статуса: 'ongoing', 'released' или null
+  void setStatusFilter(String? status) {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    final filtered = _applyFiltersAndSorting(
+      current.titles,
+      genres: current.selectedGenres,
+      sortBy: current.sortBy,
+      matchAll: current.matchAllGenres,
+      statusFilter: status,
+    );
+
+    emit(current.copyWith(
+      statusFilter: status,
+      clearStatusFilter: status == null,
+      filteredTitles: filtered,
+    ));
+  }
+
+  /// Комплексный движок фильтрации и сортировки
+  List<AnimeTitle> _applyFiltersAndSorting(
+    List<AnimeTitle> list, {
+    required Set<String> genres,
+    required CatalogSort sortBy,
+    required bool matchAll,
+    String? statusFilter,
+  }) {
+    var result = List<AnimeTitle>.from(list);
+
+    // 1. Фильтр по жанрам
+    if (genres.isNotEmpty) {
+      final cleanGenres = genres.map((g) => g.toLowerCase().trim()).toSet();
+      result = result.where((title) {
+        final titleGenres = title.genres.map((g) => g.toLowerCase().trim()).toList();
+        if (matchAll) {
+          return cleanGenres.every((sg) => titleGenres.any((tg) => tg.contains(sg) || sg.contains(tg)));
+        } else {
+          return cleanGenres.any((sg) => titleGenres.any((tg) => tg.contains(sg) || sg.contains(tg)));
+        }
+      }).toList();
+    }
+
+    // 2. Фильтр по статусу
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      if (statusFilter == 'ongoing') {
+        result = result.where((t) {
+          final s = t.status.toLowerCase();
+          return s.contains('онгоинг') || s.contains('выходит') || s.contains('ongoing');
+        }).toList();
+      } else if (statusFilter == 'released') {
+        result = result.where((t) {
+          final s = t.status.toLowerCase();
+          return s.contains('завершен') || s.contains('вышел') || s.contains('released');
+        }).toList();
+      }
+    }
+
+    // 3. Сортировка
+    switch (sortBy) {
+      case CatalogSort.updates:
+        // Сохраняем порядок обновлений AniLibria
+        break;
+      case CatalogSort.yearDesc:
+        result.sort((a, b) => (b.year ?? 0).compareTo(a.year ?? 0));
+        break;
+      case CatalogSort.yearAsc:
+        result.sort((a, b) {
+          final yA = a.year ?? 9999;
+          final yB = b.year ?? 9999;
+          return yA.compareTo(yB);
+        });
+        break;
+      case CatalogSort.episodes:
+        result.sort((a, b) {
+          final epA = a.latestEpisode ?? a.episodesTotal ?? 0;
+          final epB = b.latestEpisode ?? b.episodesTotal ?? 0;
+          return epB.compareTo(epA);
+        });
+        break;
+      case CatalogSort.rating:
+        // Сортировка по количеству серий и полноте франшизы
+        result.sort((a, b) {
+          final scA = (a.episodes.length * 10) + (a.episodesTotal ?? 0);
+          final scB = (b.episodes.length * 10) + (b.episodesTotal ?? 0);
+          return scB.compareTo(scA);
+        });
+        break;
+      case CatalogSort.alphabetical:
+        result.sort((a, b) => a.displayTitle.toLowerCase().compareTo(b.displayTitle.toLowerCase()));
+        break;
+    }
+
+    return result;
   }
 
   @override

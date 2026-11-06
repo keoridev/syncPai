@@ -46,71 +46,74 @@ class AnimeVideosScreen extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.strokeMedium,
-                    borderRadius: BorderRadius.circular(2),
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.strokeMedium,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                video.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                const SizedBox(height: 16),
+                Text(
+                  video.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$animeTitle • ${video.source}',
-                style: AppTypography.caption.copyWith(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFFE50914), size: 26),
-                title: const Text('Смотреть трейлер', style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  _playVideo(context, video);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.link_rounded, color: AppColors.textSecondary, size: 24),
-                title: const Text('Скопировать ссылку', style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: video.url));
-                  Navigator.pop(sheetCtx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Ссылка скопирована в буфер')),
-                  );
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.share_rounded, color: AppColors.textSecondary, size: 24),
-                title: const Text('Поделиться видео', style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Поделиться: ${video.url}')),
-                  );
-                },
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  '$animeTitle • ${video.source}',
+                  style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFFE50914), size: 26),
+                  title: const Text('Смотреть трейлер', style: TextStyle(color: AppColors.textPrimary)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _playVideo(context, video);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.link_rounded, color: AppColors.textSecondary, size: 24),
+                  title: const Text('Скопировать ссылку', style: TextStyle(color: AppColors.textPrimary)),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: video.url));
+                    Navigator.pop(sheetCtx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ссылка скопирована в буфер')),
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.share_rounded, color: AppColors.textSecondary, size: 24),
+                  title: const Text('Поделиться видео', style: TextStyle(color: AppColors.textPrimary)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Поделиться: ${video.url}')),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),

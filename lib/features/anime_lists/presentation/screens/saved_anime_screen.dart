@@ -74,60 +74,63 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.strokeMedium,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Сортировка списка',
-                  style: AppTypography.titleMedium.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ...SavedAnimeSort.values.map((sort) {
-                  final isSelected = sort == _sortBy;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    leading: Icon(
-                      sort.icon,
-                      color: isSelected ? AppColors.primaryLight : AppColors.textSecondary,
-                      size: 20,
-                    ),
-                    title: Text(
-                      sort.label,
-                      style: TextStyle(
-                        color: isSelected ? AppColors.primaryLight : AppColors.textPrimary,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 14,
+          child: Material(
+            color: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.strokeMedium,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_rounded, color: AppColors.primaryLight, size: 20)
-                        : null,
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      setState(() => _sortBy = sort);
-                      Navigator.pop(ctx);
-                    },
-                  );
-                }),
-              ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Сортировка списка',
+                    style: AppTypography.titleMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...SavedAnimeSort.values.map((sort) {
+                    final isSelected = sort == _sortBy;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Icon(
+                        sort.icon,
+                        color: isSelected ? AppColors.primaryLight : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      title: Text(
+                        sort.label,
+                        style: TextStyle(
+                          color: isSelected ? AppColors.primaryLight : AppColors.textPrimary,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_rounded, color: AppColors.primaryLight, size: 20)
+                          : null,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        setState(() => _sortBy = sort);
+                        Navigator.pop(ctx);
+                      },
+                    );
+                  }),
+                ],
+              ),
             ),
           ),
         );
@@ -388,9 +391,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -455,6 +460,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -512,9 +518,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 16),
-          child: Column(
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 16),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -589,6 +597,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

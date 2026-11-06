@@ -119,7 +119,9 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
       ),
       builder: (sheetCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          return Padding(
+          return Material(
+            color: Colors.transparent,
+            child: Padding(
             padding: EdgeInsets.only(
               left: AppDimensions.spacingXl,
               right: AppDimensions.spacingXl,
@@ -353,6 +355,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
                       final ep = fullTitle.episodes.first;
                       if (context.mounted) {
+                        Navigator.of(sheetCtx).pop();
                         SyncRoomLobbySheet.show(
                           context,
                           title: fullTitle,
@@ -375,6 +378,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 ),
               ],
             ),
+          ),
           );
         },
       ),
@@ -393,9 +397,11 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Center(
@@ -480,6 +486,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

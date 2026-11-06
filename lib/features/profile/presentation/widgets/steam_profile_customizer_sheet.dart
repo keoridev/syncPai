@@ -1377,66 +1377,69 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                     ),
                   ],
                 ),
-                child: Column(
-                  children: [
-                    if (_isSearchingTitles)
-                      const LinearProgressIndicator(minHeight: 2),
-                    ...matches.map((t) {
-                      final isChosen = _selectedFavAnimeId == t.id.toString() ||
-                          _favAnimeController.text.trim().toLowerCase() == t.russianTitle.toLowerCase();
+                child: Material(
+                  color: Colors.transparent,
+                  child: Column(
+                    children: [
+                      if (_isSearchingTitles)
+                        const LinearProgressIndicator(minHeight: 2),
+                      ...matches.map((t) {
+                        final isChosen = _selectedFavAnimeId == t.id.toString() ||
+                            _favAnimeController.text.trim().toLowerCase() == t.russianTitle.toLowerCase();
 
-                      return ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: SizedBox(
-                            width: 32,
-                            height: 44,
-                            child: t.posterSmall.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: t.posterSmall,
-                                    fit: BoxFit.cover,
-                                    filterQuality: FilterQuality.high,
-                                    errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
-                                  )
-                                : const Icon(Icons.movie, size: 16),
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: SizedBox(
+                              width: 32,
+                              height: 44,
+                              child: t.posterSmall.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: t.posterSmall,
+                                      fit: BoxFit.cover,
+                                      filterQuality: FilterQuality.high,
+                                      errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                    )
+                                  : const Icon(Icons.movie, size: 16),
+                            ),
                           ),
-                        ),
-                        title: Text(
-                          t.russianTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: isChosen ? accent : Colors.white,
-                            fontSize: 13,
-                            fontWeight: isChosen ? FontWeight.w700 : FontWeight.w500,
+                          title: Text(
+                            t.russianTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isChosen ? accent : Colors.white,
+                              fontSize: 13,
+                              fontWeight: isChosen ? FontWeight.w700 : FontWeight.w500,
+                            ),
                           ),
-                        ),
-                        subtitle: t.genres.isNotEmpty
-                            ? Text(
-                                t.genres.take(2).join(', '),
-                                maxLines: 1,
-                                style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
-                              )
-                            : null,
-                        trailing: isChosen
-                            ? Icon(Icons.check_circle_rounded, color: accent, size: 18)
-                            : const Icon(Icons.add_rounded, color: AppColors.textSecondary, size: 18),
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          setState(() {
-                            _favAnimeController.text = t.russianTitle;
-                            _selectedFavAnimeId = t.id.toString();
-                            _selectedFavAnimePoster = t.posterMedium.isNotEmpty
-                                ? t.posterMedium
-                                : (t.posterOriginal.isNotEmpty ? t.posterOriginal : t.posterSmall);
-                            _searchedCatalogTitles = [];
-                          });
-                        },
-                      );
-                    }),
-                  ],
+                          subtitle: t.genres.isNotEmpty
+                              ? Text(
+                                  t.genres.take(2).join(', '),
+                                  maxLines: 1,
+                                  style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                                )
+                              : null,
+                          trailing: isChosen
+                              ? Icon(Icons.check_circle_rounded, color: accent, size: 18)
+                              : const Icon(Icons.add_rounded, color: AppColors.textSecondary, size: 18),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              _favAnimeController.text = t.russianTitle;
+                              _selectedFavAnimeId = t.id.toString();
+                              _selectedFavAnimePoster = t.posterMedium.isNotEmpty
+                                  ? t.posterMedium
+                                  : (t.posterOriginal.isNotEmpty ? t.posterOriginal : t.posterSmall);
+                              _searchedCatalogTitles = [];
+                            });
+                          },
+                        );
+                      }),
+                    ],
+                  ),
                 ),
               );
             },

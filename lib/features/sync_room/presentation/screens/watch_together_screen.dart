@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -9,6 +10,7 @@ import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
+import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import 'coop_match_screen.dart';
@@ -298,51 +300,75 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.of(sheetCtx).pop();
-                      final ep = EpisodeItem(
-                        episode: 1,
-                        name: 'Серия 1',
-                        fhdUrl: '',
-                        hdUrl: '',
-                        sdUrl: '',
-                      );
-                      SyncRoomLobbySheet.show(
-                        context,
-                        title: selectedTitle,
-                        episode: ep,
-                        initialQuality: PlayerQuality.hd,
-                        onStartPlayback: (room, isHost) {
-                          Navigator.of(context).pop();
-                          if (selectedTitle.id == 0) {
-                            // Свободная комната: уведомляем и направляем в каталог
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  '🎉 Вы подключены! Теперь откройте любой тайтл в каталоге — друзья подключатся автоматически!',
-                                  style: TextStyle(fontWeight: FontWeight.w700),
-                                ),
-                                backgroundColor: AppColors.syncActive,
-                                duration: Duration(seconds: 5),
-                                behavior: SnackBarBehavior.floating,
+                      if (selectedTitle.id == 0) {
+                        // Свободная комната: переходим в каталог для выбора тайтла
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '💡 Выберите аниме в каталоге и нажмите «Смотреть с другом» для создания синхронной комнаты!',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            backgroundColor: AppColors.primary,
+                            duration: Duration(seconds: 4),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        if (widget.onCreateRoomTap != null) {
+                          widget.onCreateRoomTap!();
+                        } else {
+                          context.go('/');
+                        }
+                        return;
+                      }
+
+                      // Если у тайтла еще не загружены полные серии — подгружаем их через репозиторий
+                      AnimeTitle fullTitle = selectedTitle;
+                      if (fullTitle.episodes.isEmpty && getIt.isRegistered<CatalogRepository>()) {
+                        try {
+                          fullTitle = await getIt<CatalogRepository>().getTitleDetails(
+                            id: selectedTitle.id,
+                            code: selectedTitle.code,
+                          );
+                        } catch (_) {}
+                      }
+
+                      if (fullTitle.episodes.isEmpty) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '📂 У тайтла «${selectedTitle.displayTitle}» пока нет готовых серий в каталоге.',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
-                            );
-                            if (widget.onCreateRoomTap != null) {
-                              widget.onCreateRoomTap!();
-                            } else {
-                              context.go('/');
-                            }
-                          } else {
+                              backgroundColor: AppColors.primary,
+                              duration: const Duration(seconds: 4),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      final ep = fullTitle.episodes.first;
+                      if (context.mounted) {
+                        SyncRoomLobbySheet.show(
+                          context,
+                          title: fullTitle,
+                          episode: ep,
+                          initialQuality: PlayerQuality.hd,
+                          onStartPlayback: (room, isHost) {
                             context.pushNamed('player', extra: {
-                              'title': selectedTitle,
+                              'title': fullTitle,
                               'episode': ep,
                               'quality': PlayerQuality.hd,
                               'roomCode': room.code,
                               'isHost': isHost,
                             });
-                          }
-                        },
-                      );
+                          },
+                        );
+                      }
                     },
                     child: const Text('Создать комнату и открыть лобби', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),

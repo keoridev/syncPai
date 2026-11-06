@@ -61,6 +61,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
   late String _selectedBadgeId;
   late String _selectedAvatar;
   String? _selectedFavAnimeId;
+  String? _selectedFavAnimePoster;
 
   late TextEditingController _customUrlController;
   late TextEditingController _customAvatarUrlController;
@@ -110,6 +111,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     _selectedBadgeId = widget.profile.badgeId ?? 'sync_master';
     _selectedAvatar = widget.profile.avatarUrl ?? 'cat';
     _selectedFavAnimeId = widget.profile.favoriteAnimeId;
+    _selectedFavAnimePoster = widget.profile.favoriteAnimePoster;
 
     _customUrlController = TextEditingController(
       text: _selectedBgId.startsWith('http') ? _selectedBgId : '',
@@ -201,6 +203,8 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           bio: newBio.isNotEmpty ? newBio : null,
           badgeId: _selectedBadgeId,
           favoriteAnimeTitle: newFavAnime.isNotEmpty ? newFavAnime : null,
+          favoriteAnimeId: newFavAnime.isNotEmpty ? _selectedFavAnimeId : null,
+          favoriteAnimePoster: newFavAnime.isNotEmpty ? _selectedFavAnimePoster : null,
           accentColor: _selectedAccentHex,
         );
 
@@ -476,13 +480,13 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
             labelColor: accent,
             unselectedLabelColor: AppColors.textSecondary,
             labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            tabs: const [
-              Tab(text: 'Фон (15+)'),
-              Tab(text: 'Рамка (12)'),
-              Tab(text: 'Аватар'),
-              Tab(text: 'Значки'),
-              Tab(text: 'Витрина'),
-              Tab(text: 'Цвета'),
+            tabs: [
+              Tab(text: 'Фон (${SteamBackgroundTheme.all.length})'),
+              Tab(text: 'Рамка (${SteamAvatarFrame.all.length})'),
+              const Tab(text: 'Аватар'),
+              const Tab(text: 'Значки'),
+              const Tab(text: 'Витрина'),
+              const Tab(text: 'Цвета'),
             ],
           ),
 
@@ -734,63 +738,85 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
 
   // --- 2. ВКЛАДКА «РАМКА» ---
   Widget _buildFramesTab(Color accent) {
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 14),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.85,
-      ),
-      itemCount: SteamAvatarFrame.all.length,
-      itemBuilder: (context, index) {
-        final frame = SteamAvatarFrame.all[index];
-        final isSelected = _selectedFrameId == frame.id;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth <= 360;
+        final isWide = constraints.maxWidth >= 600;
+        final crossCount = isNarrow ? 2 : (isWide ? 4 : 3);
+        final ratio = isNarrow ? 0.78 : (isWide ? 0.85 : 0.68);
 
-        return InkWell(
-          onTap: () => setState(() => _selectedFrameId = frame.id),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isSelected ? accent.withValues(alpha: 0.12) : AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelected ? accent : AppColors.strokeMedium,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SteamAvatarFrameWidget(
-                  frameId: frame.id,
-                  size: 44,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFF1E2028),
-                    ),
-                    child: Icon(frame.previewIcon, size: 22, color: frame.colors.first),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  frame.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+        return GridView.builder(
+          padding: EdgeInsets.symmetric(
+            horizontal: isNarrow ? 8 : AppDimensions.spacingXl,
+            vertical: 12,
           ),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossCount,
+            crossAxisSpacing: isNarrow ? 8 : 10,
+            mainAxisSpacing: isNarrow ? 8 : 10,
+            childAspectRatio: ratio,
+          ),
+          itemCount: SteamAvatarFrame.all.length,
+          itemBuilder: (context, index) {
+            final frame = SteamAvatarFrame.all[index];
+            final isSelected = _selectedFrameId == frame.id;
+
+            return InkWell(
+              onTap: () => setState(() => _selectedFrameId = frame.id),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? accent.withValues(alpha: 0.12) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected ? accent : AppColors.strokeMedium,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      height: 56,
+                      child: Center(
+                        child: SteamAvatarFrameWidget(
+                          frameId: frame.id,
+                          size: 32,
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFF1E2028),
+                            ),
+                            child: Icon(frame.previewIcon, size: 16, color: frame.colors.first),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          frame.name,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: isNarrow ? 9.5 : 10.5,
+                            height: 1.15,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            color: isSelected ? Colors.white : AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1150,6 +1176,68 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         Text('Любимый тайтл на витрине:',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 6),
+        if (_selectedFavAnimePoster != null && _selectedFavAnimePoster!.isNotEmpty) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accent.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: _selectedFavAnimePoster!,
+                    width: 40,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 24),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _favAnimeController.text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Постер выбран для витрины',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white70),
+                  onPressed: () {
+                    setState(() {
+                      _favAnimeController.clear();
+                      _selectedFavAnimeId = null;
+                      _selectedFavAnimePoster = null;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
         TextField(
           controller: _favAnimeController,
           style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -1166,6 +1254,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                       setState(() {
                         _favAnimeController.clear();
                         _selectedFavAnimeId = null;
+                        _selectedFavAnimePoster = null;
                       });
                     },
                   )
@@ -1339,6 +1428,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                           setState(() {
                             _favAnimeController.text = t.russianTitle;
                             _selectedFavAnimeId = t.id.toString();
+                            _selectedFavAnimePoster = t.posterMedium.isNotEmpty
+                                ? t.posterMedium
+                                : (t.posterOriginal.isNotEmpty ? t.posterOriginal : t.posterSmall);
                             _searchedCatalogTitles = [];
                           });
                         },

@@ -443,30 +443,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themePrimary = Theme.of(context).colorScheme.primary;
+    final themePrimaryLight = HSLColor.fromColor(themePrimary)
+        .withLightness((HSLColor.fromColor(themePrimary).lightness + 0.15).clamp(0.0, 1.0))
+        .toColor();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: BlocBuilder<AuthCubit, AuthState>(
           builder: (context, authState) {
-            final profile = authState is Authenticated ? authState.profile : UserProfile.guest();
+            final rawProfile = authState is Authenticated ? authState.profile : UserProfile.guest();
+            // Если в профиле стандартный цвет, но тема приложения изменена — синхронизируем с темой
+            final profile = rawProfile;
 
             return BlocBuilder<AnimeListCubit, AnimeListState>(
               builder: (context, listState) {
                 final stats = listState.stats;
 
-                return CustomScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  slivers: [
-                    // ШАПКА В СТИЛЕ STEAM (Арт/обои на 240dp + Аватарка в неоновой рамке + Статус + Кнопки)
-                    SliverToBoxAdapter(
-                      child: SteamStyleProfileHeader(
-                        profile: profile,
-                        showBackButton: widget.showBackButton,
-                        onBackTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
-                        onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                        onEditProfileTap: () => _showEditProfileSheet(context, profile),
-                      ),
-                    ),
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 860),
+                    child: CustomScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      slivers: [
+                        // ШАПКА В СТИЛЕ STEAM (Арт/обои на 240dp + Аватарка в неоновой рамке + Статус + Кнопки)
+                        SliverToBoxAdapter(
+                          child: SteamStyleProfileHeader(
+                            profile: profile,
+                            showBackButton: widget.showBackButton,
+                            onBackTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
+                            onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                            onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                          ),
+                        ),
 
                     // КАРТОЧКА СИНХРОНИЗАЦИИ ПРОФИЛЯ (Гость / Облако)
                     if (profile.isAnonymous)
@@ -487,12 +497,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: AppColors.surfaceElevated,
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: AppColors.primary.withValues(alpha: 0.4),
+                                  color: themePrimary.withValues(alpha: 0.4),
                                   width: 1.2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.08),
+                                    color: themePrimary.withValues(alpha: 0.08),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -503,12 +513,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(alpha: 0.15),
+                                      color: themePrimary.withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.cloud_sync_rounded,
-                                      color: AppColors.primaryLight,
+                                      color: themePrimaryLight,
                                       size: 22,
                                     ),
                                   ),
@@ -667,10 +677,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: AppColors.primary.withValues(alpha: 0.15),
+                                        color: themePrimary.withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
-                                          color: AppColors.primary.withValues(alpha: 0.3),
+                                          color: themePrimary.withValues(alpha: 0.3),
                                           width: 0.8,
                                         ),
                                       ),
@@ -680,15 +690,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           Icon(
                                             _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
                                             size: 13,
-                                            color: AppColors.primaryLight,
+                                            color: themePrimaryLight,
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
                                             _showActivityCharts ? 'Скрыть график' : 'Графики',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10.5,
                                               fontWeight: FontWeight.w600,
-                                              color: AppColors.primaryLight,
+                                              color: themePrimaryLight,
                                             ),
                                           ),
                                         ],
@@ -701,11 +711,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  _buildStatItem('Время', stats.formattedTime, 'потрачено', Icons.schedule_rounded),
+                                  _buildStatItem('Время', stats.formattedTime, 'потрачено', Icons.schedule_rounded, themePrimaryLight),
                                   _buildDivider(),
-                                  _buildStatItem('Тайтлы', '${stats.totalTitles}', 'в списках', Icons.video_collection_outlined),
+                                  _buildStatItem('Тайтлы', '${stats.totalTitles}', 'в списках', Icons.video_collection_outlined, themePrimaryLight),
                                   _buildDivider(),
-                                  _buildStatItem('Серии', '${stats.totalEpisodesCompleted}', 'просмотрено', Icons.play_circle_outline_rounded),
+                                  _buildStatItem('Серии', '${stats.totalEpisodesCompleted}', 'просмотрено', Icons.play_circle_outline_rounded, themePrimaryLight),
                                 ],
                               ),
                               if (_showActivityCharts) ...[
@@ -725,19 +735,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.12),
+                            color: themePrimary.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                            border: Border.all(color: themePrimary.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.2),
+                                  color: themePrimary.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Icon(Icons.file_upload_outlined, color: AppColors.primary, size: 22),
+                                child: Icon(Icons.file_upload_outlined, color: themePrimary, size: 22),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -821,10 +831,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         height: 28,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: Theme.of(context).primaryColor,
+                                          color: themePrimary,
                                           border: Border.all(color: Colors.white30, width: 1.5),
                                         ),
-                                        child: const Icon(Icons.palette_rounded, color: Colors.black, size: 16),
+                                        child: const Icon(Icons.palette_rounded, color: Colors.white, size: 16),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
@@ -859,7 +869,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.hd_rounded, color: AppColors.primaryLight, size: 20),
+                                      Icon(Icons.hd_rounded, color: themePrimary, size: 20),
                                       const SizedBox(width: 10),
                                       Text(
                                         'Качество видео',
@@ -874,8 +884,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     value: _defaultQuality,
                                     dropdownColor: AppColors.surfaceElevated,
                                     underline: const SizedBox.shrink(),
-                                    style: const TextStyle(
-                                      color: AppColors.primaryLight,
+                                    style: TextStyle(
+                                      color: themePrimaryLight,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13,
                                     ),
@@ -967,8 +977,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Кэш плеера и временные файлы очищены!'),
-                                backgroundColor: AppColors.surfaceElevated,
+                                content: Text(
+                                  'Кэш плеера и временные файлы очищены!',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: Color(0xFF242730),
+                                behavior: SnackBarBehavior.floating,
                               ),
                             );
                           },
@@ -978,9 +992,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],
-                );
-              },
+                ),
+              ),
             );
+          },
+        );
           },
         ),
       ),
@@ -1066,9 +1082,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final accent = SteamProfileThemeAccent.fromHex(profile.accentColor).color;
     final favTitle = profile.favoriteAnimeTitle;
 
-    // Ищем постер любимого тайтла для красивого отображения
-    String? showcasePoster;
-    if (favTitle != null && favTitle.isNotEmpty) {
+    // Приоритет: 1) сохранённый постер из профиля, 2) поиск в каталоге, 3) поиск в списках
+    String? showcasePoster = profile.favoriteAnimePoster;
+
+    if ((showcasePoster == null || showcasePoster.isEmpty) && favTitle != null && favTitle.isNotEmpty) {
       try {
         final catalogState = context.read<CatalogCubit>().state;
         if (catalogState is CatalogLoaded) {
@@ -1080,7 +1097,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           showcasePoster = m.posterMedium.isNotEmpty ? m.posterMedium : m.posterOriginal;
         }
       } catch (_) {}
-      if (showcasePoster == null) {
+      if (showcasePoster == null || showcasePoster.isEmpty) {
         try {
           final listState = context.read<AnimeListCubit>().state;
           final m = listState.allEntries.firstWhere(
@@ -1090,6 +1107,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
           showcasePoster = m.posterUrl;
         } catch (_) {}
+      }
+      // Fallback: Shikimori poster via favoriteAnimeId
+      if ((showcasePoster == null || showcasePoster.isEmpty) && profile.favoriteAnimeId != null) {
+        showcasePoster = 'https://shikimori.one/system/animes/original/${profile.favoriteAnimeId}.jpg';
       }
     }
 
@@ -1278,11 +1299,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatItem(String title, String value, String subtitle, [IconData? icon]) {
+  Widget _buildStatItem(String title, String value, String subtitle, [IconData? icon, Color? accentColor]) {
+    final effectiveAccent = accentColor ?? Theme.of(context).colorScheme.primary;
     return Column(
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 16, color: AppColors.primaryLight),
+          Icon(icon, size: 16, color: effectiveAccent),
           const SizedBox(height: 3),
         ],
         Text(
@@ -1290,7 +1312,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: AppTypography.titleMedium.copyWith(
             fontSize: 16,
             fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
+            color: Colors.white,
           ),
         ),
         const SizedBox(height: 2),
@@ -1298,15 +1320,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title,
           style: AppTypography.caption.copyWith(
             fontSize: 11,
-            color: AppColors.primaryLight,
-            fontWeight: FontWeight.w600,
+            color: effectiveAccent,
+            fontWeight: FontWeight.w700,
           ),
         ),
         Text(
           subtitle,
           style: AppTypography.caption.copyWith(
-            fontSize: 10,
-            color: AppColors.textMuted,
+            fontSize: 10.5,
+            color: Colors.white70,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -1327,6 +1350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
+    final themePrimary = Theme.of(context).colorScheme.primary;
     return Row(
       children: [
         Expanded(
@@ -1336,21 +1360,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text(
                 title,
                 style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textPrimary,
+                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                style: AppTypography.caption.copyWith(color: Colors.white70),
               ),
             ],
           ),
         ),
         Switch(
           value: value,
-          activeTrackColor: AppColors.primary,
+          activeTrackColor: themePrimary,
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+            return Colors.white54;
+          }),
           onChanged: onChanged,
         ),
       ],
@@ -1362,6 +1392,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String label,
     required VoidCallback onTap,
   }) {
+    final themePrimary = Theme.of(context).colorScheme.primary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -1378,7 +1409,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 15, color: AppColors.primaryLight),
+            Icon(icon, size: 15, color: themePrimary),
             const SizedBox(width: 5),
             Text(
               label,

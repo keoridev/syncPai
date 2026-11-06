@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../network/image_cors_helper.dart';
 import '../theme/app_colors.dart';
 
 /// Элегантный кино-аватар пользователя в стиле Nordic Dark / Liquid Glass.
@@ -63,6 +64,8 @@ class AppAvatar extends StatelessWidget {
             cleanUrl.contains('cache') ||
             cleanUrl.contains('storage'));
 
+    final themePrimary = Theme.of(context).colorScheme.primary;
+
     if (isNetwork) {
       return Container(
         width: size,
@@ -73,11 +76,11 @@ class AppAvatar extends StatelessWidget {
         ),
         child: ClipOval(
           child: CachedNetworkImage(
-            imageUrl: cleanUrl,
+            imageUrl: wrapCorsSafeUrl(cleanUrl),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            placeholder: (_, __) => _buildFallback(),
-            errorWidget: (_, __, ___) => _buildFallback(),
+            placeholder: (_, __) => _buildFallback(context, themePrimary),
+            errorWidget: (_, __, ___) => _buildFallback(context, themePrimary),
           ),
         ),
       );
@@ -98,16 +101,16 @@ class AppAvatar extends StatelessWidget {
             file,
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            errorBuilder: (_, __, ___) => _buildFallback(),
+            errorBuilder: (_, __, ___) => _buildFallback(context, themePrimary),
           ),
         ),
       );
     }
 
-    return _buildFallback();
+    return _buildFallback(context, themePrimary);
   }
 
-  Widget _buildFallback() {
+  Widget _buildFallback(BuildContext context, Color themePrimary) {
     final effectiveBorderColor = borderColor ?? AppColors.strokeMedium;
     final icon = _presetIconMap[avatarUrl?.trim()];
 
@@ -125,7 +128,7 @@ class AppAvatar extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primary.withValues(alpha: 0.28),
+            themePrimary.withValues(alpha: 0.28),
             AppColors.surfaceElevated,
           ],
         ),
@@ -136,7 +139,7 @@ class AppAvatar extends StatelessWidget {
           ? Icon(
               icon,
               size: size * 0.52,
-              color: AppColors.primaryLight,
+              color: themePrimary,
             )
           : (initial != null
               ? Text(

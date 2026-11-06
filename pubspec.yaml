@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -44,7 +44,6 @@ dependencies:
   # Realtime & Storage
   supabase_flutter: ^2.8.1
   shared_preferences: ^2.3.3
-  shared_preferences_android: 2.4.28
   qr_flutter: ^4.1.0
   file_picker: ^8.1.7
   path_provider: ^2.1.6

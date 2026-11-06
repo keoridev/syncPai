@@ -474,6 +474,9 @@ class PlayerControlsOverlay extends StatelessWidget {
                       ),
                     ],
                   )
+                else if (state.errorMessage != null && !state.isPlaying)
+                  // Если есть ошибка воспроизведения — не перекрываем центральное окно ошибки кнопками плеера
+                  const SizedBox.shrink()
                 else
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -488,7 +491,7 @@ class PlayerControlsOverlay extends StatelessWidget {
 
                       // Кнопка воспроизведения/паузы
                       Material(
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                         shape: const CircleBorder(),
                         child: InkWell(
                           customBorder: const CircleBorder(),
@@ -515,7 +518,9 @@ class PlayerControlsOverlay extends StatelessWidget {
                   ),
 
                 // НИЖНИЙ БАР: ТАЙМЛАЙН, ШОРТКАТЫ ФРАЗ, СОЦИАЛЬНЫЙ БАР И СЕРИИ
-                if (isLandscape || isShort)
+                if (state.errorMessage != null && !state.isPlaying)
+                  const SizedBox.shrink()
+                else if (isLandscape || isShort)
                   _buildLandscapeBottomBar(
                     context,
                     title: title,

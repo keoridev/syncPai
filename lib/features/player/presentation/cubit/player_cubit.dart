@@ -11,6 +11,7 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
+import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
@@ -466,7 +467,25 @@ class PlayerCubit extends Cubit<PlayerState> {
       }
     } catch (_) {}
 
-    final streamUrl = localFilePath ?? _getUrlForQuality(state.episode, state.selectedQuality);
+    String? streamUrl = localFilePath ?? _getUrlForQuality(state.episode, state.selectedQuality);
+
+    // Если прямая ссылка отсутствует или пуста — пробуем разрешить через Kodik (если доступен)
+    if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<KodikCubit>()) {
+      try {
+        final kodik = getIt<KodikCubit>();
+        final resolvedKodik = await kodik.getStreamForEpisode(state.episode.episode);
+        if (resolvedKodik != null && resolvedKodik.isNotEmpty) {
+          streamUrl = resolvedKodik;
+        }
+      } catch (_) {}
+    }
+
+    if (streamUrl != null && streamUrl.isNotEmpty) {
+      final trimmed = streamUrl.trim();
+      if (trimmed.startsWith('//')) {
+        streamUrl = 'https:$trimmed';
+      }
+    }
 
     if (streamUrl == null || streamUrl.isEmpty) {
       emit(state.copyWith(

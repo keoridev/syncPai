@@ -440,6 +440,8 @@ class AuthRepositoryImpl implements AuthRepository {
     String? bio,
     String? badgeId,
     String? favoriteAnimeTitle,
+    String? favoriteAnimeId,
+    String? favoriteAnimePoster,
     String? accentColor,
   }) async {
     final current = await getCurrentProfile();
@@ -453,6 +455,8 @@ class AuthRepositoryImpl implements AuthRepository {
       bio: bio ?? current.bio,
       badgeId: badgeId ?? current.badgeId,
       favoriteAnimeTitle: favoriteAnimeTitle ?? current.favoriteAnimeTitle,
+      favoriteAnimeId: favoriteAnimeId ?? current.favoriteAnimeId,
+      favoriteAnimePoster: favoriteAnimePoster ?? current.favoriteAnimePoster,
       accentColor: accentColor ?? current.accentColor,
     );
 

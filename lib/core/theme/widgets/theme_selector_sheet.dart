@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../features/auth/presentation/cubit/auth_cubit.dart';
+import '../../../features/auth/presentation/cubit/auth_state.dart';
 import '../app_colors.dart';
 import '../app_typography.dart';
 import '../cubit/theme_cubit.dart';
@@ -132,6 +134,20 @@ class ThemeSelectorSheet extends StatelessWidget {
                         onTap: () {
                           HapticFeedback.lightImpact();
                           context.read<ThemeCubit>().setPreset(preset);
+                          // Синхронизируем акцентный цвет профиля пользователя с выбранной темой
+                          try {
+                            if (context.mounted) {
+                              final authCubit = context.read<AuthCubit?>();
+                              if (authCubit != null && authCubit.state is Authenticated) {
+                                final curProfile = (authCubit.state as Authenticated).profile;
+                                final hex = '#${preset.primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+                                authCubit.updateProfile(
+                                  username: curProfile.username,
+                                  accentColor: hex,
+                                );
+                              }
+                            }
+                          } catch (_) {}
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

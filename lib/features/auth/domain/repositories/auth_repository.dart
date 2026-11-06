@@ -41,6 +41,8 @@ abstract class AuthRepository {
     String? bio,
     String? badgeId,
     String? favoriteAnimeTitle,
+    String? favoriteAnimeId,
+    String? favoriteAnimePoster,
     String? accentColor,
   });
 

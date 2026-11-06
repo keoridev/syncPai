@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_decorations.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -50,7 +51,7 @@ class AnimeListTileCard extends StatelessWidget {
                   children: [
                     if (posterUrl.isNotEmpty)
                       CachedNetworkImage(
-                        imageUrl: posterUrl,
+                        imageUrl: wrapCorsSafeUrl(posterUrl),
                         fit: BoxFit.cover,
                         memCacheWidth: 220,
                         memCacheHeight: 330,

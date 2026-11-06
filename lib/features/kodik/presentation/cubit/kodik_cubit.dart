@@ -105,8 +105,14 @@ class KodikCubit extends Cubit<KodikState> {
   }) async {
     if (state.isAniLibriaActive) return null;
 
-    final embedUrl = state.selectedTranslation.episodeEmbedLinks[episodeNumber] ??
-        state.selectedTranslation.embedLink;
+    var embedUrl = state.selectedTranslation.episodeEmbedLinks[episodeNumber];
+    if (embedUrl == null || embedUrl.isEmpty) {
+      final base = state.selectedTranslation.embedLink;
+      if (base != null && base.isNotEmpty) {
+        embedUrl = '$base?season=1&episode=$episodeNumber';
+      }
+    }
+
     if (embedUrl != null && embedUrl.isNotEmpty) {
       final streamUrl = await _extractor.extractDirectStream(embedUrl, quality: quality);
       emit(state.copyWith(resolvedStreamUrl: () => streamUrl));

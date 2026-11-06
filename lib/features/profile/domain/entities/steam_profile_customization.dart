@@ -97,12 +97,15 @@ class SteamAvatarFrame {
   final String name;
   final List<Color> colors;
   final IconData previewIcon;
+  /// Тип анимации рамки (для AnimatedAvatarFrame)
+  final SteamFrameAnimation animation;
 
   const SteamAvatarFrame({
     required this.id,
     required this.name,
     required this.colors,
     required this.previewIcon,
+    this.animation = SteamFrameAnimation.none,
   });
 
   static const List<SteamAvatarFrame> all = [
@@ -111,78 +114,146 @@ class SteamAvatarFrame {
       name: 'Классическая',
       colors: [Color(0xFF2C303B), Color(0xFF1A1C22)],
       previewIcon: Icons.circle_outlined,
+      animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
       id: 'neon_cyber',
       name: 'Неон Киберпанк',
       colors: [Color(0xFF00F0FF), Color(0xFFFF007F), Color(0xFF00F0FF)],
       previewIcon: Icons.bolt_rounded,
+      animation: SteamFrameAnimation.pulse,
     ),
     SteamAvatarFrame(
       id: 'sakura_blossom',
       name: 'Цветение Сакуры',
       colors: [Color(0xFFFF9EB5), Color(0xFFE056FD), Color(0xFFFF9EB5)],
       previewIcon: Icons.local_florist_rounded,
+      animation: SteamFrameAnimation.rotate,
     ),
     SteamAvatarFrame(
       id: 'cosmic_void',
       name: 'Космический Войд',
       colors: [Color(0xFF7C83FD), Color(0xFF8A2BE2), Color(0xFF00D2FF)],
       previewIcon: Icons.auto_awesome_rounded,
+      animation: SteamFrameAnimation.shimmer,
     ),
     SteamAvatarFrame(
       id: 'golden_dragon',
       name: 'Золотой Дракон',
       colors: [Color(0xFFFFD700), Color(0xFFFF6B4A), Color(0xFFFFD700)],
       previewIcon: Icons.whatshot_rounded,
+      animation: SteamFrameAnimation.fire,
     ),
     SteamAvatarFrame(
       id: 'glitch_aurora',
       name: 'Северное Сияние',
       colors: [Color(0xFF00FF87), Color(0xFF60EFFF), Color(0xFF00FF87)],
       previewIcon: Icons.waves_rounded,
+      animation: SteamFrameAnimation.wave,
     ),
     SteamAvatarFrame(
       id: 'blood_moon',
       name: 'Кровавая Луна',
       colors: [Color(0xFFFF1744), Color(0xFFFF5252), Color(0xFF880E4F)],
       previewIcon: Icons.nights_stay_rounded,
+      animation: SteamFrameAnimation.pulse,
     ),
     SteamAvatarFrame(
       id: 'glacial_frost',
       name: 'Ледяной Клинок',
       colors: [Color(0xFF00E5FF), Color(0xFF80D8FF), Color(0xFF2979FF)],
       previewIcon: Icons.ac_unit_rounded,
+      animation: SteamFrameAnimation.snow,
     ),
     SteamAvatarFrame(
       id: 'infernal_flame',
       name: 'Адское Пламя',
       colors: [Color(0xFFFF3D00), Color(0xFFFF9100), Color(0xFFFFD600)],
       previewIcon: Icons.local_fire_department_rounded,
+      animation: SteamFrameAnimation.fire,
     ),
     SteamAvatarFrame(
       id: 'terminal_matrix',
       name: 'Матрица Hacker',
       colors: [Color(0xFF00FF66), Color(0xFF00E676), Color(0xFF1DE9B6)],
       previewIcon: Icons.terminal_rounded,
+      animation: SteamFrameAnimation.matrix,
     ),
     SteamAvatarFrame(
       id: 'void_arcana',
       name: 'Бездна Арканы',
       colors: [Color(0xFFD500F9), Color(0xFF651FFF), Color(0xFF3D5AFE)],
       previewIcon: Icons.psychology_rounded,
+      animation: SteamFrameAnimation.shimmer,
     ),
     SteamAvatarFrame(
       id: 'cyber_samurai',
       name: 'Кибер-Самурай',
       colors: [Color(0xFFFFD700), Color(0xFF00F0FF), Color(0xFFFF007F)],
       previewIcon: Icons.shield_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
+    // --- Новые рамки ---
+    SteamAvatarFrame(
+      id: 'rainbow_prism',
+      name: 'Радужная Призма',
+      colors: [Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF0000FF)],
+      previewIcon: Icons.blur_on_rounded,
+      animation: SteamFrameAnimation.rainbow,
+    ),
+    SteamAvatarFrame(
+      id: 'electric_storm',
+      name: 'Электрический Шторм',
+      colors: [Color(0xFFF5F500), Color(0xFF00BFFF), Color(0xFFF5F500)],
+      previewIcon: Icons.flash_on_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
+    SteamAvatarFrame(
+      id: 'shadow_oni',
+      name: 'Тень Они',
+      colors: [Color(0xFF4A0000), Color(0xFFCC0000), Color(0xFF4A0000)],
+      previewIcon: Icons.sports_martial_arts_rounded,
+      animation: SteamFrameAnimation.fire,
+    ),
+    SteamAvatarFrame(
+      id: 'spirit_realm',
+      name: 'Мир Духов',
+      colors: [Color(0xFF80DEEA), Color(0xFFCE93D8), Color(0xFF80DEEA)],
+      previewIcon: Icons.cloud_queue_rounded,
+      animation: SteamFrameAnimation.wave,
+    ),
+    SteamAvatarFrame(
+      id: 'mech_core',
+      name: 'Ядро Меха',
+      colors: [Color(0xFF455A64), Color(0xFF00BCD4), Color(0xFF455A64)],
+      previewIcon: Icons.precision_manufacturing_rounded,
+      animation: SteamFrameAnimation.rotate,
+    ),
+    SteamAvatarFrame(
+      id: 'cursed_seal',
+      name: 'Проклятая Печать',
+      colors: [Color(0xFF1A0A2E), Color(0xFF7B1FA2), Color(0xFF1A0A2E)],
+      previewIcon: Icons.hexagon_rounded,
+      animation: SteamFrameAnimation.shimmer,
     ),
   ];
 
   static SteamAvatarFrame fromId(String? id) {
     return all.firstWhere((f) => f.id == id, orElse: () => all.first);
   }
+}
+
+/// Типы анимаций рамок аватара
+enum SteamFrameAnimation {
+  none,     // статичная
+  pulse,    // пульсирующее свечение
+  rotate,   // вращение градиента
+  shimmer,  // мерцание
+  fire,     // пламя (быстрый pulse + оранжевый glow)
+  wave,     // волна (плавный shift)
+  snow,     // снежинки вокруг
+  matrix,   // зелёные буквы (пульс + зелёный glow)
+  rainbow,  // плавная смена цветов
 }
 
 class SteamBackgroundTheme {
@@ -304,6 +375,63 @@ class SteamBackgroundTheme {
       gradient: [Color(0xFF1E0A3C), Color(0xFF0B1936), Color(0xFF121316)],
       assetOrUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80',
       icon: Icons.auto_awesome_rounded,
+    ),
+    // --- Новые фоны ---
+    SteamBackgroundTheme(
+      id: 'cyberpunk_city',
+      name: 'Киберпанк 2077 Неон',
+      gradient: [Color(0xFF0D0221), Color(0xFF0F084B), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=1200&q=80',
+      icon: Icons.location_city_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'snowy_mountain',
+      name: 'Зимняя Фудзияма',
+      gradient: [Color(0xFF0D1B2A), Color(0xFF1B263B), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1200&q=80',
+      icon: Icons.landscape_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'neon_samurai',
+      name: 'Неоновый Самурай',
+      gradient: [Color(0xFF2B0938), Color(0xFF1C0A35), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1200&q=80',
+      icon: Icons.sports_martial_arts_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'retro_synthwave',
+      name: 'Ретро Синтвейв 80s',
+      gradient: [Color(0xFF370617), Color(0xFF6A040F), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=1200&q=80',
+      icon: Icons.radio_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'bamboo_forest',
+      name: 'Бамбуковый Лес Киото',
+      gradient: [Color(0xFF0A2312), Color(0xFF133C1E), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=1200&q=80',
+      icon: Icons.forest_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'deep_ocean',
+      name: 'Бездна Океана',
+      gradient: [Color(0xFF03045E), Color(0xFF023E8A), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1682687220063-4742bd7fd538?w=1200&q=80',
+      icon: Icons.water_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'cherry_blossom_night',
+      name: 'Ночная Сакура',
+      gradient: [Color(0xFF2C0B1E), Color(0xFF1F0D24), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=1200&q=80',
+      icon: Icons.local_florist_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'pixel_art_room',
+      name: 'Уютная Pixel Комната',
+      gradient: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1200&q=80',
+      icon: Icons.videogame_asset_rounded,
     ),
   ];
 

@@ -1,4 +1,5 @@
 import '../../../../core/network/api_constants.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/episode_item.dart';
 
@@ -269,14 +270,27 @@ class AnimeTitleDto {
       episode: ordinal,
       name: name,
       previewUrl: previewUrl,
-      sdUrl: hls480,
-      hdUrl: hls720,
-      fhdUrl: hls1080,
+      sdUrl: _formatStreamUrl(hls480),
+      hdUrl: _formatStreamUrl(hls720),
+      fhdUrl: _formatStreamUrl(hls1080),
       opening: opening,
       ending: ending,
       youtubeId: youtubeId,
       rutubeId: rutubeId,
     );
+  }
+
+  static String? _formatStreamUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('//')) {
+      return 'https:$trimmed';
+    }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    final cleanPath = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    return '${ApiConstants.posterBaseUrl}$cleanPath';
   }
 
   static EpisodeItem? _parseLegacyEpisode(Map<String, dynamic> item, String? host) {
@@ -286,13 +300,15 @@ class AnimeTitleDto {
 
     String? buildStreamUrl(String? path) {
       if (path == null || path.isEmpty) return null;
-      if (path.startsWith('http')) return path;
+      final trimmed = path.trim();
+      if (trimmed.startsWith('//')) return 'https:$trimmed';
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
       if (host != null && host.isNotEmpty) {
         final cleanHost = host.startsWith('http') ? host : 'https://$host';
-        final cleanPath = path.startsWith('/') ? path : '/$path';
+        final cleanPath = trimmed.startsWith('/') ? trimmed : '/$trimmed';
         return '$cleanHost$cleanPath';
       }
-      return path;
+      return '${ApiConstants.posterBaseUrl}/${trimmed.replaceFirst(RegExp(r'^/'), '')}';
     }
 
     return EpisodeItem(
@@ -306,11 +322,14 @@ class AnimeTitleDto {
 
   static String _formatPosterUrl(String? rawUrl) {
     if (rawUrl == null || rawUrl.isEmpty) return '';
+    String fullUrl;
     if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-      return rawUrl;
+      fullUrl = rawUrl;
+    } else {
+      final cleanPath = rawUrl.startsWith('/') ? rawUrl : '/$rawUrl';
+      fullUrl = '${ApiConstants.posterBaseUrl}$cleanPath';
     }
-    final cleanPath = rawUrl.startsWith('/') ? rawUrl : '/$rawUrl';
-    return '${ApiConstants.posterBaseUrl}$cleanPath';
+    return wrapCorsSafeUrl(fullUrl);
   }
 
   AnimeTitle toDomain() {

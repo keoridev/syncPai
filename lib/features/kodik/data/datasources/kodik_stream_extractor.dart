@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 
-/// Экстрактор прямых HLS (.m3u8) и MP4 видеопотоков из iframe плеера Kodik/Aniqit.
-/// Обходит обфускацию, декодирует urlParams и извлекает прямые ссылки для media_kit.
+/// Экстрактор прямых HLS (.m3u8) видеопотоков из iframe плеера Kodik (kodikplayer.com / kodik.info / aniqit).
+/// Поддерживает прямое обращение к API /ftor Kodik с расшифровкой ROT18 + base64.
 class KodikStreamExtractor {
   final Dio _dio;
 
@@ -21,18 +21,15 @@ class KodikStreamExtractor {
               ),
             );
 
-  /// Декодирование шифра Цезаря / ROT со сдвигом (часто используемого Kodik)
+  /// Декодирование шифра Цезаря / ROT со сдвигом (для обратной совместимости)
   static String caesarDecrypt(String text, {int shift = 13}) {
     final buffer = StringBuffer();
     for (int i = 0; i < text.length; i++) {
       int code = text.codeUnitAt(i);
-      // a-z
       if (code >= 97 && code <= 122) {
         code = ((code - 97 - shift) % 26) + 97;
         if (code < 97) code += 26;
-      }
-      // A-Z
-      else if (code >= 65 && code <= 90) {
+      } else if (code >= 65 && code <= 90) {
         code = ((code - 65 - shift) % 26) + 65;
         if (code < 65) code += 26;
       }
@@ -41,7 +38,35 @@ class KodikStreamExtractor {
     return buffer.toString();
   }
 
-  /// Извлечение прямой ссылки m3u8 или mp4 по ссылке iframe плеера
+  /// Декодирование шифра Kodik (ROT18 + Base64)
+  static String decodeKodikLink(String encoded) {
+    try {
+      final buffer = StringBuffer();
+      for (int i = 0; i < encoded.length; i++) {
+        final char = encoded[i];
+        final code = encoded.codeUnitAt(i);
+        // Заглавные A-Z
+        if (code >= 65 && code <= 90) {
+          final shifted = code + 18;
+          buffer.writeCharCode(shifted <= 90 ? shifted : shifted - 26);
+        }
+        // Строчные a-z
+        else if (code >= 97 && code <= 122) {
+          final shifted = code + 18;
+          buffer.writeCharCode(shifted <= 122 ? shifted : shifted - 26);
+        } else {
+          buffer.write(char);
+        }
+      }
+      final rotString = buffer.toString();
+      final decoded = utf8.decode(base64.decode(rotString));
+      return decoded.startsWith('//') ? 'https:$decoded' : decoded;
+    } catch (_) {
+      return encoded;
+    }
+  }
+
+  /// Извлечение прямой ссылки m3u8 по ссылке iframe плеера Kodik
   Future<String?> extractDirectStream(String embedUrl, {String quality = '720p'}) async {
     try {
       final safeUrl = embedUrl.startsWith('//') ? 'https:$embedUrl' : embedUrl;
@@ -51,6 +76,7 @@ class KodikStreamExtractor {
       final response = await _dio.get<String>(
         safeUrl,
         options: Options(
+          responseType: ResponseType.plain,
           headers: {
             'Referer': domain,
           },
@@ -60,71 +86,94 @@ class KodikStreamExtractor {
       final html = response.data ?? '';
       if (html.isEmpty) return null;
 
-      // 1. Попытка найти прямую m3u8 ссылку в скриптах страницы
-      final m3u8Match = RegExp(r'''['"](https?:\\?/\\?/[^'"]+?\.m3u8[^'"]*?)['"]''', caseSensitive: false)
-          .firstMatch(html);
+      // 1. Попытка найти уже готовую m3u8 ссылку в скриптах страницы
+      final m3u8Match = RegExp(
+        r'''['"](https?:\\?/\\?/[^'"]+?\.m3u8[^'"]*?)['"]''',
+        caseSensitive: false,
+      ).firstMatch(html);
       if (m3u8Match != null) {
         final rawLink = m3u8Match.group(1)!.replaceAll(r'\/', '/');
         return rawLink;
       }
 
-      // 2. Попытка извлечь urlParams для обращения к шлюзу потоков
-      final urlParamsMatch = RegExp(r'''var\s+urlParams\s*=\s*['"](\{.+?\})['"]''').firstMatch(html);
-      Map<String, dynamic>? urlParams;
-      if (urlParamsMatch != null) {
-        final rawJson = urlParamsMatch.group(1)!;
-        try {
-          urlParams = jsonDecode(rawJson) as Map<String, dynamic>;
-        } catch (_) {
-          try {
-            final decoded = Uri.decodeComponent(rawJson);
-            urlParams = jsonDecode(decoded) as Map<String, dynamic>;
-          } catch (_) {}
-        }
-      }
+      // 2. Извлекаем параметры для запроса к /ftor шлюзу Kodik
+      final domainMatch = RegExp(r'var\s+domain\s*=\s*"([^"]+)";').firstMatch(html);
+      final dSignMatch = RegExp(r'var\s+d_sign\s*=\s*"([^"]+)";').firstMatch(html);
+      final pdMatch = RegExp(r'var\s+pd\s*=\s*"([^"]+)";').firstMatch(html);
+      final pdSignMatch = RegExp(r'var\s+pd_sign\s*=\s*"([^"]+)";').firstMatch(html);
+      final refSignMatch = RegExp(r'var\s+ref_sign\s*=\s*"([^"]+)";').firstMatch(html);
 
-      // 3. Извлечение видео-хэшей и домена
-      final videoInfoMatch = RegExp(r'''videoInfo\s*=\s*(\{.+?\});''').firstMatch(html);
-      if (videoInfoMatch != null && urlParams != null) {
-        try {
-          final postUri = Uri.parse('$domain/gvi');
-          final postRes = await _dio.post(
-            postUri.toString(),
-            data: FormData.fromMap(urlParams),
-            options: Options(
-              headers: {
-                'Referer': safeUrl,
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-            ),
-          );
+      final vTypeMatch = RegExp(r"vInfo\.type\s*=\s*'([^']+)';").firstMatch(html);
+      final vHashMatch = RegExp(r"vInfo\.hash\s*=\s*'([^']+)';").firstMatch(html);
+      final vIdMatch = RegExp(r"vInfo\.id\s*=\s*'([^']+)';").firstMatch(html);
 
-          if (postRes.data is Map) {
-            final data = postRes.data as Map;
-            final links = data['links'] as Map<String, dynamic>?;
-            if (links != null) {
-              // Ищем ссылку под выбранное качество (720, 1080, 480, 360)
-              for (final q in ['1080', '720', '480', '360']) {
-                final list = links[q] as List?;
-                if (list != null && list.isNotEmpty) {
-                  final linkObj = list.first;
-                  final src = linkObj is Map ? (linkObj['src'] as String?) : null;
-                  if (src != null) {
-                    final cleanSrc = src.startsWith('//') ? 'https:$src' : src;
-                    return cleanSrc;
+      if (vHashMatch != null && vIdMatch != null) {
+        final postData = {
+          'd': domainMatch?.group(1) ?? uri.host,
+          'd_sign': dSignMatch?.group(1) ?? '',
+          'pd': pdMatch?.group(1) ?? uri.host,
+          'pd_sign': pdSignMatch?.group(1) ?? '',
+          'ref': '',
+          'ref_sign': refSignMatch?.group(1) ?? '',
+          'bad_user': 'false',
+          'cdn_is_working': 'true',
+          'type': vTypeMatch?.group(1) ?? 'seria',
+          'hash': vHashMatch.group(1)!,
+          'id': vIdMatch.group(1)!,
+        };
+
+        final ftorRes = await _dio.post(
+          '$domain/ftor',
+          data: postData,
+          options: Options(
+            contentType: Headers.formUrlEncodedContentType,
+            headers: {
+              'Referer': safeUrl,
+              'X-Requested-With': 'XMLHttpRequest',
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            },
+          ),
+        );
+
+        if (ftorRes.statusCode == 200) {
+          Map? data;
+          if (ftorRes.data is Map) {
+            data = ftorRes.data as Map;
+          } else if (ftorRes.data is String) {
+            try {
+              data = jsonDecode(ftorRes.data as String) as Map?;
+            } catch (_) {}
+          }
+          final links = data != null ? data['links'] as Map<String, dynamic>? : null;
+
+          if (links != null) {
+            // Приоритеты качества видео
+            final targetQuality = quality.replaceAll('p', '');
+            final qualityOrder = [targetQuality, '720', '1080', '480', '360'];
+
+            for (final q in qualityOrder) {
+              final list = links[q] as List?;
+              if (list != null && list.isNotEmpty) {
+                final linkObj = list.first;
+                final src = linkObj is Map ? (linkObj['src'] as String?) : null;
+                if (src != null && src.isNotEmpty) {
+                  final decoded = decodeKodikLink(src);
+                  if (decoded.contains('.m3u8') || decoded.contains('.mp4')) {
+                    final cleanDecoded = decoded.trim();
+                    return cleanDecoded.startsWith('//') ? 'https:$cleanDecoded' : cleanDecoded;
                   }
                 }
               }
             }
           }
-        } catch (_) {}
+        }
       }
 
-      // Fallback: возвращаем iframe ссылку для внешнего воспроизведения или вебвью
-      return safeUrl;
+      // Не возвращаем HTML страницу iframe плееру media_kit, так как libmpv не может играть HTML
+      return null;
     } catch (_) {
       return null;
     }
   }
 }
-

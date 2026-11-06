@@ -13,6 +13,8 @@ class UserProfile extends Equatable {
   final String? badgeId;
   final String? favoriteAnimeTitle;
   final String? favoriteAnimeId;
+  /// URL постера любимого тайтла — кэшируется при выборе в кастомизаторе
+  final String? favoriteAnimePoster;
   final String? accentColor;
   final String? email;
   final String? provider;
@@ -31,6 +33,7 @@ class UserProfile extends Equatable {
     this.badgeId,
     this.favoriteAnimeTitle,
     this.favoriteAnimeId,
+    this.favoriteAnimePoster,
     this.accentColor,
     this.email,
     this.provider,
@@ -73,6 +76,7 @@ class UserProfile extends Equatable {
     String? badgeId,
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
+    String? favoriteAnimePoster,
     String? accentColor,
     String? email,
     String? provider,
@@ -91,6 +95,7 @@ class UserProfile extends Equatable {
       badgeId: badgeId ?? this.badgeId,
       favoriteAnimeTitle: favoriteAnimeTitle ?? this.favoriteAnimeTitle,
       favoriteAnimeId: favoriteAnimeId ?? this.favoriteAnimeId,
+      favoriteAnimePoster: favoriteAnimePoster ?? this.favoriteAnimePoster,
       accentColor: accentColor ?? this.accentColor,
       email: email ?? this.email,
       provider: provider ?? this.provider,
@@ -113,6 +118,7 @@ class UserProfile extends Equatable {
         'badge_id': badgeId,
         'favorite_anime_title': favoriteAnimeTitle,
         'favorite_anime_id': favoriteAnimeId,
+        'favorite_anime_poster': favoriteAnimePoster,
         'accent_color': accentColor,
         'email': email,
         'provider': provider,
@@ -133,6 +139,7 @@ class UserProfile extends Equatable {
       badgeId: json['badge_id'] as String?,
       favoriteAnimeTitle: json['favorite_anime_title'] as String?,
       favoriteAnimeId: json['favorite_anime_id'] as String?,
+      favoriteAnimePoster: json['favorite_anime_poster'] as String?,
       accentColor: json['accent_color'] as String? ?? '#E06C53',
       email: json['email'] as String?,
       provider: json['provider'] as String?,
@@ -154,6 +161,7 @@ class UserProfile extends Equatable {
         badgeId,
         favoriteAnimeTitle,
         favoriteAnimeId,
+        favoriteAnimePoster,
         accentColor,
         email,
         provider,

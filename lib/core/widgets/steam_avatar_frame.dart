@@ -111,29 +111,120 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                 ),
               ),
 
-              // 2. СПЕЦЭФФЕКТ ДЛЯ «ЛЕДЯНОЙ КЛИНОК» (Glacial Frost):
-              // 8 кристаллических ледяных осколков, пульсирующих ледяным светом
-              if (isGlacialFrost) ...[
+              // 2. СПЕЦИАЛЬНЫЕ ЭФФЕКТЫ ЧАСТИЦ:
+              // Эффект падающего снега (Glacial Frost)
+              if (isGlacialFrost || frame.id == 'snowy_mountain') ...[
+                ...List.generate(12, (i) {
+                  final seed = (i * 0.23);
+                  final snowY = ((t + seed) % 1.0) * (frameOuterSize + 12) - (frameOuterSize / 2 + 6);
+                  final snowX = math.sin((t * 2 + i) * math.pi) * (frameOuterSize / 2.2);
+                  final flakeSize = 2.0 + (i % 3);
+
+                  return Transform.translate(
+                    offset: Offset(snowX, snowY),
+                    child: Container(
+                      width: flakeSize,
+                      height: flakeSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF80D8FF).withValues(alpha: 0.9),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект кода Матрицы (Hacker / Terminal Matrix)
+              if (frame.id == 'terminal_matrix') ...[
                 ...List.generate(8, (i) {
-                  final shardAngle = (i * math.pi / 4) + (t * 0.4);
-                  final r = (frameOuterSize / 2) + 2 + (pulse * 2.0);
-                  final dx = r * math.cos(shardAngle);
-                  final dy = r * math.sin(shardAngle);
+                  final seed = (i * 0.31);
+                  final dropY = ((t * 1.5 + seed) % 1.0) * (frameOuterSize + 14) - (frameOuterSize / 2 + 7);
+                  final dropX = math.cos(i * 1.2) * (frameOuterSize / 2.1);
+
+                  return Transform.translate(
+                    offset: Offset(dropX, dropY),
+                    child: Text(
+                      ['0', '1', 'λ', '0', '1', 'π', '0', '1'][i],
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF00FF66).withValues(
+                          alpha: ((dropY + frameOuterSize / 2) / frameOuterSize).clamp(0.2, 1.0),
+                        ),
+                        shadows: const [
+                          Shadow(color: Color(0xFF00FF66), blurRadius: 6),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект лепестков сакуры (Sakura Blossom)
+              if (frame.id == 'sakura_blossom' || frame.id == 'cherry_blossom_night') ...[
+                ...List.generate(7, (i) {
+                  final seed = (i * 0.28);
+                  final petalY = ((t * 0.8 + seed) % 1.0) * (frameOuterSize + 10) - (frameOuterSize / 2 + 5);
+                  final petalX = math.sin((t * 1.2 + i * 0.8) * math.pi) * (frameOuterSize / 2.1);
+                  final petalRot = (t * 2 + i) * math.pi;
+
+                  return Transform.translate(
+                    offset: Offset(petalX, petalY),
+                    child: Transform.rotate(
+                      angle: petalRot,
+                      child: Container(
+                        width: 4,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9EB5).withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF007F).withValues(alpha: 0.6),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект языков пламени (Infernal Flame / Golden Dragon)
+              if (frame.id == 'infernal_flame' || frame.id == 'golden_dragon' || frame.id == 'shadow_oni') ...[
+                ...List.generate(9, (i) {
+                  final flameAngle = (i * 2 * math.pi / 9) + (math.sin(t * 6 + i) * 0.15);
+                  final flameHeight = 4.0 + math.sin(t * 8 + i * 2).abs() * 6.0;
+                  final r = (frameOuterSize / 2) + 1;
+                  final dx = r * math.cos(flameAngle);
+                  final dy = r * math.sin(flameAngle);
 
                   return Transform.translate(
                     offset: Offset(dx, dy),
                     child: Transform.rotate(
-                      angle: shardAngle + (math.pi / 4),
+                      angle: flameAngle + math.pi / 2,
                       child: Container(
-                        width: 5,
-                        height: 9,
+                        width: 3.5,
+                        height: flameHeight,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.85 + (pulse * 0.15)),
+                          gradient: const LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [Color(0xFFFF3D00), Color(0xFFFFD600), Colors.white],
+                          ),
                           borderRadius: BorderRadius.circular(2),
-                          boxShadow: [
+                          boxShadow: const [
                             BoxShadow(
-                              color: const Color(0xFF00E5FF).withValues(alpha: 0.85),
-                              blurRadius: 6,
+                              color: Color(0xFFFF6D00),
+                              blurRadius: 5,
                               spreadRadius: 1,
                             ),
                           ],

@@ -38,6 +38,8 @@ class AuthCubit extends Cubit<AuthState> {
     String? bio,
     String? badgeId,
     String? favoriteAnimeTitle,
+    String? favoriteAnimeId,
+    String? favoriteAnimePoster,
     String? accentColor,
   }) async {
     try {
@@ -51,6 +53,8 @@ class AuthCubit extends Cubit<AuthState> {
         bio: bio,
         badgeId: badgeId,
         favoriteAnimeTitle: favoriteAnimeTitle,
+        favoriteAnimeId: favoriteAnimeId,
+        favoriteAnimePoster: favoriteAnimePoster,
         accentColor: accentColor,
       );
       emit(Authenticated(updated));

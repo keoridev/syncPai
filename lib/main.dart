@@ -1,4 +1,3 @@
-// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit/media_kit.dart';
@@ -17,22 +16,19 @@ import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Инициализация libmpv для media_kit
   MediaKit.ensureInitialized();
 
-  // Инициализация Supabase Realtime Gateway (если задан анонимный ключ)
   if (ApiConstants.supabaseAnonKey.isNotEmpty) {
     try {
       await Supabase.initialize(
         url: ApiConstants.supabaseUrl,
-        anonKey: ApiConstants.supabaseAnonKey,
+        publishableKey: ApiConstants.supabaseAnonKey,
       );
     } catch (e) {
       debugPrint('Supabase init error: $e');
     }
   }
 
-  // Регистрация сервисов и зависимостей Clean Architecture
   await configureDependencies();
 
   runApp(const SyncPaiApp());

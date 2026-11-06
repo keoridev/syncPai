@@ -2313,9 +2313,9 @@ Title,Status,Episodes
     expect(authProfile.avatarUrl, 'https://images.unsplash.com/photo-test.jpg');
   });
 
-  test('Steam customizer features: 12 frames, 15 backdrops, 8 badges, custom URLs', () {
-    expect(SteamAvatarFrame.all.length, 12);
-    expect(SteamBackgroundTheme.all.length, 15);
+  test('Steam customizer features: 18 frames, 23 backdrops, 8 badges, custom URLs', () {
+    expect(SteamAvatarFrame.all.length, 18);
+    expect(SteamBackgroundTheme.all.length, 23);
     expect(SteamBadge.all.length, 8);
 
     // Проверка разрешения значков

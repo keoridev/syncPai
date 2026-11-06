@@ -31,6 +31,7 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/get_title_details.dart';
+import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
@@ -424,8 +425,33 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
             opening: episode.opening,
             ending: episode.ending,
           );
+        } else if (targetEpisode.bestAvailableUrl == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Озвучка «${kodikCubit.state.activeVoiceoverTitle}» временно недоступна для серии ${episode.episode}. Попробуйте AniLibria или другую студию.'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
         }
       }
+    }
+
+    final isDownloaded = getIt.isRegistered<DownloadRepository>() &&
+        getIt<DownloadRepository>().isDownloaded(_currentTitle.id, targetEpisode.episode);
+
+    if (targetEpisode.bestAvailableUrl == null && !isDownloaded) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Видеопоток для этой серии пока не готов. Выберите другую серию или студию озвучки.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
     }
 
     if (initialPosition != null) {
@@ -661,8 +687,8 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
                           // Текстовый блок поверх нижнего растворения (плавно растворяется при скролле вверх)
                           Positioned(
-                            left: AppDimensions.spacingXl,
-                            right: AppDimensions.spacingXl,
+                            left: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                            right: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
                             bottom: 0,
                             child: Opacity(
                               opacity: (1.0 - collapseRatio * 1.8).clamp(0.0, 1.0),
@@ -728,7 +754,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: AppTypography.displayMedium.copyWith(
-                                      fontSize: 24,
+                                      fontSize: MediaQuery.sizeOf(context).width <= 360 ? 19.0 : 24.0,
                                       height: 1.2,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: -0.3,
@@ -779,136 +805,145 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               // 2. Кнопки действий: 1 главная акцентная + компактные Glass-кнопки
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
+                  padding: EdgeInsets.fromLTRB(
+                    MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
                     AppDimensions.spacingXl,
-                    AppDimensions.spacingXl,
-                    AppDimensions.spacingXl,
+                    MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
                     AppDimensions.spacingLg,
                   ),
-                  child: Row(
-                    children: [
-                      // Главная кнопка «Смотреть»: крупная, акцентная моно-пилюля
-                      Expanded(
-                        child: SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: _isLoadingDetails
-                                ? null
-                                : (currentEpisode != null
-                                    ? () => _requestPlayEpisode(currentEpisode)
-                                    : () => _loadFullDetails()),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.surfaceElevated,
-                              foregroundColor: AppColors.textPrimary,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                side: BorderSide(
-                                  color: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.strokeMedium,
-                                ),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                            child: _isLoadingDetails
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                  child: LayoutBuilder(
+                    builder: (context, actionConstraints) {
+                      final isVeryNarrow = actionConstraints.maxWidth < 320;
+                      final buttonSize = isVeryNarrow ? 40.0 : 46.0;
+                      final iconSize = isVeryNarrow ? 18.0 : 20.0;
+                      final spacing = isVeryNarrow ? 5.0 : 8.0;
+
+                      return Row(
+                        children: [
+                          // Главная кнопка «Смотреть»: крупная, акцентная моно-пилюля
+                          Expanded(
+                            child: SizedBox(
+                              height: 48,
+                              child: ElevatedButton(
+                                onPressed: _isLoadingDetails
+                                    ? null
+                                    : (currentEpisode != null
+                                        ? () => _requestPlayEpisode(currentEpisode)
+                                        : () => _loadFullDetails()),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.surfaceElevated,
+                                  foregroundColor: AppColors.textPrimary,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    side: BorderSide(
+                                      color: currentEpisode != null ? Theme.of(context).colorScheme.primary : AppColors.strokeMedium,
                                     ),
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
-                                        size: 24,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            currentEpisode != null && currentEpisode.episode > 1
-                                                ? 'Серия ${currentEpisode.episode}'
-                                                : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
-                                            maxLines: 1,
-                                            style: AppTypography.labelLarge.copyWith(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: -0.2,
+                                  ),
+                                  padding: EdgeInsets.symmetric(horizontal: isVeryNarrow ? 6 : 12),
+                                ),
+                                child: _isLoadingDetails
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
+                                            size: isVeryNarrow ? 20 : 24,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                currentEpisode != null && currentEpisode.episode > 1
+                                                    ? 'Серия ${currentEpisode.episode}'
+                                                    : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
+                                                maxLines: 1,
+                                                style: AppTypography.labelLarge.copyWith(
+                                                  fontSize: isVeryNarrow ? 13 : 15,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: -0.2,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
 
-                      const SizedBox(width: 8),
+                          SizedBox(width: spacing),
 
-                      // Компактная glassmorphic кнопка «Смотреть с другом»
-                      GlassIconButton(
-                        icon: Icons.group_outlined,
-                        size: 46,
-                        iconSize: 20,
-                        tooltip: 'Смотреть с другом',
-                        onTap: currentEpisode != null
-                            ? () => widget.onStartSyncRoom?.call(title, currentEpisode)
-                            : null,
-                      ),
+                          // Компактная glassmorphic кнопка «Смотреть с другом»
+                          GlassIconButton(
+                            icon: Icons.group_outlined,
+                            size: buttonSize,
+                            iconSize: iconSize,
+                            tooltip: 'Смотреть с другом',
+                            onTap: currentEpisode != null
+                                ? () => widget.onStartSyncRoom?.call(title, currentEpisode)
+                                : null,
+                          ),
 
-                      // Компактная glassmorphic кнопка «Трейлер & Видео» (открывает полноценный экран видео)
-                      const SizedBox(width: 8),
-                      GlassIconButton(
-                        icon: Icons.movie_outlined,
-                        size: 46,
-                        iconSize: 20,
-                        tooltip: 'Трейлеры и Видео',
-                        onTap: () {
-                          context.pushNamed('anime-videos', extra: {
-                            'title': _currentTitle.displayTitle,
-                            'backdrop': backdropUrl,
-                            'videos': _videos,
-                          });
-                        },
-                      ),
+                          // Компактная glassmorphic кнопка «Трейлер & Видео» (открывает полноценный экран видео)
+                          SizedBox(width: spacing),
+                          GlassIconButton(
+                            icon: Icons.movie_outlined,
+                            size: buttonSize,
+                            iconSize: iconSize,
+                            tooltip: 'Трейлеры и Видео',
+                            onTap: () {
+                              context.pushNamed('anime-videos', extra: {
+                                'title': _currentTitle.displayTitle,
+                                'backdrop': backdropUrl,
+                                'videos': _videos,
+                              });
+                            },
+                          ),
 
-                      // Компактная glassmorphic кнопка «В списки» (Watching/Planned/Completed/Dropped)
-                      if (getIt.isRegistered<AnimeListCubit>()) ...[
-                        const SizedBox(width: 8),
-                        BlocBuilder<AnimeListCubit, AnimeListState>(
-                          bloc: getIt<AnimeListCubit>(),
-                          builder: (context, listState) {
-                            final entry = listState.getEntryFor(title.id);
-                            final isInList = entry != null;
+                          // Компактная glassmorphic кнопка «В списки» (Watching/Planned/Completed/Dropped)
+                          if (getIt.isRegistered<AnimeListCubit>()) ...[
+                            SizedBox(width: spacing),
+                            BlocBuilder<AnimeListCubit, AnimeListState>(
+                              bloc: getIt<AnimeListCubit>(),
+                              builder: (context, listState) {
+                                final entry = listState.getEntryFor(title.id);
+                                final isInList = entry != null;
 
-                            return GlassIconButton(
-                              icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                              size: 46,
-                              iconSize: 20,
-                              tooltip: isInList ? 'В списке: ${entry.status.labelRu}' : 'Добавить в список',
-                              onTap: () => _showAnimeStatusSheet(context, title, entry),
-                            );
-                          },
-                        ),
-                      ],
+                                return GlassIconButton(
+                                  icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                                  size: buttonSize,
+                                  iconSize: iconSize,
+                                  tooltip: isInList ? 'В списке: ${entry.status.labelRu}' : 'Добавить в список',
+                                  onTap: () => _showAnimeStatusSheet(context, title, entry),
+                                );
+                              },
+                            ),
+                          ],
 
-                      // Компактная glassmorphic кнопка «Торренты & BDRip 1080p»
-                      const SizedBox(width: 8),
-                      GlassIconButton(
-                        icon: Icons.cloud_download_outlined,
-                        size: 46,
-                        iconSize: 20,
-                        tooltip: 'Торренты & BDRip (максимальный битрейт)',
-                        onTap: () => _openTorrentsSheet(context),
-                      ),
-                    ],
+                          // Компактная glassmorphic кнопка «Торренты & BDRip 1080p»
+                          SizedBox(width: spacing),
+                          GlassIconButton(
+                            icon: Icons.cloud_download_outlined,
+                            size: buttonSize,
+                            iconSize: iconSize,
+                            tooltip: 'Торренты & BDRip (максимальный битрейт)',
+                            onTap: () => _openTorrentsSheet(context),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),

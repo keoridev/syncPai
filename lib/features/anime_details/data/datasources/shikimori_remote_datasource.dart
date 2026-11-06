@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../domain/entities/anime_review.dart';
 import '../../domain/entities/anime_video_item.dart';
@@ -36,7 +37,7 @@ abstract class ShikimoriRemoteDataSource {
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   final Dio _dio;
 
-  static const String _baseUrl = 'https://shikimori.one/api';
+  static const String _baseUrl = 'https://shikimori.io/api';
   static const List<String> _avatarEmojis = [
     '🦊', '🐱', '🐼', '🐺', '🐰', '🦁', '⚡', '🌸', '⚔️', '🔥', '🍜', '🍙'
   ];
@@ -193,6 +194,118 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     double currentScore,
   ) async {
     try {
+      // 1. Приоритетный источник: официальный граф полной франшизы Shikimori (/franchise)
+      // Предоставляет истинную каноничную цепочку сезонов и фильмов без посторонних тайтлов
+      try {
+        final franchiseRes = await _dio.get('/animes/$shikimoriId/franchise');
+        if (franchiseRes.statusCode == 200 &&
+            franchiseRes.data is Map &&
+            franchiseRes.data['nodes'] is List) {
+          final nodes = franchiseRes.data['nodes'] as List;
+          final links = (franchiseRes.data['links'] as List?) ?? [];
+          final results = <RelatedAnimeRelease>[];
+          final seenIds = <String>{};
+
+          // Связи id -> тип отношения к текущему или предыдущему
+          final relationMap = <int, String>{};
+          for (final link in links) {
+            if (link is Map) {
+              final tId = link['target_id'] as int?;
+              final rel = link['relation'] as String? ?? '';
+              if (tId != null && rel.isNotEmpty) {
+                if (rel == 'sequel') {
+                  relationMap[tId] = 'Продолжение';
+                } else if (rel == 'prequel') {
+                  relationMap[tId] = 'Предыстория';
+                } else if (rel == 'parent_story') {
+                  relationMap[tId] = 'Основная история';
+                } else if (rel == 'side_story') {
+                  relationMap[tId] = 'Спин-офф';
+                } else if (rel == 'summary') {
+                  relationMap[tId] = 'Рекап';
+                } else if (rel == 'alternative_version') {
+                  relationMap[tId] = 'Альтернативная версия';
+                }
+              }
+            }
+          }
+
+          final currentYearStr = currentTitle.year != null ? '${currentTitle.year} год' : null;
+          final double? current5Star = currentScore > 0
+              ? double.parse((currentScore > 5.0 ? currentScore / 2 : currentScore).toStringAsFixed(1))
+              : null;
+
+          for (final n in nodes) {
+            if (n is! Map) continue;
+            final nId = '${n['id'] ?? ''}';
+            if (nId.isEmpty || seenIds.contains(nId)) continue;
+            seenIds.add(nId);
+
+            final nName = n['name'] as String? ?? '';
+            if (nName.isEmpty) continue;
+
+            final isCur = (n['id'] == shikimoriId) ||
+                (currentTitle.id > 0 && nId == '${currentTitle.id}') ||
+                (nName.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim());
+
+            final rawImg = n['image_url'] as String? ?? '';
+            final rawPUrl = rawImg.startsWith('http')
+                ? rawImg
+                : (rawImg.isNotEmpty ? 'https://shikimori.io$rawImg' : '');
+            final pUrl = wrapCorsSafeUrl(rawPUrl);
+
+            final yNum = n['year'] as int?;
+            final yStr = yNum != null && yNum > 1900 ? '$yNum год' : null;
+            final kStr = n['kind'] as String? ?? 'TV Сериал';
+            final relStr = isCur
+                ? 'Текущий релиз'
+                : (relationMap[n['id'] as int? ?? 0] ?? 'Связанное');
+
+            results.add(RelatedAnimeRelease(
+              id: isCur ? '${currentTitle.id}' : nId,
+              title: isCur ? currentTitle.displayTitle : nName,
+              year: isCur ? currentYearStr : yStr,
+              rating: isCur ? current5Star : null,
+              kind: kStr,
+              posterUrl: isCur && currentTitle.posterMedium.isNotEmpty
+                  ? currentTitle.posterMedium
+                  : (pUrl.isNotEmpty ? pUrl : currentTitle.posterSmall),
+              relation: relStr,
+              isCurrent: isCur,
+              resolvedTitle: isCur ? currentTitle : null,
+            ));
+          }
+
+          // Если текущий тайтл почему-то не вошел в nodes — добавляем
+          if (!results.any((r) => r.isCurrent)) {
+            results.add(RelatedAnimeRelease(
+              id: '${currentTitle.id}',
+              title: currentTitle.displayTitle,
+              year: currentYearStr,
+              rating: current5Star,
+              kind: 'Сериал',
+              posterUrl: currentTitle.posterSmall.isNotEmpty ? currentTitle.posterSmall : currentTitle.posterMedium,
+              relation: 'Текущий релиз',
+              isCurrent: true,
+              resolvedTitle: currentTitle,
+            ));
+          }
+
+          // Хронологическая сортировка по датам/годам
+          results.sort((a, b) {
+            final yearA = int.tryParse(a.year?.replaceAll(RegExp(r'\D'), '') ?? '') ?? 0;
+            final yearB = int.tryParse(b.year?.replaceAll(RegExp(r'\D'), '') ?? '') ?? 0;
+            if (yearA != yearB) return yearA.compareTo(yearB);
+            return a.title.compareTo(b.title);
+          });
+
+          if (results.length > 1) {
+            return results;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Резервный источник: эндпоинт /related с фильтрацией несвязанных кроссоверов
       final response = await _dio.get('/animes/$shikimoriId/related');
       if (response.statusCode == 200 && response.data is List) {
         final list = response.data as List;
@@ -204,6 +317,13 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           if (item is! Map<String, dynamic>) continue;
           final animeMap = item['anime'] as Map<String, dynamic>?;
           if (animeMap == null) continue;
+
+          // Исключаем чужие тайтлы со связью "Общий персонаж" (character)
+          final relKey = '${item['relation'] ?? ''}'.toLowerCase();
+          final relRu = '${item['relation_russian'] ?? ''}'.toLowerCase();
+          if (relKey == 'character' || relRu.contains('персонаж')) {
+            continue;
+          }
 
           final id = '${animeMap['id'] ?? ''}';
           if (seenIds.contains(id)) continue;
@@ -219,9 +339,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
           final imageMap = animeMap['image'] as Map<String, dynamic>?;
           final rawPoster = imageMap?['preview'] as String? ?? imageMap?['original'] as String? ?? '';
-          final posterUrl = rawPoster.startsWith('http')
+          final rawPosterUrl = rawPoster.startsWith('http')
               ? rawPoster
-              : (rawPoster.isNotEmpty ? 'https://shikimori.one$rawPoster' : '');
+              : (rawPoster.isNotEmpty ? 'https://shikimori.io$rawPoster' : '');
+          final posterUrl = wrapCorsSafeUrl(rawPosterUrl);
 
           final airedOn = animeMap['aired_on'] as String?;
           final year = airedOn != null && airedOn.length >= 4 ? '${airedOn.substring(0, 4)} год' : null;
@@ -244,7 +365,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           final relLower = relationRaw.toLowerCase();
           if (relLower.contains('предыстор') || relLower.contains('продолжен')) {
             final parsedHopId = int.tryParse(id);
-            if (parsedHopId != null && hopIdsToFetch.length < 2) {
+            if (parsedHopId != null && hopIdsToFetch.length < 3) {
               hopIdsToFetch.add(parsedHopId);
             }
           }
@@ -259,6 +380,13 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 if (hItem is! Map<String, dynamic>) continue;
                 final aMap = hItem['anime'] as Map<String, dynamic>?;
                 if (aMap == null) continue;
+
+                final hRelKey = '${hItem['relation'] ?? ''}'.toLowerCase();
+                final hRelRu = '${hItem['relation_russian'] ?? ''}'.toLowerCase();
+                if (hRelKey == 'character' || hRelRu.contains('персонаж')) {
+                  continue;
+                }
+
                 final hId = '${aMap['id'] ?? ''}';
                 if (seenIds.contains(hId)) continue;
                 seenIds.add(hId);
@@ -275,7 +403,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 final rawP = imgMap?['preview'] as String? ?? imgMap?['original'] as String? ?? '';
                 final pUrl = rawP.startsWith('http')
                     ? rawP
-                    : (rawP.isNotEmpty ? 'https://shikimori.one$rawP' : '');
+                    : (rawP.isNotEmpty ? 'https://shikimori.io$rawP' : '');
 
                 final aired = aMap['aired_on'] as String?;
                 final y = aired != null && aired.length >= 4 ? '${aired.substring(0, 4)} год' : null;

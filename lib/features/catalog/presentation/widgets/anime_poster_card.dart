@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -33,6 +34,9 @@ class AnimePosterCard extends StatelessWidget {
         ? title.posterMedium
         : (title.posterOriginal.isNotEmpty ? title.posterOriginal : title.posterSmall);
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth <= 360;
+
     return TvFocusable(
       onPressed: onTap,
       borderRadius: BorderRadius.circular(cardRadius),
@@ -64,7 +68,7 @@ class AnimePosterCard extends StatelessWidget {
                   children: [
                     if (posterUrl.isNotEmpty)
                       CachedNetworkImage(
-                        imageUrl: posterUrl,
+                        imageUrl: wrapCorsSafeUrl(posterUrl),
                         fit: BoxFit.cover,
                         memCacheWidth: 360,
                         memCacheHeight: 540,
@@ -154,23 +158,23 @@ class AnimePosterCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: AppDimensions.spacingSm + 2),
+            SizedBox(height: isNarrow ? 5 : AppDimensions.spacingSm + 2),
 
-            // Название аккуратно под постером в молочно-белом цвете
+            // Название аккуратно под постером в молочно-белом цвете (до 2 строк для читаемости сезонов)
             Text(
               title.displayTitle,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.titleSmall.copyWith(
                 color: AppColors.textPrimary,
-                fontSize: 14,
+                fontSize: isNarrow ? 12.0 : 13.5,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.2,
-                height: 1.25,
+                height: 1.20,
               ),
             ),
 
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
 
             // Метаданные через точку: Год • Жанры
             Text(
@@ -179,7 +183,7 @@ class AnimePosterCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: AppTypography.bodySmall.copyWith(
                 color: AppColors.textSecondary,
-                fontSize: 11.5,
+                fontSize: isNarrow ? 10.5 : 11.5,
                 fontWeight: FontWeight.w400,
               ),
             ),

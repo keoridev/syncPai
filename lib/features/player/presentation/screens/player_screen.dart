@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
@@ -129,6 +130,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _recordPlaybackInAnimeList({int? episodeNum, Duration? position}) {
+    // Не сохраняем в список «Смотрю» виртуальные/свободные комнаты без реального тайтла
+    if (widget.title.id <= 0 || widget.title.code == 'free_sync_room') return;
     if (!getIt.isRegistered<AnimeListCubit>()) return;
     try {
       final listCubit = getIt<AnimeListCubit>();
@@ -153,6 +156,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         episodesTotal: widget.title.episodesTotal,
       );
     } catch (_) {}
+  }
+
+  void _handleExit() {
+    // Восстанавливаем системные панели UI Android/iOS при выходе
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      context.go('/');
+    }
   }
 
   void _saveWatchProgress() {
@@ -283,151 +299,177 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       );
     }
 
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _handleTvKeyEvent,
-      child: BlocProvider.value(
-        value: _cubit,
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          body: BlocConsumer<PlayerCubit, PlayerState>(
-            listenWhen: (previous, current) =>
-                previous.errorMessage != current.errorMessage ||
-                previous.episode.episode != current.episode.episode,
-            listener: (context, state) {
-              if (state.errorMessage != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(state.errorMessage!),
-                    backgroundColor: AppColors.syncError,
-                    behavior: SnackBarBehavior.floating,
-                  ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleExit();
+        }
+      },
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: _handleTvKeyEvent,
+        child: BlocProvider.value(
+          value: _cubit,
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            body: BlocConsumer<PlayerCubit, PlayerState>(
+              listenWhen: (previous, current) =>
+                  previous.errorMessage != current.errorMessage ||
+                  previous.episode.episode != current.episode.episode,
+              listener: (context, state) {
+                if (state.errorMessage != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.errorMessage!),
+                      backgroundColor: AppColors.syncError,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                _recordPlaybackInAnimeList(
+                  episodeNum: state.episode.episode,
+                  position: state.position,
                 );
-              }
-              _recordPlaybackInAnimeList(
-                episodeNum: state.episode.episode,
-                position: state.position,
-              );
-            },
-          builder: (context, state) {
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                // Видео полотно libmpv без стандартных нативных контролов
-                Center(
-                  child: Video(
-                    controller: _videoController,
-                    controls: NoVideoControls,
-                  ),
-                ),
-
-                // Слой жестов перемотки по двойному тапу (±10 сек)
-                DoubleTapSeekOverlay(
-                  onTap: () => _cubit.toggleControls(),
-                  onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
-                ),
-
-                // Стрим-чат (Twitch Chat Overlay) в левом верхнем углу
-                if (state.isSyncRoom)
-                  TwitchChatOverlay(
-                    messages: state.chatMessages,
-                    isVisible: state.isChatOverlayVisible,
-                    onToggleVisibility: () => _cubit.toggleChatOverlay(),
-                  ),
-
-                // Слой плавающих летящих реакций (Floating Reactions)
-                if (state.isSyncRoom)
-                  FloatingReactionsLayer(
-                    reactions: state.activeReactions,
-                  ),
-
-                // Всплывающее стеклянное уведомление быстрой фразы (шортката)
-                if (state.isSyncRoom && state.activeQuickPhrase != null)
-                  QuickPhraseToastWidget(toast: state.activeQuickPhrase!),
-
-                // Баннер ожидания при буферизации у друга или когда друг отошел
-                if (state.isSyncRoom && state.bufferNotice != null)
-                  SyncBufferBanner(notice: state.bufferNotice!),
-
-                // Баннер авто-перехода на следующую серию (Auto Next Episode)
-                if (state.isSyncRoom &&
-                    state.autoNextCountdown != null &&
-                    state.nextEpisode != null)
-                  AutoNextEpisodeBanner(
-                    countdown: state.autoNextCountdown!,
-                    nextEpisode: state.nextEpisode!,
-                    isHost: state.isHost,
-                    onPlayNow: () => _cubit.playNextEpisode(),
-                    onCancel: () => _cubit.cancelAutoNextCountdown(),
-                  ),
-
-                // Индикатор локальной буферизации
-                if (state.isBuffering && state.bufferNotice == null)
+              },
+            builder: (context, state) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Видео полотно libmpv без стандартных нативных контролов
                   Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.background.withValues(alpha: 0.65),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.strokeMedium),
-                      ),
-                      child: const SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    child: Video(
+                      controller: _videoController,
+                      controls: NoVideoControls,
+                    ),
+                  ),
+
+                  // Слой жестов перемотки по двойному тапу (±10 сек)
+                  DoubleTapSeekOverlay(
+                    onTap: () => _cubit.toggleControls(),
+                    onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
+                  ),
+
+                  // Стрим-чат (Twitch Chat Overlay) в левом верхнем углу
+                  if (state.isSyncRoom)
+                    TwitchChatOverlay(
+                      messages: state.chatMessages,
+                      isVisible: state.isChatOverlayVisible,
+                      onToggleVisibility: () => _cubit.toggleChatOverlay(),
+                    ),
+
+                  // Слой плавающих летящих реакций (Floating Reactions)
+                  if (state.isSyncRoom)
+                    FloatingReactionsLayer(
+                      reactions: state.activeReactions,
+                    ),
+
+                  // Всплывающее стеклянное уведомление быстрой фразы (шортката)
+                  if (state.isSyncRoom && state.activeQuickPhrase != null)
+                    QuickPhraseToastWidget(toast: state.activeQuickPhrase!),
+
+                  // Баннер ожидания при буферизации у друга или когда друг отошел
+                  if (state.isSyncRoom && state.bufferNotice != null)
+                    SyncBufferBanner(notice: state.bufferNotice!),
+
+                  // Баннер авто-перехода на следующую серию (Auto Next Episode)
+                  if (state.isSyncRoom &&
+                      state.autoNextCountdown != null &&
+                      state.nextEpisode != null)
+                    AutoNextEpisodeBanner(
+                      countdown: state.autoNextCountdown!,
+                      nextEpisode: state.nextEpisode!,
+                      isHost: state.isHost,
+                      onPlayNow: () => _cubit.playNextEpisode(),
+                      onCancel: () => _cubit.cancelAutoNextCountdown(),
+                    ),
+
+                  // Индикатор локальной буферизации
+                  if (state.isBuffering && state.bufferNotice == null)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.background.withValues(alpha: 0.65),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.strokeMedium),
+                        ),
+                        child: const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                // Ошибка отсутствия потока
-                if (state.errorMessage != null && !state.isPlaying && !state.isSyncRoom)
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      margin: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.strokeMedium),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 40),
-                          const SizedBox(height: 12),
-                          Text(
-                            state.errorMessage!,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
+                  // Ошибка отсутствия потока (в соло и в совместной комнате)
+                  if (state.errorMessage != null && !state.isPlaying)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        margin: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.strokeMedium),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 40),
+                            const SizedBox(height: 12),
+                            Text(
+                              state.errorMessage!,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
                             ),
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Повторить'),
-                            onPressed: () => _cubit.switchEpisode(state.episode),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Theme.of(context).colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                                  label: const Text('Повторить'),
+                                  onPressed: () => _cubit.switchEpisode(state.episode),
+                                ),
+                                const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.textPrimary,
+                                    side: const BorderSide(color: AppColors.strokeMedium),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                                  label: const Text('Выйти'),
+                                  onPressed: _handleExit,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
-                // Кастомный оверлей управления в стиле Cinema Dark
-                PlayerControlsOverlay(
-                  cubit: _cubit,
-                  state: state,
-                  onBack: () => Navigator.of(context).maybePop(),
-                  syncStatus: state.isSyncRoom ? state.syncStatus : null,
-                  syncPeerName: state.peerName,
-                ),
-              ],
-            );
-          },
+                  // Кастомный оверлей управления в стиле Cinema Dark
+                  PlayerControlsOverlay(
+                    cubit: _cubit,
+                    state: state,
+                    onBack: _handleExit,
+                    syncStatus: state.isSyncRoom ? state.syncStatus : null,
+                    syncPeerName: state.peerName,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),

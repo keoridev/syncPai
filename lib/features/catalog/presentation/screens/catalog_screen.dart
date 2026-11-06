@@ -65,6 +65,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themePrimary = Theme.of(context).colorScheme.primary;
+    final themePrimaryLight = HSLColor.fromColor(themePrimary)
+        .withLightness((HSLColor.fromColor(themePrimary).lightness + 0.15).clamp(0.0, 1.0))
+        .toColor();
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth <= 360;
+    final horizontalPad = isNarrow ? 12.0 : AppDimensions.spacingXl;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -73,55 +81,66 @@ class _CatalogScreenState extends State<CatalogScreen> {
             // Заголовок приложения, бренд и кнопки настроек отображения
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppDimensions.spacingXl,
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPad,
                   AppDimensions.spacingLg,
-                  AppDimensions.spacingXl,
+                  horizontalPad,
                   AppDimensions.spacingSm,
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Логотип и брендовый заголовок
-                    Row(
-                      children: [
-                        const SyncPaiLogo(size: 40),
-                        const SizedBox(width: AppDimensions.spacingMd),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RichText(
-                              text: TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: 'Sync',
-                                    style: AppTypography.displayMedium.copyWith(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
-                                    ),
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SyncPaiLogo(size: isNarrow ? 32 : 40),
+                          SizedBox(width: isNarrow ? 8 : AppDimensions.spacingMd),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: 'Sync',
+                                        style: AppTypography.displayMedium.copyWith(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: isNarrow ? 20 : 24,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: 'Pai',
+                                        style: AppTypography.displayMedium.copyWith(
+                                          color: themePrimary,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: isNarrow ? 20 : 24,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  TextSpan(
-                                    text: 'Pai',
-                                    style: AppTypography.displayMedium.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
-                                    ),
+                                ),
+                                const SizedBox(height: AppDimensions.spacing2xs),
+                                Text(
+                                  'Каталог аниме AniLibria',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: isNarrow ? 11 : 12,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: AppDimensions.spacing2xs),
-                            Text(
-                              'Каталог аниме AniLibria',
-                              style: AppTypography.bodySmall.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
 
                     // Кнопки переключения вида: Сетка / Список + Настройки + Профиль
@@ -216,8 +235,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
             // Строка поиска
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.spacingXl,
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontalPad,
                   vertical: AppDimensions.spacingSm,
                 ),
                 child: AppSearchBar(
@@ -245,8 +264,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   return SizedBox(
                     height: 38,
                     child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppDimensions.spacingXl,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPad,
                       ),
                       scrollDirection: Axis.horizontal,
                       itemCount: _popularGenres.length,
@@ -271,12 +290,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? AppColors.primary.withValues(alpha: 0.18)
+                                  ? themePrimary.withValues(alpha: 0.22)
                                   : Colors.white.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: isSelected
-                                    ? AppColors.primary.withValues(alpha: 0.6)
+                                    ? themePrimary.withValues(alpha: 0.7)
                                     : Colors.white.withValues(alpha: 0.08),
                                 width: 1.0,
                               ),
@@ -356,7 +375,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             color: AppColors.surfaceElevated.withValues(alpha: 0.75),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.35),
+                              color: themePrimary.withValues(alpha: 0.35),
                               width: 1.0,
                             ),
                           ),
@@ -365,12 +384,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.16),
+                                  color: themePrimary.withValues(alpha: 0.16),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.history_rounded,
-                                  color: AppColors.primaryLight,
+                                  color: themePrimaryLight,
                                   size: 18,
                                 ),
                               ),
@@ -404,17 +423,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                         value: recent.progress,
                                         minHeight: 3,
                                         backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                        valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              const Icon(
+                              Icon(
                                 Icons.arrow_forward_ios_rounded,
                                 size: 14,
-                                color: AppColors.primaryLight,
+                                color: themePrimaryLight,
                               ),
                             ],
                           ),
@@ -450,7 +469,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     return false;
                   },
                   child: RefreshIndicator(
-                    color: AppColors.primary,
+                    color: themePrimary,
                     backgroundColor: AppColors.surfaceElevated,
                     onRefresh: () =>
                         context.read<CatalogCubit>().loadUpdates(refresh: true),
@@ -475,25 +494,40 @@ class _CatalogScreenState extends State<CatalogScreen> {
       List<AnimeTitle> titles, CatalogGridDensity density, [bool isLoadingMore = false]) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 900
-            ? 5
-            : constraints.maxWidth > 600
-                ? 4
-                : density.mobileColumns;
+        final width = constraints.maxWidth;
+        final isSmallPhone = width <= 360;
 
-        final childAspectRatio = crossAxisCount >= 3 ? 0.53 : 0.58;
+        final crossAxisCount = width > 900
+            ? 5
+            : width > 600
+                ? 4
+                : isSmallPhone
+                    ? 2
+                    : density.mobileColumns;
+
+        // Для узких экранов (<= 340-360px) даем больше высоты под 2 строки названия (0.49..0.51)
+        final childAspectRatio = isSmallPhone
+            ? 0.49
+            : (crossAxisCount >= 3 ? 0.49 : 0.53);
+
+        final gridPadding = isSmallPhone
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 12)
+            : const EdgeInsets.all(AppDimensions.spacingXl);
+
+        final spacing = isSmallPhone ? 8.0 : AppDimensions.spacingMd;
+
         final extraItems = isLoadingMore ? crossAxisCount : 0;
 
         return GridView.builder(
-          padding: const EdgeInsets.all(AppDimensions.spacingXl),
+          padding: gridPadding,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             childAspectRatio: childAspectRatio,
-            crossAxisSpacing: AppDimensions.spacingMd,
-            mainAxisSpacing: AppDimensions.spacingMd,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
           ),
           itemCount: titles.length + extraItems,
           itemBuilder: (context, index) {
@@ -517,14 +551,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   // РЕЖИМ 2: Список (подробные карточки в столбик)
   Widget _buildTitlesList(List<AnimeTitle> titles, [bool isLoadingMore = false]) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final listPadding = screenWidth <= 360
+        ? const EdgeInsets.symmetric(horizontal: 10, vertical: 12)
+        : const EdgeInsets.all(AppDimensions.spacingXl);
+    final spacing = screenWidth <= 360 ? 8.0 : AppDimensions.spacingMd;
+
     return ListView.separated(
-      padding: const EdgeInsets.all(AppDimensions.spacingXl),
+      padding: listPadding,
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
       ),
       itemCount: titles.length + (isLoadingMore ? 1 : 0),
-      separatorBuilder: (_, __) =>
-          const SizedBox(height: AppDimensions.spacingMd),
+      separatorBuilder: (_, __) => SizedBox(height: spacing),
       itemBuilder: (context, index) {
         if (index == titles.length) {
           return const Padding(
@@ -552,35 +591,45 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildLoadingGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.all(AppDimensions.spacingXl),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.58,
-        crossAxisSpacing: AppDimensions.spacingMd,
-        mainAxisSpacing: AppDimensions.spacingMd,
-      ),
-      itemCount: 6,
-      itemBuilder: (context, index) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.stroke, width: 1.0),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: const ShimmerPlaceholder.card(),
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isSmallPhone = constraints.maxWidth <= 360;
+        final gridPadding = isSmallPhone
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 12)
+            : const EdgeInsets.all(AppDimensions.spacingXl);
+        final spacing = isSmallPhone ? 8.0 : AppDimensions.spacingMd;
+
+        return GridView.builder(
+          padding: gridPadding,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: isSmallPhone ? 0.49 : 0.53,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
           ),
-          const SizedBox(height: 10),
-          const ShimmerPlaceholder.line(width: double.infinity, height: 14),
-          const SizedBox(height: 5),
-          const ShimmerPlaceholder.line(width: 80, height: 11),
-        ],
-      ),
+          itemCount: 6,
+          itemBuilder: (context, index) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.stroke, width: 1.0),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: const ShimmerPlaceholder.card(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const ShimmerPlaceholder.line(width: double.infinity, height: 14),
+              const SizedBox(height: 5),
+              const ShimmerPlaceholder.line(width: 80, height: 11),
+            ],
+          ),
+        );
+      },
     );
   }
 

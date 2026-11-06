@@ -21,3 +21,4 @@ String wrapCorsSafeUrl(String url) {
   final cleanUrl = trimmed.replaceFirst(RegExp(r'^https?:\/\/'), '').replaceFirst(RegExp(r'^\/\/'), '');
   return 'https://images.weserv.nl/?url=${Uri.encodeComponent(cleanUrl)}';
 }
+

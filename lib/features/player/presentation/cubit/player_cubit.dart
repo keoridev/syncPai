@@ -959,6 +959,17 @@ class PlayerCubit extends Cubit<PlayerState> {
     await _loadCurrentEpisodeStream();
   }
 
+  void setVolume(double volume) {
+    final v = volume.clamp(0.0, 100.0);
+    player.setVolume(v);
+    emit(state.copyWith(volume: v));
+  }
+
+  void setBrightness(double brightness) {
+    final b = brightness.clamp(0.05, 1.0);
+    emit(state.copyWith(brightness: b));
+  }
+
   void toggleControls() {
     final nextVisible = !state.areControlsVisible;
     emit(state.copyWith(areControlsVisible: nextVisible));
@@ -976,7 +987,8 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   void _startControlsTimer() {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(seconds: 3), () {
+    if (!state.isPlaying) return;
+    _controlsTimer = Timer(const Duration(milliseconds: 2200), () {
       if (state.isPlaying && !isClosed) {
         emit(state.copyWith(areControlsVisible: false));
       }
@@ -989,8 +1001,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
+  bool _isDisposing = false;
+
   @override
   Future<void> close() async {
+    if (_isDisposing) return;
+    _isDisposing = true;
     _controlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();

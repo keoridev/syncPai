@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
@@ -194,7 +195,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
       if (mounted) {
         setState(() => _isResolvingPlayback = false);
 
-        context.pushNamed('player', extra: {
+        PlayerNavigationGuard.openPlayer(context, extra: {
           'title': resolvedTitle,
           'episode': targetEpisode,
           'quality': PlayerQuality.fhd,

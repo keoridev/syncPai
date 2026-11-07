@@ -6,6 +6,8 @@ import '../../../../core/theme/app_typography.dart';
 import '../cubit/player_cubit.dart';
 
 /// Шторка быстрого набора сообщений и реакций для совместного просмотра.
+/// Полностью адаптирована под горизонтальный (landscape) режим экрана
+/// и предотвращает любые переполнения RenderFlex (желтые полосы).
 class SyncChatInputSheet extends StatefulWidget {
   final PlayerCubit cubit;
 
@@ -76,6 +78,8 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       child: BackdropFilter(
@@ -91,107 +95,96 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
           ),
           child: SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(AppDimensions.spacingLg),
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.symmetric(
+                horizontal: isLandscape ? 14 : AppDimensions.spacingLg,
+                vertical: isLandscape ? 8 : AppDimensions.spacingLg,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Быстрые эмодзи-реакции
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _quickReactions.map((emoji) {
-                      return InkWell(
-                        onTap: () => _sendReaction(emoji),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                          ),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 24),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: AppDimensions.spacingMd),
-
-                  // Быстрые фразы
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _quickPhrases.map((phrase) {
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ActionChip(
-                            backgroundColor: Colors.white.withValues(alpha: 0.05),
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-                            label: Text(
-                              phrase,
-                              style: AppTypography.caption.copyWith(
-                                color: AppColors.textPrimary,
-                                fontSize: 11.5,
+                  if (isLandscape) ...[
+                    // В ландшафтном режиме: ультра-компактный ряд (эмодзи + поле ввода)
+                    Row(
+                      children: [
+                        for (final emoji in _quickReactions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: InkWell(
+                              onTap: () => _sendReaction(emoji),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(emoji, style: const TextStyle(fontSize: 18)),
                               ),
                             ),
-                            onPressed: () => _sendQuickPhrase(phrase),
+                          ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildInputRow(context),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    // В портретном режиме: полноразмерные блоки реакций и шорткатов
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: _quickReactions.map((emoji) {
+                        return InkWell(
+                          onTap: () => _sendReaction(emoji),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 24),
+                            ),
                           ),
                         );
                       }).toList(),
                     ),
-                  ),
 
-                  const SizedBox(height: AppDimensions.spacingMd),
+                    const SizedBox(height: AppDimensions.spacingMd),
 
-                  // Поле ввода текста с кнопкой отправки
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          alignment: Alignment.center,
-                          child: TextField(
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                            cursorColor: AppColors.primary,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _sendMessage(),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: 'Сообщение в комнату…',
-                              hintStyle: AppTypography.bodyMedium.copyWith(
-                                color: AppColors.textMuted,
-                                fontSize: 13.5,
+                    // Быстрые фразы
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _quickPhrases.map((phrase) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ActionChip(
+                              backgroundColor: Colors.white.withValues(alpha: 0.05),
+                              side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                              label: Text(
+                                phrase,
+                                style: AppTypography.caption.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 11.5,
+                                ),
                               ),
+                              onPressed: () => _sendQuickPhrase(phrase),
                             ),
-                          ),
-                        ),
+                          );
+                        }).toList(),
                       ),
-                      const SizedBox(width: AppDimensions.spacingSm),
-                      IconButton.filled(
-                        style: IconButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
-                          minimumSize: const Size(44, 44),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        icon: const Icon(Icons.send_rounded, color: AppColors.textPrimary, size: 20),
-                        onPressed: _sendMessage,
-                      ),
-                    ],
-                  ),
+                    ),
+
+                    const SizedBox(height: AppDimensions.spacingMd),
+
+                    _buildInputRow(context),
+                  ],
                 ],
               ),
             ),
@@ -200,5 +193,50 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
       ),
     );
   }
-}
 
+  Widget _buildInputRow(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.center,
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
+              cursorColor: Theme.of(context).colorScheme.primary,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendMessage(),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Сообщение в комнату…',
+                hintStyle: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.textMuted,
+                  fontSize: 13.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppDimensions.spacingSm),
+        IconButton.filled(
+          style: IconButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            minimumSize: const Size(44, 44),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.send_rounded, color: AppColors.textPrimary, size: 20),
+          onPressed: _sendMessage,
+        ),
+      ],
+    );
+  }
+}

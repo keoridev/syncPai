@@ -52,6 +52,10 @@ class PlayerState extends Equatable {
   // 6. Ускорение 2X при удержании (Long Press Fast Forward)
   final bool is2xFastForwarding;
 
+  // 7. Жесты: громкость и яркость
+  final double volume;
+  final double brightness;
+
   const PlayerState({
     required this.title,
     required this.episode,
@@ -83,6 +87,8 @@ class PlayerState extends Equatable {
     this.isPeerTalking = false,
     this.isTalking = false,
     this.is2xFastForwarding = false,
+    this.volume = 100.0,
+    this.brightness = 1.0,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
@@ -118,6 +124,8 @@ class PlayerState extends Equatable {
     bool? isPeerTalking,
     bool? isTalking,
     bool? is2xFastForwarding,
+    double? volume,
+    double? brightness,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -150,6 +158,8 @@ class PlayerState extends Equatable {
       isPeerTalking: isPeerTalking ?? this.isPeerTalking,
       isTalking: isTalking ?? this.isTalking,
       is2xFastForwarding: is2xFastForwarding ?? this.is2xFastForwarding,
+      volume: volume ?? this.volume,
+      brightness: brightness ?? this.brightness,
     );
   }
 
@@ -185,5 +195,7 @@ class PlayerState extends Equatable {
         isPeerTalking,
         isTalking,
         is2xFastForwarding,
+        volume,
+        brightness,
       ];
 }

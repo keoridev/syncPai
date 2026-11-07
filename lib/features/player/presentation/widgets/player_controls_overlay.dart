@@ -8,9 +8,10 @@ import '../../../catalog/domain/entities/episode_item.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import 'player_episodes_sheet.dart';
 import 'player_progress_bar.dart';
+import 'player_settings_sheet.dart';
 import 'presence_radar_badge.dart';
-import 'quality_selection_sheet.dart';
 import 'quick_phrases_bar.dart';
 import 'sync_chat_input_bar.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
@@ -165,54 +166,47 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ),
                         const SizedBox(width: AppDimensions.spacingSm),
 
-                        // Выбор скорости воспроизведения
-                        PopupMenuButton<double>(
-                          initialValue: state.playbackRate,
-                          tooltip: 'Скорость',
-                          color: AppColors.surfaceElevated,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: AppDimensions.borderRadiusMedium,
-                            side: const BorderSide(color: AppColors.strokeMedium),
-                          ),
+                        // Список серий
+                        IconButton(
+                          tooltip: 'Список серий',
+                          icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                        ),
+                        const SizedBox(width: AppDimensions.spacingSm),
+
+                        // Кнопка Скорости и Настроек (Liquid Glass шторка)
+                        InkWell(
+                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                          borderRadius: AppDimensions.borderRadiusSmall,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: AppColors.surfaceElevated,
                               borderRadius: AppDimensions.borderRadiusSmall,
                               border: Border.all(color: AppColors.strokeMedium),
                             ),
-                            child: Text(
-                              '${state.playbackRate}x',
-                              style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${state.playbackRate}x',
+                                  style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.tune_rounded, color: AppColors.textSecondary, size: 13),
+                              ],
                             ),
                           ),
-                          onSelected: (rate) => cubit.setPlaybackRate(rate),
-                          itemBuilder: (context) => [0.75, 1.0, 1.25, 1.5, 2.0].map((rate) {
-                            return PopupMenuItem<double>(
-                              value: rate,
-                              child: Text(
-                                '${rate}x',
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: rate == state.playbackRate ? AppColors.primary : AppColors.textPrimary,
-                                ),
-                              ),
-                            );
-                          }).toList(),
                         ),
                         const SizedBox(width: AppDimensions.spacingSm),
 
                         // Выбор качества потока (1080p, 720p, 480p)
                         InkWell(
-                          onTap: () {
-                            QualitySelectionSheet.show(
-                              context,
-                              currentQuality: state.selectedQuality,
-                              onSelect: (q) => cubit.changeQuality(q),
-                            );
-                          },
+                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
                           borderRadius: AppDimensions.borderRadiusSmall,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: AppColors.surfaceElevated,
                               borderRadius: AppDimensions.borderRadiusSmall,
@@ -267,14 +261,18 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ],
                       ] else ...[
                         // В ПОРТРЕТНОМ РЕЖИМЕ: ультра-компактно (Качество + Меню Дополнительно ⋮)
+                        // Список серий
+                        IconButton(
+                          tooltip: 'Серии',
+                          icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                        ),
+                        const SizedBox(width: 2),
+
+                        // Качество потока
                         InkWell(
-                          onTap: () {
-                            QualitySelectionSheet.show(
-                              context,
-                              currentQuality: state.selectedQuality,
-                              onSelect: (q) => cubit.changeQuality(q),
-                            );
-                          },
+                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
                           borderRadius: AppDimensions.borderRadiusSmall,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -295,159 +293,12 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
 
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert_rounded, color: AppColors.textPrimary, size: 20),
-                          color: AppColors.surfaceElevated,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: AppDimensions.borderRadiusMedium,
-                            side: const BorderSide(color: AppColors.strokeMedium),
-                          ),
-                          onSelected: (val) async {
-                            switch (val) {
-                              case 'auto_skip':
-                                cubit.toggleAutoSkipOpening();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      cubit.isAutoSkipOpening
-                                          ? 'Автопропуск опенингов включен'
-                                          : 'Автопропуск опенингов выключен',
-                                    ),
-                                    duration: const Duration(seconds: 1),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
-                                break;
-                              case 'pip':
-                                final success = await PipService.instance.enterPip();
-                                if (!success && context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Режим PiP поддерживается на устройствах Android 8.0+'),
-                                      behavior: SnackBarBehavior.floating,
-                                      duration: Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                                break;
-                              case 'chat':
-                                cubit.toggleChatOverlay();
-                                break;
-                              case 'rate_075':
-                                cubit.setPlaybackRate(0.75);
-                                break;
-                              case 'rate_10':
-                                cubit.setPlaybackRate(1.0);
-                                break;
-                              case 'rate_125':
-                                cubit.setPlaybackRate(1.25);
-                                break;
-                              case 'rate_15':
-                                cubit.setPlaybackRate(1.5);
-                                break;
-                              case 'rate_20':
-                                cubit.setPlaybackRate(2.0);
-                              break;
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: 'auto_skip',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    cubit.isAutoSkipOpening
-                                        ? Icons.motion_photos_paused_rounded
-                                        : Icons.motion_photos_off_rounded,
-                                    color: cubit.isAutoSkipOpening ? AppColors.primary : AppColors.textSecondary,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      'Автопропуск опенингов',
-                                      style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                                    ),
-                                  ),
-                                  Text(
-                                    cubit.isAutoSkipOpening ? 'ВКЛ' : 'ВЫКЛ',
-                                    style: TextStyle(
-                                      color: cubit.isAutoSkipOpening ? AppColors.primary : AppColors.textMuted,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'pip',
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.picture_in_picture_alt_rounded, color: AppColors.textSecondary, size: 18),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'Картинка в картинке (PiP)',
-                                    style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (state.isSyncRoom)
-                              PopupMenuItem(
-                                value: 'chat',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
-                                      color: state.isChatOverlayVisible ? AppColors.primary : AppColors.textSecondary,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      state.isChatOverlayVisible ? 'Скрыть чат' : 'Показать чат',
-                                      style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            const PopupMenuDivider(),
-                            PopupMenuItem(
-                              enabled: false,
-                              height: 24,
-                              child: Text(
-                                'СКОРОСТЬ ВОСПРОИЗВЕДЕНИЯ',
-                                style: AppTypography.caption.copyWith(
-                                  color: AppColors.textMuted,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            ...[0.75, 1.0, 1.25, 1.5, 2.0].map(
-                              (r) => PopupMenuItem(
-                                value: 'rate_${r.toString().replaceAll('.', '')}',
-                                height: 32,
-                                child: Row(
-                                  children: [
-                                    if (state.playbackRate == r)
-                                      Icon(Icons.check_rounded, color: AppColors.primary, size: 16)
-                                    else
-                                      const SizedBox(width: 16),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${r}x',
-                                      style: TextStyle(
-                                        color: state.playbackRate == r ? AppColors.primary : AppColors.textPrimary,
-                                        fontWeight: state.playbackRate == r ? FontWeight.w700 : FontWeight.w400,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                        // Кнопка всех настроек (Liquid Glass шторка)
+                        IconButton(
+                          tooltip: 'Настройки',
+                          icon: const Icon(Icons.tune_rounded, color: AppColors.textPrimary, size: 20),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
                         ),
                         if (onToggleOrientation != null)
                           IconButton(

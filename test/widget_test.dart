@@ -9,6 +9,7 @@ import 'package:sync_pai/app/router/app_router.dart';
 import 'package:sync_pai/features/sync_room/presentation/screens/join_room_screen.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_theme.dart';
+import 'package:sync_pai/core/utils/player_navigation_guard.dart';
 import 'package:sync_pai/core/widgets/glass_container.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/anime_reviews_provider.dart';
 import 'package:sync_pai/features/anime_details/domain/entities/anime_video_item.dart';
@@ -3229,6 +3230,12 @@ Title,Status,Episodes
       expect(room.status, SyncRoomStatus.connected);
       expect(room.peerName, 'Тестовый Друг');
       expect(room.episode.episode, greaterThanOrEqualTo(1));
+    });
+
+    test('PlayerNavigationGuard blocks rapid double-tap parallel opens', () {
+      expect(PlayerNavigationGuard.canOpen(), isTrue);
+      // Immediately second call must be blocked
+      expect(PlayerNavigationGuard.canOpen(), isFalse);
     });
   });
 }

@@ -6,6 +6,7 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
@@ -362,7 +363,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           episode: ep,
                           initialQuality: PlayerQuality.hd,
                           onStartPlayback: (room, isHost) {
-                            context.pushNamed('player', extra: {
+                            PlayerNavigationGuard.openPlayer(context, extra: {
                               'title': fullTitle,
                               'episode': ep,
                               'quality': PlayerQuality.hd,

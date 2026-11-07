@@ -8,6 +8,7 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/tv_focusable.dart';
@@ -703,7 +704,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       hdUrl: dl.localPath,
       sdUrl: dl.localPath,
     );
-    context.pushNamed('player', extra: {
+    PlayerNavigationGuard.openPlayer(context, extra: {
       'title': targetTitle,
       'episode': ep,
       'quality': PlayerQuality.fhd,

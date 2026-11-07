@@ -351,6 +351,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           value: _cubit,
           child: Scaffold(
             backgroundColor: Colors.black,
+            resizeToAvoidBottomInset: false,
             body: BlocConsumer<PlayerCubit, PlayerState>(
               listenWhen: (previous, current) =>
                   previous.errorMessage != current.errorMessage ||
@@ -382,10 +383,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
 
-                  // Слой жестов перемотки по двойному тапу (±10 сек) и 2X при удержании
+                  // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
                   DoubleTapSeekOverlay(
                     onTap: () => _cubit.toggleControls(),
                     onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
+                    onCenterDoubleTap: () => _cubit.togglePlayPause(),
+                    onBrightnessChanged: (b) => _cubit.setBrightness(b),
+                    onVolumeChanged: (v) => _cubit.setVolume(v),
+                    onScrubSeek: (pos) => _cubit.seek(pos),
+                    currentPosition: state.position,
+                    totalDuration: state.duration,
+                    currentVolume: state.volume,
+                    currentBrightness: state.brightness,
                     onLongPressStart: () => _cubit.start2xFastForward(),
                     onLongPressEnd: () => _cubit.stop2xFastForward(),
                   ),

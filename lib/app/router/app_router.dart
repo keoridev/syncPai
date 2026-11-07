@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/utils/player_navigation_guard.dart';
 import '../../features/anime_details/domain/entities/anime_video_item.dart';
 import '../../features/anime_details/presentation/screens/anime_details_screen.dart';
 import '../../features/anime_details/presentation/screens/anime_videos_screen.dart';
@@ -52,14 +53,14 @@ final GoRouter appRouter = GoRouter(
         return AnimeDetailsScreen(
           title: title,
           onPlayEpisode: (t, ep, quality) {
-            context.pushNamed('player', extra: {
+            PlayerNavigationGuard.openPlayer(context, extra: {
               'title': t,
               'episode': ep,
               'quality': quality,
             });
           },
           onResumeEpisode: (t, ep, quality, position) {
-            context.pushNamed('player', extra: {
+            PlayerNavigationGuard.openPlayer(context, extra: {
               'title': t,
               'episode': ep,
               'quality': quality,
@@ -73,7 +74,7 @@ final GoRouter appRouter = GoRouter(
               episode: ep,
               initialQuality: PlayerQuality.hd,
               onStartPlayback: (room, isHost) {
-                context.pushNamed('player', extra: {
+                PlayerNavigationGuard.openPlayer(context, extra: {
                   'title': room.title,
                   'episode': room.episode,
                   'quality': room.quality,

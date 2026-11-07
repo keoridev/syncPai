@@ -446,14 +446,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       try {
         final listCubit = getIt<AnimeListCubit>();
         final existing = listCubit.state.getEntryFor(_currentTitle.id);
-        if (existing == null || existing.status == AnimeListStatus.planned) {
+        if (existing != null) {
           listCubit.setAnimeStatus(
             animeId: _currentTitle.id,
             titleRu: _currentTitle.displayTitle,
             posterUrl: _currentTitle.posterMedium.isNotEmpty
                 ? _currentTitle.posterMedium
                 : _currentTitle.posterSmall,
-            status: AnimeListStatus.watching,
+            status: existing.status,
             lastEpisode: episode.episode,
             positionMs: initialPosition?.inMilliseconds ?? 0,
             episodesTotal: _currentTitle.episodesTotal,

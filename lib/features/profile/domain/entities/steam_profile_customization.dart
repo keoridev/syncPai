@@ -439,16 +439,25 @@ class SteamBackgroundTheme {
     if (idOrUrl == null || idOrUrl.isEmpty || idOrUrl == 'none') {
       return all.first;
     }
-    if (idOrUrl.startsWith('http://') || idOrUrl.startsWith('https://')) {
-      return SteamBackgroundTheme(
-        id: idOrUrl,
-        name: 'Пользовательский арт / GIF',
-        gradient: const [Color(0xFF2A2B32), Color(0xFF121316)],
-        assetOrUrl: idOrUrl,
-        icon: Icons.image_outlined,
-      );
+    for (final bg in all) {
+      if (bg.id == idOrUrl) return bg;
     }
-    return all.firstWhere((b) => b.id == idOrUrl, orElse: () => all.first);
+    String effective = idOrUrl.trim();
+    if (!effective.startsWith('http://') &&
+        !effective.startsWith('https://') &&
+        !effective.startsWith('/') &&
+        !effective.startsWith('file://') &&
+        !effective.contains(':\\') &&
+        !effective.contains(':/')) {
+      effective = 'https://$effective';
+    }
+    return SteamBackgroundTheme(
+      id: idOrUrl,
+      name: 'Пользовательский арт / GIF',
+      gradient: const [Color(0xFF2A2B32), Color(0xFF16181F)],
+      assetOrUrl: effective,
+      icon: Icons.image_outlined,
+    );
   }
 }
 

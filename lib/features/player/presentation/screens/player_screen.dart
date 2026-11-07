@@ -142,13 +142,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     try {
       final listCubit = getIt<AnimeListCubit>();
       final existing = listCubit.state.getEntryFor(widget.title.id);
+      if (existing == null) {
+        // Тайтл не в закладках — не захламляем пользовательские списки
+        return;
+      }
       final currentEp = episodeNum ?? widget.initialEpisode.episode;
       final currentPos = position ?? widget.initialPosition ?? Duration.zero;
-
-      var status = existing?.status ?? AnimeListStatus.watching;
-      if (status == AnimeListStatus.planned) {
-        status = AnimeListStatus.watching;
-      }
 
       listCubit.setAnimeStatus(
         animeId: widget.title.id,
@@ -156,7 +155,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         posterUrl: widget.title.posterMedium.isNotEmpty
             ? widget.title.posterMedium
             : widget.title.posterSmall,
-        status: status,
+        status: existing.status,
         lastEpisode: currentEp,
         positionMs: currentPos.inMilliseconds,
         episodesTotal: widget.title.episodesTotal,
@@ -228,32 +227,30 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       try {
         final listCubit = getIt<AnimeListCubit>();
         final existing = listCubit.state.getEntryFor(widget.title.id);
-        var status = existing?.status ?? AnimeListStatus.watching;
-        if (status == AnimeListStatus.planned) {
-          status = AnimeListStatus.watching;
+        if (existing != null) {
+          final isEpDone = dur.inSeconds > 0 &&
+              (pos.inSeconds >= (dur.inSeconds - 60) ||
+               pos.inMilliseconds / dur.inMilliseconds >= 0.90);
+
+          final totalEps = widget.title.episodesTotal;
+          final isSeriesDone = isEpDone && totalEps != null && ep >= totalEps;
+          var status = existing.status;
+          if (isSeriesDone) {
+            status = AnimeListStatus.completed;
+          }
+
+          listCubit.setAnimeStatus(
+            animeId: widget.title.id,
+            titleRu: widget.title.displayTitle,
+            posterUrl: widget.title.posterMedium.isNotEmpty
+                ? widget.title.posterMedium
+                : widget.title.posterSmall,
+            status: status,
+            lastEpisode: ep,
+            positionMs: pos.inMilliseconds,
+            episodesTotal: totalEps,
+          );
         }
-
-        final isEpDone = dur.inSeconds > 0 &&
-            (pos.inSeconds >= (dur.inSeconds - 60) ||
-             pos.inMilliseconds / dur.inMilliseconds >= 0.90);
-
-        final totalEps = widget.title.episodesTotal;
-        final isSeriesDone = isEpDone && totalEps != null && ep >= totalEps;
-        if (isSeriesDone) {
-          status = AnimeListStatus.completed;
-        }
-
-        listCubit.setAnimeStatus(
-          animeId: widget.title.id,
-          titleRu: widget.title.displayTitle,
-          posterUrl: widget.title.posterMedium.isNotEmpty
-              ? widget.title.posterMedium
-              : widget.title.posterSmall,
-          status: status,
-          lastEpisode: ep,
-          positionMs: pos.inMilliseconds,
-          episodesTotal: totalEps,
-        );
       } catch (_) {}
     }
   }

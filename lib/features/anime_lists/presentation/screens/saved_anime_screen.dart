@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -19,6 +20,7 @@ import '../../../downloads/domain/entities/download_task.dart';
 import '../../../downloads/presentation/cubit/download_cubit.dart';
 import '../../../downloads/presentation/cubit/download_state.dart';
 import '../../../player/domain/entities/player_quality.dart';
+import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../watch_history/presentation/cubit/watch_history_cubit.dart';
 import '../../../watch_history/presentation/cubit/watch_history_state.dart';
 import '../../domain/entities/user_anime_entry.dart';
@@ -55,6 +57,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   SavedAnimeViewMode _viewMode = SavedAnimeViewMode.list;
+  int _gridColumns = 3;
+  bool _isHistoryTab = false;
   SavedAnimeSort _sortBy = SavedAnimeSort.dateAdded;
 
   // Массовое управление (Batch Edit)
@@ -63,6 +67,42 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   // Кэш запросов фоновой подгрузки постеров
   final Set<int> _posterFetchAttempts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedPreferences();
+  }
+
+  void _loadSavedPreferences() {
+    if (getIt.isRegistered<SharedPreferences>()) {
+      final prefs = getIt<SharedPreferences>();
+      final modeStr = prefs.getString('saved_anime_view_mode');
+      if (modeStr != null) {
+        _viewMode = SavedAnimeViewMode.values.firstWhere(
+          (m) => m.name == modeStr,
+          orElse: () => SavedAnimeViewMode.list,
+        );
+      }
+      _gridColumns = prefs.getInt('saved_anime_grid_columns') ?? 3;
+    }
+  }
+
+  void _setViewMode(SavedAnimeViewMode mode) {
+    HapticFeedback.lightImpact();
+    setState(() => _viewMode = mode);
+    if (getIt.isRegistered<SharedPreferences>()) {
+      getIt<SharedPreferences>().setString('saved_anime_view_mode', mode.name);
+    }
+  }
+
+  void _toggleGridColumns() {
+    HapticFeedback.lightImpact();
+    setState(() => _gridColumns = _gridColumns == 3 ? 2 : 3);
+    if (getIt.isRegistered<SharedPreferences>()) {
+      getIt<SharedPreferences>().setInt('saved_anime_grid_columns', _gridColumns);
+    }
+  }
 
   void _showSortSheet(BuildContext context) {
     HapticFeedback.lightImpact();
@@ -670,10 +710,73 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     });
   }
 
+  void _openDetailsForHistory(BuildContext context, WatchHistoryItem item) {
+    try {
+      final entry = context.read<AnimeListCubit>().state.getEntryFor(item.titleId);
+      if (entry != null) {
+        _openDetailsForEntry(context, entry);
+        return;
+      }
+      final target = AnimeTitle(
+        id: item.titleId,
+        code: 'history_${item.titleId}',
+        russianTitle: item.titleName,
+        englishTitle: item.titleName,
+        posterSmall: item.posterUrl,
+        posterMedium: item.posterUrl,
+        posterOriginal: item.posterUrl,
+        genres: const [],
+        description: '',
+        status: 'В эфире',
+      );
+      if (widget.onTitleSelected != null) {
+        widget.onTitleSelected!(target);
+      } else {
+        context.pushNamed('details', extra: target);
+      }
+    } catch (_) {}
+  }
+
+  void _confirmClearHistory(BuildContext context) {
+    HapticFeedback.lightImpact();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Очистить историю?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: const Text(
+          'Вся история просмотров будет удалена. Ваши закладки и списки останутся без изменений.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.syncError,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<WatchHistoryCubit>().clearAllHistory();
+            },
+            child: const Text('Очистить', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AnimeListCubit, AnimeListState>(
-      builder: (context, listState) {
+    return BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
+      builder: (context, historyState) {
+        return BlocBuilder<AnimeListCubit, AnimeListState>(
+          builder: (context, listState) {
         final activeTab = listState.selectedTab;
         var entries = List<UserAnimeEntry>.from(listState.entriesFor(activeTab));
 
@@ -758,22 +861,57 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             ),
                           ),
 
-                          // Переключатель вида: Список / Сетка / Карточки
-                          Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.strokeMedium),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildViewModeButton(SavedAnimeViewMode.list, Icons.view_list_rounded),
-                                _buildViewModeButton(SavedAnimeViewMode.grid, Icons.grid_view_rounded),
-                                _buildViewModeButton(SavedAnimeViewMode.card, Icons.view_agenda_rounded),
+                          // Переключатель вида: Список / Сетка / Карточки + Колонки
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_viewMode == SavedAnimeViewMode.grid) ...[
+                                InkWell(
+                                  onTap: _toggleGridColumns,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceElevated,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: AppColors.strokeMedium),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.view_column_rounded, size: 15, color: AppColors.primaryLight),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$_gridColumns к.',
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
                               ],
-                            ),
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceElevated,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppColors.strokeMedium),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildViewModeButton(SavedAnimeViewMode.list, Icons.view_list_rounded),
+                                    _buildViewModeButton(SavedAnimeViewMode.grid, Icons.grid_view_rounded),
+                                    _buildViewModeButton(SavedAnimeViewMode.card, Icons.view_agenda_rounded),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -783,100 +921,94 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   // БЛОК 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Продолжить просмотр» из WatchHistory
-                  // (Без громоздкой кнопки «Смотреть», вся карточка кликабельна с аккуратным шевроном)
-                  BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
-                    builder: (context, historyState) {
-                      final recent = historyState.lastWatched;
-                      if (recent == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
-
-                      return SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppDimensions.spacingXl,
-                            0,
-                            AppDimensions.spacingXl,
-                            14,
-                          ),
-                          child: GlassContainer(
-                            borderRadius: BorderRadius.circular(20),
-                            blurSigma: 16,
-                            backgroundOpacity: 0.08,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                            onTap: () {
-                              final entry = listState.getEntryFor(recent.titleId);
-                              if (entry != null) {
-                                _openDetailsForEntry(context, entry);
+                  if (!_isHistoryTab && historyState.lastWatched != null)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppDimensions.spacingXl,
+                          0,
+                          AppDimensions.spacingXl,
+                          14,
+                        ),
+                        child: GlassContainer(
+                          borderRadius: BorderRadius.circular(20),
+                          blurSigma: 16,
+                          backgroundOpacity: 0.08,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          onTap: () {
+                            final recent = historyState.lastWatched!;
+                            final entry = listState.getEntryFor(recent.titleId);
+                            if (entry != null) {
+                              _openDetailsForEntry(context, entry);
+                            } else {
+                              final target = AnimeTitle(
+                                id: recent.titleId,
+                                code: 'recent_${recent.titleId}',
+                                russianTitle: recent.titleName,
+                                englishTitle: recent.titleName,
+                                posterSmall: recent.posterUrl,
+                                posterMedium: recent.posterUrl,
+                                posterOriginal: recent.posterUrl,
+                                genres: const [],
+                                description: '',
+                                status: 'В эфире',
+                              );
+                              if (widget.onTitleSelected != null) {
+                                widget.onTitleSelected!(target);
                               } else {
-                                final target = AnimeTitle(
-                                  id: recent.titleId,
-                                  code: 'recent_${recent.titleId}',
-                                  russianTitle: recent.titleName,
-                                  englishTitle: recent.titleName,
-                                  posterSmall: recent.posterUrl,
-                                  posterMedium: recent.posterUrl,
-                                  posterOriginal: recent.posterUrl,
-                                  genres: const [],
-                                  description: '',
-                                  status: 'В эфире',
-                                );
-                                if (widget.onTitleSelected != null) {
-                                  widget.onTitleSelected!(target);
-                                } else {
-                                  context.pushNamed('details', extra: target);
-                                }
+                                context.pushNamed('details', extra: target);
                               }
-                            },
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 28),
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'ПРОДОЛЖИТЬ ПРОСМОТР',
-                                        style: AppTypography.caption.copyWith(
-                                          color: AppColors.primaryLight,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 10,
-                                          letterSpacing: 1.1,
-                                        ),
+                                alignment: Alignment.center,
+                                child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 28),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ПРОДОЛЖИТЬ ПРОСМОТР',
+                                      style: AppTypography.caption.copyWith(
+                                        color: AppColors.primaryLight,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 10,
+                                        letterSpacing: 1.1,
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        recent.titleName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: AppTypography.titleSmall.copyWith(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      historyState.lastWatched!.titleName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTypography.titleSmall.copyWith(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                      Text(
-                                        'Серия ${recent.episode} • ${recent.formattedPosition} / ${recent.formattedDuration}',
-                                        style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                    Text(
+                                      'Серия ${historyState.lastWatched!.episode} • ${historyState.lastWatched!.formattedPosition} / ${historyState.lastWatched!.formattedDuration}',
+                                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                                    ),
+                                  ],
                                 ),
-                                const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 22),
-                              ],
-                            ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 22),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
 
                   // БЛОК ОФЛАЙН-ЗАГРУЗОК (DOWNLOAD MANAGER В СТИЛЕ ЖИДКОГО СТЕКЛА)
                   if (getIt.isRegistered<DownloadCubit>())
@@ -1062,7 +1194,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
                   const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
-                  // СЕЛЕКТОР КАТЕГОРИЙ В СТИЛЕ ЖИДКОГО СТЕКЛА: «Смотрю», «В планах», «Просмотрено»...
+                  // СЕЛЕКТОР КАТЕГОРИЙ: «История», «Смотрю», «В планах»...
                   SliverToBoxAdapter(
                     child: SizedBox(
                       height: 40,
@@ -1070,15 +1202,26 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
-                        itemCount: AnimeListStatus.values.length,
+                        itemCount: 1 + AnimeListStatus.values.length,
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
                         itemBuilder: (context, idx) {
-                          final status = AnimeListStatus.values[idx];
-                          final isSelected = status == activeTab;
-                          final count = listState.countFor(status);
+                          final isHistory = idx == 0;
+                          final status = isHistory ? null : AnimeListStatus.values[idx - 1];
+                          final isSelected = isHistory ? _isHistoryTab : (!_isHistoryTab && status == activeTab);
+                          final icon = isHistory ? Icons.history_rounded : status!.icon;
+                          final label = isHistory ? 'История' : status!.labelRu;
+                          final count = isHistory ? historyState.history.length : listState.countFor(status!);
 
                           return GestureDetector(
-                            onTap: () => context.read<AnimeListCubit>().selectTab(status),
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              if (isHistory) {
+                                setState(() => _isHistoryTab = true);
+                              } else {
+                                setState(() => _isHistoryTab = false);
+                                context.read<AnimeListCubit>().selectTab(status!);
+                              }
+                            },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1096,13 +1239,13 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               child: Row(
                                 children: [
                                   Icon(
-                                    status.icon,
+                                    icon,
                                     size: 15,
                                     color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    status.labelRu,
+                                    label,
                                     style: TextStyle(
                                       color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
                                       fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -1140,7 +1283,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
                   const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
-                  // СПИСОК ТАЙТЛОВ
+                  // ЕСЛИ ВЫБРАНА ВКЛАДКА «ИСТОРИЯ ПРОСМОТРОВ»
+                  if (_isHistoryTab) ...[
+                    ..._buildHistorySlivers(context, historyState),
+                  ] else ...[
+                  // СПИСОК ТАЙТЛОВ ИЗ ЗАКЛАДОК
                   if (entries.isEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
@@ -1200,9 +1347,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     SliverPadding(
                       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
                       sliver: SliverGrid(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          childAspectRatio: 0.60,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: _gridColumns,
+                          childAspectRatio: _gridColumns == 2 ? 0.64 : 0.60,
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 12,
                         ),
@@ -1465,6 +1612,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                   const SliverToBoxAdapter(
                     child: SizedBox(height: 90), // Отступ под парящий Glass Bottom Nav Bar
                   ),
+                  ], // end else of _isHistoryTab
                 ],
               ),
             ),
@@ -1472,15 +1620,430 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         );
       },
     );
+  },
+);
+  }
+
+  List<Widget> _buildHistorySlivers(BuildContext context, WatchHistoryState historyState) {
+    var historyItems = List<WatchHistoryItem>.from(historyState.history);
+    if (_searchQuery.isNotEmpty) {
+      historyItems = historyItems
+          .where((h) => h.titleName.toLowerCase().contains(_searchQuery.toLowerCase()))
+          .toList();
+    }
+
+    if (historyItems.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 48),
+            child: Center(
+              child: Column(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.strokeMedium),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.history_rounded,
+                      size: 30,
+                      color: AppColors.primaryLight,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    _searchQuery.isNotEmpty
+                        ? 'По запросу «$_searchQuery» ничего не найдено'
+                        : 'История просмотров пока пуста',
+                    style: AppTypography.titleMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Серии и тайтлы, которые вы запускаете в плеере, будут сохраняться здесь с точной секундой остановки',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final headerSliver = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(AppDimensions.spacingXl, 0, AppDimensions.spacingXl, 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'История воспроизведения (${historyItems.length})',
+              style: AppTypography.caption.copyWith(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+            ),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.syncError,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+              ),
+              icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+              label: const Text('Очистить', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              onPressed: () => _confirmClearHistory(context),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    Widget contentSliver;
+    if (_viewMode == SavedAnimeViewMode.grid) {
+      contentSliver = SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+        sliver: SliverGrid(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: _gridColumns,
+            childAspectRatio: _gridColumns == 2 ? 0.64 : 0.60,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 12,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final item = historyItems[index];
+              return InkWell(
+                onTap: () => _openDetailsForHistory(context, item),
+                borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: double.infinity,
+                              child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
+                                  ? CachedNetworkImage(
+                                      imageUrl: item.posterUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, __) => ShimmerPlaceholder(
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      errorWidget: (_, __, ___) => Container(
+                                        color: AppColors.surfaceElevated,
+                                        child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                    ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                              child: LinearProgressIndicator(
+                                value: item.progress,
+                                minHeight: 4,
+                                backgroundColor: Colors.black.withValues(alpha: 0.6),
+                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                              ),
+                              child: Text(
+                                '${item.episode} сер.',
+                                style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: InkWell(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                context.read<WatchHistoryCubit>().removeProgress(item.titleId);
+                              },
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      item.titleName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                    ),
+                    Text(
+                      '${item.formattedPosition} / ${item.formattedDuration}',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            childCount: historyItems.length,
+          ),
+        ),
+      );
+    } else if (_viewMode == SavedAnimeViewMode.card) {
+      contentSliver = SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final item = historyItems[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GlassContainer(
+                  borderRadius: BorderRadius.circular(18),
+                  blurSigma: 14,
+                  backgroundOpacity: 0.08,
+                  padding: const EdgeInsets.all(12),
+                  onTap: () => _openDetailsForHistory(context, item),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Stack(
+                          children: [
+                            SizedBox(
+                              width: 72,
+                              height: 100,
+                              child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
+                                  ? CachedNetworkImage(
+                                      imageUrl: item.posterUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, __) => ShimmerPlaceholder(
+                                        width: 72,
+                                        height: 100,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      errorWidget: (_, __, ___) => Container(
+                                        color: AppColors.surfaceElevated,
+                                        child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                    ),
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              child: LinearProgressIndicator(
+                                value: item.progress,
+                                minHeight: 3.5,
+                                backgroundColor: Colors.black.withValues(alpha: 0.5),
+                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.titleName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.titleSmall.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Серия ${item.episode}${item.episodeName != null && item.episodeName!.isNotEmpty ? " • ${item.episodeName}" : ""}',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${item.formattedPosition} / ${item.formattedDuration}',
+                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.textMuted, size: 20),
+                        tooltip: 'Удалить из истории',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          context.read<WatchHistoryCubit>().removeProgress(item.titleId);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            childCount: historyItems.length,
+          ),
+        ),
+      );
+    } else {
+      contentSliver = SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final item = historyItems[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: GlassContainer(
+                  borderRadius: BorderRadius.circular(16),
+                  blurSigma: 12,
+                  backgroundOpacity: 0.06,
+                  padding: const EdgeInsets.all(10),
+                  onTap: () => _openDetailsForHistory(context, item),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Stack(
+                          children: [
+                            SizedBox(
+                              width: 52,
+                              height: 72,
+                              child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
+                                  ? CachedNetworkImage(
+                                      imageUrl: item.posterUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, __) => ShimmerPlaceholder(
+                                        width: 52,
+                                        height: 72,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      errorWidget: (_, __, ___) => Container(
+                                        color: AppColors.surfaceElevated,
+                                        child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
+                                    ),
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              child: LinearProgressIndicator(
+                                value: item.progress,
+                                minHeight: 3,
+                                backgroundColor: Colors.black.withValues(alpha: 0.5),
+                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.titleName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.titleSmall.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Серия ${item.episode} • ${item.formattedPosition} / ${item.formattedDuration}',
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
+                        tooltip: 'Удалить из истории',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          context.read<WatchHistoryCubit>().removeProgress(item.titleId);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            childCount: historyItems.length,
+          ),
+        ),
+      );
+    }
+
+    return [headerSliver, contentSliver];
   }
 
   Widget _buildViewModeButton(SavedAnimeViewMode mode, IconData icon) {
     final isSelected = _viewMode == mode;
     return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() => _viewMode = mode);
-      },
+      onTap: () => _setViewMode(mode),
       borderRadius: BorderRadius.circular(9),
       child: Container(
         padding: const EdgeInsets.all(6),

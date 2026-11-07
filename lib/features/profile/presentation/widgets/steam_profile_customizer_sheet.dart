@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -204,12 +206,17 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         ? _customAvatarUrlController.text.trim()
         : _selectedAvatar;
 
+    final customBgUrl = _customUrlController.text.trim();
+    final effectiveBg = (customBgUrl.isNotEmpty && customBgUrl != 'none')
+        ? customBgUrl
+        : _selectedBgId;
+
     // 1. Сохраняем в AuthCubit
     context.read<AuthCubit>().updateProfile(
           username: widget.profile.username,
           avatarUrl: effectiveAvatar,
           frameId: _selectedFrameId,
-          backgroundId: _selectedBgId,
+          backgroundId: effectiveBg,
           customTitle: newTitle.isNotEmpty ? newTitle : null,
           customStatus: newStatus.isNotEmpty ? newStatus : null,
           bio: newBio.isNotEmpty ? newBio : null,
@@ -332,21 +339,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 children: [
                   // Арт на фоне (сеть или файл из галереи)
                   Positioned.fill(
-                    child: (bgTheme.assetOrUrl != null && bgTheme.assetOrUrl!.isNotEmpty)
-                        ? (bgTheme.assetOrUrl!.startsWith('http://') || bgTheme.assetOrUrl!.startsWith('https://'))
-                            ? CachedNetworkImage(
-                                imageUrl: bgTheme.assetOrUrl!,
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                                errorWidget: (_, __, ___) => _buildPreviewFallback(bgTheme),
-                              )
-                            : Image.file(
-                                File(bgTheme.assetOrUrl!.replaceFirst('file://', '')),
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                                errorBuilder: (_, __, ___) => _buildPreviewFallback(bgTheme),
-                              )
-                        : _buildPreviewFallback(bgTheme),
+                    child: _buildPreviewBg(bgTheme),
                   ),
 
                   // Градиентная маска
@@ -543,13 +536,52 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     );
   }
 
+  Widget _buildPreviewBg(SteamBackgroundTheme bgTheme) {
+    final bgUrl = bgTheme.assetOrUrl?.trim();
+    if (bgUrl == null || bgUrl.isEmpty) {
+      return _buildPreviewFallback(bgTheme);
+    }
+
+    final isNetwork = bgUrl.startsWith('http://') || bgUrl.startsWith('https://');
+    if (isNetwork) {
+      return CachedNetworkImage(
+        imageUrl: wrapCorsSafeUrl(bgUrl),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+        errorWidget: (_, __, ___) => _buildPreviewFallback(bgTheme),
+      );
+    }
+
+    final filePath = bgUrl.replaceFirst('file://', '');
+    final file = File(filePath);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (_, __, ___) => _buildPreviewFallback(bgTheme),
+      );
+    }
+
+    return _buildPreviewFallback(bgTheme);
+  }
+
   Widget _buildPreviewFallback(SteamBackgroundTheme bgTheme) {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: bgTheme.gradient,
+          colors: bgTheme.gradient.length >= 2
+              ? bgTheme.gradient
+              : const [Color(0xFF2A2B32), Color(0xFF16181F)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          bgTheme.icon,
+          size: 32,
+          color: Colors.white.withValues(alpha: 0.15),
         ),
       ),
     );
@@ -572,12 +604,33 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           onPressed: () async {
-            final result = await FilePicker.platform.pickFiles(type: FileType.image);
-            if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
-              setState(() {
-                _selectedBgId = result.files.first.path!;
-                _customUrlController.text = result.files.first.path!;
-              });
+            try {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.image,
+                withData: true,
+              );
+              if (result != null && result.files.isNotEmpty) {
+                final file = result.files.first;
+                final appDir = await getApplicationDocumentsDirectory();
+                final ext = file.extension ?? 'jpg';
+                final targetPath = '${appDir.path}/custom_bg_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                final targetFile = File(targetPath);
+
+                if (file.bytes != null) {
+                  await targetFile.writeAsBytes(file.bytes!);
+                } else if (file.path != null) {
+                  await File(file.path!).copy(targetPath);
+                }
+
+                if (mounted && targetFile.existsSync()) {
+                  setState(() {
+                    _selectedBgId = targetFile.path;
+                    _customUrlController.text = targetFile.path;
+                  });
+                }
+              }
+            } catch (e) {
+              debugPrint('Custom bg pick error: $e');
             }
           },
         ),
@@ -851,12 +904,33 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           onPressed: () async {
-            final result = await FilePicker.platform.pickFiles(type: FileType.image);
-            if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
-              setState(() {
-                _selectedAvatar = result.files.first.path!;
-                _customAvatarUrlController.text = result.files.first.path!;
-              });
+            try {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.image,
+                withData: true,
+              );
+              if (result != null && result.files.isNotEmpty) {
+                final file = result.files.first;
+                final appDir = await getApplicationDocumentsDirectory();
+                final ext = file.extension ?? 'jpg';
+                final targetPath = '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                final targetFile = File(targetPath);
+
+                if (file.bytes != null) {
+                  await targetFile.writeAsBytes(file.bytes!);
+                } else if (file.path != null) {
+                  await File(file.path!).copy(targetPath);
+                }
+
+                if (mounted && targetFile.existsSync()) {
+                  setState(() {
+                    _selectedAvatar = targetFile.path;
+                    _customAvatarUrlController.text = targetFile.path;
+                  });
+                }
+              }
+            } catch (e) {
+              debugPrint('Custom avatar pick error: $e');
             }
           },
         ),

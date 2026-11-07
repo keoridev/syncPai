@@ -2725,6 +2725,20 @@ Title,Status,Episodes
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
     await tester.pumpAndSettle();
 
+    // Verify column toggle button is shown in grid mode
+    expect(find.byIcon(Icons.view_column_rounded), findsOneWidget);
+    expect(find.text('3 к.'), findsOneWidget);
+
+    // Toggle column count to 2
+    await tester.tap(find.byIcon(Icons.view_column_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('2 к.'), findsOneWidget);
+
+    // Tap History tab
+    expect(find.text('История'), findsOneWidget);
+    await tester.tap(find.text('История'));
+    await tester.pumpAndSettle();
+
     // Tap Card mode
     await tester.tap(find.byIcon(Icons.view_agenda_rounded));
     await tester.pumpAndSettle();

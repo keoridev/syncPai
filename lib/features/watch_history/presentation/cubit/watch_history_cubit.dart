@@ -72,5 +72,16 @@ class WatchHistoryCubit extends Cubit<WatchHistoryState> {
       historyMap: updatedMap,
     ));
   }
+
+  Future<void> clearAllHistory() async {
+    final ids = state.history.map((e) => e.titleId).toList();
+    for (final id in ids) {
+      await repository.removeProgress(id);
+    }
+    emit(state.copyWith(
+      history: const [],
+      historyMap: const {},
+    ));
+  }
 }
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
@@ -32,7 +33,6 @@ class SteamStyleProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgTheme = SteamBackgroundTheme.fromId(profile.backgroundId);
-    final bgUrl = bgTheme.assetOrUrl;
     final accent = SteamProfileThemeAccent.fromHex(profile.accentColor).color;
 
     return Stack(
@@ -41,21 +41,7 @@ class SteamStyleProfileHeader extends StatelessWidget {
         SizedBox(
           height: 240,
           width: double.infinity,
-          child: (bgUrl != null && bgUrl.isNotEmpty)
-              ? (bgUrl.startsWith('http://') || bgUrl.startsWith('https://'))
-                  ? CachedNetworkImage(
-                      imageUrl: bgUrl,
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorWidget: (_, __, ___) => _buildFallbackBg(bgTheme),
-                    )
-                  : Image.file(
-                      File(bgUrl.replaceFirst('file://', '')),
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, __, ___) => _buildFallbackBg(bgTheme),
-                    )
-              : _buildFallbackBg(bgTheme),
+          child: _buildBgImage(bgTheme),
         ),
 
         // 2. Градиентная маска для бесшовного перехода в темноту Cinema Dark
@@ -282,13 +268,53 @@ class SteamStyleProfileHeader extends StatelessWidget {
     );
   }
 
+  Widget _buildBgImage(SteamBackgroundTheme bgTheme) {
+    final bgUrl = bgTheme.assetOrUrl?.trim();
+    if (bgUrl == null || bgUrl.isEmpty) {
+      return _buildFallbackBg(bgTheme);
+    }
+
+    final isNetwork = bgUrl.startsWith('http://') || bgUrl.startsWith('https://');
+    if (isNetwork) {
+      return CachedNetworkImage(
+        imageUrl: wrapCorsSafeUrl(bgUrl),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+        errorWidget: (_, __, ___) => _buildFallbackBg(bgTheme),
+      );
+    }
+
+    // Локальный файл из галереи/устройства
+    final filePath = bgUrl.replaceFirst('file://', '');
+    final file = File(filePath);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (_, __, ___) => _buildFallbackBg(bgTheme),
+      );
+    }
+
+    return _buildFallbackBg(bgTheme);
+  }
+
   Widget _buildFallbackBg(SteamBackgroundTheme bgTheme) {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: bgTheme.gradient,
+          colors: bgTheme.gradient.length >= 2
+              ? bgTheme.gradient
+              : const [Color(0xFF2A2B32), Color(0xFF16181F)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          bgTheme.icon,
+          size: 44,
+          color: Colors.white.withValues(alpha: 0.15),
         ),
       ),
     );

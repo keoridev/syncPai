@@ -301,286 +301,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
             ),
 
-            // Строка поиска
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalPad,
-                  vertical: AppDimensions.spacingSm,
-                ),
-                child: AppSearchBar(
-                  controller: _searchController,
-                  onChanged: (query) {
-                    context.read<CatalogCubit>().onSearchQueryChanged(query);
-                  },
-                  onClear: () {
-                    context.read<CatalogCubit>().onSearchQueryChanged('');
-                  },
-                ),
-              ),
-            ),
-
-            // Панель фильтров и быстрой сортировки
-            SliverToBoxAdapter(
-              child: BlocBuilder<CatalogCubit, CatalogState>(
-                builder: (context, state) {
-                  if (state is! CatalogLoaded) return const SizedBox.shrink();
-
-                  final hasFilters = state.selectedGenres.isNotEmpty ||
-                      state.sortBy != CatalogSort.updates ||
-                      state.statusFilter != null;
-                  final filterCount = state.selectedGenres.length +
-                      (state.sortBy != CatalogSort.updates ? 1 : 0) +
-                      (state.statusFilter != null ? 1 : 0);
-
-                  return Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: horizontalPad,
-                      vertical: 4,
-                    ),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      child: Row(
-                        children: [
-                          // Кнопка открытия полной шторки фильтров
-                          InkWell(
-                            onTap: () => CatalogFilterSheet.show(context, state),
-                            borderRadius: BorderRadius.circular(12),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: hasFilters
-                                    ? themePrimary.withValues(alpha: 0.22)
-                                    : AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: hasFilters ? themePrimary : AppColors.strokeMedium,
-                                  width: 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.tune_rounded,
-                                    size: 16,
-                                    color: hasFilters ? themePrimaryLight : AppColors.textPrimary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Фильтры',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w600,
-                                      color: hasFilters ? themePrimaryLight : AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  if (filterCount > 0) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: themePrimary,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '$filterCount',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 8),
-
-                          // Быстрый переключатель сортировки
-                          InkWell(
-                            onTap: () => _showQuickSortSheet(context, state),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: state.sortBy != CatalogSort.updates
-                                    ? themePrimary.withValues(alpha: 0.18)
-                                    : AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: state.sortBy != CatalogSort.updates
-                                      ? themePrimary.withValues(alpha: 0.6)
-                                      : AppColors.strokeMedium,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    state.sortBy.icon,
-                                    size: 15,
-                                    color: state.sortBy != CatalogSort.updates
-                                        ? themePrimaryLight
-                                        : AppColors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    state.sortBy.label,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: state.sortBy != CatalogSort.updates
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
-                                      color: state.sortBy != CatalogSort.updates
-                                          ? themePrimaryLight
-                                          : AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  const Icon(Icons.arrow_drop_down_rounded, size: 16, color: AppColors.textMuted),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 8),
-
-                          // Быстрый переключатель статуса (Онгоинги / Завершенные / Все)
-                          InkWell(
-                            onTap: () {
-                              if (state.statusFilter == null) {
-                                context.read<CatalogCubit>().setStatusFilter('ongoing');
-                              } else if (state.statusFilter == 'ongoing') {
-                                context.read<CatalogCubit>().setStatusFilter('released');
-                              } else {
-                                context.read<CatalogCubit>().setStatusFilter(null);
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: state.statusFilter != null
-                                    ? themePrimary.withValues(alpha: 0.18)
-                                    : AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: state.statusFilter != null
-                                      ? themePrimary.withValues(alpha: 0.6)
-                                      : AppColors.strokeMedium,
-                                ),
-                              ),
-                              child: Text(
-                                state.statusFilter == 'ongoing'
-                                    ? '🎬 Онгоинги'
-                                    : (state.statusFilter == 'released' ? '✓ Завершенные' : '🎬 Статус: Все'),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: state.statusFilter != null ? FontWeight.w700 : FontWeight.w500,
-                                  color: state.statusFilter != null ? themePrimaryLight : AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // Горизонтальный список популярных жанров
-            SliverToBoxAdapter(
-              child: BlocBuilder<CatalogCubit, CatalogState>(
-                buildWhen: (prev, curr) =>
-                    curr is CatalogLoaded || curr is CatalogLoading,
-                builder: (context, state) {
-                  final selectedGenres = state is CatalogLoaded
-                      ? state.selectedGenres
-                      : const <String>{};
-
-                  return SizedBox(
-                    height: 38,
-                    child: ListView.separated(
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: _popularGenres.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(width: AppDimensions.spacingSm),
-                      itemBuilder: (context, index) {
-                        final genre = _popularGenres[index];
-                        final isAll = genre == 'Все';
-                        final isSelected = isAll
-                            ? selectedGenres.isEmpty
-                            : selectedGenres.contains(genre);
-
-                        return InkWell(
-                          onTap: () {
-                            if (isAll) {
-                              context.read<CatalogCubit>().clearGenres();
-                            } else {
-                              context.read<CatalogCubit>().toggleGenre(genre);
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(12),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? themePrimary.withValues(alpha: 0.22)
-                                  : Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected
-                                    ? themePrimary.withValues(alpha: 0.7)
-                                    : Colors.white.withValues(alpha: 0.08),
-                                width: 1.0,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isSelected && !isAll) ...[
-                                  Icon(Icons.check_rounded, size: 14, color: themePrimaryLight),
-                                  const SizedBox(width: 4),
-                                ],
-                                Text(
-                                  genre,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: isSelected
-                                        ? AppColors.textPrimary
-                                        : AppColors.textSecondary,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    fontSize: 13,
-                                    letterSpacing: -0.1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-
             // Напоминание о продолжении просмотра на главной странице
             if (getIt.isRegistered<WatchHistoryCubit>())
               BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
@@ -620,7 +340,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         AppDimensions.spacingXl,
                         AppDimensions.spacingMd,
                         AppDimensions.spacingXl,
-                        0,
+                        AppDimensions.spacingSm,
                       ),
                       child: Material(
                         color: Colors.transparent,
@@ -702,6 +422,303 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   );
                 },
               ),
+
+            // Липкая шапка с поиском (сворачивается при скролле вниз, мгновенно выплывает при свайпе вверх)
+            // и зафиксированной панелью быстрых фильтров и жанров (всегда остаётся на экране)
+            SliverAppBar(
+              pinned: true,
+              floating: true,
+              snap: true,
+              forceElevated: innerBoxIsScrolled,
+              automaticallyImplyLeading: false,
+              backgroundColor: AppColors.background,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              toolbarHeight: 56,
+              titleSpacing: 0,
+              title: Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                child: AppSearchBar(
+                  controller: _searchController,
+                  onChanged: (query) {
+                    context.read<CatalogCubit>().onSearchQueryChanged(query);
+                  },
+                  onClear: () {
+                    context.read<CatalogCubit>().onSearchQueryChanged('');
+                  },
+                ),
+              ),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(88),
+                child: Container(
+                  color: AppColors.background,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Панель фильтров и быстрой сортировки
+                      BlocBuilder<CatalogCubit, CatalogState>(
+                        builder: (context, state) {
+                          if (state is! CatalogLoaded) return const SizedBox.shrink();
+
+                          final hasFilters = state.selectedGenres.isNotEmpty ||
+                              state.sortBy != CatalogSort.updates ||
+                              state.statusFilter != null;
+                          final filterCount = state.selectedGenres.length +
+                              (state.sortBy != CatalogSort.updates ? 1 : 0) +
+                              (state.statusFilter != null ? 1 : 0);
+
+                          return Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPad,
+                              vertical: 3,
+                            ),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              child: Row(
+                                children: [
+                                  // Кнопка открытия полной шторки фильтров
+                                  InkWell(
+                                    onTap: () => CatalogFilterSheet.show(context, state),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 180),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: hasFilters
+                                            ? themePrimary.withValues(alpha: 0.22)
+                                            : AppColors.surfaceElevated,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: hasFilters ? themePrimary : AppColors.strokeMedium,
+                                          width: 1.0,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.tune_rounded,
+                                            size: 16,
+                                            color: hasFilters ? themePrimaryLight : AppColors.textPrimary,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Фильтры',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w600,
+                                              color: hasFilters ? themePrimaryLight : AppColors.textPrimary,
+                                            ),
+                                          ),
+                                          if (filterCount > 0) ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: themePrimary,
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                '$filterCount',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 8),
+
+                                  // Быстрый переключатель сортировки
+                                  InkWell(
+                                    onTap: () => _showQuickSortSheet(context, state),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: state.sortBy != CatalogSort.updates
+                                            ? themePrimary.withValues(alpha: 0.18)
+                                            : AppColors.surfaceElevated,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: state.sortBy != CatalogSort.updates
+                                              ? themePrimary.withValues(alpha: 0.6)
+                                              : AppColors.strokeMedium,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            state.sortBy.icon,
+                                            size: 15,
+                                            color: state.sortBy != CatalogSort.updates
+                                                ? themePrimaryLight
+                                                : AppColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            state.sortBy.label,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: state.sortBy != CatalogSort.updates
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                              color: state.sortBy != CatalogSort.updates
+                                                  ? themePrimaryLight
+                                                  : AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 2),
+                                          const Icon(Icons.arrow_drop_down_rounded, size: 16, color: AppColors.textMuted),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 8),
+
+                                  // Быстрый переключатель статуса (Онгоинги / Завершенные / Все)
+                                  InkWell(
+                                    onTap: () {
+                                      if (state.statusFilter == null) {
+                                        context.read<CatalogCubit>().setStatusFilter('ongoing');
+                                      } else if (state.statusFilter == 'ongoing') {
+                                        context.read<CatalogCubit>().setStatusFilter('released');
+                                      } else {
+                                        context.read<CatalogCubit>().setStatusFilter(null);
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: state.statusFilter != null
+                                            ? themePrimary.withValues(alpha: 0.18)
+                                            : AppColors.surfaceElevated,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: state.statusFilter != null
+                                              ? themePrimary.withValues(alpha: 0.6)
+                                              : AppColors.strokeMedium,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        state.statusFilter == 'ongoing'
+                                            ? '🎬 Онгоинги'
+                                            : (state.statusFilter == 'released' ? '✓ Завершенные' : '🎬 Статус: Все'),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: state.statusFilter != null ? FontWeight.w700 : FontWeight.w500,
+                                          color: state.statusFilter != null ? themePrimaryLight : AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 5),
+
+                      // Горизонтальный список популярных жанров
+                      BlocBuilder<CatalogCubit, CatalogState>(
+                        buildWhen: (prev, curr) =>
+                            curr is CatalogLoaded || curr is CatalogLoading,
+                        builder: (context, state) {
+                          final selectedGenres = state is CatalogLoaded
+                              ? state.selectedGenres
+                              : const <String>{};
+
+                          return SizedBox(
+                            height: 36,
+                            child: ListView.separated(
+                              padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: _popularGenres.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: AppDimensions.spacingSm),
+                              itemBuilder: (context, index) {
+                                final genre = _popularGenres[index];
+                                final isAll = genre == 'Все';
+                                final isSelected = isAll
+                                    ? selectedGenres.isEmpty
+                                    : selectedGenres.contains(genre);
+
+                                return InkWell(
+                                  onTap: () {
+                                    if (isAll) {
+                                      context.read<CatalogCubit>().clearGenres();
+                                    } else {
+                                      context.read<CatalogCubit>().toggleGenre(genre);
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? themePrimary.withValues(alpha: 0.22)
+                                          : Colors.white.withValues(alpha: 0.05),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? themePrimary.withValues(alpha: 0.7)
+                                            : Colors.white.withValues(alpha: 0.08),
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isSelected && !isAll) ...[
+                                          Icon(Icons.check_rounded, size: 14, color: themePrimaryLight),
+                                          const SizedBox(width: 4),
+                                        ],
+                                        Text(
+                                          genre,
+                                          style: AppTypography.labelLarge.copyWith(
+                                            color: isSelected
+                                                ? AppColors.textPrimary
+                                                : AppColors.textSecondary,
+                                            fontWeight: isSelected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                            fontSize: 13,
+                                            letterSpacing: -0.1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
           body: BlocBuilder<CatalogCubit, CatalogState>(
             buildWhen: (prev, curr) {

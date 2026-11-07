@@ -1,4 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../app/di/injection.dart';
+import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../domain/entities/anime_clip.dart';
 
 abstract class AnimeClipsDataSource {
@@ -9,19 +11,116 @@ abstract class AnimeClipsDataSource {
 
 class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
   final SharedPreferences _prefs;
+  final CatalogRepository? _catalogRepository;
   static const _likesKey = 'syncpai_shorts_likes';
   static const _bookmarksKey = 'syncpai_shorts_bookmarks';
 
-  AnimeClipsDataSourceImpl(this._prefs);
+  static final Map<int, String> _resolvedStreamCache = {};
+
+  AnimeClipsDataSourceImpl(this._prefs, {CatalogRepository? catalogRepository})
+      : _catalogRepository = catalogRepository;
 
   @override
   Future<List<AnimeClip>> getClips() async {
     final likedIds = _prefs.getStringList(_likesKey) ?? [];
     final bookmarkedIds = _prefs.getStringList(_bookmarksKey) ?? [];
 
-    final rawClips = _getCuratedClips();
+    final rawClips = _getCuratedClips().toList();
 
-    return rawClips.map((clip) {
+    CatalogRepository? repo = _catalogRepository;
+    if (repo == null && getIt.isRegistered<CatalogRepository>()) {
+      repo = getIt<CatalogRepository>();
+    }
+
+    final dynamicClips = <AnimeClip>[];
+    if (repo != null) {
+      try {
+        final catalogTitles = await repo.getUpdates(page: 1, limit: 25);
+        for (final title in catalogTitles) {
+          if (title.episodes.isNotEmpty) {
+            final validEp = title.episodes.firstWhere(
+              (ep) => (ep.hdUrl ?? ep.fhdUrl ?? ep.sdUrl) != null,
+              orElse: () => title.episodes.first,
+            );
+            final streamUrl = validEp.hdUrl ?? validEp.fhdUrl ?? validEp.sdUrl;
+            if (streamUrl != null && streamUrl.isNotEmpty && streamUrl.startsWith('http')) {
+              _resolvedStreamCache[title.id] = streamUrl;
+              final poster = title.posterOriginal.isNotEmpty
+                  ? title.posterOriginal
+                  : (title.posterMedium.isNotEmpty ? title.posterMedium : title.posterSmall);
+              final caption = title.description.isNotEmpty
+                  ? (title.description.length > 130
+                      ? '${title.description.substring(0, 127)}...'
+                      : title.description)
+                  : '🔥 Серия ${validEp.episode} из «${title.russianTitle}»';
+
+              dynamicClips.add(AnimeClip(
+                id: 'clip_dyn_${title.id}_${validEp.episode}',
+                animeId: title.id,
+                animeTitle: title.russianTitle,
+                englishTitle: title.englishTitle,
+                posterUrl: poster,
+                episodeNumber: validEp.episode,
+                targetTimestampSeconds: 120 + ((validEp.episode * 47) % 500),
+                caption: caption,
+                videoUrl: streamUrl,
+                youtubeUrl: title.trailerUrl,
+                likesCount: 1400 + (title.id * 19) % 24000,
+                authorName: 'AniLibria Stream',
+                tags: title.genres.take(4).map((g) => '#${g.replaceAll(' ', '_')}').toList(),
+              ));
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Резолвим реальные HLS-потоки AniLibria для золотой коллекции моментов
+      for (var i = 0; i < rawClips.length; i++) {
+        final clip = rawClips[i];
+        if (clip.videoUrl.contains('_ep1_720')) {
+          String? realUrl = _resolvedStreamCache[clip.animeId];
+          if (realUrl == null) {
+            try {
+              final details = await repo.getTitleDetails(id: clip.animeId);
+              final ep = details.episodes.firstWhere(
+                (e) => e.episode == clip.episodeNumber,
+                orElse: () => details.episodes.isNotEmpty
+                    ? details.episodes.first
+                    : details.episodes.first,
+              );
+              realUrl = ep.hdUrl ?? ep.fhdUrl ?? ep.sdUrl;
+              if (realUrl != null && realUrl.isNotEmpty) {
+                _resolvedStreamCache[clip.animeId] = realUrl;
+              }
+            } catch (_) {}
+          }
+          if (realUrl != null && realUrl.isNotEmpty) {
+            rawClips[i] = clip.copyWith(videoUrl: realUrl);
+          } else {
+            // Фолбек на гарантированно живой HLS поток Solo Leveling
+            rawClips[i] = clip.copyWith(
+              videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
+            );
+          }
+        }
+      }
+    } else {
+      for (var i = 0; i < rawClips.length; i++) {
+        final clip = rawClips[i];
+        if (clip.videoUrl.contains('_ep1_720')) {
+          rawClips[i] = clip.copyWith(
+            videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
+          );
+        }
+      }
+    }
+
+    final allClips = <AnimeClip>[
+      ...rawClips,
+      ...dynamicClips,
+    ];
+
+    return allClips.map((clip) {
       final isLiked = likedIds.contains(clip.id);
       final isBookmarked = bookmarkedIds.contains(clip.id);
       return clip.copyWith(

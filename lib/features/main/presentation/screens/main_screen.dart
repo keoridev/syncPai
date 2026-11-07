@@ -53,11 +53,9 @@ class _MainScreenState extends State<MainScreen> {
         setState(() => _currentIndex = index);
       }
       if (_pageController.hasClients && _pageController.page?.round() != index) {
-        _pageController.animateToPage(
-          index,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutCubic,
-        );
+        // Мгновенный переход (jumpToPage) исключает пролистывание через промежуточные экраны
+        // (особенно через тяжелую ленту видео-шортсов), предотвращая создание/удаление декодеров и лаги.
+        _pageController.jumpToPage(index);
       }
     }
   }

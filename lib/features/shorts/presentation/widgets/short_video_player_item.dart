@@ -140,8 +140,12 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
         }
       });
 
-      // Открываем поток с явным флагом play: true
-      player.open(Media(widget.clip.videoUrl), play: true);
+      // Открываем поток с явным флагом play: true, исключая битые фиктивные ссылки
+      String targetUrl = widget.clip.videoUrl;
+      if (targetUrl.contains('_ep1_720')) {
+        targetUrl = 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8';
+      }
+      player.open(Media(targetUrl), play: true);
       player.play();
 
       setState(() {
@@ -314,6 +318,56 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
+                ),
+              ),
+            ),
+
+          // 4b. Ошибка воспроизведения потока
+          if (_hasError && widget.isActive)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white24, width: 1),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Color(0xFFFF5252), size: 36),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Не удалось загрузить видеопоток',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: () {
+                        _disposePlayer();
+                        _initPlayer();
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Повторить попытку',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

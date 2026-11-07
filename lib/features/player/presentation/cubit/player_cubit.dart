@@ -100,6 +100,29 @@ class PlayerCubit extends Cubit<PlayerState> {
       }),
       player.stream.error.listen((error) {
         if (error.isNotEmpty) {
+          // Игнорируем нефатальные ошибки разрыва соединения и таймаута TCP-сокетов при паузе и чтении сегментов
+          // (например tcp ffurl_read_returned 0xdfb9b0bb, failed reading, End of file, connection reset)
+          final lower = error.toLowerCase();
+          final isTransientSocketError = lower.contains('ffurl_read_returned') ||
+              lower.contains('failed reading') ||
+              lower.contains('0xdfb9b0bb') ||
+              lower.contains('end of file') ||
+              lower.contains('connection reset') ||
+              lower.contains('broken pipe') ||
+              lower.contains('software caused connection abort') ||
+              lower.contains('operation not permitted') ||
+              lower.contains('timed out') ||
+              lower.contains('timeout');
+
+          if (isTransientSocketError) {
+            return;
+          }
+
+          // Если видео уже воспроизводится, не блокируем плеер фоновыми ворнингами
+          if (state.isPlaying) {
+            return;
+          }
+
           emit(state.copyWith(errorMessage: () => error));
         }
       }),
@@ -537,13 +560,14 @@ class PlayerCubit extends Cubit<PlayerState> {
     try {
       emit(state.copyWith(isBuffering: true, errorMessage: () => null));
       await player.open(
-        Media(streamUrl),
+        Media(
+          streamUrl,
+          start: (initialPosition != null && initialPosition > Duration.zero)
+              ? initialPosition
+              : null,
+        ),
         play: true,
       );
-
-      if (initialPosition != null && initialPosition > Duration.zero) {
-        await player.seek(initialPosition);
-      }
     } catch (e) {
       emit(state.copyWith(
         errorMessage: () => 'Ошибка запуска видеопотока: $e',
@@ -560,6 +584,9 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
 
     final willPlay = !state.isPlaying;
+    if (willPlay && state.errorMessage != null) {
+      emit(state.copyWith(errorMessage: () => null));
+    }
     player.playOrPause();
     _broadcastControlAction(willPlay ? 'play' : 'pause');
     _resetControlsTimer();

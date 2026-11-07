@@ -404,7 +404,7 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.auto_awesome_rounded, size: 56, color: AppColors.primary),
+            Icon(Icons.auto_awesome_rounded, size: 56, color: AppColors.primary),
             const SizedBox(height: 16),
             Text(
               'Колода тайтлов закончилась!',

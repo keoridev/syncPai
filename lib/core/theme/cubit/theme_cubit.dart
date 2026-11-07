@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../app_colors.dart';
 import '../app_theme.dart';
 import '../theme_preset.dart';
 
@@ -30,6 +31,7 @@ class ThemeCubit extends Cubit<ThemeState> {
   static ThemeState _buildInitialState(SharedPreferences prefs) {
     final savedId = prefs.getString(_themePrefKey);
     final preset = ThemePreset.fromId(savedId);
+    AppColors.updatePrimaryColor(preset.primaryColor);
     return ThemeState(
       currentPreset: preset,
       themeData: AppTheme.fromPreset(preset),
@@ -38,6 +40,7 @@ class ThemeCubit extends Cubit<ThemeState> {
 
   /// Установить и сохранить цветовую тему
   Future<void> setPreset(ThemePreset preset) async {
+    AppColors.updatePrimaryColor(preset.primaryColor);
     await _prefs.setString(_themePrefKey, preset.id);
     emit(ThemeState(
       currentPreset: preset,
@@ -47,6 +50,7 @@ class ThemeCubit extends Cubit<ThemeState> {
 
   /// Установить кастомный акцентный цвет
   Future<void> setCustomAccent(Color color, {String name = 'Пользовательский'}) async {
+    AppColors.updatePrimaryColor(color);
     final customPreset = ThemePreset(
       id: 'custom_${color.toARGB32().toRadixString(16)}',
       name: name,

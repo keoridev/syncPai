@@ -14,11 +14,22 @@ abstract final class AppColors {
   static const textSecondary = Color(0xFF8A909E);    // Приглушенный серо-дымчатый
   static const textMuted = Color(0xFF5E6472);        // Глубокий серый (подписи, неактивные элементы)
 
-  // Акцент (Теплый ламповый терракотово-мандариновый)
-  static const primary = Color(0xFFE06C53);
-  static const primaryVariant = Color(0xFFC85840);
-  static const primaryLight = Color(0xFFF18A74);
-  static const accentPrimary = primary;
+  // Акцент (динамически синхронизируется с выбранной темой пользователя)
+  static Color _primary = const Color(0xFFE06C53);
+  static Color _primaryVariant = const Color(0xFFC85840);
+  static Color _primaryLight = const Color(0xFFF18A74);
+
+  static Color get primary => _primary;
+  static Color get primaryVariant => _primaryVariant;
+  static Color get primaryLight => _primaryLight;
+  static Color get accentPrimary => _primary;
+
+  /// Динамическое обновление активного акцентного цвета для всего приложения
+  static void updatePrimaryColor(Color color) {
+    _primary = color;
+    _primaryVariant = Color.alphaBlend(Colors.black.withValues(alpha: 0.22), color);
+    _primaryLight = Color.alphaBlend(Colors.white.withValues(alpha: 0.28), color);
+  }
 
   // Вторичный акцент (мягкий лавандово-серый индиго для тегов или вторичных индикаторов)
   static const accentSecondary = Color(0xFF7C83FD);

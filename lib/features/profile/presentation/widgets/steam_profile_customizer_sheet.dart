@@ -44,7 +44,19 @@ class SteamProfileCustomizerSheet extends StatefulWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (ctx) => SteamProfileCustomizerSheet(profile: profile),
+      builder: (ctx) => MultiBlocProvider(
+        providers: [
+          if (getIt.isRegistered<ThemeCubit>())
+            BlocProvider.value(value: getIt<ThemeCubit>()),
+          if (getIt.isRegistered<AuthCubit>())
+            BlocProvider.value(value: getIt<AuthCubit>()),
+          if (getIt.isRegistered<CatalogCubit>())
+            BlocProvider.value(value: getIt<CatalogCubit>()),
+          if (getIt.isRegistered<AnimeListCubit>())
+            BlocProvider.value(value: getIt<AnimeListCubit>()),
+        ],
+        child: SteamProfileCustomizerSheet(profile: profile),
+      ),
     );
   }
 
@@ -1285,22 +1297,12 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           Builder(
             builder: (context) {
               final q = _favAnimeController.text.toLowerCase().trim();
-              CatalogState? catalogState;
-              try {
-                catalogState = context.read<CatalogCubit?>()?.state;
-              } catch (_) {
-                if (getIt.isRegistered<CatalogCubit>()) {
-                  catalogState = getIt<CatalogCubit>().state;
-                }
-              }
-              List<UserAnimeEntry> savedEntries = const [];
-              try {
-                savedEntries = context.read<AnimeListCubit?>()?.state.allEntries ?? const [];
-              } catch (_) {
-                if (getIt.isRegistered<AnimeListCubit>()) {
-                  savedEntries = getIt<AnimeListCubit>().state.allEntries;
-                }
-              }
+              final catalogState = getIt.isRegistered<CatalogCubit>()
+                  ? getIt<CatalogCubit>().state
+                  : null;
+              final savedEntries = getIt.isRegistered<AnimeListCubit>()
+                  ? getIt<AnimeListCubit>().state.allEntries
+                  : const <UserAnimeEntry>[];
 
               // Объединяем результаты: живой поиск API AniLibria, сохраненные списки, кэш каталога
               final Map<int, AnimeTitle> combined = {};

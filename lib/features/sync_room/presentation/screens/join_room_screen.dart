@@ -79,7 +79,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
                   const SyncPaiLogo(size: 72),
                   const SizedBox(height: 28),
                   if (_isLoading) ...[
-                    const SizedBox(
+                    SizedBox(
                       width: 32,
                       height: 32,
                       child: CircularProgressIndicator(

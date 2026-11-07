@@ -101,7 +101,7 @@ class AnimeVideosSection extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primaryLight),
+                      Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primaryLight),
                     ],
                   ),
                 ),

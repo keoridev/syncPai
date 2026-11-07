@@ -335,7 +335,7 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 18),
+                      Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 18),
                       const SizedBox(width: 6),
                       Text(
                         '2X Скорость',
@@ -425,7 +425,7 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               child: LinearProgressIndicator(
                 value: _progress,
                 backgroundColor: Colors.white12,
-                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
             ),
           ),

@@ -431,7 +431,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 child: Row(
                                   children: [
                                     if (state.playbackRate == r)
-                                      const Icon(Icons.check_rounded, color: AppColors.primary, size: 16)
+                                      Icon(Icons.check_rounded, color: AppColors.primary, size: 16)
                                     else
                                       const SizedBox(width: 16),
                                     const SizedBox(width: 8),
@@ -578,11 +578,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                             child: OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
                                 backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                                side: const BorderSide(color: AppColors.primary, width: 1.2),
+                                side: BorderSide(color: AppColors.primary, width: 1.2),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
-                              icon: const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
+                              icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
                               label: const Text('Пропустить опенинг', style: TextStyle(color: AppColors.textPrimary)),
                               onPressed: () => cubit.skipOpening(),
                             ),
@@ -599,11 +599,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                             child: OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
                                 backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                                side: const BorderSide(color: AppColors.primary, width: 1.2),
+                                side: BorderSide(color: AppColors.primary, width: 1.2),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
-                              icon: const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
+                              icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
                               label: const Text('+90с (Опенинг)', style: TextStyle(color: AppColors.textPrimary)),
                               onPressed: () => cubit.skipOpening(),
                             ),
@@ -779,13 +779,22 @@ class PlayerControlsOverlay extends StatelessWidget {
                       ),
                       const SizedBox(height: AppDimensions.spacingSm),
 
-                      // Кнопки перехода по сериям
+                      // Кнопки перехода по сериям и поворот экрана
                       if (isGuestInSync)
-                        Center(
-                          child: Text(
-                            'Переключением серий управляет хост',
-                            style: AppTypography.caption.copyWith(color: AppColors.textMuted),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Переключением серий управляет хост',
+                              style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+                            ),
+                            if (onToggleOrientation != null)
+                              IconButton(
+                                tooltip: 'Повернуть экран',
+                                icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textPrimary, size: 24),
+                                onPressed: onToggleOrientation,
+                              ),
+                          ],
                         )
                       else
                         Row(
@@ -803,8 +812,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                             ),
                             if (onToggleOrientation != null)
                               IconButton(
-                                tooltip: 'Альбомный режим (на весь экран)',
-                                icon: const Icon(Icons.fullscreen_rounded, color: AppColors.textPrimary, size: 26),
+                                tooltip: 'Повернуть экран (на весь экран)',
+                                icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textPrimary, size: 24),
                                 onPressed: onToggleOrientation,
                               ),
                             TextButton.icon(
@@ -964,11 +973,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                    side: const BorderSide(color: AppColors.primary, width: 1.0),
+                    side: BorderSide(color: AppColors.primary, width: 1.0),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  icon: const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
+                  icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
                   label: const Text('Опенинг', style: TextStyle(color: AppColors.textPrimary, fontSize: 11)),
                   onPressed: () => cubit.skipOpening(),
                 )
@@ -980,11 +989,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                    side: const BorderSide(color: AppColors.primary, width: 1.0),
+                    side: BorderSide(color: AppColors.primary, width: 1.0),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  icon: const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
+                  icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
                   label: const Text('+90с', style: TextStyle(color: AppColors.textPrimary, fontSize: 11)),
                   onPressed: () => cubit.skipOpening(),
                 ),

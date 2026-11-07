@@ -184,7 +184,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                                 color: AppColors.primary.withValues(alpha: 0.16),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.group_outlined,
                                 color: AppColors.primary,
                                 size: 18,
@@ -325,8 +325,8 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
     return BlocBuilder<SyncRoomCubit, SyncRoomState>(
       builder: (context, state) {
         if (state is SyncRoomCreating) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             ),
@@ -617,7 +617,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                           width: 1.5,
                         ),
                       ),
-                      child: const Center(
+                      child: Center(
                         child: Icon(
                           Icons.person_search_rounded,
                           color: AppColors.primaryLight,

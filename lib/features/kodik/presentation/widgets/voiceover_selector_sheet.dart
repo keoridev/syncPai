@@ -89,7 +89,7 @@ class VoiceoverSelectorSheet extends StatelessWidget {
                         color: AppColors.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.record_voice_over_rounded,
                         color: AppColors.primary,
                         size: 22,
@@ -201,7 +201,7 @@ class VoiceoverSelectorSheet extends StatelessWidget {
                                                   color: AppColors.primary.withValues(alpha: 0.2),
                                                   borderRadius: BorderRadius.circular(6),
                                                 ),
-                                                child: const Text(
+                                                child: Text(
                                                   'Рекомендуется',
                                                   style: TextStyle(
                                                     color: AppColors.primaryLight,
@@ -229,7 +229,7 @@ class VoiceoverSelectorSheet extends StatelessWidget {
                                     ),
                                   ),
                                   if (isSelected)
-                                    const Icon(
+                                    Icon(
                                       Icons.check_circle_rounded,
                                       color: AppColors.primaryLight,
                                       size: 20,

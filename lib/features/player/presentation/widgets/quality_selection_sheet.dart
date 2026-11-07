@@ -75,7 +75,7 @@ class QualitySelectionSheet extends StatelessWidget {
                   ),
                 ),
                 trailing: isSelected
-                    ? const Icon(Icons.check_rounded, color: AppColors.primary, size: 20)
+                    ? Icon(Icons.check_rounded, color: AppColors.primary, size: 20)
                     : null,
                 onTap: () {
                   Navigator.of(context).pop();

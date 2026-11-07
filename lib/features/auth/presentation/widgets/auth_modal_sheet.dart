@@ -215,7 +215,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                 ),
               ),
             ),
@@ -319,7 +319,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.cloud_sync_rounded,
                           color: AppColors.primary,
                           size: 24,
@@ -371,7 +371,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.verified_user_rounded,
                           color: AppColors.primaryLight,
                           size: 20,
@@ -482,7 +482,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                               ),
                             ),
                           ),
@@ -522,7 +522,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                       ),
                     ),
                   ),
@@ -567,7 +567,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                       ),
                     ),
                   ),
@@ -612,7 +612,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                               ),
                             ),
                           ),

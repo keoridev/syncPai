@@ -137,7 +137,7 @@ class AnimeListTileCard extends StatelessWidget {
                             value: watchProgress!,
                             minHeight: 3,
                             backgroundColor: Colors.black.withValues(alpha: 0.6),
-                            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                           ),
                         ),
                     ],

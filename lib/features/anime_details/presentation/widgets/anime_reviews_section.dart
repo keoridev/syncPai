@@ -54,7 +54,7 @@ class AnimeReviewsSection extends StatelessWidget {
                     ),
                   ),
                   if (isLoading)
-                    const SizedBox(
+                    SizedBox(
                       width: 12,
                       height: 12,
                       child: CircularProgressIndicator(
@@ -180,7 +180,7 @@ class AnimeReviewsSection extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.star_rounded, size: 14, color: AppColors.primary),
+                            Icon(Icons.star_rounded, size: 14, color: AppColors.primary),
                             const SizedBox(width: 3),
                             Text(
                               '${rev.score}',

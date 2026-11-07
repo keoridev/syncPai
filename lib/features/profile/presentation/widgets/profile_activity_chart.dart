@@ -91,7 +91,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 ),
                 child: Text(
                   '$totalWeekHours ч. за неделю',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     color: AppColors.primaryLight,

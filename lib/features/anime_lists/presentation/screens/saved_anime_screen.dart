@@ -120,7 +120,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                         ),
                       ),
                       trailing: isSelected
-                          ? const Icon(Icons.check_rounded, color: AppColors.primaryLight, size: 20)
+                          ? Icon(Icons.check_rounded, color: AppColors.primaryLight, size: 20)
                           : null,
                       onTap: () {
                         HapticFeedback.lightImpact();
@@ -366,7 +366,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
               ),
               const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.drive_file_move_outlined, color: AppColors.primaryLight, size: 22),
+                icon: Icon(Icons.drive_file_move_outlined, color: AppColors.primaryLight, size: 22),
                 tooltip: 'Перенести',
                 onPressed: count == 0 ? null : () => _showBatchMoveSheet(context),
               ),
@@ -566,7 +566,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     ),
                   ),
                   trailing: isSelected
-                      ? const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20)
+                      ? Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20)
                       : null,
                   onTap: () {
                     context.read<AnimeListCubit>().setAnimeStatus(
@@ -735,7 +735,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
                             ),
                             alignment: Alignment.center,
-                            child: const Icon(Icons.bookmark_rounded, color: AppColors.primaryLight, size: 24),
+                            child: Icon(Icons.bookmark_rounded, color: AppColors.primaryLight, size: 24),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -806,6 +806,24 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               final entry = listState.getEntryFor(recent.titleId);
                               if (entry != null) {
                                 _openDetailsForEntry(context, entry);
+                              } else {
+                                final target = AnimeTitle(
+                                  id: recent.titleId,
+                                  code: 'recent_${recent.titleId}',
+                                  russianTitle: recent.titleName,
+                                  englishTitle: recent.titleName,
+                                  posterSmall: recent.posterUrl,
+                                  posterMedium: recent.posterUrl,
+                                  posterOriginal: recent.posterUrl,
+                                  genres: const [],
+                                  description: '',
+                                  status: 'В эфире',
+                                );
+                                if (widget.onTitleSelected != null) {
+                                  widget.onTitleSelected!(target);
+                                } else {
+                                  context.pushNamed('details', extra: target);
+                                }
                               }
                             },
                             child: Row(
@@ -818,7 +836,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   alignment: Alignment.center,
-                                  child: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 28),
+                                  child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 28),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

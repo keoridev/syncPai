@@ -241,12 +241,15 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             if (nId.isEmpty || seenIds.contains(nId)) continue;
             seenIds.add(nId);
 
-            final nName = n['name'] as String? ?? '';
-            if (nName.isEmpty) continue;
+            final nRussian = (n['russian'] as String?)?.trim() ?? '';
+            final nName = (n['name'] as String?)?.trim() ?? '';
+            final effectiveTitle = nRussian.isNotEmpty ? nRussian : nName;
+            if (effectiveTitle.isEmpty && nName.isEmpty) continue;
 
             final isCur = (n['id'] == shikimoriId) ||
                 (currentTitle.id > 0 && nId == '${currentTitle.id}') ||
-                (nName.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim());
+                (effectiveTitle.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim()) ||
+                (nName.isNotEmpty && nName.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim());
 
             final rawImg = n['image_url'] as String? ?? '';
             final rawPUrl = rawImg.startsWith('http')
@@ -263,7 +266,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
             results.add(RelatedAnimeRelease(
               id: isCur ? '${currentTitle.id}' : nId,
-              title: isCur ? currentTitle.displayTitle : nName,
+              title: isCur ? currentTitle.displayTitle : effectiveTitle,
+              originalTitle: nName.isNotEmpty ? nName : null,
               year: isCur ? currentYearStr : yStr,
               rating: isCur ? current5Star : null,
               kind: kStr,

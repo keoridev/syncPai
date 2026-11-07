@@ -97,7 +97,7 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
                   children: [
                     Text(
                       widget.averageScore.toStringAsFixed(1),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 38,
                         fontWeight: FontWeight.w900,
                         color: AppColors.primaryLight,
@@ -248,7 +248,7 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.primaryLight),
+                  Icon(Icons.info_outline_rounded, size: 14, color: AppColors.primaryLight),
                   const SizedBox(width: 6),
                   Text(
                     '$_hoveredScore ★ поставили ${_formatVotes(sortedItems.firstWhere((i) => i.score == _hoveredScore).votes)}',
@@ -265,7 +265,7 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
 
   List<Color> _getBarColors(int score) {
     if (score >= 9) {
-      return const [AppColors.primary, AppColors.accentSecondary];
+      return [AppColors.primary, AppColors.accentSecondary];
     } else if (score >= 7) {
       return const [Color(0xFF3B82F6), Color(0xFF60A5FA)];
     } else if (score >= 5) {

@@ -151,7 +151,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                         color: AppColors.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.meeting_room_rounded, color: AppColors.primary, size: 22),
+                      child: Icon(Icons.meeting_room_rounded, color: AppColors.primary, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -193,7 +193,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                       isExpanded: true,
                       dropdownColor: AppColors.surfaceElevated,
                       items: [
-                        const DropdownMenuItem<AnimeTitle>(
+                        DropdownMenuItem<AnimeTitle>(
                           value: _freeRoomTitle,
                           child: Text(
                             '🌐 Свободная комната (выбрать тайтл в каталоге)',
@@ -307,13 +307,13 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                       if (selectedTitle.id == 0) {
                         // Свободная комната: переходим в каталог для выбора тайтла
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
+                          SnackBar(
+                            content: const Text(
                               '💡 Выберите аниме в каталоге и нажмите «Смотреть с другом» для создания синхронной комнаты!',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             backgroundColor: AppColors.primary,
-                            duration: Duration(seconds: 4),
+                            duration: const Duration(seconds: 4),
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
@@ -470,7 +470,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                   minimumSize: const Size(double.infinity, 44),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                icon: const Icon(Icons.send_rounded, size: 18, color: AppColors.primaryLight),
+                icon: Icon(Icons.send_rounded, size: 18, color: AppColors.primaryLight),
                 label: const Text('Отправить персональное приглашение'),
                 onPressed: () {
                   Navigator.pop(ctx);
@@ -530,7 +530,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     color: AppColors.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.person_add_alt_1_rounded, color: AppColors.primary, size: 22),
+                  child: Icon(Icons.person_add_alt_1_rounded, color: AppColors.primary, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Text(
@@ -564,7 +564,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primary),
+                  borderSide: BorderSide(color: AppColors.primary),
                 ),
               ),
             ),
@@ -691,7 +691,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                         border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
                       ),
                       alignment: Alignment.center,
-                      child: const Icon(Icons.people_alt_rounded, color: AppColors.primaryLight, size: 24),
+                      child: Icon(Icons.people_alt_rounded, color: AppColors.primaryLight, size: 24),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -734,7 +734,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
+                          Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'Присоединиться к комнате',
@@ -778,7 +778,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(color: AppColors.primary),
+                                  borderSide: BorderSide(color: AppColors.primary),
                                 ),
                               ),
                               onSubmitted: (_) => _handleJoinRoom(),
@@ -867,7 +867,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
                         ),
                         alignment: Alignment.center,
-                        child: const Icon(Icons.add_to_queue_rounded, color: AppColors.primaryLight, size: 24),
+                        child: Icon(Icons.add_to_queue_rounded, color: AppColors.primaryLight, size: 24),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -892,7 +892,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 16),
+                      Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 16),
                     ],
                   ),
                 ),
@@ -1134,11 +1134,11 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                   visualDensity: VisualDensity.compact,
                                 ),
                                 onPressed: () => context.push('/room/$roomCode'),
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(Icons.play_arrow_rounded, size: 16, color: AppColors.primaryLight),
-                                    SizedBox(width: 3),
+                                    const SizedBox(width: 3),
                                     Text(
                                       'Войти',
                                       style: TextStyle(

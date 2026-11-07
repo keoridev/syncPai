@@ -46,7 +46,7 @@ class ResumeProgressCard extends StatelessWidget {
                   color: AppColors.primary.withValues(alpha: 0.16),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.history_rounded,
                   color: AppColors.primaryLight,
                   size: 20,
@@ -88,7 +88,7 @@ class ResumeProgressCard extends StatelessWidget {
               value: item.progress,
               minHeight: 4,
               backgroundColor: Colors.white.withValues(alpha: 0.1),
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
             ),
           ),
           const SizedBox(height: 14),

@@ -141,6 +141,16 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
   }
 
+  int? _extractSeasonNumber(String s) {
+    final lower = s.toLowerCase();
+    if (lower.contains('второй') || lower.contains('2 сезон') || lower.contains('тв-2') || lower.contains('tv-2') || lower.contains('2nd') || lower.contains('season 2') || RegExp(r'\b2\b').hasMatch(lower) || RegExp(r'\bii\b').hasMatch(lower)) return 2;
+    if (lower.contains('третий') || lower.contains('3 сезон') || lower.contains('тв-3') || lower.contains('tv-3') || lower.contains('3rd') || lower.contains('season 3') || RegExp(r'\b3\b').hasMatch(lower) || RegExp(r'\biii\b').hasMatch(lower)) return 3;
+    if (lower.contains('четвертый') || lower.contains('четвёртый') || lower.contains('4 сезон') || lower.contains('тв-4') || lower.contains('tv-4') || lower.contains('4th') || lower.contains('season 4') || RegExp(r'\b4\b').hasMatch(lower) || RegExp(r'\biv\b').hasMatch(lower)) return 4;
+    if (lower.contains('пятый') || lower.contains('5 сезон') || lower.contains('тв-5') || lower.contains('5th') || lower.contains('season 5') || RegExp(r'\b5\b').hasMatch(lower)) return 5;
+    if (lower.contains('фильм') || lower.contains('movie')) return 100;
+    return null;
+  }
+
   void _onRelatedReleaseSelected(RelatedAnimeRelease release) async {
     if (release.isCurrent) return;
 
@@ -153,9 +163,35 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     try {
       final catalogRepo = getIt.isRegistered<CatalogRepository>() ? getIt<CatalogRepository>() : null;
       if (catalogRepo != null) {
-        final searchResults = await catalogRepo.searchTitles(release.title, limit: 5);
+        var searchResults = await catalogRepo.searchTitles(release.title, limit: 10);
+        if (searchResults.isEmpty && release.originalTitle != null && release.originalTitle!.isNotEmpty) {
+          searchResults = await catalogRepo.searchTitles(release.originalTitle!, limit: 10);
+        }
+
         if (searchResults.isNotEmpty) {
-          final matched = searchResults.first;
+          final targetSeason = _extractSeasonNumber(release.title) ??
+              (release.originalTitle != null ? _extractSeasonNumber(release.originalTitle!) : null);
+
+          // Исключаем текущий тайтл (первый сезон), если в выдаче есть другие релизы франшизы
+          final candidates = searchResults.where((s) => s.id != _currentTitle.id).toList();
+          final effectiveList = candidates.isNotEmpty ? candidates : searchResults;
+
+          AnimeTitle? matched;
+          if (targetSeason != null) {
+            try {
+              matched = effectiveList.firstWhere(
+                (s) =>
+                    _extractSeasonNumber(s.russianTitle) == targetSeason ||
+                    _extractSeasonNumber(s.englishTitle) == targetSeason,
+              );
+            } catch (_) {}
+          }
+
+          matched ??= effectiveList.firstWhere(
+            (s) => s.russianTitle.toLowerCase().trim() == release.title.toLowerCase().trim(),
+            orElse: () => effectiveList.first,
+          );
+
           if (mounted) {
             context.pushNamed('details', extra: matched);
             return;
@@ -350,10 +386,29 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         }
 
         if (searchResults.isNotEmpty) {
-          final target = searchResults.firstWhere(
-            (s) => s.russianTitle.toLowerCase().trim() == _currentTitle.russianTitle.toLowerCase().trim(),
-            orElse: () => searchResults.first,
-          );
+          final targetSeason = _extractSeasonNumber(_currentTitle.russianTitle) ??
+              _extractSeasonNumber(_currentTitle.englishTitle);
+
+          AnimeTitle target = searchResults.first;
+          if (targetSeason != null) {
+            try {
+              target = searchResults.firstWhere(
+                (s) =>
+                    _extractSeasonNumber(s.russianTitle) == targetSeason ||
+                    _extractSeasonNumber(s.englishTitle) == targetSeason,
+              );
+            } catch (_) {
+              target = searchResults.firstWhere(
+                (s) => s.russianTitle.toLowerCase().trim() == _currentTitle.russianTitle.toLowerCase().trim(),
+                orElse: () => searchResults.first,
+              );
+            }
+          } else {
+            target = searchResults.firstWhere(
+              (s) => s.russianTitle.toLowerCase().trim() == _currentTitle.russianTitle.toLowerCase().trim(),
+              orElse: () => searchResults.first,
+            );
+          }
 
           try {
             final full = await getDetails(id: target.id, code: target.code);
@@ -441,6 +496,37 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
     final isDownloaded = getIt.isRegistered<DownloadRepository>() &&
         getIt<DownloadRepository>().isDownloaded(_currentTitle.id, targetEpisode.episode);
+
+    if (targetEpisode.bestAvailableUrl == null && !isDownloaded) {
+      // Пытаемся получить полные серии и видеопотоки из каталога или поиска
+      if (getIt.isRegistered<CatalogRepository>()) {
+        try {
+          final full = await getIt<CatalogRepository>().getTitleDetails(id: _currentTitle.id);
+          if (full.episodes.isNotEmpty) {
+            _currentTitle = full;
+            targetEpisode = full.episodes.firstWhere(
+              (e) => e.episode == episode.episode,
+              orElse: () => full.episodes.first,
+            );
+          }
+        } catch (_) {}
+      }
+      if (targetEpisode.bestAvailableUrl == null && getIt.isRegistered<CatalogRepository>()) {
+        try {
+          final results = await getIt<CatalogRepository>().searchTitles(_currentTitle.russianTitle, limit: 3);
+          if (results.isNotEmpty) {
+            final full = await getIt<CatalogRepository>().getTitleDetails(id: results.first.id);
+            if (full.episodes.isNotEmpty) {
+              _currentTitle = full;
+              targetEpisode = full.episodes.firstWhere(
+                (e) => e.episode == episode.episode,
+                orElse: () => full.episodes.first,
+              );
+            }
+          }
+        } catch (_) {}
+      }
+    }
 
     if (targetEpisode.bestAvailableUrl == null && !isDownloaded) {
       if (mounted) {
@@ -535,7 +621,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                     ),
                   ),
                   trailing: isSelected
-                      ? const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20)
+                      ? Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20)
                       : null,
                   onTap: () {
                     context.read<AnimeListCubit>().setAnimeStatus(
@@ -1432,7 +1518,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                               const SizedBox(height: 3),
                                               Row(
                                                 children: [
-                                                  const Icon(
+                                                  Icon(
                                                     Icons.fast_forward_rounded,
                                                     size: 12,
                                                     color: AppColors.primaryLight,
@@ -1619,7 +1705,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_isLoadingDetails) ...[
-                              const SizedBox(
+                              SizedBox(
                                 width: 28,
                                 height: 28,
                                 child: CircularProgressIndicator(
@@ -1652,7 +1738,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppColors.primary,
-                                  side: const BorderSide(color: AppColors.primary),
+                                  side: BorderSide(color: AppColors.primary),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                                 icon: const Icon(Icons.refresh_rounded, size: 18),

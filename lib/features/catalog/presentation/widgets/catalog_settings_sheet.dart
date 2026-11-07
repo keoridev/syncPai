@@ -66,7 +66,7 @@ class CatalogSettingsSheet extends StatelessWidget {
 
             Row(
               children: [
-                const Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
+                Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
                 const SizedBox(width: AppDimensions.spacingSm),
                 Text(
                   'Настройки каталога',
@@ -189,7 +189,7 @@ class CatalogSettingsSheet extends StatelessWidget {
                     color: isSelected ? AppColors.primary : AppColors.textSecondary,
                   ),
                   if (isSelected)
-                    const Icon(
+                    Icon(
                       Icons.check_circle_rounded,
                       size: 16,
                       color: AppColors.primary,

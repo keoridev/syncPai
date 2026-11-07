@@ -157,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.cloud_download_outlined, color: AppColors.primary, size: 22),
+                        child: Icon(Icons.cloud_download_outlined, color: AppColors.primary, size: 22),
                       ),
                       const SizedBox(width: 12),
                       Text(
@@ -189,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       fillColor: AppColors.surface,
                       prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textSecondary),
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 20),
+                        icon: Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 20),
                         tooltip: 'Вставить из буфера',
                         onPressed: () async {
                           final data = await Clipboard.getData('text/plain');
@@ -204,7 +204,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.primary),
+                        borderSide: BorderSide(color: AppColors.primary),
                       ),
                     ),
                   ),
@@ -407,7 +407,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary),
+                    borderSide: BorderSide(color: AppColors.primary),
                   ),
                 ),
               ),
@@ -547,7 +547,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Icon(
+                                  Icon(
                                     Icons.arrow_forward_ios_rounded,
                                     color: AppColors.primary,
                                     size: 14,
@@ -1010,7 +1010,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     AnimeTitle? matched;
     // 1. Поиск в каталоге в памяти
     try {
-      final catalogState = context.read<CatalogCubit>().state;
+      final catalogState = getIt.isRegistered<CatalogCubit>()
+          ? getIt<CatalogCubit>().state
+          : (context.mounted ? context.read<CatalogCubit>().state : null);
       if (catalogState is CatalogLoaded) {
         matched = catalogState.titles.firstWhere(
           (t) =>
@@ -1087,7 +1089,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if ((showcasePoster == null || showcasePoster.isEmpty) && favTitle != null && favTitle.isNotEmpty) {
       try {
-        final catalogState = context.read<CatalogCubit>().state;
+        final catalogState = getIt.isRegistered<CatalogCubit>()
+          ? getIt<CatalogCubit>().state
+          : (context.mounted ? context.read<CatalogCubit>().state : null);
         if (catalogState is CatalogLoaded) {
           final m = catalogState.titles.firstWhere(
             (t) =>

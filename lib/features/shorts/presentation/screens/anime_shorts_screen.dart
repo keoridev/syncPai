@@ -268,7 +268,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
           child: CircularProgressIndicator(
@@ -424,7 +424,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const CircularProgressIndicator(
+                      CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                       ),
                       const SizedBox(height: 16),

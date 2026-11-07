@@ -704,6 +704,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
           ],
           body: BlocBuilder<CatalogCubit, CatalogState>(
+            buildWhen: (prev, curr) {
+              if (prev.runtimeType != curr.runtimeType) return true;
+              if (prev is CatalogLoaded && curr is CatalogLoaded) {
+                return prev.filteredTitles != curr.filteredTitles ||
+                    prev.viewMode != curr.viewMode ||
+                    prev.gridDensity != curr.gridDensity ||
+                    prev.isLoadingMore != curr.isLoadingMore;
+              }
+              return true;
+            },
             builder: (context, state) {
               if (state is CatalogLoading) {
                 return _buildLoadingGrid();
@@ -721,7 +731,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 return NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     if (notification is ScrollUpdateNotification &&
-                        notification.metrics.extentAfter < 600) {
+                        notification.scrollDelta != null &&
+                        notification.scrollDelta! > 0 &&
+                        notification.metrics.extentAfter < 500) {
                       context.read<CatalogCubit>().loadMore();
                     }
                     return false;
@@ -784,8 +796,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
             parent: BouncingScrollPhysics(),
           ),
           // ignore: deprecated_member_use
-          cacheExtent: 800.0,
+          // ignore: deprecated_member_use
+      cacheExtent: 350.0,
           addRepaintBoundaries: true,
+          findChildIndexCallback: (Key key) {
+            if (key is ValueKey<String>) {
+              final idStr = key.value.replaceFirst('anime_grid_', '');
+              final id = int.tryParse(idStr);
+              if (id != null) {
+                final idx = titles.indexWhere((t) => t.id == id);
+                return idx >= 0 ? idx : null;
+              }
+            }
+            return null;
+          },
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             childAspectRatio: childAspectRatio,
@@ -828,7 +852,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         parent: BouncingScrollPhysics(),
       ),
       // ignore: deprecated_member_use
-      cacheExtent: 800.0,
+      cacheExtent: 350.0,
       addRepaintBoundaries: true,
       itemCount: titles.length + (isLoadingMore ? 1 : 0),
       separatorBuilder: (_, __) => SizedBox(height: spacing),

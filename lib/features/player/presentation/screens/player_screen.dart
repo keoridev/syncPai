@@ -484,66 +484,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           shape: BoxShape.circle,
                           border: Border.all(color: AppColors.strokeMedium),
                         ),
-                        child: const SizedBox(
+                        child: SizedBox(
                           width: 36,
                           height: 36,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                           ),
-                        ),
-                      ),
-                    ),
-
-                  // Ошибка отсутствия потока (в соло и в совместной комнате)
-                  if (state.errorMessage != null && !state.isPlaying)
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                        margin: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceElevated,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.strokeMedium),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 40),
-                            const SizedBox(height: 12),
-                            Text(
-                              state.errorMessage!,
-                              textAlign: TextAlign.center,
-                              style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Theme.of(context).colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                                  label: const Text('Повторить'),
-                                  onPressed: () => _cubit.switchEpisode(state.episode),
-                                ),
-                                const SizedBox(width: 12),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.textPrimary,
-                                    side: const BorderSide(color: AppColors.strokeMedium),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                                  label: const Text('Выйти'),
-                                  onPressed: _handleExit,
-                                ),
-                              ],
-                            ),
-                          ],
                         ),
                       ),
                     ),
@@ -557,6 +504,79 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     syncStatus: state.isSyncRoom ? state.syncStatus : null,
                     syncPeerName: state.peerName,
                   ),
+
+                  // Ошибка воспроизведения потока (рендерится ПОВЕРХ оверлея управления, чтобы кнопки всегда реагировали на нажатия)
+                  if (state.errorMessage != null && !state.isPlaying)
+                    Material(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                          margin: const EdgeInsets.all(24),
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.strokeMedium),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                blurRadius: 24,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 44),
+                              const SizedBox(height: 12),
+                              Text(
+                                state.errorMessage!,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
+                              ),
+                              const SizedBox(height: 18),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Theme.of(context).colorScheme.primary,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    ),
+                                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                                    label: const Text('Повторить'),
+                                    onPressed: () {
+                                      _cubit.switchEpisode(state.episode);
+                                    },
+                                  ),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.textPrimary,
+                                      side: const BorderSide(color: AppColors.strokeMedium),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    ),
+                                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                                    label: const Text('Выйти'),
+                                    onPressed: _handleExit,
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Повернуть экран',
+                                    icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textSecondary, size: 22),
+                                    onPressed: _toggleScreenOrientation,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },

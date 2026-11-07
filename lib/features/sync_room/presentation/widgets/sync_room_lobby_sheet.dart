@@ -652,6 +652,29 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
 
             const SizedBox(height: AppDimensions.spacingLg),
 
+            // Кнопка немедленного старта для хоста
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: AppColors.textPrimary,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.play_arrow_rounded, size: 24),
+              label: const Text(
+                'Войти в комнату и начать просмотр',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+              ),
+              onPressed: room == null
+                  ? null
+                  : () {
+                      Navigator.of(context).pop();
+                      widget.onStartPlayback(room, true);
+                    },
+            ),
+
+            const SizedBox(height: AppDimensions.spacingSm),
+
             // Демо-кнопка для быстрого тестирования в одном окне
             TextButton.icon(
               onPressed: () => context.read<SyncRoomCubit>().simulatePeerJoin(),

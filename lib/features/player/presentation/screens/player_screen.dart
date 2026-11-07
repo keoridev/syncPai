@@ -93,7 +93,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       initialPosition: widget.initialPosition,
     );
 
-    _videoController = VideoController(_cubit.player);
+    _videoController = VideoController(
+      _cubit.player,
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: true,
+        androidAttachSurfaceAfterVideoParameters: true,
+      ),
+    );
 
     // Фиксируем воспроизведение в списках и статистике профиля
     _recordPlaybackInAnimeList();
@@ -158,10 +164,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     } catch (_) {}
   }
 
+  Future<void> _toggleScreenOrientation() async {
+    HapticFeedback.lightImpact();
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeRight,
+        DeviceOrientation.landscapeLeft,
+      ]);
+    }
+  }
+
   void _handleExit() {
     _saveWatchProgress();
 
-    // Восстанавливаем системные панели UI Android/iOS при выходе
+    // Восстанавливаем ориентацию и системные панели UI Android/iOS при выходе
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.edgeToEdge,
     );
@@ -239,13 +267,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     // Сохраняем прогресс просмотра перед уничтожением плеера
     _saveWatchProgress();
 
-    // Освобождаем wakelock и возвращаем системные панели Android
+    // Освобождаем wakelock, восстанавливаем ориентацию и системные панели
     if (!kIsWeb) {
       try {
         WakelockPlus.disable();
       } catch (_) {}
     }
 
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.edgeToEdge,
     );
@@ -351,11 +385,60 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
 
-                  // Слой жестов перемотки по двойному тапу (±10 сек)
+                  // Слой жестов перемотки по двойному тапу (±10 сек) и 2X при удержании
                   DoubleTapSeekOverlay(
                     onTap: () => _cubit.toggleControls(),
                     onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
+                    onLongPressStart: () => _cubit.start2xFastForward(),
+                    onLongPressEnd: () => _cubit.stop2xFastForward(),
                   ),
+
+                  // Неоновый индикатор 2X при зажатии экрана
+                  if (state.is2xFastForwarding)
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top + 16,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.fast_forward_rounded,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                '2X  Быстрая перемотка',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
 
                   // Стрим-чат (Twitch Chat Overlay) в левом верхнем углу
                   if (state.isSyncRoom)
@@ -470,6 +553,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     cubit: _cubit,
                     state: state,
                     onBack: _handleExit,
+                    onToggleOrientation: _toggleScreenOrientation,
                     syncStatus: state.isSyncRoom ? state.syncStatus : null,
                     syncPeerName: state.peerName,
                   ),

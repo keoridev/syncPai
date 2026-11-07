@@ -19,6 +19,7 @@ class PlayerControlsOverlay extends StatelessWidget {
   final PlayerCubit cubit;
   final PlayerState state;
   final VoidCallback onBack;
+  final VoidCallback? onToggleOrientation;
   final SyncStatus? syncStatus;
   final String? syncPeerName;
 
@@ -27,6 +28,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.cubit,
     required this.state,
     required this.onBack,
+    this.onToggleOrientation,
     this.syncStatus,
     this.syncPeerName,
   });
@@ -250,6 +252,19 @@ class PlayerControlsOverlay extends StatelessWidget {
                             }
                           },
                         ),
+                        if (onToggleOrientation != null) ...[
+                          const SizedBox(width: AppDimensions.spacingSm),
+                          IconButton(
+                            tooltip: 'Портретный режим',
+                            icon: const Icon(
+                              Icons.screen_lock_portrait_rounded,
+                              color: AppColors.textSecondary,
+                              size: 19,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: onToggleOrientation,
+                          ),
+                        ],
                       ] else ...[
                         // В ПОРТРЕТНОМ РЕЖИМЕ: ультра-компактно (Качество + Меню Дополнительно ⋮)
                         InkWell(
@@ -434,6 +449,17 @@ class PlayerControlsOverlay extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (onToggleOrientation != null)
+                          IconButton(
+                            tooltip: 'Альбомный режим',
+                            icon: const Icon(
+                              Icons.screen_rotation_rounded,
+                              color: AppColors.textPrimary,
+                              size: 20,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: onToggleOrientation,
+                          ),
                       ],
                     ],
                   ),
@@ -775,6 +801,12 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   ? () => cubit.switchEpisode(allEpisodes[currentIndex - 1])
                                   : null,
                             ),
+                            if (onToggleOrientation != null)
+                              IconButton(
+                                tooltip: 'Альбомный режим (на весь экран)',
+                                icon: const Icon(Icons.fullscreen_rounded, color: AppColors.textPrimary, size: 26),
+                                onPressed: onToggleOrientation,
+                              ),
                             TextButton.icon(
                               style: TextButton.styleFrom(
                                 foregroundColor: hasNextEpisode ? AppColors.textPrimary : AppColors.textMuted,
@@ -808,6 +840,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required bool hasPrevEpisode,
     required bool isGuestInSync,
   }) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Column(
@@ -955,6 +988,19 @@ class PlayerControlsOverlay extends StatelessWidget {
                   label: const Text('+90с', style: TextStyle(color: AppColors.textPrimary, fontSize: 11)),
                   onPressed: () => cubit.skipOpening(),
                 ),
+              if (onToggleOrientation != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: isLandscape ? 'Вернуть в портретный режим' : 'Альбомный режим (на весь экран)',
+                  icon: Icon(
+                    isLandscape ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                    color: AppColors.textPrimary,
+                    size: 24,
+                  ),
+                  onPressed: onToggleOrientation,
+                ),
+              ],
             ],
           ),
         ],

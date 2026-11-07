@@ -49,6 +49,9 @@ class PlayerState extends Equatable {
   final bool isPeerTalking;
   final bool isTalking;
 
+  // 6. Ускорение 2X при удержании (Long Press Fast Forward)
+  final bool is2xFastForwarding;
+
   const PlayerState({
     required this.title,
     required this.episode,
@@ -79,6 +82,7 @@ class PlayerState extends Equatable {
     this.isVoiceMuted = true,
     this.isPeerTalking = false,
     this.isTalking = false,
+    this.is2xFastForwarding = false,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
@@ -113,6 +117,7 @@ class PlayerState extends Equatable {
     bool? isVoiceMuted,
     bool? isPeerTalking,
     bool? isTalking,
+    bool? is2xFastForwarding,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -144,6 +149,7 @@ class PlayerState extends Equatable {
       isVoiceMuted: isVoiceMuted ?? this.isVoiceMuted,
       isPeerTalking: isPeerTalking ?? this.isPeerTalking,
       isTalking: isTalking ?? this.isTalking,
+      is2xFastForwarding: is2xFastForwarding ?? this.is2xFastForwarding,
     );
   }
 
@@ -178,5 +184,6 @@ class PlayerState extends Equatable {
         isVoiceMuted,
         isPeerTalking,
         isTalking,
+        is2xFastForwarding,
       ];
 }

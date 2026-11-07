@@ -38,6 +38,7 @@ import 'package:sync_pai/features/player/presentation/widgets/presence_radar_bad
 import 'package:sync_pai/features/player/presentation/widgets/quick_phrase_toast_widget.dart';
 import 'package:sync_pai/features/player/presentation/widgets/sync_buffer_banner.dart';
 import 'package:sync_pai/features/player/presentation/widgets/twitch_chat_overlay.dart';
+import 'package:sync_pai/features/player/presentation/widgets/double_tap_seek_overlay.dart';
 import 'package:sync_pai/features/sync_room/data/repositories/sync_room_repository_impl.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
@@ -3171,6 +3172,49 @@ Title,Status,Episodes
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(SteamAvatarFrameWidget), findsOneWidget);
+    });
+
+    test('PlayerState manages 2X fast forward state properly', () {
+      const state = PlayerState(
+        title: testTitle,
+        episode: EpisodeItem(episode: 1),
+      );
+
+      expect(state.is2xFastForwarding, false);
+      final fastState = state.copyWith(is2xFastForwarding: true);
+      expect(fastState.is2xFastForwarding, true);
+      final normalState = fastState.copyWith(is2xFastForwarding: false);
+      expect(normalState.is2xFastForwarding, false);
+    });
+
+    testWidgets('DoubleTapSeekOverlay triggers 2X speed on long press start and end', (tester) async {
+      bool speedUpStarted = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DoubleTapSeekOverlay(
+              onTap: () {},
+              onSeekRelative: (_) {},
+              onLongPressStart: () => speedUpStarted = true,
+              onLongPressEnd: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPress(find.byType(GestureDetector).first);
+      expect(speedUpStarted, isTrue);
+    });
+
+    test('SyncRoomRepositoryImpl joinRoom safely connects guest to room', () async {
+      final repo = SyncRoomRepositoryImpl();
+      final room = await repo.joinRoom(code: 'SP-9999', peerName: 'Тестовый Друг');
+
+      expect(room.code, 'SP-9999');
+      expect(room.status, SyncRoomStatus.connected);
+      expect(room.peerName, 'Тестовый Друг');
+      expect(room.episode.episode, greaterThanOrEqualTo(1));
     });
   });
 }

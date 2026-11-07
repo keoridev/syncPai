@@ -6,11 +6,15 @@ import '../../../../core/theme/app_typography.dart';
 class DoubleTapSeekOverlay extends StatefulWidget {
   final VoidCallback onTap;
   final ValueChanged<int> onSeekRelative;
+  final VoidCallback? onLongPressStart;
+  final VoidCallback? onLongPressEnd;
 
   const DoubleTapSeekOverlay({
     super.key,
     required this.onTap,
     required this.onSeekRelative,
+    this.onLongPressStart,
+    this.onLongPressEnd,
   });
 
   @override
@@ -48,7 +52,7 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Детекторы касаний по левой и правой половинам экрана
+        // Детекторы касаний по левой и правой половинам экрана с поддержкой 2X при удержании
         Row(
           children: [
             Expanded(
@@ -56,6 +60,9 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> {
                 behavior: HitTestBehavior.translucent,
                 onTap: widget.onTap,
                 onDoubleTap: () => _triggerSeek(-10, true),
+                onLongPressStart: (_) => widget.onLongPressStart?.call(),
+                onLongPressEnd: (_) => widget.onLongPressEnd?.call(),
+                onLongPressCancel: () => widget.onLongPressEnd?.call(),
               ),
             ),
             Expanded(
@@ -63,6 +70,9 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> {
                 behavior: HitTestBehavior.translucent,
                 onTap: widget.onTap,
                 onDoubleTap: () => _triggerSeek(10, false),
+                onLongPressStart: (_) => widget.onLongPressStart?.call(),
+                onLongPressEnd: (_) => widget.onLongPressEnd?.call(),
+                onLongPressCancel: () => widget.onLongPressEnd?.call(),
               ),
             ),
           ],

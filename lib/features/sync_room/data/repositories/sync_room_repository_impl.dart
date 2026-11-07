@@ -7,10 +7,13 @@ import '../../domain/entities/sync_room.dart';
 import '../../domain/repositories/sync_room_repository.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
+import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../player/domain/entities/player_quality.dart';
+import '../../../../app/di/injection.dart';
 
 class SyncRoomRepositoryImpl implements SyncRoomRepository {
-  final Map<String, SyncRoom> _rooms = {};
+  static final Map<String, SyncRoom> _sharedRooms = {};
+  Map<String, SyncRoom> get _rooms => _sharedRooms;
   final Map<String, StreamController<SyncEvent>> _roomControllers = {};
   final Map<String, StreamController<SyncPacket>> _packetControllers = {};
   final Map<String, StreamController<List<PeerPresence>>> _presenceControllers = {};
@@ -185,37 +188,61 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
     var room = _rooms[key];
     if (room == null) {
-      room = SyncRoom(
-        code: key,
-        title: const AnimeTitle(
-          id: 0,
-          code: 'sync_title',
-          russianTitle: 'Тайтл совместного просмотра',
-          englishTitle: 'Watch Party',
-          posterSmall: '',
-          posterMedium: '',
-          posterOriginal: '',
-          episodesTotal: 12,
-          latestEpisode: 1,
-          season: '',
-          year: 2024,
-          genres: ['Аниме'],
-          description: '',
-          status: 'Онгоинг',
-          playerHost: null,
-          episodes: [
-            EpisodeItem(
+      AnimeTitle? resolvedTitle;
+      EpisodeItem? resolvedEpisode;
+
+      if (getIt.isRegistered<CatalogRepository>()) {
+        try {
+          final catalog = getIt<CatalogRepository>();
+          List<AnimeTitle> candidates = [];
+          if (key == 'SP4821' || key.contains('4821')) {
+            candidates = await catalog.searchTitles('Магическая битва', limit: 1);
+          }
+          if (candidates.isEmpty) {
+            candidates = await catalog.getUpdates();
+          }
+          if (candidates.isNotEmpty) {
+            final cand = candidates.first;
+            resolvedTitle = await catalog.getTitleDetails(id: cand.id, code: cand.code);
+            if (resolvedTitle.episodes.isNotEmpty) {
+              resolvedEpisode = resolvedTitle.episodes.firstWhere(
+                (e) => (key == 'SP4821' || key.contains('4821')) ? e.episode == 4 : true,
+                orElse: () => resolvedTitle!.episodes.first,
+              );
+            }
+          }
+        } catch (_) {}
+      }
+
+      final safeTitle = resolvedTitle ?? const AnimeTitle(
+        id: 0,
+        code: 'sync_title',
+        russianTitle: 'Тайтл совместного просмотра',
+        englishTitle: 'Watch Party',
+        posterSmall: '',
+        posterMedium: '',
+        posterOriginal: '',
+        episodesTotal: 12,
+        latestEpisode: 1,
+        season: '',
+        year: 2024,
+        genres: ['Аниме'],
+        description: '',
+        status: 'Онгоинг',
+        playerHost: null,
+      );
+
+      final safeEpisode = resolvedEpisode ?? (safeTitle.episodes.isNotEmpty
+          ? safeTitle.episodes.first
+          : const EpisodeItem(
               episode: 1,
               name: 'Эпизод 1',
-              hdUrl: 'https://sample.com/720.m3u8',
-            ),
-          ],
-        ),
-        episode: const EpisodeItem(
-          episode: 1,
-          name: 'Эпизод 1',
-          hdUrl: 'https://sample.com/720.m3u8',
-        ),
+            ));
+
+      room = SyncRoom(
+        code: key,
+        title: safeTitle,
+        episode: safeEpisode,
         quality: PlayerQuality.hd,
         hostName: 'Хост',
         peerName: peerName,

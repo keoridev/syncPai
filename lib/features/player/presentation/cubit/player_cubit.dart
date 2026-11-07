@@ -9,6 +9,7 @@ import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
@@ -469,12 +470,50 @@ class PlayerCubit extends Cubit<PlayerState> {
 
     String? streamUrl = localFilePath ?? _getUrlForQuality(state.episode, state.selectedQuality);
 
+    // Защита: отсекаем dummy-ссылки sample.com, которые приводят к падению декодера c2.mtk.avc.decoder
+    if (streamUrl != null && streamUrl.contains('sample.com')) {
+      streamUrl = null;
+    }
+
+    // Если прямая ссылка отсутствует или тайтл не имеет серий — пробуем загрузить рабочий тайтл через CatalogRepository
+    if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<CatalogRepository>()) {
+      try {
+        final catalog = getIt<CatalogRepository>();
+        AnimeTitle? resolvedTitle;
+
+        if (state.title.id > 0) {
+          resolvedTitle = await catalog.getTitleDetails(id: state.title.id, code: state.title.code);
+        } else {
+          // Для комнат совместного просмотра без указанного тайтла берём свежий популярный релиз
+          final updates = await catalog.getUpdates();
+          if (updates.isNotEmpty) {
+            final first = updates.first;
+            resolvedTitle = await catalog.getTitleDetails(id: first.id, code: first.code);
+          }
+        }
+
+        if (resolvedTitle != null && resolvedTitle.episodes.isNotEmpty) {
+          final targetEp = resolvedTitle.episodes.firstWhere(
+            (e) => e.episode == state.episode.episode,
+            orElse: () => resolvedTitle!.episodes.first,
+          );
+          streamUrl = _getUrlForQuality(targetEp, state.selectedQuality);
+          if (streamUrl != null && !streamUrl.contains('sample.com')) {
+            emit(state.copyWith(
+              title: resolvedTitle,
+              episode: targetEp,
+            ));
+          }
+        }
+      } catch (_) {}
+    }
+
     // Если прямая ссылка отсутствует или пуста — пробуем разрешить через Kodik (если доступен)
     if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<KodikCubit>()) {
       try {
         final kodik = getIt<KodikCubit>();
         final resolvedKodik = await kodik.getStreamForEpisode(state.episode.episode);
-        if (resolvedKodik != null && resolvedKodik.isNotEmpty) {
+        if (resolvedKodik != null && resolvedKodik.isNotEmpty && !resolvedKodik.contains('sample.com')) {
           streamUrl = resolvedKodik;
         }
       } catch (_) {}
@@ -487,9 +526,9 @@ class PlayerCubit extends Cubit<PlayerState> {
       }
     }
 
-    if (streamUrl == null || streamUrl.isEmpty) {
+    if (streamUrl == null || streamUrl.isEmpty || streamUrl.contains('sample.com')) {
       emit(state.copyWith(
-        errorMessage: () => 'Ссылка на видеопоток недоступна',
+        errorMessage: () => 'Серия недоступна для воспроизведения. Выберите другой тайтл или эпизод.',
         isBuffering: false,
       ));
       return;
@@ -564,9 +603,26 @@ class PlayerCubit extends Cubit<PlayerState> {
     seek(Duration(seconds: target));
   }
 
+  double _preFastForwardRate = 1.0;
+
   void setPlaybackRate(double rate) {
     player.setRate(rate);
     _resetControlsTimer();
+  }
+
+  /// Ускорение 2X при удержании экрана (Long Press)
+  void start2xFastForward() {
+    if (state.is2xFastForwarding) return;
+    _preFastForwardRate = state.playbackRate;
+    player.setRate(2.0);
+    emit(state.copyWith(is2xFastForwarding: true));
+  }
+
+  /// Возврат к обычной скорости при отпускании
+  void stop2xFastForward() {
+    if (!state.is2xFastForwarding) return;
+    player.setRate(_preFastForwardRate);
+    emit(state.copyWith(is2xFastForwarding: false));
   }
 
   /// Отправить реакцию (🔥, 😂, 😱, 😭, ❤️)
@@ -917,7 +973,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     for (final s in _subscriptions) {
       await s.cancel();
     }
-    await player.dispose();
+    try {
+      await player.stop();
+    } catch (_) {}
+    try {
+      await player.dispose();
+    } catch (_) {}
     if (!kIsWeb) {
       try {
         await WakelockPlus.disable();

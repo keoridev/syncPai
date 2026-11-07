@@ -29,3 +29,4 @@ class PlayerNavigationGuard {
     context.pushNamed('player', extra: extra);
   }
 }
+

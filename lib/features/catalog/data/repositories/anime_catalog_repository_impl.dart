@@ -27,6 +27,22 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
   }
 
   @override
+  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async {
+    try {
+      final models = await remoteDataSource.searchCatalog(query, limit: limit);
+      return models.map((m) => m.toDomain()).toList();
+    } on NetworkException catch (e) {
+      throw NetworkFailure(e.message);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message, e.statusCode);
+    } on ParsingException catch (e) {
+      throw ParsingFailure(e.message);
+    } catch (e) {
+      throw UnknownFailure(e.toString());
+    }
+  }
+
+  @override
   Future<List<TranslationEntity>> getPlayerLinks(int shikimoriId, {String? title}) async {
     try {
       final dataModel = await remoteDataSource.getPlayerLinks(shikimoriId, title: title);

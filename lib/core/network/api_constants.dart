@@ -11,7 +11,6 @@ abstract final class ApiConstants {
   // Актуальные эндпоинты API v1
   static const String latestReleases = '/anime/releases/latest';
   static const String searchReleases = '/app/search/releases';
-  static const String catalogReleases = '/anime/catalog/releases';
   static const String releaseDetails = '/anime/releases';
 
   // Таймауты

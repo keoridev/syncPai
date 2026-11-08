@@ -16,28 +16,6 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
 
   @override
   Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 40}) async {
-    // 1. Попытка запросить глобальный каталог релизов AniLibria (содержит тысячи тайтлов за все годы)
-    try {
-      final response = await client.get(
-        ApiConstants.catalogReleases,
-        queryParameters: {
-          'limit': limit,
-          'page': page,
-        },
-      );
-
-      final list = _parseList(response.data);
-      if (list.isNotEmpty) {
-        return list
-            .whereType<Map<String, dynamic>>()
-            .map((item) => AnimeTitleDto.fromJson(item))
-            .toList();
-      }
-    } catch (_) {
-      // Фолбек на ленту последних релизов
-    }
-
-    // 2. Фолбек на ленту свежих релизов
     try {
       final response = await client.get(
         ApiConstants.latestReleases,

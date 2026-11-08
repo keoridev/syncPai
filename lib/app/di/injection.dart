@@ -19,6 +19,7 @@ import '../../features/catalog/domain/usecases/get_catalog_usecase.dart';
 import '../../features/catalog/domain/usecases/get_player_links_usecase.dart';
 import '../../features/catalog/domain/usecases/get_title_details.dart';
 import '../../features/catalog/domain/usecases/get_updates.dart';
+import '../../features/catalog/domain/usecases/search_catalog_usecase.dart';
 import '../../features/catalog/domain/usecases/search_titles.dart';
 import '../../features/catalog/presentation/cubit/catalog_cubit.dart';
 import '../../features/sync_room/data/repositories/sync_room_repository_impl.dart';
@@ -126,12 +127,32 @@ Future<void> configureDependencies() async {
   // Core: Network
   getIt.registerLazySingleton<DioClient>(() => DioClient());
 
-  // Features: Catalog - Data
+  // Features: Supabase Anime Catalog & Player Data Layer (High Priority)
+  getIt.registerLazySingleton<AnimeRemoteDataSource>(
+    () => SupabaseAnimeRemoteDataSourceImpl(),
+  );
+  getIt.registerLazySingleton<AnimeCatalogRepository>(
+    () => AnimeCatalogRepositoryImpl(getIt<AnimeRemoteDataSource>()),
+  );
+  getIt.registerLazySingleton<GetCatalogUseCase>(
+    () => GetCatalogUseCase(getIt<AnimeCatalogRepository>()),
+  );
+  getIt.registerLazySingleton<SearchCatalogUseCase>(
+    () => SearchCatalogUseCase(getIt<AnimeCatalogRepository>()),
+  );
+  getIt.registerLazySingleton<GetPlayerLinksUseCase>(
+    () => GetPlayerLinksUseCase(getIt<AnimeCatalogRepository>()),
+  );
+
+  // Features: Catalog - Data & Repositories
   getIt.registerLazySingleton<AnilibriaRemoteDataSource>(
     () => AnilibriaRemoteDataSourceImpl(getIt<DioClient>()),
   );
   getIt.registerLazySingleton<CatalogRepository>(
-    () => CatalogRepositoryImpl(getIt<AnilibriaRemoteDataSource>()),
+    () => CatalogRepositoryImpl(
+      getIt<AnilibriaRemoteDataSource>(),
+      animeCatalogRepository: getIt<AnimeCatalogRepository>(),
+    ),
   );
 
   // Features: Catalog - Domain Use Cases
@@ -145,20 +166,6 @@ Future<void> configureDependencies() async {
     () => GetTitleDetails(getIt<CatalogRepository>()),
   );
 
-  // Features: Supabase Anime Catalog & Player Data Layer
-  getIt.registerLazySingleton<AnimeRemoteDataSource>(
-    () => SupabaseAnimeRemoteDataSourceImpl(),
-  );
-  getIt.registerLazySingleton<AnimeCatalogRepository>(
-    () => AnimeCatalogRepositoryImpl(getIt<AnimeRemoteDataSource>()),
-  );
-  getIt.registerLazySingleton<GetCatalogUseCase>(
-    () => GetCatalogUseCase(getIt<AnimeCatalogRepository>()),
-  );
-  getIt.registerLazySingleton<GetPlayerLinksUseCase>(
-    () => GetPlayerLinksUseCase(getIt<AnimeCatalogRepository>()),
-  );
-
   // Features: Catalog - Presentation Cubit
   getIt.registerLazySingleton<CatalogCubit>(
     () => CatalogCubit(
@@ -166,6 +173,7 @@ Future<void> configureDependencies() async {
       searchTitles: getIt<SearchTitles>(),
       prefs: getIt<SharedPreferences>(),
       getCatalogUseCase: getIt<GetCatalogUseCase>(),
+      searchCatalogUseCase: getIt<SearchCatalogUseCase>(),
     ),
   );
 }

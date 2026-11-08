@@ -6,6 +6,7 @@ import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_settings.dart';
 import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
+import '../../domain/usecases/search_catalog_usecase.dart';
 import '../../domain/usecases/search_titles.dart';
 import 'catalog_state.dart';
 
@@ -14,6 +15,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   final SearchTitles searchTitles;
   final SharedPreferences? prefs;
   final GetCatalogUseCase? getCatalogUseCase;
+  final SearchCatalogUseCase? searchCatalogUseCase;
 
   Timer? _debounceTimer;
   List<AnimeTitle> _cachedUpdates = [];
@@ -26,6 +28,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     required this.searchTitles,
     this.prefs,
     this.getCatalogUseCase,
+    this.searchCatalogUseCase,
   }) : super(const CatalogInitial()) {
     _currentViewMode = _loadSavedViewMode();
     _currentGridDensity = _loadSavedGridDensity();
@@ -202,7 +205,22 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
 
     try {
-      final results = await searchTitles(query, limit: 40);
+      List<AnimeTitle> results = [];
+      final useCase = searchCatalogUseCase ??
+          (getIt.isRegistered<SearchCatalogUseCase>() ? getIt<SearchCatalogUseCase>() : null);
+
+      if (useCase != null) {
+        try {
+          final entities = await useCase(query, limit: 40);
+          if (entities.isNotEmpty) {
+            results = entities.map((e) => e.toAnimeTitle()).toList();
+          }
+        } catch (_) {}
+      }
+
+      if (results.isEmpty) {
+        results = await searchTitles(query, limit: 40);
+      }
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final genres = current?.selectedGenres ?? const {};
       final sort = current?.sortBy ?? CatalogSort.updates;

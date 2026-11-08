@@ -27,16 +27,23 @@ class AnimeCatalogModel {
   });
 
   factory AnimeCatalogModel.fromJson(Map<String, dynamic> json) {
+    final rawShikiId = json['shikimori_id'] ?? json['id'];
+    final shikimoriId = (rawShikiId is num)
+        ? rawShikiId.toInt()
+        : int.tryParse(rawShikiId?.toString() ?? '') ?? 0;
+
     return AnimeCatalogModel(
-      id: json['id'] as String? ?? '',
-      shikimoriId: (json['shikimori_id'] as num?)?.toInt() ?? 0,
-      titleRu: json['title_ru'] as String? ?? '',
-      titleEn: json['title_en'] as String? ?? '',
-      posterUrl: json['poster_url'] as String?,
+      id: json['id']?.toString() ?? '',
+      shikimoriId: shikimoriId,
+      titleRu: json['title_ru'] as String? ?? json['russian'] as String? ?? '',
+      titleEn: json['title_en'] as String? ?? json['name'] as String? ?? '',
+      posterUrl: json['poster_url'] as String? ?? json['image'] as String?,
       kind: json['kind'] as String?,
       status: json['status'] as String? ?? 'ongoing',
       score: (json['score'] as num?)?.toDouble() ?? 0.0,
-      episodesTotal: (json['episodes_total'] as num?)?.toInt() ?? 0,
+      episodesTotal: (json['episodes_total'] as num?)?.toInt() ??
+          (json['episodes'] as num?)?.toInt() ??
+          0,
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'] as String)
           : null,

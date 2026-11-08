@@ -38,6 +38,7 @@ import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dar
 import 'package:sync_pai/features/catalog/domain/repositories/anime_catalog_repository.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/get_catalog_usecase.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/search_catalog_usecase.dart';
 import 'package:sync_pai/features/catalog/presentation/widgets/anime_poster_card.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/presentation/widgets/auto_next_episode_banner.dart';
@@ -3350,6 +3351,45 @@ Title,Status,Episodes
         expect(links.first.isDirectStream, isTrue);
       });
 
+      test('AnimeCatalogModel maps PostgreSQL anime_catalog fields accurately', () {
+        final json = {
+          'id': 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+          'shikimori_id': 57584,
+          'title_ru': 'Восхождение в тени! Реверберация',
+          'title_en': 'Kage no Jitsuryokusha ni Naritakute! Movie: Zankoku-hen',
+          'poster_url': 'https://desu.shikimori.me/original/57584.jpg',
+          'score': 8.74,
+          'episodes_total': 1,
+          'kind': 'movie',
+          'status': 'released',
+        };
+
+        final model = AnimeCatalogModel.fromJson(json);
+        expect(model.id, 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
+        expect(model.shikimoriId, 57584);
+        expect(model.titleRu, 'Восхождение в тени! Реверберация');
+        expect(model.posterUrl, 'https://desu.shikimori.me/original/57584.jpg');
+        expect(model.score, 8.74);
+        expect(model.episodesTotal, 1);
+
+        final entity = model.toDomain();
+        expect(entity.shikimoriId, 57584);
+
+        final animeTitle = entity.toAnimeTitle();
+        expect(animeTitle.id, 57584);
+        expect(animeTitle.russianTitle, 'Восхождение в тени! Реверберация');
+        expect(animeTitle.posterOriginal, 'https://desu.shikimori.me/original/57584.jpg');
+      });
+
+      test('SearchCatalogUseCase queries anime_catalog in PostgreSQL', () async {
+        final mockRepo = _MockAnimeCatalogRepository();
+        final searchUseCase = SearchCatalogUseCase(mockRepo);
+        final results = await searchUseCase('Тест', limit: 20);
+        expect(results.length, 1);
+        expect(results.first.titleRu, 'Тестовое Аниме');
+        expect(results.first.shikimoriId, 99999);
+      });
+
       test('Screen Lock state and DoubleTapSeekOverlay gesture protection', () {
         const initialState = PlayerState(
           title: testTitle,
@@ -3567,6 +3607,21 @@ Title,Status,Episodes
 class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
   @override
   Future<List<AnimeEntity>> getCatalog({int page = 1, int limit = 30}) async {
+    return [
+      const AnimeEntity(
+        id: 'test-uuid',
+        shikimoriId: 99999,
+        titleRu: 'Тестовое Аниме',
+        titleEn: 'Test Anime',
+        status: 'ongoing',
+        score: 9.0,
+        episodesTotal: 12,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async {
     return [
       const AnimeEntity(
         id: 'test-uuid',

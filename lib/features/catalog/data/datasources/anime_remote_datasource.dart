@@ -5,10 +5,10 @@ import '../models/anime_catalog_model.dart';
 import '../models/anime_player_data_model.dart';
 
 abstract class AnimeRemoteDataSource {
-  /// Получение каталога напрямую через официальный Shikimori API v1 (15 000+ аниме)
+  /// Получение каталога через Supabase Edge Function get_catalog (BFF для Shikimori API v1)
   Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30});
 
-  /// Поиск по аниме через официальный Shikimori API v1
+  /// Поиск по аниме через Supabase Edge Function get_catalog
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30});
 
   /// Получение прямых ссылок и озвучек через Supabase Edge Function get_anime_player_data
@@ -16,29 +16,12 @@ abstract class AnimeRemoteDataSource {
 }
 
 class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
-  final Dio _dio;
   final SupabaseClient? _client;
-
-  static const String _primaryUrl = 'https://shikimori.one/api/animes';
-  static const String _fallbackUrl = 'https://shikimori.io/api/animes';
-  static const Map<String, dynamic> _headers = {
-    'User-Agent': 'SyncPai-App/1.0',
-    'Accept': 'application/json',
-  };
 
   ShikimoriAnimeRemoteDataSourceImpl({
     Dio? customDio,
     SupabaseClient? customClient,
-  })  : _dio = customDio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 4),
-                receiveTimeout: const Duration(seconds: 5),
-                sendTimeout: const Duration(seconds: 4),
-                headers: _headers,
-              ),
-            ),
-        _client = customClient;
+  }) : _client = customClient;
 
   SupabaseClient? get _supabase {
     if (_client != null) return _client;
@@ -51,35 +34,23 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
   @override
   Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30}) async {
-    try {
-      dynamic responseData;
-      try {
-        final response = await _dio.get(
-          _primaryUrl,
-          queryParameters: {
-            'page': page,
-            'limit': limit,
-            'order': 'popularity',
-          },
-          options: Options(headers: _headers),
-        );
-        responseData = response.data;
-      } catch (primaryErr) {
-        // Fallback на зеркало shikimori.one
-        final response = await _dio.get(
-          _fallbackUrl,
-          queryParameters: {
-            'page': page,
-            'limit': limit,
-            'order': 'popularity',
-          },
-          options: Options(headers: _headers),
-        );
-        responseData = response.data;
-      }
+    final client = _supabase;
+    if (client == null) {
+      throw const NetworkException('Supabase клиент не инициализирован');
+    }
 
-      if (responseData is List) {
-        return responseData
+    try {
+      final response = await client.functions.invoke(
+        'get_catalog',
+        body: {
+          'page': page,
+          'limit': limit,
+        },
+      );
+
+      final dynamic data = response.data;
+      if (data is List) {
+        return data
             .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
@@ -87,47 +58,32 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return [];
     } catch (e) {
       if (e is ServerException || e is NetworkException) rethrow;
-      throw ServerException('Ошибка загрузки каталога Shikimori: $e');
+      throw ServerException('Ошибка загрузки каталога через Edge Function get_catalog: $e');
     }
   }
 
   @override
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30}) async {
-    final clean = query.trim();
-    if (clean.isEmpty) {
-      return getCatalog(page: 1, limit: limit);
+    final client = _supabase;
+    if (client == null) {
+      throw const NetworkException('Supabase клиент не инициализирован');
     }
 
-    try {
-      dynamic responseData;
-      try {
-        final response = await _dio.get(
-          _primaryUrl,
-          queryParameters: {
-            'search': clean,
-            'page': 1,
-            'limit': limit,
-            'order': 'popularity',
-          },
-          options: Options(headers: _headers),
-        );
-        responseData = response.data;
-      } catch (primaryErr) {
-        final response = await _dio.get(
-          _fallbackUrl,
-          queryParameters: {
-            'search': clean,
-            'page': 1,
-            'limit': limit,
-            'order': 'popularity',
-          },
-          options: Options(headers: _headers),
-        );
-        responseData = response.data;
-      }
+    final clean = query.trim();
 
-      if (responseData is List) {
-        return responseData
+    try {
+      final response = await client.functions.invoke(
+        'get_catalog',
+        body: {
+          'page': 1,
+          'limit': limit,
+          if (clean.isNotEmpty) 'search': clean,
+        },
+      );
+
+      final dynamic data = response.data;
+      if (data is List) {
+        return data
             .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
@@ -135,7 +91,7 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return [];
     } catch (e) {
       if (e is ServerException || e is NetworkException) rethrow;
-      throw ServerException('Ошибка поиска по каталогу Shikimori: $e');
+      throw ServerException('Ошибка поиска по каталогу через Edge Function get_catalog: $e');
     }
   }
 

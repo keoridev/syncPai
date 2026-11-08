@@ -17,11 +17,27 @@ abstract class AnimeRemoteDataSource {
 
 class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   final SupabaseClient? _client;
+  final Dio _dio;
+
+  static const String _fallbackShikimoriUrl = 'https://shikimori.one/api/animes';
+  static const String _mirrorShikimoriUrl = 'https://shikimori.io/api/animes';
 
   ShikimoriAnimeRemoteDataSourceImpl({
     Dio? customDio,
     SupabaseClient? customClient,
-  }) : _client = customClient;
+  })  : _client = customClient,
+        _dio = customDio ??
+            Dio(
+              BaseOptions(
+                connectTimeout: const Duration(seconds: 4),
+                receiveTimeout: const Duration(seconds: 5),
+                sendTimeout: const Duration(seconds: 4),
+                headers: const {
+                  'User-Agent': 'SyncPai-App/1.0',
+                  'Accept': 'application/json',
+                },
+              ),
+            );
 
   SupabaseClient? get _supabase {
     if (_client != null) return _client;
@@ -35,64 +51,117 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   @override
   Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30}) async {
     final client = _supabase;
-    if (client == null) {
-      throw const NetworkException('Supabase клиент не инициализирован');
+    if (client != null) {
+      try {
+        final response = await client.functions.invoke(
+          'get_catalog',
+          body: {
+            'page': page,
+            'limit': limit,
+          },
+        );
+
+        final dynamic data = response.data;
+        if (data is List) {
+          return data
+              .whereType<Map>()
+              .map((json) => AnimeCatalogModel.fromShikimori(json))
+              .toList();
+        }
+      } catch (e) {
+        // Fallback к прямому зеркалу Shikimori при ошибке Edge Function
+      }
     }
 
+    // Резервный канал напрямую к зеркалам Shikimori API
     try {
-      final response = await client.functions.invoke(
-        'get_catalog',
-        body: {
+      final response = await _dio.get(
+        _fallbackShikimoriUrl,
+        queryParameters: {
           'page': page,
           'limit': limit,
+          'order': 'popularity',
         },
       );
-
-      final dynamic data = response.data;
-      if (data is List) {
-        return data
+      if (response.data is List) {
+        return (response.data as List)
             .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
       }
-      return [];
-    } catch (e) {
-      if (e is ServerException || e is NetworkException) rethrow;
-      throw ServerException('Ошибка загрузки каталога через Edge Function get_catalog: $e');
+    } catch (_) {
+      try {
+        final mirrorRes = await _dio.get(
+          _mirrorShikimoriUrl,
+          queryParameters: {
+            'page': page,
+            'limit': limit,
+            'order': 'popularity',
+          },
+        );
+        if (mirrorRes.data is List) {
+          return (mirrorRes.data as List)
+              .whereType<Map>()
+              .map((json) => AnimeCatalogModel.fromShikimori(json))
+              .toList();
+        }
+      } catch (_) {}
     }
+
+    return [];
   }
 
   @override
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30}) async {
-    final client = _supabase;
-    if (client == null) {
-      throw const NetworkException('Supabase клиент не инициализирован');
+    final clean = query.trim();
+    if (clean.isEmpty) {
+      return getCatalog(page: 1, limit: limit);
     }
 
-    final clean = query.trim();
+    final client = _supabase;
+    if (client != null) {
+      try {
+        final response = await client.functions.invoke(
+          'get_catalog',
+          body: {
+            'page': 1,
+            'limit': limit,
+            'search': clean,
+          },
+        );
 
+        final dynamic data = response.data;
+        if (data is List) {
+          return data
+              .whereType<Map>()
+              .map((json) => AnimeCatalogModel.fromShikimori(json))
+              .toList();
+        }
+      } catch (_) {
+        // Fallback к прямому поиску
+      }
+    }
+
+    // Резервный прямой поиск
     try {
-      final response = await client.functions.invoke(
-        'get_catalog',
-        body: {
+      final response = await _dio.get(
+        _fallbackShikimoriUrl,
+        queryParameters: {
+          'search': clean,
           'page': 1,
           'limit': limit,
-          if (clean.isNotEmpty) 'search': clean,
+          'order': 'popularity',
         },
       );
-
-      final dynamic data = response.data;
-      if (data is List) {
-        return data
+      if (response.data is List) {
+        return (response.data as List)
             .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
       }
-      return [];
-    } catch (e) {
-      if (e is ServerException || e is NetworkException) rethrow;
-      throw ServerException('Ошибка поиска по каталогу через Edge Function get_catalog: $e');
-    }
+    } catch (_) {}
+
+    return [];
   }
 
   @override

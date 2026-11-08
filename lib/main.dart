@@ -18,15 +18,14 @@ void main() async {
   
   MediaKit.ensureInitialized();
 
-  if (ApiConstants.supabaseAnonKey.isNotEmpty) {
-    try {
-      await Supabase.initialize(
-        url: ApiConstants.supabaseUrl,
-        publishableKey: ApiConstants.supabaseAnonKey,
-      );
-    } catch (e) {
-      debugPrint('Supabase init error: $e');
-    }
+  // Гарантированная инициализация Supabase до создания BLoC/Cubit и вызова runApp
+  try {
+    await Supabase.initialize(
+      url: ApiConstants.supabaseUrl,
+      publishableKey: ApiConstants.supabaseAnonKey,
+    );
+  } catch (e) {
+    debugPrint('Supabase init error: $e');
   }
 
   await configureDependencies();

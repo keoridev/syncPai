@@ -455,7 +455,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               ),
               bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(88),
+                preferredSize: const Size.fromHeight(92),
                 child: Container(
                   color: AppColors.background,
                   child: Column(
@@ -481,7 +481,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
                               physics: const BouncingScrollPhysics(),
+                              clipBehavior: Clip.none,
                               child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   // Кнопка открытия полной шторки фильтров
                                   InkWell(
@@ -664,11 +666,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               : const <String>{};
 
                           return SizedBox(
-                            height: 36,
+                            height: 38,
                             child: ListView.separated(
                               padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                               scrollDirection: Axis.horizontal,
                               physics: const BouncingScrollPhysics(),
+                              clipBehavior: Clip.none,
                               itemCount: _popularGenres.length,
                               separatorBuilder: (_, __) =>
                                   const SizedBox(width: AppDimensions.spacingSm),

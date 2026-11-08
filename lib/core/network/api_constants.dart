@@ -19,7 +19,11 @@ abstract final class ApiConstants {
 
   // Supabase Realtime Gateway
   static const String supabaseUrl = 'https://lemaomwexnttytizamxl.supabase.co';
-  static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlbWFvbXdleG50dHl0aXphbXhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NjA2MTYsImV4cCI6MjEwOTQzNjYxNn0.CPSqPnrspXJpNJJNf92jJjeFNTU_Wgt8gc2b_8WdEq8',
+  );
 
   // Google Sign-In Web Client ID (для Supabase Auth на Android)
   static const String googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID', defaultValue: '');

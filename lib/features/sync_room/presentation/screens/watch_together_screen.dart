@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -14,7 +15,6 @@ import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
-import 'coop_match_screen.dart';
 import '../widgets/qr_scanner_sheet.dart';
 import '../widgets/sync_room_lobby_sheet.dart';
 import '../../../player/domain/entities/player_quality.dart';
@@ -35,6 +35,7 @@ class WatchTogetherScreen extends StatefulWidget {
 
 class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   final TextEditingController _pinController = TextEditingController();
+  final FocusNode _pinFocusNode = FocusNode();
   String? _pinError;
 
   // Демонстрационный список друзей с Presence-статусом
@@ -71,6 +72,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   @override
   void dispose() {
     _pinController.dispose();
+    _pinFocusNode.dispose();
     super.dispose();
   }
 
@@ -612,54 +614,111 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   }
 
   void _openCoopMatch(BuildContext context) {
-    List<AnimeTitle> deck = [];
-    try {
-      final catalogState = context.read<CatalogCubit>().state;
-      if (catalogState is CatalogLoaded && catalogState.titles.isNotEmpty) {
-        deck = catalogState.titles;
-      }
-    } catch (_) {}
-
-    if (deck.isEmpty) {
-      deck = [
-        const AnimeTitle(
-          id: 101,
-          code: 'frieren',
-          russianTitle: 'Провожающая в последний путь Фрирен',
-          englishTitle: 'Sousou no Frieren',
-          posterSmall: '',
-          posterMedium: '',
-          posterOriginal: '',
-          genres: ['Приключения', 'Фэнтези'],
-          description: 'История эльфийки-волшебницы Фрирен после победы над Королем демонов.',
-          status: 'Онгоинг',
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF2A68).withValues(alpha: 0.45),
+                      blurRadius: 18,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(Icons.style_rounded, color: Colors.white, size: 28),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Anime Match для двоих',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Anime Match работает только внутри комнаты совместного просмотра!\n\n'
+                'Создайте комнату или подключитесь по коду: внутри лобби откроется совместный свайп карточек аниме. '
+                'Как только ваши вкусы совпадут — серия мгновенно запустится сразу для вас обоих!',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF2A68),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 4,
+                  ),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Создать комнату', style: TextStyle(fontWeight: FontWeight.w700)),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _showCreateRoomSheet(context);
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: AppColors.strokeMedium),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.login_rounded),
+                  label: const Text('Присоединиться по коду', style: TextStyle(fontWeight: FontWeight.w700)),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _pinFocusNode.requestFocus();
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
-        const AnimeTitle(
-          id: 102,
-          code: 'jujutsu_kaisen',
-          russianTitle: 'Магическая битва',
-          englishTitle: 'Jujutsu Kaisen',
-          posterSmall: '',
-          posterMedium: '',
-          posterOriginal: '',
-          genres: ['Экшен', 'Сёнэн'],
-          description: 'Юдзи Итадори проглатывает палец проклятого духа Сукуны.',
-          status: 'Онгоинг',
-        ),
-      ];
-    }
-
-    CoopMatchScreen.open(
-      context,
-      deck: deck,
-      roomCode: null,
-      userName: 'Вы',
-      onStartWatching: (matched) {
-        final ep = matched.episodes.isNotEmpty
-            ? matched.episodes.first
-            : const EpisodeItem(episode: 1);
-        widget.onStartSyncRoom?.call(matched, ep);
-      },
+      ),
     );
   }
 
@@ -757,6 +816,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           Expanded(
                             child: TextField(
                               controller: _pinController,
+                              focusNode: _pinFocusNode,
                               style: const TextStyle(
                                 color: AppColors.textPrimary,
                                 fontWeight: FontWeight.w700,
@@ -902,7 +962,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-            // КАРТОЧКА 3 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Anime Match (Co-op Tinder)»
+            // КАРТОЧКА 3 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Anime Match»
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
@@ -951,16 +1011,16 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFF2A68).withValues(alpha: 0.2),
+                                    color: const Color(0xFFFF2A68).withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Text('Co-op Tinder', style: TextStyle(fontSize: 10, color: Color(0xFFFF5E3A), fontWeight: FontWeight.bold)),
+                                  child: const Text('В комнате', style: TextStyle(fontSize: 10, color: Color(0xFFFF5E3A), fontWeight: FontWeight.bold)),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Свайпайте карточки тайтлов вдвоем до первого совпадения',
+                              'Свайпайте аниме вдвоем в комнате до первого совпадения',
                               style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                             ),
                           ],

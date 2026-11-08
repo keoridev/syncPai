@@ -395,6 +395,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     totalDuration: state.duration,
                     currentVolume: state.volume,
                     currentBrightness: state.brightness,
+                    opening: state.episode.opening,
+                    ending: state.episode.ending,
+                    previewUrl: state.episode.previewUrl ??
+                        (state.title.posterMedium.isNotEmpty
+                            ? state.title.posterMedium
+                            : state.title.posterSmall),
+                    isLocked: state.isSyncRoom && !state.isHost,
+                    onLockedTap: () {
+                      _cubit.requestPauseFromHost();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Хост управляет просмотром. Запрос на паузу отправлен хосту'),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
                     onLongPressStart: () => _cubit.start2xFastForward(),
                     onLongPressEnd: () => _cubit.stop2xFastForward(),
                   ),
@@ -512,7 +529,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
 
                   // Ошибка воспроизведения потока (рендерится ПОВЕРХ оверлея управления, чтобы кнопки всегда реагировали на нажатия)
-                  if (state.errorMessage != null && !state.isPlaying)
+                  if (state.errorMessage != null)
                     Material(
                       color: Colors.black.withValues(alpha: 0.8),
                       child: Center(

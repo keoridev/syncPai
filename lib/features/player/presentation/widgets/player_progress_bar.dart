@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 
 /// Интерактивный таймлайн плеера в стиле YouTube / SoundCloud:
 /// - Поддерживает тепловую карту реакций зрителей
-/// - При перетаскивании ползунка отображает парящее окно с точным таймкодом и дельтой времени (Scrubber Preview)
+/// - Светящиеся маркеры и точки таймкодов (Опенинг, Эндинг, Главы) на прогресс-баре
+/// - При перетаскивании ползунка отображает парящее окно с точным таймкодом, названием фрагмента и дельтой времени (Scrubber Preview)
 class PlayerProgressBar extends StatefulWidget {
   final Duration position;
   final Duration duration;
@@ -14,6 +16,8 @@ class PlayerProgressBar extends StatefulWidget {
   final bool isLocked;
   final VoidCallback? onLockedTap;
   final ReactionHeatmap? heatmap;
+  final TimecodeRange? opening;
+  final TimecodeRange? ending;
 
   const PlayerProgressBar({
     super.key,
@@ -24,6 +28,8 @@ class PlayerProgressBar extends StatefulWidget {
     this.isLocked = false,
     this.onLockedTap,
     this.heatmap,
+    this.opening,
+    this.ending,
   });
 
   @override
@@ -43,6 +49,20 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
     return '$minutes:$seconds';
   }
 
+  bool _isInsideOpening(Duration pos) {
+    final op = widget.opening;
+    if (op == null) return false;
+    final sec = pos.inSeconds;
+    return sec >= op.start && sec <= op.stop;
+  }
+
+  bool _isInsideEnding(Duration pos) {
+    final ed = widget.ending;
+    if (ed == null) return false;
+    final sec = pos.inSeconds;
+    return sec >= ed.start && sec <= ed.stop;
+  }
+
   @override
   Widget build(BuildContext context) {
     final maxMs = widget.duration.inMilliseconds.toDouble();
@@ -52,6 +72,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
     final actualRatio = maxMs > 0 ? (posMs / maxMs) : 0.0;
     final progressRatio = _isDragging ? _dragRatio : actualRatio;
     final bufferRatio = maxMs > 0 ? (bufMs / maxMs) : 0.0;
+    final totalSec = widget.duration.inSeconds;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -59,6 +80,25 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
         LayoutBuilder(
           builder: (context, constraints) {
             final barWidth = constraints.maxWidth;
+
+            // Расчет позиций опенинга и эндинга
+            double? opStartRatio;
+            double? opStopRatio;
+            if (totalSec > 0 && widget.opening != null) {
+              opStartRatio = (widget.opening!.start / totalSec).clamp(0.0, 1.0);
+              opStopRatio = (widget.opening!.stop / totalSec).clamp(0.0, 1.0);
+            }
+
+            double? edStartRatio;
+            double? edStopRatio;
+            if (totalSec > 0 && widget.ending != null) {
+              edStartRatio = (widget.ending!.start / totalSec).clamp(0.0, 1.0);
+              edStopRatio = (widget.ending!.stop / totalSec).clamp(0.0, 1.0);
+            }
+
+            final currentDragTime = Duration(milliseconds: (_dragRatio * maxMs).round());
+            final inOpening = _isInsideOpening(currentDragTime);
+            final inEnding = _isInsideEnding(currentDragTime);
 
             return Stack(
               clipBehavior: Clip.none,
@@ -127,7 +167,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                                                       ? const Color(0xFFFF5E3A)
                                                       : const Color(0xFFFF5E3A).withValues(alpha: 0.38))
                                                   : (isPlayed
-                                                      ? AppColors.primary.withValues(alpha: 0.65)
+                                                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.65)
                                                       : Colors.white.withValues(alpha: 0.12)),
                                               borderRadius: BorderRadius.circular(1.5),
                                             ),
@@ -140,7 +180,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                             ),
 
-                          // Фоновая дорожка
+                          // 1. Фоновая дорожка
                           Container(
                             height: 4.0,
                             width: double.infinity,
@@ -149,7 +189,8 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               borderRadius: BorderRadius.circular(2.0),
                             ),
                           ),
-                          // Буфер
+
+                          // 2. Буфер воспроизведения
                           FractionallySizedBox(
                             widthFactor: bufferRatio,
                             child: Container(
@@ -160,18 +201,119 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                             ),
                           ),
-                          // Воспроизведение
+
+                          // 3. Цветные отрезки таймкодов (Опенинг - золото/янтарь, Эндинг - циан/неон)
+                          if (opStartRatio != null && opStopRatio != null && opStopRatio > opStartRatio)
+                            Positioned(
+                              left: barWidth * opStartRatio,
+                              width: barWidth * (opStopRatio - opStartRatio),
+                              child: Container(
+                                height: 4.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFB300).withValues(alpha: 0.8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFFB300).withValues(alpha: 0.5),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          if (edStartRatio != null && edStopRatio != null && edStopRatio > edStartRatio)
+                            Positioned(
+                              left: barWidth * edStartRatio,
+                              width: barWidth * (edStopRatio - edStartRatio),
+                              child: Container(
+                                height: 4.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00E5FF).withValues(alpha: 0.8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF00E5FF).withValues(alpha: 0.5),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // 4. Линия текущего прогресса воспроизведения
                           FractionallySizedBox(
                             widthFactor: progressRatio,
                             child: Container(
                               height: _isDragging ? 6.0 : 4.0,
                               decoration: BoxDecoration(
-                                color: AppColors.primary,
+                                color: Theme.of(context).colorScheme.primary,
                                 borderRadius: BorderRadius.circular(3.0),
                               ),
                             ),
                           ),
-                          // Ползунок (Thumb)
+
+                          // 5. Светящиеся разделительные точки-маркеры ключевых таймкодов
+                          if (opStartRatio != null)
+                            Positioned(
+                              left: (barWidth * opStartRatio - 2.5).clamp(0.0, barWidth - 5),
+                              child: Container(
+                                width: 5.0,
+                                height: 8.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFD54F),
+                                  borderRadius: BorderRadius.circular(2),
+                                  boxShadow: const [
+                                    BoxShadow(color: Color(0xFFFFB300), blurRadius: 4),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (opStopRatio != null)
+                            Positioned(
+                              left: (barWidth * opStopRatio - 2.5).clamp(0.0, barWidth - 5),
+                              child: Container(
+                                width: 5.0,
+                                height: 8.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFD54F),
+                                  borderRadius: BorderRadius.circular(2),
+                                  boxShadow: const [
+                                    BoxShadow(color: Color(0xFFFFB300), blurRadius: 4),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (edStartRatio != null)
+                            Positioned(
+                              left: (barWidth * edStartRatio - 2.5).clamp(0.0, barWidth - 5),
+                              child: Container(
+                                width: 5.0,
+                                height: 8.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF80D8FF),
+                                  borderRadius: BorderRadius.circular(2),
+                                  boxShadow: const [
+                                    BoxShadow(color: Color(0xFF00E5FF), blurRadius: 4),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (edStopRatio != null)
+                            Positioned(
+                              left: (barWidth * edStopRatio - 2.5).clamp(0.0, barWidth - 5),
+                              child: Container(
+                                width: 5.0,
+                                height: 8.0,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF80D8FF),
+                                  borderRadius: BorderRadius.circular(2),
+                                  boxShadow: const [
+                                    BoxShadow(color: Color(0xFF00E5FF), blurRadius: 4),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // 6. Ползунок (Thumb)
                           Positioned(
                             left: (barWidth * progressRatio - (_isDragging ? 8 : 6))
                                 .clamp(0.0, barWidth - (_isDragging ? 16 : 12)),
@@ -183,7 +325,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.6),
+                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
                                     blurRadius: _isDragging ? 10 : 6,
                                     spreadRadius: _isDragging ? 2 : 0,
                                   ),
@@ -197,25 +339,30 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                   ),
                 ),
 
-                // Всплывающее YouTube-окно предпросмотра при перемотке (Scrubber Preview)
+                // 7. Всплывающее YouTube-окно предпросмотра при перемотке (Scrubber Preview) с чипом таймкода
                 if (_isDragging) ...[
                   Positioned(
                     bottom: 38,
-                    left: (barWidth * _dragRatio - 50).clamp(0.0, barWidth - 100),
+                    left: (barWidth * _dragRatio - 70).clamp(0.0, barWidth - 140),
                     child: Container(
-                      width: 100,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      width: 140,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.88),
-                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.black.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.6),
-                          width: 1.2,
+                          color: (inOpening
+                                  ? const Color(0xFFFFB300)
+                                  : inEnding
+                                      ? const Color(0xFF00E5FF)
+                                      : Theme.of(context).colorScheme.primary)
+                              .withValues(alpha: 0.7),
+                          width: 1.4,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            blurRadius: 12,
+                            color: Colors.black.withValues(alpha: 0.65),
+                            blurRadius: 16,
                             offset: const Offset(0, 4),
                           ),
                         ],
@@ -223,6 +370,37 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Метка Опенинга / Эндинга при перемотке по точкам
+                          if (inOpening || inEnding)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF))
+                                    .withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    inOpening ? Icons.music_note_rounded : Icons.queue_music_rounded,
+                                    size: 11,
+                                    color: inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    inOpening ? 'Опенинг' : 'Эндинг',
+                                    style: TextStyle(
+                                      color: inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -233,11 +411,11 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                _formatDuration(Duration(milliseconds: (_dragRatio * maxMs).round())),
+                                _formatDuration(currentDragTime),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 12.5,
+                                  fontSize: 13,
                                 ),
                               ),
                             ],
@@ -255,7 +433,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               '${isForward ? '+' : '-'}${_formatDuration(absDiff)}',
                               style: TextStyle(
                                 color: isForward ? const Color(0xFF00E676) : const Color(0xFFFFB74D),
-                                fontSize: 10,
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
                               ),
                             );

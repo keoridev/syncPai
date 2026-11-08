@@ -51,24 +51,27 @@ class PlayerControlsOverlay extends StatelessWidget {
       child: AnimatedOpacity(
         opacity: state.areControlsVisible ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 250),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              stops: const [0.0, 0.25, 0.75, 1.0],
-              colors: [
-                Colors.black.withValues(alpha: isLandscape ? 0.65 : 0.75),
-                Colors.transparent,
-                Colors.transparent,
-                Colors.black.withValues(alpha: isLandscape ? 0.75 : 0.85),
-              ],
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => cubit.toggleControls(),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0.0, 0.25, 0.75, 1.0],
+                colors: [
+                  Colors.black.withValues(alpha: isLandscape ? 0.65 : 0.75),
+                  Colors.transparent,
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: isLandscape ? 0.75 : 0.85),
+                ],
+              ),
             ),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+            child: SafeArea(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
                 // ВЕРХНИЙ БАР
                 Padding(
                   padding: EdgeInsets.symmetric(
@@ -351,8 +354,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                       ),
                     ],
                   )
-                else if (state.errorMessage != null && !state.isPlaying)
-                  // Если есть ошибка воспроизведения — не перекрываем центральное окно ошибки кнопками плеера
+                else if (state.errorMessage != null)
+                  // Если есть ошибка воспроизведения — скрываем центральные кнопки управления, чтобы не перекрывать экран ошибки
                   const SizedBox.shrink()
                 else
                   Row(
@@ -616,6 +619,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                         duration: state.duration,
                         buffer: state.buffer,
                         heatmap: state.heatmap,
+                        opening: ep.opening,
+                        ending: ep.ending,
                         onSeek: (pos) => cubit.seek(pos),
                         isLocked: isGuestInSync,
                         onLockedTap: () {
@@ -687,8 +692,9 @@ class PlayerControlsOverlay extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildLandscapeBottomBar(
     BuildContext context, {
@@ -712,6 +718,8 @@ class PlayerControlsOverlay extends StatelessWidget {
             duration: state.duration,
             buffer: state.buffer,
             heatmap: state.heatmap,
+            opening: ep.opening,
+            ending: ep.ending,
             onSeek: (pos) => cubit.seek(pos),
             isLocked: isGuestInSync,
             onLockedTap: () {

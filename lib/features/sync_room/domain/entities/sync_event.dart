@@ -8,6 +8,7 @@ enum SyncEventType {
   seek,
   buffering,
   syncReady,
+  startPlayback,
 }
 
 /// Событие реального времени в канале совместной комнаты.

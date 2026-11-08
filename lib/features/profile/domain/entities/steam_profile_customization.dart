@@ -54,7 +54,7 @@ class SteamBadge {
     SteamBadge(
       id: 'match_swiper',
       title: 'Аниме Matcher',
-      description: 'Нашел соулмейта в совместном Anime Tinder',
+      description: 'Нашел соулмейта в совместном Anime Match',
       icon: Icons.favorite_rounded,
       color: Color(0xFFFF2A68),
       level: 20,
@@ -235,6 +235,41 @@ class SteamAvatarFrame {
       colors: [Color(0xFF1A0A2E), Color(0xFF7B1FA2), Color(0xFF1A0A2E)],
       previewIcon: Icons.hexagon_rounded,
       animation: SteamFrameAnimation.shimmer,
+    ),
+    SteamAvatarFrame(
+      id: 'blizzard_snow',
+      name: 'Снежная Метель',
+      colors: [Color(0xFFE0F7FA), Color(0xFF80DEEA), Color(0xFF00E5FF)],
+      previewIcon: Icons.ac_unit_rounded,
+      animation: SteamFrameAnimation.snow,
+    ),
+    SteamAvatarFrame(
+      id: 'matrix_hacker',
+      name: 'Матрица Hacker',
+      colors: [Color(0xFF00FF66), Color(0xFF00E676), Color(0xFF003311)],
+      previewIcon: Icons.terminal_rounded,
+      animation: SteamFrameAnimation.matrix,
+    ),
+    SteamAvatarFrame(
+      id: 'sakura_drift',
+      name: 'Парящая Сакура',
+      colors: [Color(0xFFFFB7B2), Color(0xFFFF4081), Color(0xFFFF80AB)],
+      previewIcon: Icons.local_florist_rounded,
+      animation: SteamFrameAnimation.wave,
+    ),
+    SteamAvatarFrame(
+      id: 'plasma_storm',
+      name: 'Плазменный Разряд',
+      colors: [Color(0xFF00E5FF), Color(0xFF7C4DFF), Color(0xFFFF007F)],
+      previewIcon: Icons.flash_on_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
+    SteamAvatarFrame(
+      id: 'solar_flare',
+      name: 'Солнечная Вспышка',
+      colors: [Color(0xFFFF3D00), Color(0xFFFFD600), Color(0xFFFF6D00)],
+      previewIcon: Icons.whatshot_rounded,
+      animation: SteamFrameAnimation.fire,
     ),
   ];
 
@@ -432,6 +467,34 @@ class SteamBackgroundTheme {
       gradient: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF121316)],
       assetOrUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1200&q=80',
       icon: Icons.videogame_asset_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'snowy_village',
+      name: 'Зимняя Снежная Деревня',
+      gradient: [Color(0xFF0F1E36), Color(0xFF182848), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1200&q=80',
+      icon: Icons.ac_unit_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'matrix_cyberspace',
+      name: 'Матрица: Зеленый Код',
+      gradient: [Color(0xFF001F0B), Color(0xFF003814), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=80',
+      icon: Icons.terminal_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'ghibli_sunset',
+      name: 'Ghibli Закатный Поезд',
+      gradient: [Color(0xFF381D2A), Color(0xFF1D283E), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80',
+      icon: Icons.train_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'cyber_highway',
+      name: 'Кибертрасса Под Дождем',
+      gradient: [Color(0xFF120324), Color(0xFF07193F), Color(0xFF121316)],
+      assetOrUrl: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=1200&q=80',
+      icon: Icons.speed_rounded,
     ),
   ];
 

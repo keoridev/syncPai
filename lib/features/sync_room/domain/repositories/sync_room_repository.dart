@@ -105,6 +105,9 @@ abstract class SyncRoomRepository {
   /// Отправка события в комнату
   void emitEvent(SyncEvent event);
 
+  /// Отправка команды немедленного одновременного старта воспроизведения для всех участников лобби
+  Future<void> startPlayback(String roomCode);
+
   /// Выход из комнаты / закрытие
   Future<void> leaveRoom(String roomCode);
 

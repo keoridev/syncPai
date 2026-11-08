@@ -84,6 +84,47 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       if (controller != null && !controller.isClosed) {
         controller.add(roomPresences.values.toList());
       }
+    } else if (packet.action == SyncActionTypes.roomJoin) {
+      final peerName = packet.sender;
+      final room = _rooms[roomKey];
+      if (room != null) {
+        _rooms[roomKey] = room.copyWith(
+          peerName: peerName,
+          status: SyncRoomStatus.connected,
+        );
+      }
+      final roomPresences = _presences.putIfAbsent(roomKey, () => <String, PeerPresence>{});
+      roomPresences[packet.sender] = PeerPresence(
+        userId: 'peer_${packet.sender}',
+        name: packet.sender,
+        avatar: '🐱',
+        status: PresenceStatus.online,
+        lastSeen: DateTime.now(),
+        isHost: false,
+      );
+      final presController = _presenceControllers[roomKey];
+      if (presController != null && !presController.isClosed) {
+        presController.add(roomPresences.values.toList());
+      }
+      final roomController = _roomControllers[roomKey];
+      if (roomController != null && !roomController.isClosed) {
+        roomController.add(SyncEvent(
+          roomCode: roomKey,
+          type: SyncEventType.peerJoined,
+          senderName: peerName,
+          timestamp: DateTime.now(),
+        ));
+      }
+    } else if (packet.action == SyncActionTypes.startPlayback) {
+      final roomController = _roomControllers[roomKey];
+      if (roomController != null && !roomController.isClosed) {
+        roomController.add(SyncEvent(
+          roomCode: roomKey,
+          type: SyncEventType.startPlayback,
+          senderName: packet.sender,
+          timestamp: DateTime.now(),
+        ));
+      }
     }
   }
 
@@ -543,6 +584,25 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     if (controller != null && !controller.isClosed) {
       controller.add(event);
     }
+  }
+
+  @override
+  Future<void> startPlayback(String roomCode) async {
+    final key = normalizeCode(roomCode);
+    final senderName = _rooms[key]?.hostName ?? 'Хост';
+    await sendPacket(SyncPacket(
+      action: SyncActionTypes.startPlayback,
+      sender: senderName,
+      roomCode: key,
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      payload: {},
+    ));
+    emitEvent(SyncEvent(
+      roomCode: key,
+      type: SyncEventType.startPlayback,
+      senderName: senderName,
+      timestamp: DateTime.now(),
+    ));
   }
 
   @override

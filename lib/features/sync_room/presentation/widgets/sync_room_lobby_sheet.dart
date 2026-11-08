@@ -5,17 +5,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import '../../domain/entities/sync_room.dart';
 import '../../domain/repositories/sync_room_repository.dart';
 import '../cubit/sync_room_cubit.dart';
 import '../cubit/sync_room_state.dart';
+import '../screens/coop_match_screen.dart';
 import 'qr_scanner_sheet.dart';
 
 enum SyncLobbyTab { host, join }
@@ -123,8 +127,8 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
   Widget build(BuildContext context) {
     return BlocListener<SyncRoomCubit, SyncRoomState>(
       listener: (context, state) {
-        if (state is SyncRoomJoined) {
-          // Синхронный переход в плеер при подключении участника (PEER_JOINED)
+        if (state is SyncRoomPlaybackStarting) {
+          // Синхронный переход в плеер при старте воспроизведения хостом
           Navigator.of(context).pop();
           widget.onStartPlayback(state.room, state.isHost);
         }
@@ -587,90 +591,49 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
 
             const SizedBox(height: AppDimensions.spacingXl),
 
-            // Пульсирующий статус ожидания подключения друга
-            AnimatedBuilder(
-              animation: _pulseAnimation,
-              builder: (context, child) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Внешнее пульсирующее кольцо
-                    Container(
-                      width: 58 * _pulseAnimation.value,
-                      height: 58 * _pulseAnimation.value,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.primary.withValues(
-                          alpha: (0.35 / _pulseAnimation.value).clamp(0.0, 0.4),
-                        ),
-                      ),
-                    ),
-                    // Основной круговой индикатор
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.surfaceElevated,
-                        border: Border.all(
-                          color: AppColors.primary,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.person_search_rounded,
-                          color: AppColors.primaryLight,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+            const SizedBox(height: AppDimensions.spacingMd),
+
+            // Список участников комнаты («Кто есть, кого нет»)
+            _buildParticipantsList(
+              hostName: room?.hostName ?? 'Хост (Вы)',
+              guestName: room?.peerName,
+              hasGuest: state is SyncRoomHostWaiting && state.hasGuest,
             ),
 
             const SizedBox(height: AppDimensions.spacingMd),
 
-            Text(
-              'Ждем подключения друга...',
-              style: AppTypography.titleSmall.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Передайте код другу. Как только он подключится, плеер запустится синхронно у обоих.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
+            // Интерактивная плашка Anime Match для совместного выбора в комнате
+            if (room != null)
+              _buildInRoomAnimeMatchBanner(room, isHost: true),
 
-            const SizedBox(height: AppDimensions.spacingLg),
+            const SizedBox(height: AppDimensions.spacingSm),
 
-            // Кнопка немедленного старта для хоста
+            // Кнопка старта для хоста
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: AppColors.textPrimary,
-                minimumSize: const Size(double.infinity, 48),
+                backgroundColor: (state is SyncRoomHostWaiting && state.hasGuest)
+                    ? const Color(0xFF00E676)
+                    : Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: (state is SyncRoomHostWaiting && state.hasGuest) ? 6 : 0,
               ),
-              icon: const Icon(Icons.play_arrow_rounded, size: 24),
-              label: const Text(
-                'Войти в комнату и начать просмотр',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+              icon: Icon(
+                (state is SyncRoomHostWaiting && state.hasGuest)
+                    ? Icons.play_arrow_rounded
+                    : Icons.play_circle_outline_rounded,
+                size: 24,
+              ),
+              label: Text(
+                (state is SyncRoomHostWaiting && state.hasGuest)
+                    ? 'Запустить просмотр вместе (2/2) ▶'
+                    : 'Начать сейчас (Хост) ▶',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
               onPressed: room == null
                   ? null
-                  : () {
-                      Navigator.of(context).pop();
-                      widget.onStartPlayback(room, true);
-                    },
+                  : () => context.read<SyncRoomCubit>().startPlaybackForAll(),
             ),
 
             const SizedBox(height: AppDimensions.spacingSm),
@@ -697,6 +660,172 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
   Widget _buildJoinTab() {
     return BlocBuilder<SyncRoomCubit, SyncRoomState>(
       builder: (context, state) {
+        if (state is SyncRoomJoined) {
+          final room = state.room;
+          final previewUrl = room.episode.previewUrl ??
+              (room.title.posterMedium.isNotEmpty
+                  ? room.title.posterMedium
+                  : room.title.posterSmall);
+
+          return Column(
+            children: [
+              // Карточка тайтла и серии комнаты
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    width: 1.0,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: SizedBox(
+                        width: 90,
+                        height: 52,
+                        child: previewUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: wrapCorsSafeUrl(previewUrl),
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) =>
+                                    const ShimmerPlaceholder.card(),
+                                errorWidget: (context, url, error) =>
+                                    Container(color: AppColors.surfaceElevated),
+                              )
+                            : Container(color: AppColors.surfaceElevated),
+                      ),
+                    ),
+                    const SizedBox(width: AppDimensions.spacingMd),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            room.title.displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.titleSmall.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Text(
+                                'Серия ${room.episode.episode}',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const Text('  •  ', style: TextStyle(color: AppColors.textMuted)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  room.quality.label,
+                                  style: AppTypography.badge.copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.primaryLight,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppDimensions.spacingMd),
+
+              // Список участников («Кто в комнате»)
+              _buildParticipantsList(
+                hostName: room.hostName,
+                guestName: room.peerName ?? 'Вы (Гость)',
+                hasGuest: true,
+              ),
+
+              const SizedBox(height: AppDimensions.spacingMd),
+
+              // Интерактивная плашка Anime Match для гостя
+              _buildInRoomAnimeMatchBanner(room, isHost: false),
+
+              const SizedBox(height: AppDimensions.spacingSm),
+
+              // Статус ожидания запуска от хоста
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ожидание запуска от хоста…',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Как только хост нажмет «Старт», плеер откроется синхронно у всех участников.',
+                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppDimensions.spacingLg),
+
+              // Кнопка входа
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                label: const Text('Войти в плеер сейчас ▶', style: TextStyle(fontWeight: FontWeight.w700)),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  widget.onStartPlayback(room, false);
+                },
+              ),
+            ],
+          );
+        }
+
         final isLoading = state is SyncRoomJoining;
         final errorMsg = state is SyncRoomError ? state.message : null;
 
@@ -886,6 +1015,395 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
             ),
           ],
         );
+      },
+    );
+  }
+
+  Widget _buildParticipantsList({
+    required String hostName,
+    String? guestName,
+    required bool hasGuest,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasGuest
+              ? const Color(0xFF00E676).withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.08),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.people_alt_rounded, size: 16, color: Colors.white70),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Участники комнаты',
+                    style: AppTypography.titleSmall.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: hasGuest
+                      ? const Color(0xFF00E676).withValues(alpha: 0.18)
+                      : AppColors.primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: hasGuest
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00E676),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            '2/2 в сборе',
+                            style: TextStyle(
+                              color: Color(0xFF00E676),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      )
+                    : ScaleTransition(
+                        scale: _pulseAnimation,
+                        child: Text(
+                          'Ждем подключения друга...',
+                          style: TextStyle(
+                            color: AppColors.primaryLight,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Хост
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.amber.withValues(alpha: 0.2),
+                  border: Border.all(color: Colors.amber, width: 1.2),
+                ),
+                child: const Center(
+                  child: Icon(Icons.workspace_premium_rounded, size: 18, color: Colors.amber),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hostName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const Text(
+                      'Создатель комнаты',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00E676),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('Готов', style: TextStyle(color: Color(0xFF00E676), fontSize: 10.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: AppColors.strokeMedium, height: 1),
+          const SizedBox(height: 10),
+          // Гость
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: hasGuest ? const Color(0xFF00E676).withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
+                  border: Border.all(
+                    color: hasGuest ? const Color(0xFF00E676) : Colors.white24,
+                    width: 1.2,
+                  ),
+                ),
+                child: Center(
+                  child: Icon(
+                    hasGuest ? Icons.person_rounded : Icons.schedule_rounded,
+                    size: 18,
+                    color: hasGuest ? const Color(0xFF00E676) : Colors.white54,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasGuest ? (guestName ?? 'Друг') : 'Ожидание подключения друга…',
+                      style: TextStyle(
+                        color: hasGuest ? Colors.white : AppColors.textMuted,
+                        fontWeight: hasGuest ? FontWeight.w700 : FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      hasGuest ? 'В комнате' : 'Отправьте код или ссылку для входа',
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasGuest
+                      ? const Color(0xFF00E676).withValues(alpha: 0.15)
+                      : Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: hasGuest ? const Color(0xFF00E676) : Colors.white38,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      hasGuest ? 'Подключен' : 'Ожидание',
+                      style: TextStyle(
+                        color: hasGuest ? const Color(0xFF00E676) : Colors.white54,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInRoomAnimeMatchBanner(SyncRoom room, {required bool isHost}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF5E3A).withValues(alpha: 0.14),
+            const Color(0xFFFF2A68).withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFF2A68).withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFF2A68).withValues(alpha: 0.35),
+                  blurRadius: 10,
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.style_rounded, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    const Text(
+                      'Anime Match',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF2A68).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'Вдвоем',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: Color(0xFFFF5E3A),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Свайпайте тайтлы — совпадение сразу включит серию!',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF2A68),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () => _startAnimeMatch(context, room, isHost: isHost),
+            child: const Text(
+              'Свайпать',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startAnimeMatch(BuildContext context, SyncRoom room, {required bool isHost}) {
+    List<AnimeTitle> deck = [];
+    try {
+      if (getIt.isRegistered<CatalogCubit>()) {
+        final catalogState = getIt<CatalogCubit>().state;
+        if (catalogState is CatalogLoaded && catalogState.titles.isNotEmpty) {
+          deck = catalogState.titles;
+        }
+      }
+    } catch (_) {}
+
+    if (deck.isEmpty) {
+      deck = [
+        room.title,
+        const AnimeTitle(
+          id: 101,
+          code: 'frieren',
+          russianTitle: 'Провожающая в последний путь Фрирен',
+          englishTitle: 'Sousou no Frieren',
+          posterSmall: '',
+          posterMedium: '',
+          posterOriginal: '',
+          genres: ['Приключения', 'Фэнтези'],
+          description: 'История эльфийки-волшебницы Фрирен после победы над Королем демонов.',
+          status: 'Онгоинг',
+        ),
+        const AnimeTitle(
+          id: 102,
+          code: 'jujutsu_kaisen',
+          russianTitle: 'Магическая битва',
+          englishTitle: 'Jujutsu Kaisen',
+          posterSmall: '',
+          posterMedium: '',
+          posterOriginal: '',
+          genres: ['Экшен', 'Сёнэн'],
+          description: 'Юдзи Итадори проглатывает палец проклятого духа Сукуны.',
+          status: 'Онгоинг',
+        ),
+      ];
+    }
+
+    CoopMatchScreen.open(
+      context,
+      deck: deck,
+      roomCode: room.code,
+      userName: isHost ? room.hostName : (room.peerName ?? 'Гость'),
+      syncRepository: getIt<SyncRoomRepository>(),
+      onStartWatching: (matched) {
+        if (getIt.isRegistered<SyncRoomCubit>()) {
+          getIt<SyncRoomCubit>().startMatchedTitlePlayback(matched);
+        }
       },
     );
   }

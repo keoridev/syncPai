@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../theme/app_colors.dart';
@@ -34,7 +35,7 @@ class ShimmerPlaceholder extends StatelessWidget {
     this.enabled = true,
   }) : borderRadius = AppDimensions.borderRadiusSmall;
 
-  static bool get _isInTest => Platform.environment.containsKey('FLUTTER_TEST');
+  static bool get _isInTest => !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
 
   @override
   Widget build(BuildContext context) {

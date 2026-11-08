@@ -123,7 +123,11 @@ class PlayerCubit extends Cubit<PlayerState> {
             return;
           }
 
-          emit(state.copyWith(errorMessage: () => error));
+          emit(state.copyWith(
+            errorMessage: () => error,
+            isPlaying: false,
+            isBuffering: false,
+          ));
         }
       }),
     ]);
@@ -553,12 +557,18 @@ class PlayerCubit extends Cubit<PlayerState> {
       emit(state.copyWith(
         errorMessage: () => 'Серия недоступна для воспроизведения. Выберите другой тайтл или эпизод.',
         isBuffering: false,
+        isPlaying: false,
       ));
       return;
     }
 
     try {
-      emit(state.copyWith(isBuffering: true, errorMessage: () => null));
+      final shouldPlay = !state.isSyncRoom || state.isHost;
+      emit(state.copyWith(
+        isBuffering: true,
+        isPlaying: shouldPlay,
+        errorMessage: () => null,
+      ));
       await player.open(
         Media(
           streamUrl,
@@ -566,12 +576,13 @@ class PlayerCubit extends Cubit<PlayerState> {
               ? initialPosition
               : null,
         ),
-        play: true,
+        play: shouldPlay,
       );
     } catch (e) {
       emit(state.copyWith(
         errorMessage: () => 'Ошибка запуска видеопотока: $e',
         isBuffering: false,
+        isPlaying: false,
       ));
     }
   }
@@ -987,9 +998,11 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   void _startControlsTimer() {
     _controlsTimer?.cancel();
-    if (!state.isPlaying) return;
-    _controlsTimer = Timer(const Duration(milliseconds: 2200), () {
-      if (state.isPlaying && !isClosed) {
+    final delay = state.isPlaying
+        ? const Duration(milliseconds: 2600)
+        : const Duration(milliseconds: 4500);
+    _controlsTimer = Timer(delay, () {
+      if (!isClosed) {
         emit(state.copyWith(areControlsVisible: false));
       }
     });

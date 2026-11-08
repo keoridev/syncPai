@@ -40,6 +40,21 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
             );
             emit(state.copyWith(matchedTitle: () => matched));
           }
+        } else if (packet.action == SyncActionTypes.startPlayback) {
+          final titleId = packet.payload['title_id'] as int?;
+          AnimeTitle? matched = state.matchedTitle;
+          if (titleId != null) {
+            matched = state.deck.firstWhere(
+              (t) => t.id == titleId,
+              orElse: () => state.deck.first,
+            );
+          }
+          if (matched != null) {
+            emit(state.copyWith(
+              matchedTitle: () => matched,
+              isStartingPlayback: true,
+            ));
+          }
         }
       });
     }
@@ -107,8 +122,27 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
     }
   }
 
+  Future<void> startWatchingMatch() async {
+    final matched = state.matchedTitle;
+    if (matched == null) return;
+
+    emit(state.copyWith(isStartingPlayback: true));
+
+    if (roomCode != null && syncRepository != null) {
+      await syncRepository!.sendPacket(
+        SyncPacket(
+          action: SyncActionTypes.startPlayback,
+          sender: userName,
+          roomCode: roomCode!,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          payload: {'title_id': matched.id},
+        ),
+      );
+    }
+  }
+
   void clearMatch() {
-    emit(state.copyWith(matchedTitle: () => null));
+    emit(state.copyWith(matchedTitle: () => null, isStartingPlayback: false));
   }
 
   @override

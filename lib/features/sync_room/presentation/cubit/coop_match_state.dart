@@ -9,6 +9,7 @@ class CoopMatchState extends Equatable {
   final AnimeTitle? matchedTitle;
   final bool isSearching;
   final String? peerName;
+  final bool isStartingPlayback;
 
   const CoopMatchState({
     this.deck = const [],
@@ -18,6 +19,7 @@ class CoopMatchState extends Equatable {
     this.matchedTitle,
     this.isSearching = false,
     this.peerName,
+    this.isStartingPlayback = false,
   });
 
   AnimeTitle? get currentTitle =>
@@ -35,6 +37,7 @@ class CoopMatchState extends Equatable {
     AnimeTitle? Function()? matchedTitle,
     bool? isSearching,
     String? peerName,
+    bool? isStartingPlayback,
   }) {
     return CoopMatchState(
       deck: deck ?? this.deck,
@@ -44,6 +47,7 @@ class CoopMatchState extends Equatable {
       matchedTitle: matchedTitle != null ? matchedTitle() : this.matchedTitle,
       isSearching: isSearching ?? this.isSearching,
       peerName: peerName ?? this.peerName,
+      isStartingPlayback: isStartingPlayback ?? this.isStartingPlayback,
     );
   }
 
@@ -56,6 +60,7 @@ class CoopMatchState extends Equatable {
         matchedTitle,
         isSearching,
         peerName,
+        isStartingPlayback,
       ];
 }
 

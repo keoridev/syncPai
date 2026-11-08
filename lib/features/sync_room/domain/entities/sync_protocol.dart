@@ -17,6 +17,8 @@ abstract final class SyncActionTypes {
   static const String matchFound = 'MATCH_FOUND';
   static const String voiceTalking = 'VOICE_TALKING';
   static const String timestampedReaction = 'TIMESTAMPED_REACTION';
+  static const String startPlayback = 'START_PLAYBACK';
+  static const String roomInfo = 'ROOM_INFO';
 }
 
 /// Легковесный сетевой пакет протокола совместного просмотра.

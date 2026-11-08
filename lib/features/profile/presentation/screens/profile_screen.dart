@@ -13,6 +13,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/glass_container.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_state.dart';
@@ -976,13 +977,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: const Text('Очистить кэш плеера и историю', style: TextStyle(fontWeight: FontWeight.w600)),
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
+                              SnackBar(
+                                content: const Text(
                                   'Кэш плеера и временные файлы очищены!',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                                 ),
-                                backgroundColor: Color(0xFF242730),
+                                backgroundColor: const Color(0xFF242730),
                                 behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                             );
                           },
@@ -1202,7 +1205,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         child: showcasePoster != null && showcasePoster.isNotEmpty
                             ? CachedNetworkImage(
-                                imageUrl: showcasePoster,
+                                imageUrl: wrapCorsSafeUrl(showcasePoster),
                                 fit: BoxFit.cover,
                                 filterQuality: FilterQuality.high,
                                 errorWidget: (_, __, ___) => Center(

@@ -101,7 +101,15 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
       value: widget.cubit,
       child: BlocConsumer<CoopMatchCubit, CoopMatchState>(
         listener: (context, state) {
-          if (state.matchedTitle != null) {
+          if (state.isStartingPlayback && state.matchedTitle != null) {
+            HapticFeedback.heavyImpact();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+            widget.onStartWatching?.call(state.matchedTitle!);
+            return;
+          }
+          if (state.matchedTitle != null && !state.isStartingPlayback) {
             HapticFeedback.heavyImpact();
             _showMatchDialog(context, state.matchedTitle!);
           }
@@ -518,9 +526,12 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                       'Смотреть 1-ю серию вместе',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      Navigator.of(context).pop();
+                    onPressed: () async {
+                      await widget.cubit.startWatchingMatch();
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      if (context.mounted && Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
                       widget.onStartWatching?.call(matched);
                     },
                   ),

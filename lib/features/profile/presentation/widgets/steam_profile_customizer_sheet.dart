@@ -211,6 +211,33 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         ? customBgUrl
         : _selectedBgId;
 
+    String? effectiveFavPoster = _selectedFavAnimePoster;
+    String? effectiveFavId = _selectedFavAnimeId;
+
+    if (newFavAnime.isNotEmpty && (effectiveFavPoster == null || effectiveFavPoster.isEmpty)) {
+      if (_searchedCatalogTitles.isNotEmpty) {
+        final searchMatch = _searchedCatalogTitles.first;
+        effectiveFavPoster = searchMatch.posterMedium.isNotEmpty
+            ? searchMatch.posterMedium
+            : (searchMatch.posterOriginal.isNotEmpty ? searchMatch.posterOriginal : searchMatch.posterSmall);
+        effectiveFavId = searchMatch.id.toString();
+      } else {
+        try {
+          if (getIt.isRegistered<CatalogCubit>()) {
+            final catState = getIt<CatalogCubit>().state;
+            if (catState is CatalogLoaded) {
+              final m = catState.titles.firstWhere(
+                (t) => t.russianTitle.toLowerCase().contains(newFavAnime.toLowerCase()) ||
+                       t.englishTitle.toLowerCase().contains(newFavAnime.toLowerCase()),
+              );
+              effectiveFavPoster = m.posterMedium.isNotEmpty ? m.posterMedium : m.posterOriginal;
+              effectiveFavId = m.id.toString();
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     // 1. Сохраняем в AuthCubit
     context.read<AuthCubit>().updateProfile(
           username: widget.profile.username,
@@ -222,8 +249,8 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           bio: newBio.isNotEmpty ? newBio : null,
           badgeId: _selectedBadgeId,
           favoriteAnimeTitle: newFavAnime.isNotEmpty ? newFavAnime : null,
-          favoriteAnimeId: newFavAnime.isNotEmpty ? _selectedFavAnimeId : null,
-          favoriteAnimePoster: newFavAnime.isNotEmpty ? _selectedFavAnimePoster : null,
+          favoriteAnimeId: newFavAnime.isNotEmpty ? effectiveFavId : null,
+          favoriteAnimePoster: newFavAnime.isNotEmpty ? effectiveFavPoster : null,
           accentColor: _selectedAccentHex,
         );
 
@@ -808,7 +835,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         final isNarrow = constraints.maxWidth <= 360;
         final isWide = constraints.maxWidth >= 600;
         final crossCount = isNarrow ? 2 : (isWide ? 4 : 3);
-        final ratio = isNarrow ? 0.78 : (isWide ? 0.85 : 0.68);
+        final ratio = isNarrow ? 0.72 : (isWide ? 0.85 : 0.68);
 
         return GridView.builder(
           padding: EdgeInsets.symmetric(
@@ -830,7 +857,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
               onTap: () => setState(() => _selectedFrameId = frame.id),
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 decoration: BoxDecoration(
                   color: isSelected ? accent.withValues(alpha: 0.12) : AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
@@ -842,37 +869,44 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      height: 56,
+                    Expanded(
+                      flex: 3,
                       child: Center(
                         child: SteamAvatarFrameWidget(
                           frameId: frame.id,
-                          size: 32,
+                          size: 30,
                           child: Container(
-                            width: 32,
-                            height: 32,
+                            width: 30,
+                            height: 30,
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
                               color: Color(0xFF1E2028),
                             ),
-                            child: Icon(frame.previewIcon, size: 16, color: frame.colors.first),
+                            child: Icon(frame.previewIcon, size: 15, color: frame.colors.first),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Expanded(
+                      flex: 2,
                       child: Center(
-                        child: Text(
-                          frame.name,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: isNarrow ? 9.5 : 10.5,
-                            height: 1.15,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            color: isSelected ? Colors.white : AppColors.textSecondary,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Text(
+                              frame.name,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: isNarrow ? 9.5 : 10.5,
+                                height: 1.15,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? Colors.white : AppColors.textSecondary,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -1276,7 +1310,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: CachedNetworkImage(
-                    imageUrl: _selectedFavAnimePoster!,
+                    imageUrl: wrapCorsSafeUrl(_selectedFavAnimePoster!),
                     width: 40,
                     height: 56,
                     fit: BoxFit.cover,
@@ -1473,7 +1507,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                               height: 44,
                               child: t.posterSmall.isNotEmpty
                                   ? CachedNetworkImage(
-                                      imageUrl: t.posterSmall,
+                                      imageUrl: wrapCorsSafeUrl(t.posterSmall),
                                       fit: BoxFit.cover,
                                       filterQuality: FilterQuality.high,
                                       errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),

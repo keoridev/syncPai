@@ -65,6 +65,23 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
 
     final frameOuterSize = widget.size + 14;
     final isGlacialFrost = frame.id == 'glacial_frost';
+    final isSnow = frame.animation == SteamFrameAnimation.snow ||
+        isGlacialFrost ||
+        frame.id == 'blizzard_snow' ||
+        frame.id.contains('snow');
+    final isMatrix = frame.animation == SteamFrameAnimation.matrix ||
+        frame.id == 'terminal_matrix' ||
+        frame.id == 'matrix_hacker' ||
+        frame.id.contains('matrix');
+    final isSakura = frame.id.contains('sakura') || frame.id.contains('blossom');
+    final isFire = frame.animation == SteamFrameAnimation.fire ||
+        frame.id.contains('flame') ||
+        frame.id.contains('dragon') ||
+        frame.id.contains('flare') ||
+        frame.id.contains('oni');
+    final isLightning = frame.id.contains('electric') ||
+        frame.id.contains('plasma') ||
+        frame.id.contains('storm');
 
     return AnimatedBuilder(
       animation: _animController,
@@ -112,83 +129,33 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
               ),
 
               // 2. СПЕЦИАЛЬНЫЕ ЭФФЕКТЫ ЧАСТИЦ:
-              // Эффект падающего снега (Glacial Frost)
-              if (isGlacialFrost || frame.id == 'snowy_mountain') ...[
-                ...List.generate(12, (i) {
-                  final seed = (i * 0.23);
-                  final snowY = ((t + seed) % 1.0) * (frameOuterSize + 12) - (frameOuterSize / 2 + 6);
-                  final snowX = math.sin((t * 2 + i) * math.pi) * (frameOuterSize / 2.2);
-                  final flakeSize = 2.0 + (i % 3);
+              // Эффект реалистичного падающего снега (Снежная метель / Ледяной Клинок)
+              if (isSnow) ...[
+                ...List.generate(18, (i) {
+                  final seed = (i * 0.173);
+                  final speed = 0.8 + ((i % 4) * 0.25);
+                  final snowY = ((t * speed + seed) % 1.0) * (frameOuterSize + 16) - (frameOuterSize / 2 + 8);
+                  // Естественное покачивание на зимнем ветру
+                  final wind = math.sin((t * 2 * math.pi) + (i * 1.4)) * (5.0 + (i % 3) * 2.5);
+                  final snowX = ((i / 18.0) * (frameOuterSize + 8) - (frameOuterSize / 2 + 4)) + wind;
+                  final flakeSize = 1.8 + (i % 4) * 0.9;
+                  final opacity = (0.45 + (i % 5) * 0.12).clamp(0.2, 0.95);
 
                   return Transform.translate(
                     offset: Offset(snowX, snowY),
-                    child: Container(
-                      width: flakeSize,
-                      height: flakeSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF80D8FF).withValues(alpha: 0.9),
-                            blurRadius: 4,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-
-              // Эффект кода Матрицы (Hacker / Terminal Matrix)
-              if (frame.id == 'terminal_matrix') ...[
-                ...List.generate(8, (i) {
-                  final seed = (i * 0.31);
-                  final dropY = ((t * 1.5 + seed) % 1.0) * (frameOuterSize + 14) - (frameOuterSize / 2 + 7);
-                  final dropX = math.cos(i * 1.2) * (frameOuterSize / 2.1);
-
-                  return Transform.translate(
-                    offset: Offset(dropX, dropY),
-                    child: Text(
-                      ['0', '1', 'λ', '0', '1', 'π', '0', '1'][i],
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF00FF66).withValues(
-                          alpha: ((dropY + frameOuterSize / 2) / frameOuterSize).clamp(0.2, 1.0),
-                        ),
-                        shadows: const [
-                          Shadow(color: Color(0xFF00FF66), blurRadius: 6),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-
-              // Эффект лепестков сакуры (Sakura Blossom)
-              if (frame.id == 'sakura_blossom' || frame.id == 'cherry_blossom_night') ...[
-                ...List.generate(7, (i) {
-                  final seed = (i * 0.28);
-                  final petalY = ((t * 0.8 + seed) % 1.0) * (frameOuterSize + 10) - (frameOuterSize / 2 + 5);
-                  final petalX = math.sin((t * 1.2 + i * 0.8) * math.pi) * (frameOuterSize / 2.1);
-                  final petalRot = (t * 2 + i) * math.pi;
-
-                  return Transform.translate(
-                    offset: Offset(petalX, petalY),
                     child: Transform.rotate(
-                      angle: petalRot,
+                      angle: (t * 2.5 + i) * math.pi,
                       child: Container(
-                        width: 4,
-                        height: 7,
+                        width: flakeSize,
+                        height: flakeSize,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFF9EB5).withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(3),
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: opacity),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFFF007F).withValues(alpha: 0.6),
+                              color: const Color(0xFFB3E5FC).withValues(alpha: 0.9),
                               blurRadius: 4,
+                              spreadRadius: 0.5,
                             ),
                           ],
                         ),
@@ -198,12 +165,80 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                 }),
               ],
 
-              // Эффект языков пламени (Infernal Flame / Golden Dragon)
-              if (frame.id == 'infernal_flame' || frame.id == 'golden_dragon' || frame.id == 'shadow_oni') ...[
-                ...List.generate(9, (i) {
-                  final flameAngle = (i * 2 * math.pi / 9) + (math.sin(t * 6 + i) * 0.15);
-                  final flameHeight = 4.0 + math.sin(t * 8 + i * 2).abs() * 6.0;
-                  final r = (frameOuterSize / 2) + 1;
+              // Эффект реалистичного цифрового дождя Матрицы (Hacker Terminal)
+              if (isMatrix) ...[
+                ...List.generate(14, (i) {
+                  final seed = (i * 0.21);
+                  final speed = 1.2 + ((i % 3) * 0.4);
+                  final dropY = ((t * speed + seed) % 1.0) * (frameOuterSize + 18) - (frameOuterSize / 2 + 9);
+                  final dropX = (i / 14.0) * (frameOuterSize + 4) - (frameOuterSize / 2 + 2);
+                  const glyphs = ['1', '0', 'λ', '1', '§', '0', 'ｶ', '1', '⚡', '0', '7', '1', 'X', '0'];
+                  final char = glyphs[i % glyphs.length];
+                  final isHead = ((t * speed + seed) % 1.0) > 0.85;
+
+                  return Transform.translate(
+                    offset: Offset(dropX, dropY),
+                    child: Text(
+                      char,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: isHead ? 9.5 : 8.0,
+                        fontWeight: FontWeight.w900,
+                        color: isHead
+                            ? const Color(0xFFE0FFF4)
+                            : const Color(0xFF00FF66).withValues(
+                                alpha: ((dropY + frameOuterSize / 2) / frameOuterSize).clamp(0.25, 1.0),
+                              ),
+                        shadows: [
+                          Shadow(
+                            color: isHead ? const Color(0xFF00FF66) : const Color(0xFF008F39),
+                            blurRadius: isHead ? 8 : 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект реалистичных лепестков сакуры (Sakura Blossom)
+              if (isSakura) ...[
+                ...List.generate(10, (i) {
+                  final seed = (i * 0.24);
+                  final petalY = ((t * 0.75 + seed) % 1.0) * (frameOuterSize + 14) - (frameOuterSize / 2 + 7);
+                  final flutter = math.sin((t * 2.0 + i * 0.7) * math.pi) * (frameOuterSize / 2.3);
+                  final petalRot = (t * 2.4 + i * 1.1) * math.pi;
+
+                  return Transform.translate(
+                    offset: Offset(flutter, petalY),
+                    child: Transform.rotate(
+                      angle: petalRot,
+                      child: Container(
+                        width: 4.5,
+                        height: 7.5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB2C9).withValues(alpha: 0.9),
+                          borderRadius: const BorderRadius.all(Radius.elliptical(4, 7)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF4081).withValues(alpha: 0.7),
+                              blurRadius: 5,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект языков пламени и взлетающих искр (Infernal Flame / Solar Dragon)
+              if (isFire) ...[
+                // Языки пламени по периметру
+                ...List.generate(10, (i) {
+                  final flameAngle = (i * 2 * math.pi / 10) + (math.sin(t * 6 + i) * 0.16);
+                  final flameHeight = 4.5 + math.sin(t * 9 + i * 2).abs() * 7.0;
+                  final r = (frameOuterSize / 2) + 1.5;
                   final dx = r * math.cos(flameAngle);
                   final dy = r * math.sin(flameAngle);
 
@@ -212,7 +247,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                     child: Transform.rotate(
                       angle: flameAngle + math.pi / 2,
                       child: Container(
-                        width: 3.5,
+                        width: 3.8,
                         height: flameHeight,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
@@ -224,11 +259,68 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0xFFFF6D00),
-                              blurRadius: 5,
+                              blurRadius: 6,
                               spreadRadius: 1,
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  );
+                }),
+                // Взлетающие горящие искры
+                ...List.generate(8, (i) {
+                  final seed = (i * 0.28);
+                  final sparkY = ((1.0 - ((t * 1.5 + seed) % 1.0))) * (frameOuterSize + 10) - (frameOuterSize / 2 + 5);
+                  final sparkX = math.sin((t * 4 + i) * math.pi) * (frameOuterSize / 2.6);
+
+                  return Transform.translate(
+                    offset: Offset(sparkX, sparkY),
+                    child: Container(
+                      width: 2.5,
+                      height: 2.5,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFFFEB3B),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFFFF5722),
+                            blurRadius: 5,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // Эффект электрических разрядов и молний (Electric / Plasma Storm)
+              if (isLightning) ...[
+                ...List.generate(6, (i) {
+                  final sparkAngle = (i * 2 * math.pi / 6) + (math.sin(t * 12 + i) * 0.3);
+                  final r = (frameOuterSize / 2) + 2.0;
+                  final dx = r * math.cos(sparkAngle);
+                  final dy = r * math.sin(sparkAngle);
+                  final isFlashing = ((t * 8 + i) % 1.0) > 0.45;
+
+                  if (!isFlashing) return const SizedBox.shrink();
+
+                  return Transform.translate(
+                    offset: Offset(dx, dy),
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (i % 2 == 0) ? const Color(0xFF00E5FF) : const Color(0xFFFFEB3B),
+                            blurRadius: 8,
+                            spreadRadius: 2,
+                          ),
+                        ],
                       ),
                     ),
                   );

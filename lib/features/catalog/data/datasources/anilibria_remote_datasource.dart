@@ -103,10 +103,22 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   @override
   Future<AnimeTitleDto> getTitleDetails({int? id, String? code}) async {
     try {
+      final hasValidCode = code != null && code.trim().isNotEmpty && !code.startsWith('saved_');
       final target = id != null ? '$id' : (code ?? '');
       final path = '${ApiConstants.releaseDetails}/$target';
 
-      final response = await client.get(path);
+      dynamic response;
+      try {
+        response = await client.get(path);
+      } catch (err) {
+        // Если по ID вернулась 404 ошибка (например, ID из Anixart/Shikimori не совпадает с AniLibria),
+        // пробуем запросить по коду/slug тайтла (если он есть)
+        if (hasValidCode && target != code) {
+          response = await client.get('${ApiConstants.releaseDetails}/$code');
+        } else {
+          rethrow;
+        }
+      }
 
       if (response.data is Map<String, dynamic>) {
         final map = response.data as Map<String, dynamic>;

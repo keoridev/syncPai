@@ -1,19 +1,82 @@
 import '../../domain/entities/episode_entity.dart';
+import '../../domain/entities/episode_item.dart';
 
-/// DTO модели серии с прямой ссылкой на видеопоток
+/// DTO модели серии с прямой ссылкой на видеопоток и расширенными метаданными AniLibria
 class EpisodeModel {
   final int episode;
   final String link;
+  final String? name;
+  final String? fhd;
+  final String? hd;
+  final String? sd;
+  final String? preview;
+  final TimecodeRange? opening;
+  final TimecodeRange? ending;
 
   const EpisodeModel({
     required this.episode,
     required this.link,
+    this.name,
+    this.fhd,
+    this.hd,
+    this.sd,
+    this.preview,
+    this.opening,
+    this.ending,
   });
 
   factory EpisodeModel.fromJson(Map<String, dynamic> json) {
+    TimecodeRange? opRange;
+    TimecodeRange? edRange;
+    final skips = json['skips'] as Map?;
+    if (skips != null) {
+      final op = skips['opening'] as List?;
+      if (op != null && op.length >= 2) {
+        opRange = TimecodeRange(
+          start: (op[0] as num).toInt(),
+          stop: (op[1] as num).toInt(),
+        );
+      }
+      final ed = skips['ending'] as List?;
+      if (ed != null && ed.length >= 2) {
+        edRange = TimecodeRange(
+          start: (ed[0] as num).toInt(),
+          stop: (ed[1] as num).toInt(),
+        );
+      }
+    } else {
+      if (json['opening'] is Map) {
+        final op = json['opening'] as Map;
+        if (op['start'] != null && op['stop'] != null) {
+          opRange = TimecodeRange(
+            start: (op['start'] as num).toInt(),
+            stop: (op['stop'] as num).toInt(),
+          );
+        }
+      }
+      if (json['ending'] is Map) {
+        final ed = json['ending'] as Map;
+        if (ed['start'] != null && ed['stop'] != null) {
+          edRange = TimecodeRange(
+            start: (ed['start'] as num).toInt(),
+            stop: (ed['stop'] as num).toInt(),
+          );
+        }
+      }
+    }
+
+    final link = (json['link'] ?? json['fhd'] ?? json['hd'] ?? json['sd'] ?? '') as String;
+
     return EpisodeModel(
       episode: (json['episode'] as num?)?.toInt() ?? 1,
-      link: json['link'] as String? ?? '',
+      link: link,
+      name: json['name'] as String?,
+      fhd: json['fhd'] as String?,
+      hd: json['hd'] as String?,
+      sd: json['sd'] as String?,
+      preview: (json['preview'] ?? json['preview_url']) as String?,
+      opening: opRange,
+      ending: edRange,
     );
   }
 
@@ -21,6 +84,16 @@ class EpisodeModel {
     return {
       'episode': episode,
       'link': link,
+      if (name != null) 'name': name,
+      if (fhd != null) 'fhd': fhd,
+      if (hd != null) 'hd': hd,
+      if (sd != null) 'sd': sd,
+      if (preview != null) 'preview': preview,
+      if (opening != null)
+        'skips': {
+          'opening': [opening!.start, opening!.stop],
+          if (ending != null) 'ending': [ending!.start, ending!.stop],
+        },
     };
   }
 
@@ -28,6 +101,13 @@ class EpisodeModel {
     return EpisodeEntity(
       episode: episode,
       link: link,
+      name: name,
+      fhd: fhd,
+      hd: hd,
+      sd: sd,
+      preview: preview,
+      opening: opening,
+      ending: ending,
     );
   }
 }

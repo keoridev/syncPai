@@ -17,10 +17,11 @@ class CatalogCubit extends Cubit<CatalogState> {
   final GetCatalogUseCase? getCatalogUseCase;
   final SearchCatalogUseCase? searchCatalogUseCase;
 
-  Timer? _debounceTimer;
+  Timer? _searchDebounceTimer;
   List<AnimeTitle> _cachedUpdates = [];
+  final Map<String, List<AnimeTitle>> _pageCache = {};
   bool _isFetchingMore = false;
-  int _activeRequestId = 0;
+  int _requestId = 0;
   late CatalogViewMode _currentViewMode;
   late CatalogGridDensity _currentGridDensity;
 
@@ -113,6 +114,14 @@ class CatalogCubit extends Cubit<CatalogState> {
     return null;
   }
 
+  String _buildCacheKey({
+    required String order,
+    required String? status,
+    required String? genre,
+  }) {
+    return '${order}_${status ?? "all"}_${genre ?? "all"}';
+  }
+
   CatalogCubit({
     required this.getUpdates,
     required this.searchTitles,
@@ -135,11 +144,13 @@ class CatalogCubit extends Cubit<CatalogState> {
   }
 
   Future<void> loadUpdates({bool refresh = false}) async {
-    if (!refresh && state is CatalogLoaded && (state as CatalogLoaded).titles.isNotEmpty) {
+    if (refresh) {
+      _pageCache.clear();
+    } else if (state is CatalogLoaded && (state as CatalogLoaded).titles.isNotEmpty) {
       return;
     }
 
-    final requestId = ++_activeRequestId;
+    final requestId = ++_requestId;
     emit(const CatalogLoading());
     try {
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
@@ -150,6 +161,25 @@ class CatalogCubit extends Cubit<CatalogState> {
       final order = _mapSortToOrder(sort);
       final status = _mapStatus(sort, statusFilter);
       final genreStr = _mapGenresToShikimori(genres);
+      final cacheKey = _buildCacheKey(order: order, status: status, genre: genreStr);
+
+      if (!refresh && _pageCache.containsKey(cacheKey) && _pageCache[cacheKey]!.isNotEmpty) {
+        final cached = _pageCache[cacheKey]!;
+        _cachedUpdates = cached;
+        emit(CatalogLoaded(
+          titles: cached,
+          filteredTitles: cached,
+          selectedGenres: genres,
+          sortBy: sort,
+          matchAllGenres: current?.matchAllGenres ?? false,
+          statusFilter: statusFilter,
+          viewMode: _currentViewMode,
+          gridDensity: _currentGridDensity,
+          currentPage: 1,
+          hasMore: cached.length >= 15,
+        ));
+        return;
+      }
 
       List<AnimeTitle> titles = [];
       final useCase = getCatalogUseCase ??
@@ -181,9 +211,13 @@ class CatalogCubit extends Cubit<CatalogState> {
         );
       }
 
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
 
       _cachedUpdates = titles;
+      if (titles.isNotEmpty) {
+        _pageCache[cacheKey] = titles;
+      }
+
       emit(CatalogLoaded(
         titles: titles,
         filteredTitles: titles,
@@ -197,7 +231,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         hasMore: titles.length >= 15,
       ));
     } catch (e) {
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
       emit(CatalogError(e.toString()));
     }
   }
@@ -210,7 +244,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    final requestId = _activeRequestId;
+    final requestId = _requestId;
     _isFetchingMore = true;
     emit(current.copyWith(isLoadingMore: true));
     try {
@@ -249,7 +283,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         );
       }
 
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
 
       if (newTitles.isEmpty) {
         emit(current.copyWith(hasMore: false, isLoadingMore: false));
@@ -271,7 +305,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         isLoadingMore: false,
       ));
     } catch (e) {
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
       emit(current.copyWith(isLoadingMore: false));
     } finally {
       _isFetchingMore = false;
@@ -302,7 +336,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   }
 
   void onSearchQueryChanged(String query) {
-    _debounceTimer?.cancel();
+    _searchDebounceTimer?.cancel();
     final trimmed = query.trim();
 
     if (trimmed.isEmpty) {
@@ -325,13 +359,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 350), () async {
       await performSearch(trimmed);
     });
   }
 
   Future<void> performSearch(String query) async {
-    final requestId = ++_activeRequestId;
+    final requestId = ++_requestId;
     if (state is CatalogLoaded) {
       emit((state as CatalogLoaded).copyWith(isSearching: true, searchQuery: query));
     } else {
@@ -356,7 +390,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         results = await searchTitles(query, limit: 40);
       }
 
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
 
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final genres = current?.selectedGenres ?? const {};
@@ -385,7 +419,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         gridDensity: _currentGridDensity,
       ));
     } catch (e) {
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
       emit(CatalogError('Поиск не удался: $e'));
     }
   }
@@ -396,7 +430,32 @@ class CatalogCubit extends Cubit<CatalogState> {
     String? statusFilter,
     bool matchAll = false,
   }) async {
-    final requestId = ++_activeRequestId;
+    final order = _mapSortToOrder(sortBy);
+    final status = _mapStatus(sortBy, statusFilter);
+    final genreStr = _mapGenresToShikimori(genres);
+    final cacheKey = _buildCacheKey(order: order, status: status, genre: genreStr);
+
+    // 1. Быстрое чтение из In-Memory кэша
+    if (_pageCache.containsKey(cacheKey) && _pageCache[cacheKey]!.isNotEmpty) {
+      final cached = _pageCache[cacheKey]!;
+      _cachedUpdates = cached;
+      emit(CatalogLoaded(
+        titles: cached,
+        filteredTitles: cached,
+        selectedGenres: genres,
+        sortBy: sortBy,
+        matchAllGenres: matchAll,
+        statusFilter: statusFilter,
+        viewMode: _currentViewMode,
+        gridDensity: _currentGridDensity,
+        currentPage: 1,
+        hasMore: cached.length >= 15,
+        isLoadingMore: false,
+      ));
+      return;
+    }
+
+    final requestId = ++_requestId;
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
       emit(current.copyWith(
@@ -412,10 +471,6 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
 
     try {
-      final order = _mapSortToOrder(sortBy);
-      final status = _mapStatus(sortBy, statusFilter);
-      final genreStr = _mapGenresToShikimori(genres);
-
       List<AnimeTitle> titles = [];
       final useCase = getCatalogUseCase ??
           (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
@@ -446,9 +501,13 @@ class CatalogCubit extends Cubit<CatalogState> {
         );
       }
 
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
 
       _cachedUpdates = titles;
+      if (titles.isNotEmpty) {
+        _pageCache[cacheKey] = titles;
+      }
+
       emit(CatalogLoaded(
         titles: titles,
         filteredTitles: titles,
@@ -463,7 +522,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         isLoadingMore: false,
       ));
     } catch (e) {
-      if (requestId != _activeRequestId) return;
+      if (requestId != _requestId) return;
       emit(CatalogError(e.toString()));
     }
   }
@@ -719,7 +778,7 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   @override
   Future<void> close() {
-    _debounceTimer?.cancel();
+    _searchDebounceTimer?.cancel();
     return super.close();
   }
 }

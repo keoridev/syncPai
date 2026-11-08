@@ -344,11 +344,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       final titleEn = _currentTitle.englishTitle;
       final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
 
-      // Получаем видеопотоки напрямую через Supabase Edge Function get_anime_player_data
+      // Получаем видеопотоки напрямую через Supabase Edge Function get_anime_player_data (BFF)
       final response = await Supabase.instance.client.functions.invoke(
         'get_anime_player_data',
         body: {
           'shikimori_id': shikiId,
+          'title_ru': titleRu,
+          'title_en': titleEn,
           if (displayTitle.isNotEmpty) 'title': displayTitle,
         },
       );
@@ -361,27 +363,83 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         data = Map<String, dynamic>.from(resData);
       }
 
-      final translationsList = data['translations'] as List? ?? [];
       final List<EpisodeItem> directEpisodes = [];
 
-      for (final t in translationsList) {
-        if (t is Map && t['is_direct_stream'] == true && t['episodes'] is List) {
-          final eps = t['episodes'] as List;
-          for (final e in eps) {
-            if (e is Map) {
-              final epNum = (e['episode'] as num?)?.toInt() ?? 1;
-              final link = (e['link'] ?? '') as String;
-              if (link.isNotEmpty) {
-                directEpisodes.add(EpisodeItem(
-                  episode: epNum,
-                  sdUrl: link,
-                  hdUrl: link,
-                  fhdUrl: link,
-                ));
-              }
+      // 1. Приоритет: парсинг серий из AniLibria со всеми метаданными (FHD/HD/SD, скипы, превью)
+      final rawEps = (data['episodes'] as List? ?? []);
+      for (final e in rawEps) {
+        if (e is Map) {
+          final epNum = (e['episode'] as num?)?.toInt() ?? 1;
+          final link = (e['link'] ?? '') as String;
+          final fhd = e['fhd'] as String?;
+          final hd = e['hd'] as String?;
+          final sd = e['sd'] as String?;
+          final preview = e['preview'] as String?;
+
+          TimecodeRange? opRange;
+          TimecodeRange? edRange;
+          final skips = e['skips'] as Map?;
+          if (skips != null) {
+            final op = skips['opening'] as List?;
+            if (op != null && op.length >= 2) {
+              opRange = TimecodeRange(
+                start: (op[0] as num).toInt(),
+                stop: (op[1] as num).toInt(),
+              );
+            }
+            final ed = skips['ending'] as List?;
+            if (ed != null && ed.length >= 2) {
+              edRange = TimecodeRange(
+                start: (ed[0] as num).toInt(),
+                stop: (ed[1] as num).toInt(),
+              );
             }
           }
-          if (directEpisodes.isNotEmpty) break;
+
+          if (link.isNotEmpty) {
+            directEpisodes.add(EpisodeItem(
+              episode: epNum,
+              name: e['name'] as String?,
+              previewUrl: preview,
+              sdUrl: sd ?? link,
+              hdUrl: hd ?? link,
+              fhdUrl: fhd ?? hd ?? link,
+              opening: opRange,
+              ending: edRange,
+            ));
+          }
+        }
+      }
+
+      // 2. Резервный источник: translations с флагом is_direct_stream
+      if (directEpisodes.isEmpty) {
+        final translationsList = data['translations'] as List? ?? [];
+        for (final t in translationsList) {
+          if (t is Map && t['is_direct_stream'] == true && t['episodes'] is List) {
+            final eps = t['episodes'] as List;
+            for (final e in eps) {
+              if (e is Map) {
+                final epNum = (e['episode'] as num?)?.toInt() ?? 1;
+                final link = (e['link'] ?? '') as String;
+                final fhd = e['fhd'] as String?;
+                final hd = e['hd'] as String?;
+                final sd = e['sd'] as String?;
+                final preview = e['preview'] as String?;
+
+                if (link.isNotEmpty) {
+                  directEpisodes.add(EpisodeItem(
+                    episode: epNum,
+                    name: e['name'] as String?,
+                    previewUrl: preview,
+                    sdUrl: sd ?? link,
+                    hdUrl: hd ?? link,
+                    fhdUrl: fhd ?? hd ?? link,
+                  ));
+                }
+              }
+            }
+            if (directEpisodes.isNotEmpty) break;
+          }
         }
       }
 
@@ -486,12 +544,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
             final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
             if (direct.isNotEmpty) {
               final directEpisodes = direct.first.episodes
-                  .map((e) => EpisodeItem(
-                        episode: e.episode,
-                        sdUrl: e.link,
-                        hdUrl: e.link,
-                        fhdUrl: e.link,
-                      ))
+                  .map((e) => e.toEpisodeItem())
                   .toList();
               final updatedTitle = _currentTitle.copyWith(episodes: directEpisodes);
               _currentTitle = updatedTitle;
@@ -699,31 +752,29 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       final double minH = kToolbarHeight + MediaQuery.paddingOf(context).top;
                       final double currentH = constraints.maxHeight;
                       final double collapseRatio = ((maxH - currentH) / (maxH - minH)).clamp(0.0, 1.0);
-                      final double blurSigma = collapseRatio * 14.0;
 
                       return Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Фоновый арт с эффектом прогрессивного размытия при скролле
+                          // Четкий оригинальный HD-арт без размытия и потери детализации
                           if (backdropUrl.isNotEmpty)
                             Hero(
                               tag: 'anime-poster-${title.id}',
-                              child: ImageFiltered(
-                                imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-                                child: CachedNetworkImage(
-                                  imageUrl: wrapCorsSafeUrl(backdropUrl),
-                                  fit: BoxFit.cover,
-                                  alignment: Alignment.topCenter,
-                                  httpHeaders: const {
-                                    'User-Agent': 'SyncPai-App/1.0',
-                                    'Referer': 'https://shikimori.io/',
-                                  },
-                                  placeholder: (context, url) => Container(color: AppColors.surface),
-                                  errorWidget: (context, url, error) => Container(
-                                    color: AppColors.surface,
-                                    child: const Center(
-                                      child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 48),
-                                    ),
+                              child: CachedNetworkImage(
+                                imageUrl: wrapCorsSafeUrl(backdropUrl),
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                                memCacheWidth: 1080,
+                                filterQuality: FilterQuality.medium,
+                                httpHeaders: const {
+                                  'User-Agent': 'SyncPai-App/1.0',
+                                  'Referer': 'https://shikimori.io/',
+                                },
+                                placeholder: (context, url) => Container(color: AppColors.surface),
+                                errorWidget: (context, url, error) => Container(
+                                  color: AppColors.surface,
+                                  child: const Center(
+                                    child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 48),
                                   ),
                                 ),
                               ),

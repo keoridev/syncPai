@@ -251,7 +251,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 (effectiveTitle.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim()) ||
                 (nName.isNotEmpty && nName.toLowerCase().trim() == currentTitle.displayTitle.toLowerCase().trim());
 
-            final rawImg = n['image_url'] as String? ?? '';
+            final rawImg = (n['image_url'] as String? ?? '')
+                .replaceAll('/x96/', '/original/')
+                .replaceAll('/x48/', '/original/')
+                .replaceAll('/preview/', '/original/');
             final rawPUrl = rawImg.startsWith('http')
                 ? rawImg
                 : (rawImg.isNotEmpty ? 'https://shikimori.io$rawImg' : '');
@@ -341,8 +344,11 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
               ? double.parse((rawScore > 5.0 ? rawScore / 2 : rawScore).toStringAsFixed(1))
               : null;
 
-          final imageMap = animeMap['image'] as Map<String, dynamic>?;
-          final rawPoster = imageMap?['preview'] as String? ?? imageMap?['original'] as String? ?? '';
+          final rawPoster = ((animeMap['image'] as Map<String, dynamic>?)?['original'] as String? ??
+                  (animeMap['image'] as Map<String, dynamic>?)?['preview'] as String? ?? '')
+              .replaceAll('/x96/', '/original/')
+              .replaceAll('/x48/', '/original/')
+              .replaceAll('/preview/', '/original/');
           final rawPosterUrl = rawPoster.startsWith('http')
               ? rawPoster
               : (rawPoster.isNotEmpty ? 'https://shikimori.io$rawPoster' : '');

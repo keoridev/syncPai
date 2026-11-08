@@ -265,68 +265,6 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                             ),
                           ),
 
-                          // 5. Светящиеся разделительные точки-маркеры ключевых таймкодов
-                          if (opStartRatio != null)
-                            Positioned(
-                              left: (barWidth * opStartRatio - 2.5).clamp(0.0, barWidth - 5),
-                              child: Container(
-                                width: 5.0,
-                                height: 8.0,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFD54F),
-                                  borderRadius: BorderRadius.circular(2),
-                                  boxShadow: const [
-                                    BoxShadow(color: Color(0xFFFFB300), blurRadius: 4),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (opStopRatio != null)
-                            Positioned(
-                              left: (barWidth * opStopRatio - 2.5).clamp(0.0, barWidth - 5),
-                              child: Container(
-                                width: 5.0,
-                                height: 8.0,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFD54F),
-                                  borderRadius: BorderRadius.circular(2),
-                                  boxShadow: const [
-                                    BoxShadow(color: Color(0xFFFFB300), blurRadius: 4),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (edStartRatio != null)
-                            Positioned(
-                              left: (barWidth * edStartRatio - 2.5).clamp(0.0, barWidth - 5),
-                              child: Container(
-                                width: 5.0,
-                                height: 8.0,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF80D8FF),
-                                  borderRadius: BorderRadius.circular(2),
-                                  boxShadow: const [
-                                    BoxShadow(color: Color(0xFF00E5FF), blurRadius: 4),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (edStopRatio != null)
-                            Positioned(
-                              left: (barWidth * edStopRatio - 2.5).clamp(0.0, barWidth - 5),
-                              child: Container(
-                                width: 5.0,
-                                height: 8.0,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF80D8FF),
-                                  borderRadius: BorderRadius.circular(2),
-                                  boxShadow: const [
-                                    BoxShadow(color: Color(0xFF00E5FF), blurRadius: 4),
-                                  ],
-                                ),
-                              ),
-                            ),
-
                           // 6. Ползунок (Thumb) с плавной трансформацией размера
                           Positioned(
                             left: (barWidth * progressRatio - (_isDragging ? 10 : 6))

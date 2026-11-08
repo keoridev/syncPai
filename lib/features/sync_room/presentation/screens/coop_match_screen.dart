@@ -222,7 +222,7 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Кажется, ваши вкусы сошлись! 🎰',
+                              'Кажется, ваши вкусы сошлись!',
                               style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
                             ),
                           ],

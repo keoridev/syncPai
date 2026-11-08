@@ -148,9 +148,6 @@ class PlayerCubit extends Cubit<PlayerState> {
     if (isAutoSkipOpening && opening != null) {
       if (pos.inSeconds >= opening.start && pos.inSeconds < opening.start + 2) {
         seek(opening.stopDuration);
-        emit(state.copyWith(
-          errorMessage: () => 'Опенинг автоматически пропущен (+${opening.stop - opening.start}с)',
-        ));
       }
     }
   }
@@ -158,11 +155,6 @@ class PlayerCubit extends Cubit<PlayerState> {
   /// Включить / выключить умный авто-пропуск опенингов
   void toggleAutoSkipOpening() {
     isAutoSkipOpening = !isAutoSkipOpening;
-    emit(state.copyWith(
-      errorMessage: () => isAutoSkipOpening
-          ? 'Включен авто-пропуск опенингов'
-          : 'Авто-пропуск опенингов выключен',
-    ));
   }
 
   /// Пропуск опенинга: по таймкодам или универсально на +90 сек
@@ -258,7 +250,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       isPeerAway: isAwayNow,
       awaySecondsCount: isAwayNow ? state.awaySecondsCount : 0,
       bufferNotice: isAwayNow
-          ? () => '$friendName ждет вас. Плеер остановлен 🥺'
+          ? () => '$friendName ждет вас. Плеер приостановлен'
           : () => (wasAway ? null : state.bufferNotice),
       syncStatus: isAwayNow
           ? SyncStatus.buffering
@@ -617,7 +609,22 @@ class PlayerCubit extends Cubit<PlayerState> {
       }
     } catch (_) {}
 
-    String? streamUrl = localFilePath ?? _getUrlForQuality(state.episode, state.selectedQuality);
+    String? streamUrl = localFilePath;
+
+    // Если активна сторонняя озвучка (Kodik, StudioBand, AniDUB и др.), загружаем её поток
+    if (streamUrl == null && getIt.isRegistered<KodikCubit>()) {
+      try {
+        final kodik = getIt<KodikCubit>();
+        if (!kodik.state.isAniLibriaActive) {
+          final kodikStream = await kodik.getStreamForEpisode(state.episode.episode);
+          if (kodikStream != null && kodikStream.isNotEmpty) {
+            streamUrl = kodikStream;
+          }
+        }
+      } catch (_) {}
+    }
+
+    streamUrl ??= _getUrlForQuality(state.episode, state.selectedQuality);
 
     // Защита: отсекаем dummy-ссылки sample.com, которые приводят к падению декодера c2.mtk.avc.decoder
     if (streamUrl != null && streamUrl.contains('sample.com')) {
@@ -735,7 +742,24 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       }
     } else {
-      // Для iframe плееров (Kodik) ставим нативный плеер на паузу
+      // Для сторонних озвучек (Kodik) извлекаем прямой поток через KodikCubit
+      if (getIt.isRegistered<KodikCubit>()) {
+        try {
+          final kodik = getIt<KodikCubit>();
+          final streamUrl = await kodik.getStreamForEpisode(state.episode.episode);
+          if (streamUrl != null && streamUrl.isNotEmpty) {
+            await player.open(
+              Media(
+                streamUrl,
+                start: currentPos > Duration.zero ? currentPos : null,
+              ),
+              play: state.isPlaying,
+            );
+            return;
+          }
+        } catch (_) {}
+      }
+      // Если поток недоступен, ставим на паузу
       await player.pause();
     }
   }
@@ -1061,8 +1085,6 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   /// Проверка окончания серии для авто-перехода (Auto Next Episode)
   void _checkAutoNextEpisode(Duration pos) {
-    if (!state.isSyncRoom) return;
-
     final dur = state.duration;
     if (dur <= const Duration(seconds: 20)) return;
 
@@ -1096,7 +1118,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       if (current <= 1) {
         timer.cancel();
         emit(state.copyWith(autoNextCountdown: () => null));
-        if (state.isHost) {
+        if (!state.isSyncRoom || state.isHost) {
           playNextEpisode(nextEp);
         }
       } else {

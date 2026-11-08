@@ -52,7 +52,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
                   ? (title.description.length > 130
                       ? '${title.description.substring(0, 127)}...'
                       : title.description)
-                  : '🔥 Серия ${validEp.episode} из «${title.russianTitle}»';
+                  : 'Серия ${validEp.episode} из «${title.russianTitle}»';
 
               dynamicClips.add(AnimeClip(
                 id: 'clip_dyn_${title.id}_${validEp.episode}',
@@ -174,7 +174,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://anilibria.top/storage/releases/posters/10344/HqOeeF96Obeeu51pc8uw8ft06RFoM1A0.jpg',
         episodeNumber: 12,
         targetTimestampSeconds: 1115, // 18:35
-        caption: '🔥 Кульминация сезона! Сон Джин-ву произносит заветное «Восстань» и подчиняет тень Игриса.',
+        caption: 'Кульминация сезона! Сон Джин-ву произносит заветное «Восстань» и подчиняет тень Игриса.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=9g0H2gKqQ5Y',
         likesCount: 28420,
@@ -234,7 +234,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/40028/main-43dc73cfbf9be5caae303b603eb60682.jpg',
         episodeNumber: 28,
         targetTimestampSeconds: 760, // 12:40
-        caption: '🌊 Гул Земли начался. Тысячи Колоссальных титанов под командованием Эрена пересекают океан.',
+        caption: 'Гул Земли начался. Тысячи Колоссальных титанов под командованием Эрена пересекают океан.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9283/1/720/9283_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=E7WytQM244o',
         likesCount: 31400,
@@ -264,7 +264,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/41467/main-5fe6e3cfb384666f7f2b1d3d633f0a51.jpg',
         episodeNumber: 6,
         targetTimestampSeconds: 1050, // 17:30
-        caption: '🔥 Банкай Занка но Тачи: Главнокомандующий Ямамото высвобождает жар в 15 000 000 градусов.',
+        caption: 'Банкай Занка но Тачи: Главнокомандующий Ямамото высвобождает жар в 15 000 000 градусов.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9780/1/720/9780_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=e8YBesRKq_U',
         likesCount: 22100,
@@ -279,7 +279,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/40871/main-23bca393693e8271701f681a95e791e8.jpg',
         episodeNumber: 1,
         targetTimestampSeconds: 320, // 05:20
-        caption: '🐾 Невероятная динамика боевых искусств: Заместитель министра Ли Бин берется за расследование.',
+        caption: 'Невероятная динамика боевых искусств: Заместитель министра Ли Бин берется за расследование.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10420/1/720/10420_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=wXqM1gI34w8',
         likesCount: 15320,

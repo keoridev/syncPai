@@ -26,6 +26,14 @@ abstract class AnimeListRepository {
   /// Импортировать закладки из файла бэкапа Anixart
   Future<AnixartImportResult> importAnixartBackup(String jsonContent, {required String userId});
 
+  /// Умный импорт CSV-закладок Anixart с поиском по Shikimori API и маппингом статусов
+  Future<AnixartImportResult> importAnixartCsvWithShikimori(
+    String rawCsv, {
+    required String userId,
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    void Function(int current, int total, String currentTitle)? onProgress,
+  });
+
   /// Импортировать закладки онлайн по ID профиля или логину Anixart
   Future<AnixartImportResult> importAnixartByLoginOrId(String loginOrId, {required String userId});
 

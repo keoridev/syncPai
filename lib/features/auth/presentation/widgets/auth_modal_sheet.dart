@@ -59,6 +59,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
 
   @override
   void dispose() {
+    FocusManager.instance.primaryFocus?.unfocus();
     _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();

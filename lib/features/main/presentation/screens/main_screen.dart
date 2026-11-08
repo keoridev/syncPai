@@ -48,6 +48,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void switchTab(int index) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    FocusScope.of(context).unfocus();
     if (index >= 0 && index < 5) {
       if (_currentIndex != index) {
         setState(() => _currentIndex = index);
@@ -70,6 +72,8 @@ class _MainScreenState extends State<MainScreen> {
       controller: _pageController,
       physics: const BouncingScrollPhysics(),
       onPageChanged: (index) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        FocusScope.of(context).unfocus();
         if (_currentIndex != index) {
           setState(() => _currentIndex = index);
         }

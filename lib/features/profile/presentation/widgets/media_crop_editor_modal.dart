@@ -210,18 +210,19 @@ class _MediaCropEditorModalState extends State<MediaCropEditorModal> {
                           child: Container(
                             decoration: BoxDecoration(
                               shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
-                              border: Border.all(color: accent, width: 2.0),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 1.5),
                               boxShadow: [
                                 BoxShadow(
-                                  color: accent.withValues(alpha: 0.35),
-                                  blurRadius: 18,
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
                                 ),
                               ],
                             ),
                             child: isCircle
                                 ? null
                                 : CustomPaint(
-                                    painter: _RuleOfThirdsPainter(color: accent.withValues(alpha: 0.45)),
+                                    painter: _RuleOfThirdsPainter(color: Colors.white.withValues(alpha: 0.35)),
                                   ),
                           ),
                         ),

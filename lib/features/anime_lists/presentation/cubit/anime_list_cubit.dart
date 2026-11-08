@@ -162,6 +162,39 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     }
   }
 
+  /// Умный импорт CSV закладок с маппингом через официальный Shikimori API
+  Future<AnixartImportResult?> importAnixartCsvWithShikimori(
+    String rawCsv, {
+    required String userId,
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    void Function(int current, int total, String currentTitle)? onProgress,
+  }) async {
+    emit(state.copyWith(isLoading: true, errorMessage: null));
+    try {
+      final result = await repository.importAnixartCsvWithShikimori(
+        rawCsv,
+        userId: userId,
+        defaultStatus: defaultStatus,
+        onProgress: onProgress,
+      );
+      final entries = await repository.getAllEntries();
+      final stats = UserAnimeStats.compute(entries);
+      emit(state.copyWith(
+        allEntries: entries,
+        stats: stats,
+        isLoading: false,
+        lastImportResult: result,
+      ));
+      return result;
+    } catch (e) {
+      emit(state.copyWith(
+        isLoading: false,
+        errorMessage: 'Ошибка умного импорта Anixart: $e',
+      ));
+      return null;
+    }
+  }
+
   Future<AnixartImportResult?> importAnixartOnline(String loginOrId, {required String userId}) async {
     emit(state.copyWith(isLoading: true, errorMessage: null));
     try {

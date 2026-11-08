@@ -610,15 +610,32 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                               : AppColors.strokeMedium,
                                         ),
                                       ),
-                                      child: Text(
-                                        state.statusFilter == 'ongoing'
-                                            ? '🎬 Онгоинги'
-                                            : (state.statusFilter == 'released' ? '✓ Завершенные' : '🎬 Статус: Все'),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: state.statusFilter != null ? FontWeight.w700 : FontWeight.w500,
-                                          color: state.statusFilter != null ? themePrimaryLight : AppColors.textSecondary,
-                                        ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            state.statusFilter == 'ongoing'
+                                                ? Icons.bolt_rounded
+                                                : (state.statusFilter == 'released'
+                                                    ? Icons.check_circle_outline_rounded
+                                                    : Icons.apps_rounded),
+                                            size: 14,
+                                            color: state.statusFilter != null
+                                                ? themePrimaryLight
+                                                : AppColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            state.statusFilter == 'ongoing'
+                                                ? 'Онгоинги'
+                                                : (state.statusFilter == 'released' ? 'Завершенные' : 'Статус: Все'),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: state.statusFilter != null ? FontWeight.w700 : FontWeight.w500,
+                                              color: state.statusFilter != null ? themePrimaryLight : AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),

@@ -401,14 +401,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     isScreenLocked: state.isScreenLocked,
                     onScreenLockedTap: () {
                       HapticFeedback.selectionClick();
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Экран заблокирован. Нажмите «Разблокировать» в углу экрана 🔒'),
-                          duration: Duration(milliseconds: 1400),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
                     },
                     opening: state.episode.opening,
                     ending: state.episode.ending,
@@ -651,7 +643,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                             _cubit.toggleScreenLock();
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Экран разблокирован 🔓'),
+                                content: Text('Экран разблокирован'),
                                 duration: Duration(seconds: 1),
                                 behavior: SnackBarBehavior.floating,
                               ),

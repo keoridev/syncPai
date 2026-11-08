@@ -135,7 +135,7 @@ class WatchPartyStatsSheet extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: _buildMetricCard(
-                        '🔥 Эмодзи Danmaku',
+                        'Реакции Danmaku',
                         '$emojisSent шт.',
                         'Эмоциональный просмотр',
                       ),
@@ -159,7 +159,7 @@ class WatchPartyStatsSheet extends StatelessWidget {
                     onPressed: () {
                       HapticFeedback.mediumImpact();
                       Clipboard.setData(ClipboardData(
-                        text: 'Смотрели ${title.displayTitle} (серия ${episode.episode}) вместе в SyncPai! 🍿🔥',
+                        text: 'Смотрели ${title.displayTitle} (серия ${episode.episode}) вместе в SyncPai!',
                       ));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

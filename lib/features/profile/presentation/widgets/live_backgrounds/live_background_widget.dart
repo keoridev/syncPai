@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../../../../core/network/image_cors_helper.dart';
+import 'anime_procedural_painters.dart';
 import 'cyberpunk_grid_painter.dart';
 import 'matrix_rain_painter.dart';
 import 'sakura_petals_painter.dart';
@@ -67,7 +68,18 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
         bgId.contains('space') ||
         bgId.contains('void') ||
         bgId.contains('star') ||
-        media == 'starfield';
+        media == 'starfield' ||
+        bgId.contains('solo_leveling') ||
+        media == 'solo_leveling' ||
+        bgId.contains('titan') ||
+        media == 'titan_lightning' ||
+        bgId.contains('black_flash') ||
+        bgId.contains('jujutsu') ||
+        media == 'black_flash' ||
+        bgId.contains('bleach') ||
+        media == 'bleach_bankai' ||
+        bgId.contains('evangelion') ||
+        media == 'evangelion_at';
   }
 
   @override
@@ -247,6 +259,81 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
               painter: StarfieldPainter(
                 animationValue: _animController.value,
               ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 6. Процедурный живой фон: Solo Leveling (Теневой Монарх)
+    if (bgId.contains('solo_leveling') || media == 'solo_leveling') {
+      return RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) => CustomPaint(
+            size: Size.infinite,
+            painter: SoloLevelingShadowPainter(
+              animationValue: _animController.value,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 7. Процедурный живой фон: Атака Титанов (Золотая молния)
+    if (bgId.contains('titan') || media == 'titan_lightning') {
+      return RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) => CustomPaint(
+            size: Size.infinite,
+            painter: TitanLightningPainter(
+              animationValue: _animController.value,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 8. Процедурный живой фон: Магическая Битва (Black Flash)
+    if (bgId.contains('black_flash') || bgId.contains('jujutsu') || media == 'black_flash') {
+      return RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) => CustomPaint(
+            size: Size.infinite,
+            painter: BlackFlashPainter(
+              animationValue: _animController.value,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 9. Процедурный живой фон: Блич (Банкай / Рэйацу)
+    if (bgId.contains('bleach') || media == 'bleach_bankai') {
+      return RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) => CustomPaint(
+            size: Size.infinite,
+            painter: BleachReiatsuPainter(
+              animationValue: _animController.value,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 10. Процедурный живой фон: Евангелион (A.T. Field)
+    if (bgId.contains('evangelion') || media == 'evangelion_at') {
+      return RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) => CustomPaint(
+            size: Size.infinite,
+            painter: EvangelionAtFieldPainter(
+              animationValue: _animController.value,
             ),
           ),
         ),

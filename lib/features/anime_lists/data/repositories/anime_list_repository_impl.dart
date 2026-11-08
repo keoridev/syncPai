@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../datasources/anixart_backup_parser.dart';
+import '../datasources/anixart_csv_parser.dart';
 import '../datasources/anixart_remote_datasource.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
@@ -187,6 +188,59 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
             );
       } catch (e) {
         debugPrint('Cloud bulk import error: $e');
+      }
+    }
+
+    return result;
+  }
+
+  @override
+  Future<AnixartImportResult> importAnixartCsvWithShikimori(
+    String rawCsv, {
+    required String userId,
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    void Function(int current, int total, String currentTitle)? onProgress,
+  }) async {
+    final result = await AnixartCsvParser.parseWithShikimori(
+      rawCsv,
+      userId: userId,
+      defaultStatus: defaultStatus,
+      onProgress: onProgress,
+    );
+
+    final current = await getAllEntries();
+    final map = {for (final e in current) e.animeId: e};
+
+    for (final imported in result.entries) {
+      map[imported.animeId] = imported;
+    }
+
+    final merged = map.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await _saveLocal(merged);
+
+    // Пачковый UPSERT в таблицу Supabase
+    final client = _supabase;
+    if (client != null && client.auth.currentUser != null) {
+      try {
+        final payload = result.entries.map((e) => {
+              'user_id': client.auth.currentUser!.id,
+              'anime_id': e.animeId,
+              'shikimori_id': e.animeId,
+              'title_ru': e.titleRu,
+              'poster_url': e.posterUrl,
+              'status': e.status.name,
+              'last_episode': e.lastEpisode,
+              'position_ms': e.positionMs,
+              'episodes_total': e.episodesTotal,
+              'updated_at': e.updatedAt.toIso8601String(),
+            }).toList();
+
+        await client.from('user_anime_lists').upsert(
+              payload,
+              onConflict: 'user_id, anime_id',
+            );
+      } catch (e) {
+        debugPrint('Cloud bulk UPSERT error: $e');
       }
     }
 

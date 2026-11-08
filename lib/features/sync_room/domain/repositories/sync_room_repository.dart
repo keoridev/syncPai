@@ -17,6 +17,9 @@ abstract class SyncRoomRepository {
   /// Получить информацию о комнате по ее 6-значному коду
   Future<SyncRoom?> getRoom(String code);
 
+  /// Валидация существования комнаты перед входом (предотвращение входа в призрачные комнаты)
+  Future<bool> validateRoomExists(String code);
+
   /// Присоединиться к существующей комнате (Я гость)
   Future<SyncRoom> joinRoom({
     required String code,

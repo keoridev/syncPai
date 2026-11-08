@@ -4,6 +4,7 @@ import '../../core/utils/player_navigation_guard.dart';
 import '../../features/anime_details/domain/entities/anime_video_item.dart';
 import '../../features/anime_details/presentation/screens/anime_details_screen.dart';
 import '../../features/anime_details/presentation/screens/anime_videos_screen.dart';
+import '../../features/auth/presentation/screens/auth_screen.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import '../../features/catalog/domain/entities/episode_item.dart';
 import '../../features/main/presentation/screens/main_screen.dart';
@@ -25,6 +26,11 @@ final GoRouter appRouter = GoRouter(
       path: '/splash',
       name: 'splash',
       builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: '/auth',
+      name: 'auth',
+      builder: (context, state) => const AuthScreen(),
     ),
     GoRoute(
       path: '/',

@@ -61,6 +61,9 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
     if (clean.contains('sakura') || clean.contains('blossom')) {
       return 'sakura';
     }
+    if (clean.contains('dragon')) {
+      return 'golden_dragon';
+    }
     if (clean.contains('cyber') || clean.contains('blade') || clean.contains('samurai')) {
       return 'cyber_blade';
     }

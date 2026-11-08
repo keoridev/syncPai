@@ -35,6 +35,9 @@ class ThematicAvatarFramePainter extends CustomPainter {
       case 'matrix_glitch':
         _paintMatrixGlitchFrame(canvas, center, radius);
         break;
+      case 'golden_dragon':
+        _paintGoldenDragonFrame(canvas, center, radius);
+        break;
       default:
         _paintDefaultAura(canvas, center, radius);
         break;
@@ -250,6 +253,118 @@ class ThematicAvatarFramePainter extends CustomPainter {
       final pixelAlpha = (1.0 - blockProgress).clamp(0.1, 0.95);
       pixelPaint.color = const Color(0xFF00FF66).withValues(alpha: pixelAlpha);
       canvas.drawRect(Rect.fromLTWH(bx, by, 3.2, 3.2), pixelPaint);
+    }
+  }
+
+  // --- 5. ТЕМА «ЗОЛОТОЙ ДРАКОН» (Golden Dragon) ---
+  void _paintGoldenDragonFrame(Canvas canvas, Offset center, double radius) {
+    // 1. Золотое тело дракона, обвивающее контур
+    final bodyPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFFFFD700),
+          Color(0xFFFF9100),
+          Color(0xFFFF6D00),
+          Color(0xFFFFE57F),
+          Color(0xFFFFD700),
+        ],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.6
+      ..strokeCap = StrokeCap.round;
+
+    final bodyPath = Path();
+    bodyPath.addArc(
+      Rect.fromCircle(center: center, radius: radius + 2.0),
+      -math.pi * 0.4,
+      math.pi * 1.85,
+    );
+    canvas.drawPath(bodyPath, bodyPaint);
+
+    // 2. Драконьи чешуйки вдоль обода
+    final scalePaint = Paint()
+      ..color = const Color(0xFFFFD700).withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+
+    for (int i = 0; i < 14; i++) {
+      final a = -math.pi * 0.35 + (i * (math.pi * 1.7 / 14));
+      final sx = center.dx + (radius + 2.0) * math.cos(a);
+      final sy = center.dy + (radius + 2.0) * math.sin(a);
+      canvas.save();
+      canvas.translate(sx, sy);
+      canvas.rotate(a + math.pi / 2);
+      final sp = Path()
+        ..moveTo(-2.5, 0)
+        ..quadraticBezierTo(0, -3.5, 2.5, 0);
+      canvas.drawPath(sp, scalePaint);
+      canvas.restore();
+    }
+
+    // 3. Голова Дракона на верхнем правом фланге (с рогами и усами)
+    final headAngle = -math.pi * 0.38;
+    final hx = center.dx + (radius + 3.0) * math.cos(headAngle);
+    final hy = center.dy + (radius + 3.0) * math.sin(headAngle);
+
+    canvas.save();
+    canvas.translate(hx, hy);
+    canvas.rotate(headAngle + math.pi * 0.65);
+
+    // Морда дракона
+    final headPaint = Paint()..color = const Color(0xFFFFD700);
+    final headPath = Path()
+      ..moveTo(0, -5)
+      ..lineTo(5, 2)
+      ..lineTo(2, 6)
+      ..lineTo(-2, 6)
+      ..lineTo(-5, 2)
+      ..close();
+    canvas.drawPath(headPath, headPaint);
+
+    // Глаз дракона (рубиновый огонь)
+    final eyePaint = Paint()..color = const Color(0xFFFF1744);
+    canvas.drawCircle(const Offset(2.2, 0.5), 1.2, eyePaint);
+
+    // Рога дракона
+    final hornPaint = Paint()
+      ..color = const Color(0xFFFFE57F)
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(const Offset(-1.5, -4), const Offset(-4, -9), hornPaint);
+    canvas.drawLine(const Offset(1.5, -4), const Offset(4, -9), hornPaint);
+
+    // Усы дракона (колеблются на ветру)
+    final whiskerSway = math.sin(animationValue * math.pi * 4) * 2.0;
+    final whiskerPaint = Paint()
+      ..color = const Color(0xFFFFF9C4)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    final wPath = Path()
+      ..moveTo(3, 4)
+      ..quadraticBezierTo(7 + whiskerSway, 8, 11, 7 + whiskerSway);
+    canvas.drawPath(wPath, whiskerPaint);
+
+    canvas.restore();
+
+    // 4. Парящие искры и огненные жемчужины дракона
+    final sparkPaint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 7; i++) {
+      final prog = (animationValue + (i / 7.0)) % 1.0;
+      final angle = (i * 1.1) + (prog * math.pi * 2);
+      final dist = radius + 3.0 + math.sin(prog * math.pi) * 6.0;
+      final px = center.dx + dist * math.cos(angle);
+      final py = center.dy + dist * math.sin(angle);
+      final alpha = (1.0 - (prog - 0.5).abs() * 2.0).clamp(0.2, 0.95);
+
+      sparkPaint.color = Color.lerp(
+        const Color(0xFFFFD700),
+        const Color(0xFFFF3D00),
+        prog,
+      )!.withValues(alpha: alpha);
+
+      canvas.drawCircle(Offset(px, py), 1.8 * (1.0 - prog * 0.4), sparkPaint);
     }
   }
 

@@ -56,6 +56,13 @@ class SyncPaiApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: themeState.themeData,
             routerConfig: appRouter,
+            builder: (context, child) {
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
           );
         },
       ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
@@ -281,10 +282,33 @@ class AuthRepositoryImpl implements AuthRepository {
     final client = _supabase;
     if (client != null) {
       try {
-        await client.auth.signInWithOAuth(
-          OAuthProvider.google,
-          redirectTo: kIsWeb ? null : 'syncpai://auth-callback',
+        final googleSignIn = GoogleSignIn(
+          scopes: ['email', 'profile'],
         );
+        final googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          // Пользователь отменил диалог входа
+          return null;
+        }
+
+        final googleAuth = await googleUser.authentication;
+        final idToken = googleAuth.idToken;
+        final accessToken = googleAuth.accessToken;
+
+        if (idToken != null) {
+          await client.auth.signInWithIdToken(
+            provider: OAuthProvider.google,
+            idToken: idToken,
+            accessToken: accessToken,
+          );
+        } else {
+          // Fallback на signInWithOAuth (например на Web/десктопе)
+          await client.auth.signInWithOAuth(
+            OAuthProvider.google,
+            redirectTo: kIsWeb ? null : 'syncpai://auth-callback',
+          );
+        }
+
         final user = client.auth.currentUser;
         if (user != null) {
           final profile = await _fetchAndMigrateCloudProfile(user);
@@ -293,7 +317,7 @@ class AuthRepositoryImpl implements AuthRepository {
           return profile;
         }
       } catch (e) {
-        debugPrint('Google OAuth error: $e');
+        debugPrint('Google Sign-In error: $e');
         rethrow;
       }
     }

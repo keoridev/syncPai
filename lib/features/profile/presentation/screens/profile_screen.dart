@@ -16,8 +16,11 @@ import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
+import '../../../anime_lists/data/datasources/anixart_csv_parser.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_state.dart';
+import '../../../anime_lists/presentation/widgets/import_progress_dialog.dart';
+import '../../../anime_lists/presentation/widgets/import_status_selector_dialog.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
@@ -82,22 +85,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         }
 
-        if (content.isNotEmpty && context.mounted) {
-          await context.read<AnimeListCubit>().importAnixartBackup(content, userId: userId);
-          if (context.mounted) {
-            final res = context.read<AnimeListCubit>().state.lastImportResult;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  res != null
-                      ? 'Успешно импортировано ${res.totalParsed} тайтлов (${res.totalEpisodes} серий) • ${res.estimatedTimeSpent}'
-                      : 'Списки Anixart успешно импортированы!',
-                ),
-                backgroundColor: AppColors.syncActive,
-                behavior: SnackBarBehavior.floating,
-              ),
+        if (content.isEmpty || !context.mounted) return;
+
+        final rawTitles = AnixartCsvParser.extractRawTitles(content);
+        final detectedCount = rawTitles.isNotEmpty ? rawTitles.length : 1;
+
+        // 1. Показываем диалог выбора статуса по умолчанию
+        final selection = await ImportStatusSelectorDialog.show(
+          context,
+          totalTitlesDetected: detectedCount,
+          fileName: file.name,
+        );
+
+        if (selection == null || !context.mounted) return;
+
+        // 2. Показываем анимированный модальный диалог прогресса
+        final progressNotifier = ValueNotifier<ImportProgressData>(
+          ImportProgressData(
+            current: 0,
+            total: detectedCount,
+            currentTitle: 'Инициализация подключения...',
+          ),
+        );
+
+        ImportProgressDialog.show(context, progressNotifier: progressNotifier);
+
+        final cubit = context.read<AnimeListCubit>();
+        dynamic importResult;
+
+        try {
+          if (selection.useShikimoriSearch) {
+            importResult = await cubit.importAnixartCsvWithShikimori(
+              content,
+              userId: userId,
+              defaultStatus: selection.defaultStatus,
+              onProgress: (current, total, currentTitle) {
+                progressNotifier.value = ImportProgressData(
+                  current: current,
+                  total: total,
+                  currentTitle: currentTitle,
+                );
+              },
             );
+          } else {
+            await cubit.importAnixartBackup(content, userId: userId);
+            importResult = cubit.state.lastImportResult;
           }
+        } finally {
+          // Закрываем диалог прогресса
+          if (context.mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
+        }
+
+        if (context.mounted) {
+          final res = importResult ?? cubit.state.lastImportResult;
+          final totalCount = res?.totalParsed ?? detectedCount;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Успешно импортировано $totalCount тайтлов! Ваша коллекция синхронизирована.',
+              ),
+              backgroundColor: AppColors.syncActive,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -289,6 +342,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 final cubit = context.read<AnimeListCubit>();
                                 final res = await cubit.importAnixartOnline(text, userId: userId);
                                 if (sheetContext.mounted) {
+                                  FocusScope.of(sheetContext).unfocus();
                                   Navigator.pop(sheetContext);
                                 }
                                 if (context.mounted && res != null) {
@@ -450,6 +504,172 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _showAccountDetailsSheet(BuildContext context, UserProfile profile) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.strokeMedium,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  AppAvatar(
+                    avatarUrl: profile.avatarUrl,
+                    username: profile.username,
+                    size: 52,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              profile.username,
+                              style: AppTypography.titleMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: AppColors.syncActive,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          profile.email ?? 'Аккаунт подключен',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.strokeMedium),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_done_rounded, color: AppColors.syncActive, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Синхронизация списков аниме, истории и кастомизации Steam-профиля активна.',
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.sync_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                ),
+                title: const Text('Синхронизировать сейчас', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Отправить локальные закладки в облако', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Все списки и настройки синхронизированы с облаком!'),
+                      backgroundColor: AppColors.syncActive,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.switch_account_rounded, color: AppColors.textPrimary, size: 20),
+                ),
+                title: const Text('Сменить аккаунт', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Войти через другой Google аккаунт или почту', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  AuthModalSheet.show(context, profile);
+                },
+              ),
+              const Divider(color: AppColors.strokeMedium, height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.syncError.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.logout_rounded, color: AppColors.syncError, size: 20),
+                ),
+                title: const Text('Выйти из профиля', style: TextStyle(color: AppColors.syncError, fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Вернуться в режим гостя', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  context.read<AuthCubit>().signOut();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Вы вышли из профиля SyncPai'),
+                      backgroundColor: AppColors.surfaceElevated,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themePrimary = Theme.of(context).colorScheme.primary;
@@ -576,70 +796,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             AppDimensions.spacingXl,
                             0,
                           ),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: AppColors.syncActive.withValues(alpha: 0.35),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.syncActive.withValues(alpha: 0.15),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    profile.provider == 'google'
-                                        ? Icons.verified_user_rounded
-                                        : Icons.cloud_done_rounded,
-                                    color: AppColors.syncActive,
-                                    size: 20,
-                                  ),
+                          child: InkWell(
+                            onTap: () => _showAccountDetailsSheet(context, profile),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceElevated,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppColors.syncActive.withValues(alpha: 0.35),
+                                  width: 1.2,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        profile.provider == 'google'
-                                            ? 'Google аккаунт привязан'
-                                            : 'Облачная синхронизация активна',
-                                        style: AppTypography.caption.copyWith(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      if (profile.email != null && profile.email!.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.syncActive.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      profile.provider == 'google'
+                                          ? Icons.verified_user_rounded
+                                          : Icons.cloud_done_rounded,
+                                      color: AppColors.syncActive,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
                                         Text(
-                                          profile.email!,
+                                          profile.provider == 'google'
+                                              ? 'Google аккаунт привязан'
+                                              : 'Облачная синхронизация активна',
                                           style: AppTypography.caption.copyWith(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 11,
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
+                                        if (profile.email != null && profile.email!.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            profile.email!,
+                                            style: AppTypography.caption.copyWith(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                TextButton(
-                                  onPressed: () => context.read<AuthCubit>().signOut(),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: AppColors.textMuted,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  const Icon(
+                                    Icons.tune_rounded,
+                                    color: AppColors.textSecondary,
+                                    size: 18,
                                   ),
-                                  child: const Text('Выйти', style: TextStyle(fontSize: 12)),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),

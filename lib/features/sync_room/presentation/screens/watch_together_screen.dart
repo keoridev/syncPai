@@ -17,6 +17,8 @@ import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../widgets/qr_scanner_sheet.dart';
 import '../widgets/sync_room_lobby_sheet.dart';
+import '../../domain/repositories/sync_room_repository.dart';
+import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../../player/domain/entities/player_quality.dart';
 
 class WatchTogetherScreen extends StatefulWidget {
@@ -37,8 +39,16 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   final TextEditingController _pinController = TextEditingController();
   final FocusNode _pinFocusNode = FocusNode();
   String? _pinError;
+  bool _isJoiningRoom = false;
 
-  // Демонстрационный список друзей с Presence-статусом и счетчиком стрика (Watch Streak 🔥)
+  static const Set<String> _validUsernames = {
+    'nekochan', 'nekochan_99', 'senpai', 'senpai_kun', 'otakumaster',
+    'akari', 'ren', 'kirito', 'asuka', 'shinji', 'levi', 'eren',
+    'gojo', 'tanjiro', 'luffy', 'zoro', 'makima', 'denji', 'anya',
+    'alex', 'sakura', 'kaito', 'yuki', 'zero_two', 'megumin'
+  };
+
+  // Демонстрационный список друзей с Presence-статусом и счетчиком стрика (Watch Streak)
   final List<Map<String, dynamic>> _friends = [
     {
       'id': 'fr_1',
@@ -79,7 +89,10 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     super.dispose();
   }
 
-  void _handleJoinRoom() {
+  Future<void> _handleJoinRoom() async {
+    if (_isJoiningRoom) return;
+
+    FocusScope.of(context).unfocus();
     String raw = _pinController.text.trim();
     if (raw.isEmpty) {
       setState(() => _pinError = 'Введите код комнаты');
@@ -92,14 +105,55 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
         raw = parts[1].split('?').first.split('#').first.trim();
       }
     }
-    setState(() => _pinError = null);
-    context.push('/room/$raw');
+
+    final normalized = SyncRoomRepositoryImpl.normalizeCode(raw);
+    setState(() {
+      _pinError = null;
+      _isJoiningRoom = true;
+    });
+
+    try {
+      final repo = getIt<SyncRoomRepository>();
+      final exists = await repo.validateRoomExists(normalized);
+      if (!exists) {
+        if (!mounted) return;
+        setState(() {
+          _isJoiningRoom = false;
+          _pinError = 'Комната не найдена или сессия завершена';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Комната не найдена или сессия завершена'),
+            backgroundColor: AppColors.syncError,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() => _isJoiningRoom = false);
+      context.push('/room/$normalized');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isJoiningRoom = false;
+        _pinError = 'Не удалось проверить комнату';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Комната не найдена или сессия завершена'),
+          backgroundColor: AppColors.syncError,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   static const AnimeTitle _freeRoomTitle = AnimeTitle(
     id: 0,
     code: 'free_sync_room',
-    russianTitle: '🌐 Свободная комната (выбрать тайтл в каталоге)',
+    russianTitle: 'Свободная комната (выбрать тайтл в каталоге)',
     englishTitle: 'Free Sync Room',
     posterSmall: '',
     posterMedium: '',
@@ -209,7 +263,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                         DropdownMenuItem<AnimeTitle>(
                           value: _freeRoomTitle,
                           child: Text(
-                            '🌐 Свободная комната (выбрать тайтл в каталоге)',
+                            'Свободная комната (выбрать тайтл в каталоге)',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -322,7 +376,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: const Text(
-                              '💡 Выберите аниме в каталоге и нажмите «Смотреть с другом» для создания синхронной комнаты!',
+                              'Выберите аниме в каталоге и нажмите «Смотреть с другом» для создания синхронной комнаты!',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             backgroundColor: AppColors.primary,
@@ -354,7 +408,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                '📂 У тайтла «${selectedTitle.displayTitle}» пока нет готовых серий в каталоге.',
+                                'У тайтла «${selectedTitle.displayTitle}» пока нет готовых серий в каталоге.',
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                               backgroundColor: AppColors.primary,
@@ -624,6 +678,19 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     );
                     return;
                   }
+                  final cleanName = text.replaceAll('@', '').toLowerCase();
+                  final isRealUser = _validUsernames.contains(cleanName);
+                  if (!isRealUser) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Хватит ботов добавлять! Такого друга не существует.'),
+                        backgroundColor: AppColors.syncError,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
                   final alreadyExists = _friends.any(
                     (f) => (f['name'] as String).toLowerCase() == lower,
                   );
@@ -664,6 +731,150 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showReportFriendDialog(BuildContext context, Map<String, dynamic> friend) {
+    final friendName = friend['name'] as String? ?? 'пользователя';
+    final reasons = [
+      'Оскорбительное поведение / токсичность',
+      'Спам или подозрительная активность',
+      'Бот или фейковый аккаунт',
+      'Неприемлемый аватар / статус',
+    ];
+    String selectedReason = reasons.first;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.flag_rounded, color: AppColors.warning, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Пожаловаться на $friendName',
+                  style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Укажите причину вашей жалобы:',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              ...reasons.map((r) => InkWell(
+                    onTap: () => setDialogState(() => selectedReason = r),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selectedReason == r
+                                ? Icons.radio_button_checked_rounded
+                                : Icons.radio_button_off_rounded,
+                            size: 18,
+                            color: selectedReason == r
+                                ? Theme.of(context).colorScheme.primary
+                                : AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              r,
+                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warning,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Жалоба на $friendName отправлена модераторам.'),
+                    backgroundColor: AppColors.surfaceElevated,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Text('Отправить', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteFriend(BuildContext context, Map<String, dynamic> friend) {
+    final friendName = friend['name'] as String? ?? 'пользователя';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.person_remove_rounded, color: AppColors.syncError, size: 22),
+            SizedBox(width: 10),
+            Text('Удалить из друзей', style: TextStyle(color: AppColors.textPrimary)),
+          ],
+        ),
+        content: Text(
+          'Вы уверены, что хотите удалить $friendName из списка друзей?',
+          style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.syncError,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              setState(() {
+                _friends.removeWhere((f) => f['id'] == friend['id']);
+              });
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Пользователь $friendName удален из друзей.'),
+                  backgroundColor: AppColors.surfaceElevated,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: const Text('Удалить', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
   }
@@ -987,11 +1198,20 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                               elevation: 0,
                               visualDensity: VisualDensity.compact,
                             ),
-                            onPressed: _handleJoinRoom,
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('Войти', style: TextStyle(fontWeight: FontWeight.w700)),
-                            ),
+                            onPressed: _isJoiningRoom ? null : _handleJoinRoom,
+                            child: _isJoiningRoom
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('Войти', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  ),
                           ),
                         ],
                       ),
@@ -1303,7 +1523,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Text('🔥', style: TextStyle(fontSize: 10)),
+                                              const Icon(Icons.local_fire_department_rounded, size: 12, color: Color(0xFFFF5E3A)),
                                               const SizedBox(width: 2),
                                               Text(
                                                 '${friend['streakDays']} дн.',
@@ -1362,7 +1582,45 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                   ],
                                 ),
                               ),
+                              const SizedBox(width: 4),
                             ],
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppColors.textMuted),
+                              color: AppColors.surfaceElevated,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: const BorderSide(color: AppColors.strokeMedium),
+                              ),
+                              onSelected: (value) {
+                                if (value == 'report') {
+                                  _showReportFriendDialog(context, friend);
+                                } else if (value == 'delete') {
+                                  _confirmDeleteFriend(context, friend);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'report',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.flag_outlined, size: 18, color: AppColors.warning),
+                                      SizedBox(width: 10),
+                                      Text('Пожаловаться', style: TextStyle(fontSize: 13, color: AppColors.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.person_remove_outlined, size: 18, color: AppColors.syncError),
+                                      SizedBox(width: 10),
+                                      Text('Удалить из друзей', style: TextStyle(fontSize: 13, color: AppColors.syncError)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),

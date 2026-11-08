@@ -48,6 +48,9 @@ import 'package:sync_pai/features/player/presentation/widgets/quick_phrase_toast
 import 'package:sync_pai/features/player/presentation/widgets/sync_buffer_banner.dart';
 import 'package:sync_pai/features/player/presentation/widgets/twitch_chat_overlay.dart';
 import 'package:sync_pai/features/player/presentation/widgets/double_tap_seek_overlay.dart';
+import 'package:sync_pai/features/anime_lists/presentation/widgets/import_status_selector_dialog.dart';
+import 'package:sync_pai/features/anime_lists/presentation/widgets/import_progress_dialog.dart';
+import 'package:sync_pai/features/auth/presentation/screens/auth_screen.dart';
 import 'package:sync_pai/features/sync_room/data/repositories/sync_room_repository_impl.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
@@ -3237,12 +3240,20 @@ Title,Status,Episodes
 
     test('SyncRoomRepositoryImpl joinRoom safely connects guest to room', () async {
       final repo = SyncRoomRepositoryImpl();
-      final room = await repo.joinRoom(code: 'SP-9999', peerName: 'Тестовый Друг');
+      final room = await repo.joinRoom(code: 'SP-4821', peerName: 'Тестовый Друг');
 
-      expect(room.code, 'SP-9999');
+      expect(room.code, 'SP-4821');
       expect(room.status, SyncRoomStatus.connected);
       expect(room.peerName, 'Тестовый Друг');
       expect(room.episode.episode, greaterThanOrEqualTo(1));
+    });
+
+    test('SyncRoomRepositoryImpl joinRoom rejects non-existent ghost room', () async {
+      final repo = SyncRoomRepositoryImpl();
+      expect(
+        () => repo.joinRoom(code: 'SP-9999', peerName: 'Ghost'),
+        throwsA(isA<Exception>()),
+      );
     });
 
     test('PlayerNavigationGuard blocks rapid double-tap parallel opens', () {
@@ -3351,6 +3362,156 @@ Title,Status,Episodes
 
         final unlockedState = lockedState.copyWith(isScreenLocked: false);
         expect(unlockedState.isScreenLocked, isFalse);
+      });
+    });
+
+    group('Anixart CSV Bookmark & Room Validation & Auth Tests', () {
+      test('AnixartCsvParser parses Anixart_Bookmarks.csv format with index and title columns', () {
+        const rawCsv = '''#,Русское название
+1,"100 девушек, которые очень-очень-очень-очень-очень сильно тебя любят"
+2,"Адский рай"
+3,"Адский рай 2"
+4,"Аллель Кидзуны"
+5,"Аля иногда кокетничает со мной по-русски"
+''';
+        final rawTitles = AnixartCsvParser.extractRawTitles(rawCsv, defaultStatus: AnimeListStatus.completed);
+        expect(rawTitles.length, 5);
+        expect(rawTitles[0].title, '100 девушек, которые очень-очень-очень-очень-очень сильно тебя любят');
+        expect(rawTitles[0].status, AnimeListStatus.completed);
+        expect(rawTitles[1].title, 'Адский рай');
+        expect(rawTitles[2].title, 'Адский рай 2');
+
+        final entries = AnixartCsvParser.parseCsv(rawCsv, userId: 'u_user', defaultStatus: AnimeListStatus.planned);
+        expect(entries.length, 5);
+        expect(entries[0].titleRu, '100 девушек, которые очень-очень-очень-очень-очень сильно тебя любят');
+        expect(entries[0].status, AnimeListStatus.planned);
+      });
+
+      test('SyncRoomRepository validateRoomExists returns false on invalid random room', () async {
+        final repo = getIt<SyncRoomRepository>();
+        final exists = await repo.validateRoomExists('RANDOM_NON_EXISTENT_9999');
+        expect(exists, isFalse);
+      });
+
+      test('SyncRoomRepository validateRoomExists returns true for standard room SP4821', () async {
+        final repo = getIt<SyncRoomRepository>();
+        final exists = await repo.validateRoomExists('SP4821');
+        expect(exists, isTrue);
+      });
+
+      testWidgets('WatchTogetherScreen blocks ghost room and shows SnackBar', (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: WatchTogetherScreen(),
+          ),
+        );
+
+        final pinInput = find.byType(TextField);
+        expect(pinInput, findsOneWidget);
+
+        await tester.enterText(pinInput, 'GHOST_ROOM_XYZ');
+        await tester.pump();
+
+        final joinBtn = find.widgetWithText(ElevatedButton, 'Войти');
+        expect(joinBtn, findsOneWidget);
+        await tester.tap(joinBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(find.text('Комната не найдена или сессия завершена'), findsAtLeast(1));
+      });
+
+      testWidgets('ImportStatusSelectorDialog renders options and switches category', (tester) async {
+        ImportStatusSelection? selected;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () async {
+                    selected = await ImportStatusSelectorDialog.show(
+                      context,
+                      totalTitlesDetected: 301,
+                      fileName: 'Anixart_Bookmarks.csv',
+                    );
+                  },
+                  child: const Text('Open Dialog'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open Dialog'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Импорт закладок Anixart'), findsOneWidget);
+        expect(find.textContaining('301 тайтлов в "Anixart_Bookmarks.csv"'), findsOneWidget);
+        expect(find.text('Просмотрено'), findsOneWidget);
+        expect(find.text('В планах'), findsOneWidget);
+
+        // Тапаем по категории «Просмотрено»
+        await tester.tap(find.text('Просмотрено'));
+        await tester.pumpAndSettle();
+
+        // Подтверждаем
+        await tester.tap(find.text('Начать импорт'));
+        await tester.pumpAndSettle();
+
+        expect(selected, isNotNull);
+        expect(selected!.defaultStatus, AnimeListStatus.completed);
+        expect(selected!.useShikimoriSearch, isTrue);
+      });
+
+      testWidgets('ImportProgressDialog updates progress and current title smoothly', (tester) async {
+        final progressNotifier = ValueNotifier<ImportProgressData>(
+          const ImportProgressData(
+            current: 45,
+            total: 301,
+            currentTitle: '100 девушек...',
+          ),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ImportProgressDialog(progressNotifier: progressNotifier),
+            ),
+          ),
+        );
+
+        expect(find.text('Импорт аниме: 45 / 301 (Находим Shikimori ID...)'), findsOneWidget);
+        expect(find.textContaining('100 девушек...'), findsOneWidget);
+        expect(find.text('14%'), findsOneWidget);
+
+        progressNotifier.value = const ImportProgressData(
+          current: 150,
+          total: 301,
+          currentTitle: 'Адский рай',
+        );
+        await tester.pump();
+
+        expect(find.text('Импорт аниме: 150 / 301 (Находим Shikimori ID...)'), findsOneWidget);
+        expect(find.textContaining('Адский рай'), findsOneWidget);
+      });
+
+      testWidgets('AuthScreen renders anime aesthetics, logo, form and Google Sign-In button', (tester) async {
+        await tester.pumpWidget(
+          BlocProvider.value(
+            value: getIt<AuthCubit>(),
+            child: const MaterialApp(
+              home: AuthScreen(),
+            ),
+          ),
+        );
+
+        expect(find.text('SyncPai'), findsOneWidget);
+        expect(find.text('Смотрите аниме синхронно с друзьями'), findsOneWidget);
+        expect(find.text('Войти через Google'), findsOneWidget);
+        expect(find.text('Продолжить как гость'), findsOneWidget);
+        expect(find.text('Email'), findsOneWidget);
+        expect(find.text('Пароль'), findsOneWidget);
       });
     });
   });

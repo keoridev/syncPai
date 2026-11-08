@@ -50,6 +50,7 @@ dependencies:
   url_launcher: ^6.3.3
   mobile_scanner: ^7.5.0
   palette_generator: ^0.3.3+7
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:

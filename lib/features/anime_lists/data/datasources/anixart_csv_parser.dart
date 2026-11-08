@@ -1,23 +1,48 @@
 import 'package:csv/csv.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import 'anixart_backup_parser.dart';
+import 'shikimori_search_service.dart';
 
-/// Парсер официального CSV-экспорта списков Anixart
-/// («Профиль» → «Экспорт списков» в приложении Anixart)
+/// Модель предварительно распарсенной сырой записи из CSV
+class AnixartRawEntry {
+  final String title;
+  final AnimeListStatus status;
+  final int watchedEpisodes;
+  final int? totalEpisodes;
+  final int? extractedId;
+
+  const AnixartRawEntry({
+    required this.title,
+    required this.status,
+    this.watchedEpisodes = 0,
+    this.totalEpisodes,
+    this.extractedId,
+  });
+}
+
+/// Высоконадежный парсер официального CSV-экспорта списков и закладок Anixart
+/// Поддерживает:
+/// - UTF-8, экранированные кавычки и запятые внутри названий
+/// - Форматы: `#,Русское название` (индекс в 1-й колонке, название во 2-й)
+/// - Форматы: `6 / "Название"`, `Смотрю`, `12/24`
+/// - Умный матчинг с официальным Shikimori API для получения истинного shikimori_id и постера
 class AnixartCsvParser {
-  /// Принимает сырую строку из выбранного .csv или .txt файла
-  static List<UserAnimeEntry> parseCsv(String rawCsv, {String userId = ''}) {
+  /// Извлекает сырые записи из CSV/TXT файла
+  static List<AnixartRawEntry> extractRawTitles(
+    String rawCsv, {
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+  }) {
     if (rawCsv.trim().isEmpty) return [];
 
     // Определяем разделитель: в Anixart обычно запятая, но может быть и ';'
-    // Проверяем первую непустую строку (заголовок)
     final firstLine = rawCsv.split(RegExp(r'\r?\n')).firstWhere(
           (l) => l.trim().isNotEmpty,
           orElse: () => '',
         );
     final delimiter = (firstLine.contains(';') && !firstLine.contains(','))
         ? ';'
-        : (firstLine.contains(';') && firstLine.split(';').length >= firstLine.split(',').length)
+        : (firstLine.contains(';') &&
+                firstLine.split(';').length >= firstLine.split(',').length)
             ? ';'
             : ',';
 
@@ -30,10 +55,9 @@ class AnixartCsvParser {
 
     if (rows.isEmpty) return [];
 
-    final List<UserAnimeEntry> entries = [];
-    final now = DateTime.now();
+    final List<AnixartRawEntry> result = [];
 
-    // Определяем, есть ли заголовок (первая строка содержит "title", "название", "статус", "status")
+    // Определяем наличие заголовка
     int startIndex = 0;
     if (rows.isNotEmpty) {
       final headerStr = rows.first.join(' ').toLowerCase();
@@ -42,26 +66,51 @@ class AnixartCsvParser {
           headerStr.contains('status') ||
           headerStr.contains('статус') ||
           headerStr.contains('anime') ||
-          headerStr.contains('аниме')) {
+          headerStr.contains('аниме') ||
+          headerStr.trim().startsWith('#')) {
         startIndex = 1;
       }
     }
 
     for (int i = startIndex; i < rows.length; i++) {
       final row = rows[i];
-      if (row.isEmpty || row[0].toString().trim().isEmpty) continue;
+      if (row.isEmpty) continue;
 
-      final rawFirstCol = row[0].toString().trim();
-      final title = cleanTitle(rawFirstCol);
-      if (title.isEmpty) continue;
+      String rawTitle = '';
+      String statusRaw = '';
+      String episodesRaw = '0';
+      int? extractedId;
 
-      String statusRaw = row.length > 1 ? row[1].toString().trim() : '';
-      final episodesRaw = row.length > 2 ? row[2].toString().trim() : '0';
+      final firstColStr = row[0].toString().trim();
+      final isFirstColNumeric = RegExp(r'^\d+$').hasMatch(firstColStr);
 
-      // Если в строке содержались разделители " / " (характерный экспорт Anixart)
-      if (rawFirstCol.contains(' / ')) {
-        final slashParts = rawFirstCol.split(RegExp(r'\s*/\s*'));
-        // Ищем категорию статуса среди частей строки
+      if (isFirstColNumeric && row.length > 1) {
+        // Пример структуры: 1,"100 девушек, которые очень-очень сильно тебя любят"
+        // Первая колонка — это порядковый номер, вторая колонка — русское название
+        rawTitle = row[1].toString().trim();
+        statusRaw = row.length > 2 ? row[2].toString().trim() : '';
+        episodesRaw = row.length > 3 ? row[3].toString().trim() : '0';
+      } else {
+        // Первая колонка содержит название (возможно с префиксом ID вроде '6 / ...')
+        rawTitle = firstColStr;
+        statusRaw = row.length > 1 ? row[1].toString().trim() : '';
+        episodesRaw = row.length > 2 ? row[2].toString().trim() : '0';
+      }
+
+      final title = cleanTitle(rawTitle);
+      if (title.isEmpty || title == '#' || title.toLowerCase() == 'русское название') {
+        continue;
+      }
+
+      // Извлекаем числовой ID, если он присутствовал в строке вида '6 / "Название"'
+      final matchId = RegExp(r'^(\d+)\s*/').firstMatch(rawTitle);
+      if (matchId != null) {
+        extractedId = int.tryParse(matchId.group(1)!);
+      }
+
+      // Если в названии содержались слэши со статусом
+      if (rawTitle.contains(' / ')) {
+        final slashParts = rawTitle.split(RegExp(r'\s*/\s*'));
         if (statusRaw.isEmpty || statusRaw == '0') {
           for (final part in slashParts) {
             final lowerPart = part.toLowerCase();
@@ -78,10 +127,9 @@ class AnixartCsvParser {
         }
       }
 
-      // Маппим статус Anixart в модель SyncPai
-      final status = mapStatus(statusRaw);
+      final status = statusRaw.isNotEmpty ? mapStatus(statusRaw) : defaultStatus;
 
-      // Извлекаем просмотренные серии и всего серий (например "12" или "12/24")
+      // Извлекаем серии
       int watchedEpisodes = 0;
       int? totalEpisodes;
       if (episodesRaw.contains('/')) {
@@ -94,34 +142,119 @@ class AnixartCsvParser {
         watchedEpisodes = int.tryParse(episodesRaw) ?? 0;
       }
 
-      // Числовой ID: если в начале строки был ID (например: '6 / ...'), берем его
-      int? extractedId;
-      final matchId = RegExp(r'^(\d+)\s*/').firstMatch(rawFirstCol);
-      if (matchId != null) {
-        extractedId = int.tryParse(matchId.group(1)!);
-      }
-      final animeId = extractedId ?? _generateAnimeId(title);
-
-      entries.add(
-        UserAnimeEntry(
-          id: 'anixart_csv_${animeId}_${now.millisecondsSinceEpoch}_$i',
-          userId: userId,
-          animeId: animeId,
-          titleRu: title,
+      result.add(
+        AnixartRawEntry(
+          title: title,
           status: status,
-          lastEpisode: watchedEpisodes > 0 ? watchedEpisodes : 1,
-          episodesTotal: totalEpisodes,
-          updatedAt: now,
+          watchedEpisodes: watchedEpisodes,
+          totalEpisodes: totalEpisodes,
+          extractedId: extractedId,
         ),
       );
     }
 
-    return entries;
+    return result;
+  }
+
+  /// Быстрый синхронный парсинг в список UserAnimeEntry (для локального использования и обратной совместимости)
+  static List<UserAnimeEntry> parseCsv(
+    String rawCsv, {
+    String userId = '',
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+  }) {
+    final rawEntries = extractRawTitles(rawCsv, defaultStatus: defaultStatus);
+    final now = DateTime.now();
+
+    return rawEntries.asMap().entries.map((item) {
+      final i = item.key;
+      final raw = item.value;
+      final animeId = raw.extractedId ?? _generateAnimeId(raw.title);
+
+      return UserAnimeEntry(
+        id: 'anixart_csv_${animeId}_${now.millisecondsSinceEpoch}_$i',
+        userId: userId,
+        animeId: animeId,
+        titleRu: raw.title,
+        status: raw.status,
+        lastEpisode: raw.watchedEpisodes > 0 ? raw.watchedEpisodes : 1,
+        episodesTotal: raw.totalEpisodes,
+        updatedAt: now,
+      );
+    }).toList();
+  }
+
+  /// Умный импорт с поиском истинного shikimori_id, официального постера и прогрессом в реальном времени
+  static Future<AnixartImportResult> parseWithShikimori(
+    String rawCsv, {
+    required String userId,
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    ShikimoriSearchService? searchService,
+    void Function(int current, int total, String currentTitle)? onProgress,
+  }) async {
+    final service = searchService ?? ShikimoriSearchService();
+    final rawEntries = extractRawTitles(rawCsv, defaultStatus: defaultStatus);
+    final total = rawEntries.length;
+    final List<UserAnimeEntry> resolvedEntries = [];
+    final now = DateTime.now();
+
+    for (int i = 0; i < total; i++) {
+      final raw = rawEntries[i];
+      onProgress?.call(i + 1, total, raw.title);
+
+      int effectiveAnimeId;
+      String? posterUrl;
+      String finalTitle = raw.title;
+      int? totalEpisodes = raw.totalEpisodes;
+
+      // Ищем истинный тайтл на официальном Shikimori API
+      final match = await service.findAnime(raw.title);
+      if (match != null) {
+        effectiveAnimeId = match.id;
+        posterUrl = match.posterUrl.isNotEmpty ? match.posterUrl : null;
+        if (match.russianTitle.isNotEmpty) {
+          finalTitle = match.russianTitle;
+        }
+        totalEpisodes = match.episodesTotal ?? totalEpisodes;
+      } else {
+        effectiveAnimeId = raw.extractedId ?? _generateAnimeId(raw.title);
+      }
+
+      resolvedEntries.add(
+        UserAnimeEntry(
+          id: 'shikimori_${effectiveAnimeId}_${now.millisecondsSinceEpoch}_$i',
+          userId: userId,
+          animeId: effectiveAnimeId,
+          titleRu: finalTitle,
+          posterUrl: posterUrl,
+          status: raw.status,
+          lastEpisode: raw.watchedEpisodes > 0 ? raw.watchedEpisodes : 1,
+          episodesTotal: totalEpisodes,
+          updatedAt: now,
+        ),
+      );
+
+      // Микро-пауза для снижения нагрузки на сеть при большом числе тайтлов
+      if (i % 5 == 0 && i > 0) {
+        await Future.delayed(const Duration(milliseconds: 40));
+      }
+    }
+
+    final stats = UserAnimeStats.compute(resolvedEntries);
+    return AnixartImportResult(
+      entries: resolvedEntries,
+      totalParsed: resolvedEntries.length,
+      totalEpisodes: stats.totalEpisodesCompleted,
+      estimatedTimeSpent: stats.formattedTime,
+    );
   }
 
   /// Парсит CSV и оборачивает результат в AnixartImportResult с подсчетом статистики
-  static AnixartImportResult parseToResult(String rawCsv, {required String userId}) {
-    final entries = parseCsv(rawCsv, userId: userId);
+  static AnixartImportResult parseToResult(
+    String rawCsv, {
+    required String userId,
+    AnimeListStatus defaultStatus = AnimeListStatus.planned,
+  }) {
+    final entries = parseCsv(rawCsv, userId: userId, defaultStatus: defaultStatus);
     final stats = UserAnimeStats.compute(entries);
 
     return AnixartImportResult(
@@ -158,15 +291,14 @@ class AnixartCsvParser {
     return hash > 0 ? hash : 100000;
   }
 
-  /// Очистка сырого названия тайтла из формата экспорта Anixart:
-  /// - '6 / "Аля иногда кокетничает со мной по-русски 2" / "Tokidoki..." / ...' -> 'Аля иногда кокетничает со мной по-русски 2'
-  /// - '99 / "Магическая битва 2: Рекап" / "..."' -> 'Магическая битва 2: Рекап'
-  /// - '2 / "Адский рай" / "Jigokuraku"' -> 'Адский рай'
-  /// - '"Магическая битва"' -> 'Магическая битва'
+  /// Очистка сырого названия тайтла из формата экспорта Anixart
   static String cleanTitle(String rawTitle) {
     if (rawTitle.trim().isEmpty) return '';
 
     String cleaned = rawTitle.trim();
+
+    // 0. Убираем префикс порядкового номера в строке, например '1, "Тайтл"' или '1. Тайтл'
+    cleaned = cleaned.replaceAll(RegExp(r'^\d+[\.,]\s*'), '').trim();
 
     // 1. Если в строке есть разделители " / " (экспорт списков Anixart)
     if (cleaned.contains(' / ') || cleaned.contains(' /"')) {

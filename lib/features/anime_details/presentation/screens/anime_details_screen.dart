@@ -87,6 +87,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   bool _isLoadingReviews = false;
   bool _isDescriptionExpanded = false;
   bool _isLoadingDetails = false;
+  bool _isOpeningEpisode = false;
   late final ScrollController _scrollController;
   bool _showAppBarTitle = false;
 
@@ -180,20 +181,22 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           AnimeTitle? matched;
           if (targetSeason != null) {
             try {
-              matched = effectiveList.firstWhere(
+              matched = effectiveList.where(
                 (s) =>
                     _extractSeasonNumber(s.russianTitle) == targetSeason ||
                     _extractSeasonNumber(s.englishTitle) == targetSeason,
-              );
+              ).firstOrNull;
             } catch (_) {}
           }
 
-          matched ??= effectiveList.firstWhere(
-            (s) => s.russianTitle.toLowerCase().trim() == release.title.toLowerCase().trim(),
-            orElse: () => effectiveList.first,
-          );
+          matched ??= effectiveList.where(
+            (s) =>
+                s.russianTitle.toLowerCase().trim() == release.title.toLowerCase().trim() ||
+                (release.originalTitle != null &&
+                    s.englishTitle.toLowerCase().trim() == release.originalTitle!.toLowerCase().trim()),
+          ).firstOrNull;
 
-          if (mounted) {
+          if (matched != null && mounted) {
             context.pushNamed('details', extra: matched);
             return;
           }
@@ -431,7 +434,10 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   }
 
   Future<void> _requestPlayEpisode(EpisodeItem episode, [Duration? initialPosition]) async {
-    SharedPreferences? prefs;
+    if (_isOpeningEpisode) return;
+    _isOpeningEpisode = true;
+    try {
+      SharedPreferences? prefs;
     if (getIt.isRegistered<SharedPreferences>()) {
       prefs = getIt<SharedPreferences>();
     }
@@ -562,6 +568,9 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     if (chosenQuality != null && mounted) {
       prefs?.setString('preferred_player_quality', chosenQuality.name);
       widget.onPlayEpisode?.call(_currentTitle, targetEpisode, chosenQuality);
+    }
+    } finally {
+      _isOpeningEpisode = false;
     }
   }
 

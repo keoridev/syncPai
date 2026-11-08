@@ -189,7 +189,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   cubit.toggleScreenLock();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Экран заблокирован 🔒. Жесты звука и яркости активны'),
+                                      content: Text('Экран заблокирован. Жесты звука и яркости активны'),
                                       duration: Duration(seconds: 2),
                                       behavior: SnackBarBehavior.floating,
                                     ),

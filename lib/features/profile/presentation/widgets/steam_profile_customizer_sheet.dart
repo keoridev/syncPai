@@ -24,6 +24,11 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
+import '../../../../core/widgets/anime_silhouette_avatars.dart';
+import '../../../../core/widgets/holographic_monogram_avatar.dart';
+import 'badge_details_sheet.dart';
+import 'live_backgrounds/live_background_widget.dart';
+import 'media_crop_editor_modal.dart';
 
 /// Интерактивное меню кастомизации профиля в стиле Steam Community & Points Shop
 /// Вкладки:
@@ -42,22 +47,23 @@ class SteamProfileCustomizerSheet extends StatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (ctx) => MultiBlocProvider(
-        providers: [
-          if (getIt.isRegistered<ThemeCubit>())
-            BlocProvider.value(value: getIt<ThemeCubit>()),
-          if (getIt.isRegistered<AuthCubit>())
-            BlocProvider.value(value: getIt<AuthCubit>()),
-          if (getIt.isRegistered<CatalogCubit>())
-            BlocProvider.value(value: getIt<CatalogCubit>()),
-          if (getIt.isRegistered<AnimeListCubit>())
-            BlocProvider.value(value: getIt<AnimeListCubit>()),
-        ],
-        child: SteamProfileCustomizerSheet(profile: profile),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Scaffold(
+        backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: true,
+        body: MultiBlocProvider(
+          providers: [
+            if (getIt.isRegistered<ThemeCubit>())
+              BlocProvider.value(value: getIt<ThemeCubit>()),
+            if (getIt.isRegistered<AuthCubit>())
+              BlocProvider.value(value: getIt<AuthCubit>()),
+            if (getIt.isRegistered<CatalogCubit>())
+              BlocProvider.value(value: getIt<CatalogCubit>()),
+            if (getIt.isRegistered<AnimeListCubit>())
+              BlocProvider.value(value: getIt<AnimeListCubit>()),
+          ],
+          child: SteamProfileCustomizerSheet(profile: profile),
+        ),
       ),
     );
   }
@@ -84,6 +90,11 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
   late TextEditingController _bioController;
   late TextEditingController _favAnimeController;
 
+  late FocusNode _titleFocusNode;
+  late FocusNode _statusFocusNode;
+  late FocusNode _bioFocusNode;
+  late FocusNode _favAnimeFocusNode;
+
   static const List<String> _quickStatuses = [
     'Смотрю аниме...',
     'В поиске годноты',
@@ -91,20 +102,6 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     'Не спать, смотреть онгоинги',
     'Синхронный вайб',
     'Жду новый сезон',
-  ];
-
-  static const List<String> _avatarPresets = [
-    'cat',
-    'fox',
-    'panda',
-    'wolf',
-    'bolt',
-    'flower',
-    'shield',
-    'fire',
-    'gamer',
-    'star',
-    'bot',
   ];
 
   // Живой поиск любимого тайтла для витрины
@@ -145,6 +142,26 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     _favAnimeController = TextEditingController(
       text: widget.profile.favoriteAnimeTitle ?? '',
     );
+
+    _titleFocusNode = FocusNode()..addListener(() => _ensureFocusVisible(_titleFocusNode));
+    _statusFocusNode = FocusNode()..addListener(() => _ensureFocusVisible(_statusFocusNode));
+    _bioFocusNode = FocusNode()..addListener(() => _ensureFocusVisible(_bioFocusNode));
+    _favAnimeFocusNode = FocusNode()..addListener(() => _ensureFocusVisible(_favAnimeFocusNode));
+  }
+
+  void _ensureFocusVisible(FocusNode node) {
+    if (node.hasFocus) {
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (node.context != null) {
+          Scrollable.ensureVisible(
+            node.context!,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            alignment: 0.5,
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -157,6 +174,10 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     _titleController.dispose();
     _bioController.dispose();
     _favAnimeController.dispose();
+    _titleFocusNode.dispose();
+    _statusFocusNode.dispose();
+    _bioFocusNode.dispose();
+    _favAnimeFocusNode.dispose();
     super.dispose();
   }
 
@@ -564,53 +585,12 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
   }
 
   Widget _buildPreviewBg(SteamBackgroundTheme bgTheme) {
-    final bgUrl = bgTheme.assetOrUrl?.trim();
-    if (bgUrl == null || bgUrl.isEmpty) {
-      return _buildPreviewFallback(bgTheme);
-    }
-
-    final isNetwork = bgUrl.startsWith('http://') || bgUrl.startsWith('https://');
-    if (isNetwork) {
-      return CachedNetworkImage(
-        imageUrl: wrapCorsSafeUrl(bgUrl),
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.high,
-        errorWidget: (_, __, ___) => _buildPreviewFallback(bgTheme),
-      );
-    }
-
-    final filePath = bgUrl.replaceFirst('file://', '');
-    final file = File(filePath);
-    if (file.existsSync()) {
-      return Image.file(
-        file,
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (_, __, ___) => _buildPreviewFallback(bgTheme),
-      );
-    }
-
-    return _buildPreviewFallback(bgTheme);
-  }
-
-  Widget _buildPreviewFallback(SteamBackgroundTheme bgTheme) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: bgTheme.gradient.length >= 2
-              ? bgTheme.gradient
-              : const [Color(0xFF2A2B32), Color(0xFF16181F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          bgTheme.icon,
-          size: 32,
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
-      ),
+    return LiveBackgroundWidget(
+      backgroundId: _selectedBgId,
+      assetOrUrl: _customUrlController.text.trim().isNotEmpty
+          ? _customUrlController.text.trim()
+          : (bgTheme.assetOrUrl ?? _selectedBgId),
+      fallbackGradient: bgTheme.gradient,
     );
   }
 
@@ -619,10 +599,10 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 12),
       children: [
-        // Выбор из галереи устройства в исходном разрешении
+        // Выбор из галереи устройства (фото, GIF или зацикленное видео MP4/WebM)
         OutlinedButton.icon(
-          icon: const Icon(Icons.photo_library_rounded, size: 20),
-          label: const Text('Выбрать фото/GIF из галереи устройства'),
+          icon: const Icon(Icons.video_library_rounded, size: 20),
+          label: const Text('Загрузить фото, GIF или видео (MP4)'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide(color: accent.withValues(alpha: 0.6), width: 1.2),
@@ -633,7 +613,8 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           onPressed: () async {
             try {
               final result = await FilePicker.platform.pickFiles(
-                type: FileType.image,
+                type: FileType.custom,
+                allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm'],
                 withData: true,
               );
               if (result != null && result.files.isNotEmpty) {
@@ -650,6 +631,14 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 }
 
                 if (mounted && targetFile.existsSync()) {
+                  final isVideo = ext == 'mp4' || ext == 'webm';
+                  if (!isVideo && context.mounted) {
+                    await MediaCropEditorModal.show(
+                      context,
+                      imagePathOrUrl: targetFile.path,
+                      shape: CropShape.banner,
+                    );
+                  }
                   setState(() {
                     _selectedBgId = targetFile.path;
                     _customUrlController.text = targetFile.path;
@@ -957,6 +946,13 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 }
 
                 if (mounted && targetFile.existsSync()) {
+                  if (context.mounted) {
+                    await MediaCropEditorModal.show(
+                      context,
+                      imagePathOrUrl: targetFile.path,
+                      shape: CropShape.circle,
+                    );
+                  }
                   setState(() {
                     _selectedAvatar = targetFile.path;
                     _customAvatarUrlController.text = targetFile.path;
@@ -1015,43 +1011,129 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         ),
 
         const SizedBox(height: 18),
-        Text('Или выберите стилизованный векторный аватар:',
+        Text('Премиальные арт-пресеты (Anime Silhouettes & Hologram):',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 10),
 
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _avatarPresets.map((preset) {
-            final isSelected = _selectedAvatar == preset && _customAvatarUrlController.text.isEmpty;
+        // Голографическая монограмма из матового стекла
+        InkWell(
+          onTap: () {
+            setState(() {
+              _selectedAvatar = '';
+              _customAvatarUrlController.clear();
+            });
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: (_selectedAvatar.isEmpty && _customAvatarUrlController.text.isEmpty)
+                  ? accent.withValues(alpha: 0.16)
+                  : AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: (_selectedAvatar.isEmpty && _customAvatarUrlController.text.isEmpty)
+                    ? accent
+                    : AppColors.strokeMedium,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                HolographicMonogramAvatar(
+                  text: widget.profile.username,
+                  size: 48,
+                  accentColor: accent,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Голографическая монограмма',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Стеклянный Glassmorphism с радужным переливом и инициалом',
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_selectedAvatar.isEmpty && _customAvatarUrlController.text.isEmpty)
+                  Icon(Icons.check_circle_rounded, color: accent, size: 20),
+              ],
+            ),
+          ),
+        ),
 
-            return InkWell(
+        // Сетка Dark Cyberpunk аниме-силуэтов
+        ...AnimeSilhouettePreset.presets.map((preset) {
+          final isSelected = _selectedAvatar == preset.id && _customAvatarUrlController.text.isEmpty;
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: InkWell(
               onTap: () {
                 setState(() {
-                  _selectedAvatar = preset;
+                  _selectedAvatar = preset.id;
                   _customAvatarUrlController.clear();
                 });
               },
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isSelected ? accent.withValues(alpha: 0.15) : AppColors.surface,
-                  borderRadius: BorderRadius.circular(14),
+                  color: isSelected ? preset.eyeColor.withValues(alpha: 0.15) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: isSelected ? accent : AppColors.strokeMedium,
-                    width: isSelected ? 2 : 1,
+                    color: isSelected ? preset.eyeColor : AppColors.strokeMedium,
+                    width: isSelected ? 1.8 : 1,
                   ),
                 ),
-                child: AppAvatar(
-                  avatarUrl: preset,
-                  size: 48,
-                  borderColor: isSelected ? accent : AppColors.strokeMedium,
+                child: Row(
+                  children: [
+                    AppAvatar(
+                      avatarUrl: preset.id,
+                      size: 46,
+                      borderColor: isSelected ? preset.eyeColor : AppColors.strokeMedium,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            preset.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            preset.title,
+                            style: TextStyle(color: preset.eyeColor, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isSelected)
+                      Icon(Icons.check_circle_rounded, color: preset.eyeColor, size: 20),
+                  ],
                 ),
               ),
-            );
-          }).toList(),
-        ),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -1135,8 +1217,27 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                     ],
                   ),
                 ),
-                if (isSelected)
+                IconButton(
+                  icon: Icon(
+                    Icons.info_outline_rounded,
+                    color: b.color.withValues(alpha: 0.8),
+                    size: 20,
+                  ),
+                  tooltip: 'Перки и детали значка',
+                  onPressed: () {
+                    BadgeDetailsSheet.show(
+                      context,
+                      badge: b,
+                      onSelectBadge: () {
+                        setState(() => _selectedBadgeId = b.id);
+                      },
+                    );
+                  },
+                ),
+                if (isSelected) ...[
+                  const SizedBox(width: 4),
                   Icon(Icons.check_circle_rounded, color: b.color, size: 20),
+                ],
               ],
             ),
           ),
@@ -1147,229 +1248,309 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
 
   // --- 5. ВКЛАДКА «ВИТРИНА & О СЕБЕ» ---
   Widget _buildShowcaseTab(Color accent) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 14),
-      children: [
-        // Произвольный кастомный титул
-        Text('Кастомный титул профиля:',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _titleController,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: 'Например: Тень Монарха, Верховный Архимаг...',
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            filled: true,
-            fillColor: AppColors.surface,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: accent, width: 1.5),
-            ),
-          ),
-          onChanged: (val) => setState(() {}),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: SteamCustomTitle.titles.where((t) => t.isNotEmpty).map((t) {
-            return InkWell(
-              onTap: () {
-                setState(() {
-                  _titleController.text = t;
-                });
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.strokeMedium),
-                ),
-                child: Text(t, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-              ),
-            );
-          }).toList(),
-        ),
-
-        const SizedBox(height: 18),
-
-        // Статус
-        Text('Статус в профиле:',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _statusController,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: 'Что сейчас делаете?',
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            filled: true,
-            fillColor: AppColors.surface,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: accent, width: 1.5),
-            ),
-          ),
-          onChanged: (val) => setState(() {}),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: _quickStatuses.map((s) {
-            return InkWell(
-              onTap: () {
-                setState(() {
-                  _statusController.text = s;
-                });
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.strokeMedium),
-                ),
-                child: Text(s, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-              ),
-            );
-          }).toList(),
-        ),
-
-        const SizedBox(height: 18),
-
-        // О себе / Цитата
-        Text('О себе / Цитата:',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _bioController,
-          maxLines: 2,
-          maxLength: 150,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: 'Любимая цитата из аниме или пара слов о себе...',
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            filled: true,
-            fillColor: AppColors.surface,
-            contentPadding: const EdgeInsets.all(12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: accent, width: 1.5),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        // Любимый тайтл на витрине с живым автодополнением
-        Text('Любимый тайтл на витрине:',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 6),
-        if (_selectedFavAnimePoster != null && _selectedFavAnimePoster!.isNotEmpty) ...[
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        left: AppDimensions.spacingXl,
+        right: AppDimensions.spacingXl,
+        top: 14,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 36,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Живой интерактивный предпросмотр Витрины (Live Preview)
           Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(8),
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accent.withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(_selectedFavAnimePoster!),
-                    width: 40,
-                    height: 56,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 24),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _favAnimeController.text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Постер выбран для витрины',
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white70),
-                  onPressed: () {
-                    setState(() {
-                      _favAnimeController.clear();
-                      _selectedFavAnimeId = null;
-                      _selectedFavAnimePoster = null;
-                    });
-                  },
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: accent.withValues(alpha: 0.4), width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.15),
+                  blurRadius: 12,
                 ),
               ],
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.visibility_rounded, color: accent, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'ПРЕДПРОСМОТР ВИТРИНЫ',
+                      style: TextStyle(
+                        color: accent,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (_titleController.text.trim().isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: accent, width: 0.8),
+                    ),
+                    child: Text(
+                      _titleController.text.trim(),
+                      style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 11),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                Text(
+                  '«${_statusController.text.isNotEmpty ? _statusController.text : 'Смотрю аниме...'}»',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                if (_bioController.text.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _bioController.text.trim(),
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5, fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
-        TextField(
-          controller: _favAnimeController,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: 'Начните вводить название (например: Восхождение в тени)...',
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            filled: true,
-            fillColor: AppColors.surface,
-            prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 20),
-            suffixIcon: _favAnimeController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textMuted),
+
+          // Произвольный кастомный титул
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Кастомный титул профиля:',
+                  style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+              Text('${_titleController.text.length}/30',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _titleController,
+            focusNode: _titleFocusNode,
+            maxLength: 30,
+            cursorColor: accent,
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: 'Например: Тень Монарха, Верховный Архимаг...',
+              hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: accent, width: 1.5),
+              ),
+            ),
+            onChanged: (val) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: SteamCustomTitle.titles.where((t) => t.isNotEmpty).map((t) {
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    _titleController.text = t;
+                  });
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.strokeMedium),
+                  ),
+                  child: Text(t, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 18),
+
+          // Статус
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Статус в профиле:',
+                  style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+              Text('${_statusController.text.length}/50',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _statusController,
+            focusNode: _statusFocusNode,
+            maxLength: 50,
+            cursorColor: accent,
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: 'Что сейчас делаете?',
+              hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: accent, width: 1.5),
+              ),
+            ),
+            onChanged: (val) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _quickStatuses.map((s) {
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    _statusController.text = s;
+                  });
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.strokeMedium),
+                  ),
+                  child: Text(s, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 18),
+
+          // О себе / Цитата
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('О себе / Цитата:',
+                  style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+              Text('${_bioController.text.length}/150',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _bioController,
+            focusNode: _bioFocusNode,
+            maxLines: 2,
+            maxLength: 150,
+            cursorColor: accent,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: 'Любимая цитата из аниме или пара слов о себе...',
+              hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.all(12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: accent, width: 1.5),
+              ),
+            ),
+            onChanged: (val) => setState(() {}),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Любимый тайтл на витрине с живым автодополнением
+          Text('Любимый тайтл на витрине:',
+              style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+          const SizedBox(height: 6),
+          if (_selectedFavAnimePoster != null && _selectedFavAnimePoster!.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(_selectedFavAnimePoster!),
+                      width: 40,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 24),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _favAnimeController.text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Постер выбран для витрины',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white70),
                     onPressed: () {
                       setState(() {
                         _favAnimeController.clear();
@@ -1377,27 +1558,53 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                         _selectedFavAnimePoster = null;
                       });
                     },
-                  )
-                : null,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
+                  ),
+                ],
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.strokeMedium),
+          ],
+          TextField(
+            controller: _favAnimeController,
+            focusNode: _favAnimeFocusNode,
+            cursorColor: accent,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Начните вводить название (например: Восхождение в тени)...',
+              hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+              filled: true,
+              fillColor: AppColors.surface,
+              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 20),
+              suffixIcon: _favAnimeController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textMuted),
+                      onPressed: () {
+                        setState(() {
+                          _favAnimeController.clear();
+                          _selectedFavAnimeId = null;
+                          _selectedFavAnimePoster = null;
+                        });
+                      },
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.strokeMedium),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: accent, width: 1.5),
+              ),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: accent, width: 1.5),
-            ),
+            onChanged: (val) {
+              setState(() {});
+              _onFavSearchChanged(val);
+            },
           ),
-          onChanged: (val) {
-            setState(() {});
-            _onFavSearchChanged(val);
-          },
-        ),
 
         // Выпадающий список совпадений из каталога и живого поиска для мгновенного выбора
         if (_favAnimeController.text.trim().isNotEmpty) ...[
@@ -1554,8 +1761,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
               );
             },
           ),
+          ],
         ],
-      ],
+      ),
     );
   }
 

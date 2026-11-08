@@ -1,13 +1,12 @@
-import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../domain/entities/steam_profile_customization.dart';
+import 'badge_details_sheet.dart';
+import 'live_backgrounds/live_background_widget.dart';
 
 /// Шапка профиля в стиле Steam Community:
 /// 1. Широкоформатный арт/обои на 240 dp с плавным затуханием в цвет фона #121316
@@ -37,11 +36,15 @@ class SteamStyleProfileHeader extends StatelessWidget {
 
     return Stack(
       children: [
-        // 1. Арт / Обои на фоне шапки профиля (высокое оригинальное разрешение)
+        // 1. Арт / Обои / Живой фон на фоне шапки профиля (Live Background & Video)
         SizedBox(
           height: 240,
           width: double.infinity,
-          child: _buildBgImage(bgTheme),
+          child: LiveBackgroundWidget(
+            backgroundId: profile.backgroundId,
+            assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
+            fallbackGradient: bgTheme.gradient,
+          ),
         ),
 
         // 2. Градиентная маска для бесшовного перехода в темноту Cinema Dark
@@ -151,27 +154,31 @@ class SteamStyleProfileHeader extends StatelessWidget {
                           Builder(
                             builder: (context) {
                               final badge = SteamBadge.fromId(profile.badgeId);
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: badge.color.withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: badge.color, width: 0.8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(badge.icon, size: 11, color: badge.color),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '${badge.level}',
-                                      style: TextStyle(
-                                        color: badge.color,
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w800,
+                              return InkWell(
+                                onTap: () => BadgeDetailsSheet.show(context, badge: badge),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: badge.color.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: badge.color, width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(badge.icon, size: 11, color: badge.color),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '${badge.level}',
+                                        style: TextStyle(
+                                          color: badge.color,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               );
                             },
@@ -265,58 +272,6 @@ class SteamStyleProfileHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildBgImage(SteamBackgroundTheme bgTheme) {
-    final bgUrl = bgTheme.assetOrUrl?.trim();
-    if (bgUrl == null || bgUrl.isEmpty) {
-      return _buildFallbackBg(bgTheme);
-    }
-
-    final isNetwork = bgUrl.startsWith('http://') || bgUrl.startsWith('https://');
-    if (isNetwork) {
-      return CachedNetworkImage(
-        imageUrl: wrapCorsSafeUrl(bgUrl),
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.high,
-        errorWidget: (_, __, ___) => _buildFallbackBg(bgTheme),
-      );
-    }
-
-    // Локальный файл из галереи/устройства
-    final filePath = bgUrl.replaceFirst('file://', '');
-    final file = File(filePath);
-    if (file.existsSync()) {
-      return Image.file(
-        file,
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (_, __, ___) => _buildFallbackBg(bgTheme),
-      );
-    }
-
-    return _buildFallbackBg(bgTheme);
-  }
-
-  Widget _buildFallbackBg(SteamBackgroundTheme bgTheme) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: bgTheme.gradient.length >= 2
-              ? bgTheme.gradient
-              : const [Color(0xFF2A2B32), Color(0xFF16181F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          bgTheme.icon,
-          size: 44,
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
-      ),
     );
   }
 }

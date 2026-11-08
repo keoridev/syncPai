@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Значок профиля в стиле Steam Profile Badges
+enum BadgeRarity { common, rare, epic, legendary }
+
+enum BadgeGlowStyle { pulse, metallic, flame }
+
+/// Значок профиля в стиле Steam Profile Badges с функциональными перками и кастомизацией
 class SteamBadge {
   final String id;
   final String title;
@@ -8,6 +12,10 @@ class SteamBadge {
   final IconData icon;
   final Color color;
   final int level;
+  final BadgeRarity rarity;
+  final String perkTitle;
+  final String perkDescription;
+  final String unlockCriteria;
 
   const SteamBadge({
     required this.id,
@@ -16,6 +24,10 @@ class SteamBadge {
     required this.icon,
     required this.color,
     required this.level,
+    this.rarity = BadgeRarity.rare,
+    this.perkTitle = 'Эксклюзивный статус',
+    this.perkDescription = 'Выделяет ваш профиль и сообщения среди зрителей',
+    this.unlockCriteria = 'Активность в приложении SyncPai',
   });
 
   static const List<SteamBadge> all = [
@@ -26,6 +38,10 @@ class SteamBadge {
       icon: Icons.sync_alt_rounded,
       color: Color(0xFF00E5FF),
       level: 50,
+      rarity: BadgeRarity.epic,
+      perkTitle: 'Увеличение комнат до 12 человек',
+      perkDescription: 'Позволяет хостить совместный просмотр в расширенных комнатах до 12 участников',
+      unlockCriteria: '10 успешных сеансов совместного просмотра без десинхронизации',
     ),
     SteamBadge(
       id: 'marathon_100',
@@ -34,6 +50,10 @@ class SteamBadge {
       icon: Icons.local_fire_department_rounded,
       color: Color(0xFFFF6B4A),
       level: 100,
+      rarity: BadgeRarity.legendary,
+      perkTitle: 'Особый звук входа в лобби',
+      perkDescription: 'При вашем подключении к комнате друзья слышат фирменный эпический джингл',
+      unlockCriteria: 'Просмотреть 100 серий аниме суммарно за 72 часа',
     ),
     SteamBadge(
       id: 'night_otaku',
@@ -42,6 +62,10 @@ class SteamBadge {
       icon: Icons.bedtime_rounded,
       color: Color(0xFFB388FF),
       level: 25,
+      rarity: BadgeRarity.rare,
+      perkTitle: 'Темная неоновая тема Danmaku',
+      perkDescription: 'Открывает ультра-темный градиент для плавающих комментариев Danmaku',
+      unlockCriteria: 'Просмотреть более 5 серий в ночное время (с 02:00 до 06:00)',
     ),
     SteamBadge(
       id: 'anixart_collector',
@@ -50,6 +74,10 @@ class SteamBadge {
       icon: Icons.auto_stories_rounded,
       color: Color(0xFF00FF87),
       level: 30,
+      rarity: BadgeRarity.rare,
+      perkTitle: 'Мгновенный офлайн-экспорт списков',
+      perkDescription: 'Быстрый экспорт и бэкап аниме-библиотеки в JSON и CSV в 1 клик',
+      unlockCriteria: 'Импортировать профиль или CSV закладки из Anixart',
     ),
     SteamBadge(
       id: 'match_swiper',
@@ -58,6 +86,10 @@ class SteamBadge {
       icon: Icons.favorite_rounded,
       color: Color(0xFFFF2A68),
       level: 20,
+      rarity: BadgeRarity.rare,
+      perkTitle: 'Неоновые сердечки в реакциях',
+      perkDescription: 'Уникальный набор летающих реакций с сердечками для стрим-комнаты',
+      unlockCriteria: 'Совершить 3 взаимных мэтча в режиме Anime Match с друзьями',
     ),
     SteamBadge(
       id: 'pioneer',
@@ -66,6 +98,10 @@ class SteamBadge {
       icon: Icons.military_tech_rounded,
       color: Color(0xFFFFD700),
       level: 99,
+      rarity: BadgeRarity.legendary,
+      perkTitle: 'Золотой никнейм и VIP значок',
+      perkDescription: 'Отображает золотое свечение никнейма в списке участников комнаты',
+      unlockCriteria: 'Участие в тестировании SyncPai на этапе закрытого альфа-релиза',
     ),
     SteamBadge(
       id: 'sakura_lord',
@@ -74,6 +110,10 @@ class SteamBadge {
       icon: Icons.filter_vintage_rounded,
       color: Color(0xFFFF76AC),
       level: 150,
+      rarity: BadgeRarity.legendary,
+      perkTitle: 'Эксклюзивный цвет текста в Danmaku',
+      perkDescription: 'Ваши бегущие строки Danmaku подсвечиваются градиентом Сакуры',
+      unlockCriteria: 'Провести 50 часов совместного просмотра в комнатах SyncPai',
     ),
     SteamBadge(
       id: 'fhd_expert',
@@ -82,6 +122,10 @@ class SteamBadge {
       icon: Icons.high_quality_rounded,
       color: Color(0xFF4A90E2),
       level: 15,
+      rarity: BadgeRarity.common,
+      perkTitle: 'Приоритетный выбор 1080p 60fps',
+      perkDescription: 'Автоматически подключает лучший доступный видеопоток без ожидания',
+      unlockCriteria: 'Просмотреть 20 серий в максимальном качестве 1080p',
     ),
     SteamBadge(
       id: 'skip_legend',
@@ -90,6 +134,10 @@ class SteamBadge {
       icon: Icons.fast_forward_rounded,
       color: Color(0xFFE06C53),
       level: 10,
+      rarity: BadgeRarity.common,
+      perkTitle: 'Мгновенный авто-скип без голосования',
+      perkDescription: 'В соло-режиме пропускает опенинг за 0.1 секунды',
+      unlockCriteria: 'Пропустить более 50 опенингов умным таймкодом',
     ),
   ];
 
@@ -327,6 +375,34 @@ class SteamBackgroundTheme {
       name: 'Cinema Dark',
       gradient: [Color(0xFF1E1F24), Color(0xFF121316)],
       icon: Icons.dark_mode_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'matrix_digital_rain',
+      name: 'Матрица (Живой код)',
+      gradient: [Color(0xFF030D06), Color(0xFF003311)],
+      assetOrUrl: 'matrix',
+      icon: Icons.terminal_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'falling_sakura_live',
+      name: 'Цветение Сакуры (Live)',
+      gradient: [Color(0xFF260D1E), Color(0xFF160914)],
+      assetOrUrl: 'sakura',
+      icon: Icons.filter_vintage_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'cyberpunk_grid_3d',
+      name: 'Киберпанк 3D Сетка (Live)',
+      gradient: [Color(0xFF090614), Color(0xFF1B072B)],
+      assetOrUrl: 'cyberpunk',
+      icon: Icons.view_in_ar_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'deep_starfield_cosmos',
+      name: 'Глубокий Космос (Live)',
+      gradient: [Color(0xFF06060F), Color(0xFF140D2B)],
+      assetOrUrl: 'starfield',
+      icon: Icons.auto_awesome_rounded,
     ),
     SteamBackgroundTheme(
       id: 'cyberpunk_edgerunners',

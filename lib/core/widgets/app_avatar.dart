@@ -3,12 +3,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../network/image_cors_helper.dart';
 import '../theme/app_colors.dart';
+import 'anime_silhouette_avatars.dart';
+import 'holographic_monogram_avatar.dart';
 
-/// Элегантный кино-аватар пользователя в стиле Nordic Dark / Liquid Glass.
-/// Поддерживает:
-/// - Оригинальные фото высокого разрешения из галереи устройства (File)
-/// - Удаленные аватары высокого разрешения (Network / CachedNetworkImage)
-/// - Стильные векторные пресеты с мягкими градиентами и инициалы.
+/// Элегантный кино-аватар пользователя в стиле Nordic Dark / Liquid Glass:
+/// 1. Поддержка оригинальных фото высокого разрешения из галереи (File)
+/// 2. Удаленные аватары высокого разрешения (Network / CachedNetworkImage)
+/// 3. Премиальные аниме-силуэты (Anime Silhouette / Dark Cyberpunk) с горящими неоновыми глазами
+/// 4. Генеративные голографические монограммы из матового стекла (Glassmorphism).
 class AppAvatar extends StatelessWidget {
   final String? avatarUrl;
   final String? username;
@@ -51,21 +53,90 @@ class AppAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveBorderColor = borderColor ?? AppColors.strokeMedium;
     final cleanUrl = avatarUrl?.trim() ?? '';
-
-    // 1. Проверяем, является ли ссылка сетевым URL
-    final isNetwork = cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://');
-
-    // 2. Проверяем, является ли путь локальным файлом из галереи
-    final isLocalFile = !isNetwork &&
-        cleanUrl.isNotEmpty &&
-        (cleanUrl.startsWith('/') ||
-            cleanUrl.contains(':\\') ||
-            cleanUrl.startsWith('file:') ||
-            cleanUrl.contains('cache') ||
-            cleanUrl.contains('storage'));
-
     final themePrimary = Theme.of(context).colorScheme.primary;
 
+    // 1. Проверяем, выбран ли аниме-силуэтный пресет
+    final silhouette = AnimeSilhouettePreset.find(cleanUrl);
+    if (silhouette != null) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: silhouette.backgroundGradient,
+          ),
+          border: Border.all(color: effectiveBorderColor, width: borderWidth),
+          boxShadow: [
+            BoxShadow(
+              color: silhouette.eyeColor.withValues(alpha: 0.35),
+              blurRadius: 10,
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              silhouette.silhouetteIcon,
+              size: size * 0.58,
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
+            // Неоновый акцент глаз/визора
+            Positioned(
+              top: size * 0.38,
+              child: Container(
+                width: size * 0.16,
+                height: 2.2,
+                decoration: BoxDecoration(
+                  color: silhouette.eyeColor,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: silhouette.eyeColor,
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. Векторный пресет иконки (для совместимости)
+    final presetIcon = _presetIconMap[cleanUrl];
+    if (presetIcon != null) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              themePrimary.withValues(alpha: 0.28),
+              AppColors.surfaceElevated,
+            ],
+          ),
+          border: Border.all(color: effectiveBorderColor, width: borderWidth),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          presetIcon,
+          size: size * 0.52,
+          color: themePrimary,
+        ),
+      );
+    }
+
+    // 2. Проверяем, является ли ссылка сетевым URL
+    final isNetwork = cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://');
     if (isNetwork) {
       return Container(
         width: size,
@@ -79,12 +150,21 @@ class AppAvatar extends StatelessWidget {
             imageUrl: wrapCorsSafeUrl(cleanUrl),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            placeholder: (_, __) => _buildFallback(context, themePrimary),
-            errorWidget: (_, __, ___) => _buildFallback(context, themePrimary),
+            placeholder: (_, __) => _buildHolographicMonogram(themePrimary),
+            errorWidget: (_, __, ___) => _buildHolographicMonogram(themePrimary),
           ),
         ),
       );
     }
+
+    // 3. Проверяем, является ли путь локальным файлом из галереи
+    final isLocalFile = !isNetwork &&
+        cleanUrl.isNotEmpty &&
+        (cleanUrl.startsWith('/') ||
+            cleanUrl.contains(':\\') ||
+            cleanUrl.startsWith('file:') ||
+            cleanUrl.contains('cache') ||
+            cleanUrl.contains('storage'));
 
     if (isLocalFile) {
       final filePath = cleanUrl.replaceFirst('file://', '');
@@ -101,61 +181,21 @@ class AppAvatar extends StatelessWidget {
             file,
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            errorBuilder: (_, __, ___) => _buildFallback(context, themePrimary),
+            errorBuilder: (_, __, ___) => _buildHolographicMonogram(themePrimary),
           ),
         ),
       );
     }
 
-    return _buildFallback(context, themePrimary);
+    // 4. Если фото нет — генеративная голографическая монограмма из матового стекла
+    return _buildHolographicMonogram(themePrimary);
   }
 
-  Widget _buildFallback(BuildContext context, Color themePrimary) {
-    final effectiveBorderColor = borderColor ?? AppColors.strokeMedium;
-    final icon = _presetIconMap[avatarUrl?.trim()];
-
-    // Инициал пользователя для чистого минималистичного аватара
-    final initial = (username != null && username!.trim().isNotEmpty)
-        ? username!.trim()[0].toUpperCase()
-        : null;
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            themePrimary.withValues(alpha: 0.28),
-            AppColors.surfaceElevated,
-          ],
-        ),
-        border: Border.all(color: effectiveBorderColor, width: borderWidth),
-      ),
-      alignment: Alignment.center,
-      child: icon != null
-          ? Icon(
-              icon,
-              size: size * 0.52,
-              color: themePrimary,
-            )
-          : (initial != null
-              ? Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: size * 0.44,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.5,
-                  ),
-                )
-              : Icon(
-                  Icons.person_rounded,
-                  size: size * 0.52,
-                  color: AppColors.textSecondary,
-                )),
+  Widget _buildHolographicMonogram(Color themePrimary) {
+    return HolographicMonogramAvatar(
+      text: (username != null && username!.trim().isNotEmpty) ? username! : 'S',
+      size: size,
+      accentColor: borderColor ?? themePrimary,
     );
   }
 }

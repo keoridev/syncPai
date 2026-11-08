@@ -10,8 +10,13 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
 import '../../features/catalog/data/datasources/anilibria_remote_datasource.dart';
+import '../../features/catalog/data/datasources/anime_remote_datasource.dart';
+import '../../features/catalog/data/repositories/anime_catalog_repository_impl.dart';
 import '../../features/catalog/data/repositories/catalog_repository_impl.dart';
+import '../../features/catalog/domain/repositories/anime_catalog_repository.dart';
 import '../../features/catalog/domain/repositories/catalog_repository.dart';
+import '../../features/catalog/domain/usecases/get_catalog_usecase.dart';
+import '../../features/catalog/domain/usecases/get_player_links_usecase.dart';
 import '../../features/catalog/domain/usecases/get_title_details.dart';
 import '../../features/catalog/domain/usecases/get_updates.dart';
 import '../../features/catalog/domain/usecases/search_titles.dart';
@@ -140,12 +145,27 @@ Future<void> configureDependencies() async {
     () => GetTitleDetails(getIt<CatalogRepository>()),
   );
 
+  // Features: Supabase Anime Catalog & Player Data Layer
+  getIt.registerLazySingleton<AnimeRemoteDataSource>(
+    () => SupabaseAnimeRemoteDataSourceImpl(),
+  );
+  getIt.registerLazySingleton<AnimeCatalogRepository>(
+    () => AnimeCatalogRepositoryImpl(getIt<AnimeRemoteDataSource>()),
+  );
+  getIt.registerLazySingleton<GetCatalogUseCase>(
+    () => GetCatalogUseCase(getIt<AnimeCatalogRepository>()),
+  );
+  getIt.registerLazySingleton<GetPlayerLinksUseCase>(
+    () => GetPlayerLinksUseCase(getIt<AnimeCatalogRepository>()),
+  );
+
   // Features: Catalog - Presentation Cubit
   getIt.registerLazySingleton<CatalogCubit>(
     () => CatalogCubit(
       getUpdates: getIt<GetUpdates>(),
       searchTitles: getIt<SearchTitles>(),
       prefs: getIt<SharedPreferences>(),
+      getCatalogUseCase: getIt<GetCatalogUseCase>(),
     ),
   );
 }

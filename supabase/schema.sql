@@ -60,3 +60,41 @@ create index if not exists idx_user_anime_lists_updated
 -- 4. Включение Realtime для таблицы списков (чтобы изменения сразу прилетали на все девайсы)
 alter publication supabase_realtime add table public.user_anime_lists;
 
+-- ==============================================================================
+-- 5. Таблица кэшированного каталога аниме (anime_catalog)
+-- Обеспечивает моментальную загрузку каталога во Flutter без внешних API
+-- ==============================================================================
+create table if not exists public.anime_catalog (
+  id uuid default gen_random_uuid() primary key,
+  shikimori_id int not null unique,
+  title_ru text not null default '',
+  title_en text not null default '',
+  poster_url text,
+  kind text, -- 'tv', 'movie', 'ova', 'ona', 'special'
+  status text not null default 'ongoing', -- 'ongoing', 'released'
+  score numeric(3, 1) default 0.0,
+  episodes_total int default 0,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Индексы для сверхбыстрой фильтрации и сортировки каталога
+create index if not exists idx_anime_catalog_status on public.anime_catalog (status);
+create index if not exists idx_anime_catalog_score on public.anime_catalog (score desc);
+create index if not exists idx_anime_catalog_shikimori_id on public.anime_catalog (shikimori_id);
+
+-- RLS для anime_catalog: публичный просмотр
+alter table public.anime_catalog enable row level security;
+
+create policy "Public catalog is viewable by everyone" 
+  on public.anime_catalog for select 
+  using (true);
+
+create policy "Service role can manage anime catalog" 
+  on public.anime_catalog for all 
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+-- Включение Realtime для каталога
+alter publication supabase_realtime add table public.anime_catalog;
+
+

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../app/di/injection.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_settings.dart';
+import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
 import '../../domain/usecases/search_titles.dart';
 import 'catalog_state.dart';
@@ -11,6 +13,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   final GetUpdates getUpdates;
   final SearchTitles searchTitles;
   final SharedPreferences? prefs;
+  final GetCatalogUseCase? getCatalogUseCase;
 
   Timer? _debounceTimer;
   List<AnimeTitle> _cachedUpdates = [];
@@ -22,6 +25,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     required this.getUpdates,
     required this.searchTitles,
     this.prefs,
+    this.getCatalogUseCase,
   }) : super(const CatalogInitial()) {
     _currentViewMode = _loadSavedViewMode();
     _currentGridDensity = _loadSavedGridDensity();
@@ -44,7 +48,23 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     emit(const CatalogLoading());
     try {
-      final titles = await getUpdates(page: 1, limit: 40);
+      List<AnimeTitle> titles = [];
+      final useCase = getCatalogUseCase ??
+          (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
+
+      if (useCase != null) {
+        try {
+          final entities = await useCase(page: 1, limit: 40);
+          if (entities.isNotEmpty) {
+            titles = entities.map((e) => e.toAnimeTitle()).toList();
+          }
+        } catch (_) {}
+      }
+
+      if (titles.isEmpty) {
+        titles = await getUpdates(page: 1, limit: 40);
+      }
+
       _cachedUpdates = titles;
       emit(CatalogLoaded(
         titles: titles,
@@ -59,7 +79,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
-  /// Подгрузка следующей страницы каталога AniLibria (бесконечный скролл)
+  /// Подгрузка следующей страницы каталога (Supabase PostgreSQL / AniLibria с бесконечным скроллом)
   Future<void> loadMore() async {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
@@ -71,7 +91,22 @@ class CatalogCubit extends Cubit<CatalogState> {
     emit(current.copyWith(isLoadingMore: true));
     try {
       final nextPage = current.currentPage + 1;
-      final newTitles = await getUpdates(page: nextPage, limit: 40);
+      List<AnimeTitle> newTitles = [];
+      final useCase = getCatalogUseCase ??
+          (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
+
+      if (useCase != null) {
+        try {
+          final entities = await useCase(page: nextPage, limit: 40);
+          if (entities.isNotEmpty) {
+            newTitles = entities.map((e) => e.toAnimeTitle()).toList();
+          }
+        } catch (_) {}
+      }
+
+      if (newTitles.isEmpty) {
+        newTitles = await getUpdates(page: nextPage, limit: 40);
+      }
 
       if (newTitles.isEmpty) {
         emit(current.copyWith(hasMore: false, isLoadingMore: false));

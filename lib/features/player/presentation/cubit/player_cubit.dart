@@ -9,6 +9,7 @@ import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
@@ -585,6 +586,47 @@ class PlayerCubit extends Cubit<PlayerState> {
         isPlaying: false,
       ));
     }
+  }
+
+  /// Переключение варианта озвучки или студии (AniLibria / Kodik / StudioBand)
+  /// Обновляет источник воспроизведения без пересоздания всего экрана и с сохранением позиции
+  Future<void> changeTranslation(TranslationEntity newTranslation) async {
+    final currentPos = state.position;
+    emit(state.copyWith(
+      currentTranslation: () => newTranslation,
+    ));
+
+    if (newTranslation.isDirectStream) {
+      final streamUrl = newTranslation.getStreamForEpisode(state.episode.episode);
+      if (streamUrl != null && streamUrl.isNotEmpty) {
+        try {
+          await player.open(
+            Media(
+              streamUrl,
+              start: currentPos > Duration.zero ? currentPos : null,
+            ),
+            play: state.isPlaying,
+          );
+        } catch (e) {
+          emit(state.copyWith(
+            errorMessage: () => 'Ошибка переключения потока: $e',
+          ));
+        }
+      }
+    } else {
+      // Для iframe плееров (Kodik) ставим нативный плеер на паузу
+      await player.pause();
+    }
+  }
+
+  /// Установка списка доступных переводов от Supabase Edge Function
+  void setTranslations(List<TranslationEntity> translations) {
+    if (translations.isEmpty) return;
+    final current = state.currentTranslation ?? translations.first;
+    emit(state.copyWith(
+      translations: translations,
+      currentTranslation: () => current,
+    ));
   }
 
   void playOrPause() {

@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
@@ -18,6 +19,10 @@ class PlayerState extends Equatable {
   final double playbackRate;
   final bool areControlsVisible;
   final String? errorMessage;
+
+  // Supabase BFF агрегатор переводов и балансеров
+  final List<TranslationEntity> translations;
+  final TranslationEntity? currentTranslation;
 
   // Realtime Совместный просмотр (Sync Room)
   final String? roomCode;
@@ -68,6 +73,8 @@ class PlayerState extends Equatable {
     this.playbackRate = 1.0,
     this.areControlsVisible = true,
     this.errorMessage,
+    this.translations = const [],
+    this.currentTranslation,
     this.roomCode,
     this.isHost = true,
     this.syncStatus = SyncStatus.active,
@@ -105,6 +112,8 @@ class PlayerState extends Equatable {
     double? playbackRate,
     bool? areControlsVisible,
     String? Function()? errorMessage,
+    List<TranslationEntity>? translations,
+    TranslationEntity? Function()? currentTranslation,
     String? roomCode,
     bool? isHost,
     SyncStatus? syncStatus,
@@ -139,6 +148,8 @@ class PlayerState extends Equatable {
       playbackRate: playbackRate ?? this.playbackRate,
       areControlsVisible: areControlsVisible ?? this.areControlsVisible,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
+      translations: translations ?? this.translations,
+      currentTranslation: currentTranslation != null ? currentTranslation() : this.currentTranslation,
       roomCode: roomCode ?? this.roomCode,
       isHost: isHost ?? this.isHost,
       syncStatus: syncStatus ?? this.syncStatus,
@@ -176,6 +187,8 @@ class PlayerState extends Equatable {
         playbackRate,
         areControlsVisible,
         errorMessage,
+        translations,
+        currentTranslation,
         roomCode,
         isHost,
         syncStatus,

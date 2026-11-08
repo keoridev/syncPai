@@ -30,6 +30,16 @@ import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_
 import 'package:sync_pai/features/profile/presentation/widgets/profile_activity_chart.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/catalog/data/models/anime_catalog_model.dart';
+import 'package:sync_pai/features/catalog/data/models/anime_player_data_model.dart';
+import 'package:sync_pai/features/catalog/data/models/episode_model.dart';
+import 'package:sync_pai/features/catalog/data/models/translation_model.dart';
+import 'package:sync_pai/features/catalog/domain/entities/anime_entity.dart';
+import 'package:sync_pai/features/catalog/domain/entities/episode_entity.dart';
+import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
+import 'package:sync_pai/features/catalog/domain/repositories/anime_catalog_repository.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/get_catalog_usecase.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/catalog/presentation/widgets/anime_poster_card.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/presentation/widgets/auto_next_episode_banner.dart';
@@ -3237,5 +3247,125 @@ Title,Status,Episodes
       // Immediately second call must be blocked
       expect(PlayerNavigationGuard.canOpen(), isFalse);
     });
+
+    group('Supabase Catalog & Player BFF Tests', () {
+      test('AnimeCatalogModel serialization and toDomain mapping', () {
+        final json = {
+          'id': 'uuid-12345',
+          'shikimori_id': 51009,
+          'title_ru': 'Магическая битва 2',
+          'title_en': 'Jujutsu Kaisen 2nd Season',
+          'poster_url': 'https://shikimori.me/poster.jpg',
+          'kind': 'tv',
+          'status': 'ongoing',
+          'score': 8.8,
+          'episodes_total': 23,
+          'updated_at': '2026-11-08T12:00:00.000Z',
+        };
+
+        final model = AnimeCatalogModel.fromJson(json);
+        expect(model.id, 'uuid-12345');
+        expect(model.shikimoriId, 51009);
+        expect(model.titleRu, 'Магическая битва 2');
+        expect(model.score, 8.8);
+        expect(model.status, 'ongoing');
+
+        final domain = model.toDomain();
+        expect(domain, isA<AnimeEntity>());
+        expect(domain.displayTitle, 'Магическая битва 2');
+
+        final animeTitle = domain.toAnimeTitle();
+        expect(animeTitle.id, 51009);
+        expect(animeTitle.russianTitle, 'Магическая битва 2');
+        expect(animeTitle.status, 'Онгоинг');
+
+        final serialized = model.toJson();
+        expect(serialized['shikimori_id'], 51009);
+        expect(serialized['score'], 8.8);
+      });
+
+      test('AnimePlayerDataModel, TranslationModel and EpisodeModel parsing', () {
+        final bffJson = {
+          'shikimori_id': 12345,
+          'translations': [
+            {
+              'studio_name': 'AniLibria',
+              'translation_type': 'dub',
+              'is_direct_stream': true,
+              'episodes': [
+                {'episode': 1, 'link': 'https://cache.libria.fun/ep1.m3u8'},
+                {'episode': 2, 'link': 'https://cache.libria.fun/ep2.m3u8'}
+              ]
+            },
+            {
+              'studio_name': 'StudioBand',
+              'translation_type': 'dub',
+              'is_direct_stream': false,
+              'iframe_url': 'https://kodik.info/video/sb123'
+            }
+          ]
+        };
+
+        final playerData = AnimePlayerDataModel.fromJson(bffJson);
+        expect(playerData.shikimoriId, 12345);
+        expect(playerData.translations.length, 2);
+
+        final direct = playerData.translations.first.toDomain();
+        expect(direct.studioName, 'AniLibria');
+        expect(direct.isDirectStream, isTrue);
+        expect(direct.getStreamForEpisode(2), 'https://cache.libria.fun/ep2.m3u8');
+
+        final iframe = playerData.translations.last.toDomain();
+        expect(iframe.studioName, 'StudioBand');
+        expect(iframe.isDirectStream, isFalse);
+        expect(iframe.iframeUrl, 'https://kodik.info/video/sb123');
+      });
+
+      test('GetCatalogUseCase and GetPlayerLinksUseCase interact with repository', () async {
+        final mockRepo = _MockAnimeCatalogRepository();
+        final getCatalog = GetCatalogUseCase(mockRepo);
+        final getLinks = GetPlayerLinksUseCase(mockRepo);
+
+        final catalog = await getCatalog(page: 1, limit: 10);
+        expect(catalog.length, 1);
+        expect(catalog.first.titleRu, 'Тестовое Аниме');
+
+        final links = await getLinks(99999);
+        expect(links.length, 1);
+        expect(links.first.studioName, 'AniLibria');
+        expect(links.first.isDirectStream, isTrue);
+      });
+    });
   });
+}
+
+class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
+  @override
+  Future<List<AnimeEntity>> getCatalog({int page = 1, int limit = 30}) async {
+    return [
+      const AnimeEntity(
+        id: 'test-uuid',
+        shikimoriId: 99999,
+        titleRu: 'Тестовое Аниме',
+        titleEn: 'Test Anime',
+        status: 'ongoing',
+        score: 9.0,
+        episodesTotal: 12,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<TranslationEntity>> getPlayerLinks(int shikimoriId, {String? title}) async {
+    return [
+      const TranslationEntity(
+        studioName: 'AniLibria',
+        translationType: 'dub',
+        isDirectStream: true,
+        episodes: [
+          EpisodeEntity(episode: 1, link: 'https://test.m3u8'),
+        ],
+      ),
+    ];
+  }
 }

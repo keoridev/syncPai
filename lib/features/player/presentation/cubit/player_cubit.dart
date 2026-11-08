@@ -11,7 +11,7 @@ import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
-import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
@@ -631,34 +631,34 @@ class PlayerCubit extends Cubit<PlayerState> {
       streamUrl = null;
     }
 
-    // Если прямая ссылка отсутствует или тайтл не имеет серий — пробуем загрузить рабочий тайтл через CatalogRepository
-    if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<CatalogRepository>()) {
+    // Если прямая ссылка отсутствует или тайтл не имеет серий — получаем видеопотоки через Supabase Edge Function
+    if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<GetPlayerLinksUseCase>() && state.title.id > 0) {
       try {
-        final catalog = getIt<CatalogRepository>();
-        AnimeTitle? resolvedTitle;
-
-        if (state.title.id > 0) {
-          resolvedTitle = await catalog.getTitleDetails(id: state.title.id, code: state.title.code);
-        } else {
-          // Для комнат совместного просмотра без указанного тайтла берём свежий популярный релиз
-          final updates = await catalog.getUpdates();
-          if (updates.isNotEmpty) {
-            final first = updates.first;
-            resolvedTitle = await catalog.getTitleDetails(id: first.id, code: first.code);
-          }
-        }
-
-        if (resolvedTitle != null && resolvedTitle.episodes.isNotEmpty) {
-          final targetEp = resolvedTitle.episodes.firstWhere(
-            (e) => e.episode == state.episode.episode,
-            orElse: () => resolvedTitle!.episodes.first,
-          );
-          streamUrl = _getUrlForQuality(targetEp, state.selectedQuality);
-          if (streamUrl != null && !streamUrl.contains('sample.com')) {
-            emit(state.copyWith(
-              title: resolvedTitle,
-              episode: targetEp,
-            ));
+        final links = await getIt<GetPlayerLinksUseCase>().call(
+          state.title.id,
+          title: state.title.displayTitle,
+        );
+        if (links.isNotEmpty) {
+          final direct = links.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
+          if (direct.isNotEmpty) {
+            final directEps = direct.first.episodes.map((e) => EpisodeItem(
+              episode: e.episode,
+              sdUrl: e.link,
+              hdUrl: e.link,
+              fhdUrl: e.link,
+            )).toList();
+            final updatedTitle = state.title.copyWith(episodes: directEps);
+            final targetEp = directEps.firstWhere(
+              (e) => e.episode == state.episode.episode,
+              orElse: () => directEps.first,
+            );
+            streamUrl = _getUrlForQuality(targetEp, state.selectedQuality);
+            if (streamUrl != null && !streamUrl.contains('sample.com')) {
+              emit(state.copyWith(
+                title: updatedTitle,
+                episode: targetEp,
+              ));
+            }
           }
         }
       } catch (_) {}

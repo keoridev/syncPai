@@ -5,6 +5,8 @@ import '../../domain/repositories/anime_catalog_repository.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../datasources/anilibria_remote_datasource.dart';
 
+import '../../domain/entities/episode_item.dart';
+
 class CatalogRepositoryImpl implements CatalogRepository {
   final AnilibriaRemoteDataSource remoteDataSource;
   final AnimeCatalogRepository? animeCatalogRepository;
@@ -62,6 +64,42 @@ class CatalogRepositoryImpl implements CatalogRepository {
 
   @override
   Future<AnimeTitle> getTitleDetails({int? id, String? code}) async {
+    // 1. Приоритетный источник: Supabase Edge Function get_anime_player_data (BFF)
+    // Предотвращает каскадные 404 ошибки на клиенте по Shikimori ID
+    if (animeCatalogRepository != null && id != null && id > 0) {
+      try {
+        final translations = await animeCatalogRepository!.getPlayerLinks(id, title: code);
+        if (translations.isNotEmpty) {
+          final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
+          final epList = direct.isNotEmpty
+              ? direct.first.episodes
+                  .map((e) => EpisodeItem(
+                        episode: e.episode,
+                        sdUrl: e.link,
+                        hdUrl: e.link,
+                        fhdUrl: e.link,
+                      ))
+                  .toList()
+              : <EpisodeItem>[];
+
+          return AnimeTitle(
+            id: id,
+            code: code ?? 'shikimori-$id',
+            russianTitle: code ?? '',
+            englishTitle: code ?? '',
+            posterSmall: '',
+            posterMedium: '',
+            posterOriginal: '',
+            episodesTotal: epList.length,
+            genres: const [],
+            description: '',
+            status: 'Завершен',
+            episodes: epList,
+          );
+        }
+      } catch (_) {}
+    }
+
     try {
       final dto = await remoteDataSource.getTitleDetails(id: id, code: code);
       return dto.toDomain();

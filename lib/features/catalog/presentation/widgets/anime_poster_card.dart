@@ -64,11 +64,15 @@ class AnimePosterCard extends StatelessWidget {
                         tag: 'anime-poster-${title.id}',
                         child: CachedNetworkImage(
                           imageUrl: wrapCorsSafeUrl(posterUrl),
+                          httpHeaders: const {
+                            'User-Agent': 'SyncPai-App/1.0',
+                            'Referer': 'https://shikimori.io/',
+                          },
                           fit: BoxFit.cover,
-                          memCacheWidth: 260,
-                          memCacheHeight: 390,
-                          maxWidthDiskCache: 450,
-                          maxHeightDiskCache: 675,
+                          memCacheWidth: 300,
+                          memCacheHeight: 450,
+                          maxWidthDiskCache: 600,
+                          maxHeightDiskCache: 900,
                           fadeInDuration: const Duration(milliseconds: 120),
                           filterQuality: FilterQuality.low,
                           placeholder: (context, url) =>

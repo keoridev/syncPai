@@ -160,18 +160,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Логотип и брендовый заголовок
-                    Flexible(
+                    Expanded(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SyncPaiLogo(size: isNarrow ? 32 : 40),
                           SizedBox(width: isNarrow ? 8 : AppDimensions.spacingMd),
-                          Flexible(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 RichText(
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   text: TextSpan(
                                     children: [
                                       TextSpan(
@@ -197,7 +199,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 ),
                                 const SizedBox(height: AppDimensions.spacing2xs),
                                 Text(
-                                  'Каталог аниме AniLibria',
+                                  'Каталог аниме Shikimori',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: AppTypography.bodySmall.copyWith(
@@ -211,6 +213,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppDimensions.spacingSm),
 
                     // Кнопки переключения вида: Сетка / Список + Настройки + Профиль
                     BlocBuilder<CatalogCubit, CatalogState>(
@@ -222,8 +225,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         final gridDensity = state is CatalogLoaded
                             ? state.gridDensity
                             : CatalogGridDensity.standard;
+                        final btnSize = isNarrow ? 34.0 : 38.0;
+                        final btnSpacing = isNarrow ? 6.0 : AppDimensions.spacingSm;
 
                         return Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             // Кнопка перехода в Профиль пользователя
                             if (getIt.isRegistered<AuthCubit>()) ...[
@@ -236,19 +242,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                     child: AppAvatar(
                                       avatarUrl: profile?.avatarUrl,
                                       username: profile?.username ?? 'Гость',
-                                      size: 38,
+                                      size: btnSize,
                                       borderWidth: 1.2,
                                     ),
                                   );
                                 },
                               ),
-                              const SizedBox(width: AppDimensions.spacingSm),
+                              SizedBox(width: btnSpacing),
                             ],
 
                             // Кнопка быстрого переключения Сетка <-> Список
                             GlassContainer(
-                              width: 38,
-                              height: 38,
+                              width: btnSize,
+                              height: btnSize,
                               borderRadius: BorderRadius.circular(10),
                               backgroundOpacity: 0.08,
                               borderOpacity: 0.12,
@@ -261,16 +267,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                       ? Icons.view_agenda_rounded
                                       : Icons.grid_view_rounded,
                                   color: AppColors.textPrimary,
-                                  size: 19,
+                                  size: isNarrow ? 17 : 19,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: AppDimensions.spacingSm),
+                            SizedBox(width: btnSpacing),
 
                             // Кнопка подробных настроек (шторка плотности и вида)
                             GlassContainer(
-                              width: 38,
-                              height: 38,
+                              width: btnSize,
+                              height: btnSize,
                               borderRadius: BorderRadius.circular(10),
                               backgroundOpacity: 0.08,
                               borderOpacity: 0.12,
@@ -284,11 +290,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   currentGridDensity: gridDensity,
                                 );
                               },
-                              child: const Center(
+                              child: Center(
                                 child: Icon(
                                   Icons.tune_rounded,
                                   color: AppColors.textSecondary,
-                                  size: 19,
+                                  size: isNarrow ? 17 : 19,
                                 ),
                               ),
                             ),
@@ -831,7 +837,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
           // ignore: deprecated_member_use
           // ignore: deprecated_member_use
-      cacheExtent: 350.0,
+      cacheExtent: 500.0,
           addRepaintBoundaries: true,
           findChildIndexCallback: (Key key) {
             if (key is ValueKey<String>) {
@@ -886,7 +892,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         parent: BouncingScrollPhysics(),
       ),
       // ignore: deprecated_member_use
-      cacheExtent: 350.0,
+      cacheExtent: 500.0,
       addRepaintBoundaries: true,
       itemCount: titles.length + (isLoadingMore ? 1 : 0),
       separatorBuilder: (_, __) => SizedBox(height: spacing),

@@ -28,6 +28,7 @@ import 'package:sync_pai/features/anime_details/presentation/widgets/related_rel
 import 'package:sync_pai/features/anime_details/presentation/widgets/resume_progress_card.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_distribution_widget.dart';
 import 'package:sync_pai/features/sync_room/presentation/widgets/sync_room_config_sheet.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
@@ -505,29 +506,29 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         getIt<DownloadRepository>().isDownloaded(_currentTitle.id, targetEpisode.episode);
 
     if (targetEpisode.bestAvailableUrl == null && !isDownloaded) {
-      // Пытаемся получить полные серии и видеопотоки из каталога или поиска
-      if (getIt.isRegistered<CatalogRepository>()) {
+      // Пытаемся получить полные серии через Supabase Edge Function get_anime_player_data (BFF)
+      if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
         try {
-          final full = await getIt<CatalogRepository>().getTitleDetails(id: _currentTitle.id);
-          if (full.episodes.isNotEmpty) {
-            _currentTitle = full;
-            targetEpisode = full.episodes.firstWhere(
-              (e) => e.episode == episode.episode,
-              orElse: () => full.episodes.first,
-            );
-          }
-        } catch (_) {}
-      }
-      if (targetEpisode.bestAvailableUrl == null && getIt.isRegistered<CatalogRepository>()) {
-        try {
-          final results = await getIt<CatalogRepository>().searchTitles(_currentTitle.russianTitle, limit: 3);
-          if (results.isNotEmpty) {
-            final full = await getIt<CatalogRepository>().getTitleDetails(id: results.first.id);
-            if (full.episodes.isNotEmpty) {
-              _currentTitle = full;
-              targetEpisode = full.episodes.firstWhere(
+          final translations = await getIt<GetPlayerLinksUseCase>().call(
+            _currentTitle.id,
+            title: _currentTitle.displayTitle,
+          );
+          if (translations.isNotEmpty) {
+            final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
+            if (direct.isNotEmpty) {
+              final directEpisodes = direct.first.episodes
+                  .map((e) => EpisodeItem(
+                        episode: e.episode,
+                        sdUrl: e.link,
+                        hdUrl: e.link,
+                        fhdUrl: e.link,
+                      ))
+                  .toList();
+              final updatedTitle = _currentTitle.copyWith(episodes: directEpisodes);
+              _currentTitle = updatedTitle;
+              targetEpisode = directEpisodes.firstWhere(
                 (e) => e.episode == episode.episode,
-                orElse: () => full.episodes.first,
+                orElse: () => directEpisodes.first,
               );
             }
           }

@@ -26,7 +26,7 @@ class AnimeCatalogModel {
     this.updatedAt,
   });
 
-  factory AnimeCatalogModel.fromShikimori(Map<String, dynamic> json) {
+  factory AnimeCatalogModel.fromShikimori(Map<dynamic, dynamic> json) {
     final shikiId = json['id'] is int
         ? json['id'] as int
         : int.tryParse(json['id']?.toString() ?? '') ?? 0;
@@ -35,19 +35,34 @@ class AnimeCatalogModel {
     final titleRu = (russian != null && russian.trim().isNotEmpty) ? russian.trim() : name;
 
     String? posterUrl;
-    if (json['image'] is Map<String, dynamic>) {
-      final img = json['image'] as Map<String, dynamic>;
-      final raw = (img['original'] ?? img['preview'] ?? '') as String;
+    if (json['image'] is Map) {
+      final img = json['image'] as Map;
+      final raw = (img['original'] ?? img['preview'] ?? img['x96'] ?? '')?.toString() ?? '';
       if (raw.isNotEmpty) {
-        posterUrl = raw.startsWith('http') ? raw : 'https://shikimori.me$raw';
+        final withHost = raw.startsWith('http') ? raw : 'https://shikimori.io$raw';
+        posterUrl = withHost
+            .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+            .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+            .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+            .replaceFirst('http://shikimori.one', 'https://shikimori.io');
       }
     } else if (json['image'] is String) {
       final raw = json['image'] as String;
       if (raw.isNotEmpty) {
-        posterUrl = raw.startsWith('http') ? raw : 'https://shikimori.me$raw';
+        final withHost = raw.startsWith('http') ? raw : 'https://shikimori.io$raw';
+        posterUrl = withHost
+            .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+            .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+            .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+            .replaceFirst('http://shikimori.one', 'https://shikimori.io');
       }
     } else if (json['poster_url'] is String) {
-      posterUrl = json['poster_url'] as String;
+      final raw = json['poster_url'] as String;
+      posterUrl = raw
+          .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.one', 'https://shikimori.io');
     }
 
     final score = double.tryParse(json['score']?.toString() ?? '0.0') ?? 0.0;
@@ -80,12 +95,23 @@ class AnimeCatalogModel {
         ? rawShikiId.toInt()
         : int.tryParse(rawShikiId?.toString() ?? '') ?? 0;
 
+    String? posterUrl;
+    final rawPoster = (json['poster_url'] ?? json['image'])?.toString();
+    if (rawPoster != null && rawPoster.trim().isNotEmpty) {
+      final withHost = rawPoster.startsWith('http') ? rawPoster : 'https://shikimori.io$rawPoster';
+      posterUrl = withHost
+          .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.one', 'https://shikimori.io');
+    }
+
     return AnimeCatalogModel(
       id: json['id']?.toString() ?? shikimoriId.toString(),
       shikimoriId: shikimoriId,
       titleRu: json['title_ru'] as String? ?? json['russian'] as String? ?? '',
       titleEn: json['title_en'] as String? ?? json['name'] as String? ?? '',
-      posterUrl: json['poster_url'] as String? ?? json['image'] as String?,
+      posterUrl: posterUrl,
       kind: json['kind'] as String?,
       status: json['status'] as String? ?? 'ongoing',
       score: (json['score'] as num?)?.toDouble() ?? 0.0,

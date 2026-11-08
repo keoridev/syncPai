@@ -19,8 +19,8 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   final Dio _dio;
   final SupabaseClient? _client;
 
-  static const String _primaryUrl = 'https://shikimori.me/api/animes';
-  static const String _fallbackUrl = 'https://shikimori.one/api/animes';
+  static const String _primaryUrl = 'https://shikimori.one/api/animes';
+  static const String _fallbackUrl = 'https://shikimori.io/api/animes';
   static const Map<String, dynamic> _headers = {
     'User-Agent': 'SyncPai-App/1.0',
     'Accept': 'application/json',
@@ -32,9 +32,9 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   })  : _dio = customDio ??
             Dio(
               BaseOptions(
-                connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(seconds: 15),
-                sendTimeout: const Duration(seconds: 12),
+                connectTimeout: const Duration(seconds: 4),
+                receiveTimeout: const Duration(seconds: 5),
+                sendTimeout: const Duration(seconds: 4),
                 headers: _headers,
               ),
             ),
@@ -80,7 +80,7 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
       if (responseData is List) {
         return responseData
-            .whereType<Map<String, dynamic>>()
+            .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
       }
@@ -128,7 +128,7 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
       if (responseData is List) {
         return responseData
-            .whereType<Map<String, dynamic>>()
+            .whereType<Map>()
             .map((json) => AnimeCatalogModel.fromShikimori(json))
             .toList();
       }

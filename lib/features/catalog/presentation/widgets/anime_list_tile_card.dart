@@ -52,6 +52,10 @@ class AnimeListTileCard extends StatelessWidget {
                       if (posterUrl.isNotEmpty)
                         CachedNetworkImage(
                           imageUrl: wrapCorsSafeUrl(posterUrl),
+                          httpHeaders: const {
+                            'User-Agent': 'SyncPai-App/1.0',
+                            'Referer': 'https://shikimori.io/',
+                          },
                           fit: BoxFit.cover,
                           memCacheWidth: 220,
                           memCacheHeight: 330,

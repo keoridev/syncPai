@@ -3401,7 +3401,7 @@ Title,Status,Episodes
         expect(model.shikimoriId, 57584);
         expect(model.titleRu, 'Восхождение в тени! Реверберация');
         expect(model.titleEn, 'Kage no Jitsuryokusha ni Naritakute! Movie: Zankoku-hen');
-        expect(model.posterUrl, 'https://shikimori.me/system/animes/original/57584.jpg');
+        expect(model.posterUrl, 'https://shikimori.io/system/animes/original/57584.jpg');
         expect(model.score, 8.74);
         expect(model.episodesTotal, 1);
       });

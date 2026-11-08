@@ -31,19 +31,33 @@ class AnimeEntity extends Equatable {
 
   /// Преобразование в AnimeTitle для совместимости со всеми существующими UI-виджетами
   AnimeTitle toAnimeTitle() {
+    var cleanPoster = (posterUrl ?? '').trim();
+    if (cleanPoster.isNotEmpty) {
+      if (cleanPoster.startsWith('//')) {
+        cleanPoster = 'https:$cleanPoster';
+      } else if (!cleanPoster.startsWith('http')) {
+        cleanPoster = 'https://shikimori.io$cleanPoster';
+      }
+      cleanPoster = cleanPoster
+          .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+          .replaceFirst('http://shikimori.one', 'https://shikimori.io');
+    }
+
     return AnimeTitle(
       id: shikimoriId,
       code: titleEn.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
       russianTitle: titleRu,
       englishTitle: titleEn,
-      posterSmall: posterUrl ?? '',
-      posterMedium: posterUrl ?? '',
-      posterOriginal: posterUrl ?? '',
+      posterSmall: cleanPoster,
+      posterMedium: cleanPoster,
+      posterOriginal: cleanPoster,
       episodesTotal: episodesTotal,
       genres: const [],
       description: '',
       status: status == 'ongoing' ? 'Онгоинг' : 'Завершен',
-      shikimoriUrl: 'https://shikimori.me/animes/$shikimoriId',
+      shikimoriUrl: 'https://shikimori.one/animes/$shikimoriId',
     );
   }
 

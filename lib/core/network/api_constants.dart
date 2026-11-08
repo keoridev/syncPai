@@ -12,10 +12,10 @@ abstract final class ApiConstants {
   static const String searchReleases = '/app/search/releases';
   static const String releaseDetails = '/anime/releases';
 
-  // Таймауты
-  static const Duration connectTimeout = Duration(seconds: 15);
-  static const Duration receiveTimeout = Duration(seconds: 20);
-  static const Duration sendTimeout = Duration(seconds: 15);
+  // Таймауты (Fail-Fast принцип для предотвращения UI freeze)
+  static const Duration connectTimeout = Duration(seconds: 4);
+  static const Duration receiveTimeout = Duration(seconds: 5);
+  static const Duration sendTimeout = Duration(seconds: 4);
 
   // Supabase Realtime Gateway
   static const String supabaseUrl = 'https://lemaomwexnttytizamxl.supabase.co';

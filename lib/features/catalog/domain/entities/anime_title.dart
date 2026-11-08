@@ -65,6 +65,48 @@ class AnimeTitle extends Equatable {
     return status;
   }
 
+  AnimeTitle copyWith({
+    int? id,
+    String? code,
+    String? russianTitle,
+    String? englishTitle,
+    String? posterSmall,
+    String? posterMedium,
+    String? posterOriginal,
+    int? episodesTotal,
+    int? latestEpisode,
+    String? season,
+    int? year,
+    List<String>? genres,
+    String? description,
+    String? status,
+    String? playerHost,
+    List<EpisodeItem>? episodes,
+    String? trailerUrl,
+    String? shikimoriUrl,
+  }) {
+    return AnimeTitle(
+      id: id ?? this.id,
+      code: code ?? this.code,
+      russianTitle: russianTitle ?? this.russianTitle,
+      englishTitle: englishTitle ?? this.englishTitle,
+      posterSmall: posterSmall ?? this.posterSmall,
+      posterMedium: posterMedium ?? this.posterMedium,
+      posterOriginal: posterOriginal ?? this.posterOriginal,
+      episodesTotal: episodesTotal ?? this.episodesTotal,
+      latestEpisode: latestEpisode ?? this.latestEpisode,
+      season: season ?? this.season,
+      year: year ?? this.year,
+      genres: genres ?? this.genres,
+      description: description ?? this.description,
+      status: status ?? this.status,
+      playerHost: playerHost ?? this.playerHost,
+      episodes: episodes ?? this.episodes,
+      trailerUrl: trailerUrl ?? this.trailerUrl,
+      shikimoriUrl: shikimoriUrl ?? this.shikimoriUrl,
+    );
+  }
+
   @override
   List<Object?> get props => [
         id,

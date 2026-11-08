@@ -1,23 +1,44 @@
+import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../models/anime_catalog_model.dart';
 import '../models/anime_player_data_model.dart';
 
 abstract class AnimeRemoteDataSource {
-  /// Получение кэшированного каталога напрямую из PostgreSQL таблицы Supabase
+  /// Получение каталога напрямую через официальный Shikimori API v1 (15 000+ аниме)
   Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30});
 
-  /// Поиск по аниме в таблице anime_catalog в Supabase PostgreSQL
+  /// Поиск по аниме через официальный Shikimori API v1
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30});
 
   /// Получение прямых ссылок и озвучек через Supabase Edge Function get_anime_player_data
   Future<AnimePlayerDataModel> getPlayerLinks(int shikimoriId, {String? title});
 }
 
-class SupabaseAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
+class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
+  final Dio _dio;
   final SupabaseClient? _client;
 
-  SupabaseAnimeRemoteDataSourceImpl([this._client]);
+  static const String _primaryUrl = 'https://shikimori.me/api/animes';
+  static const String _fallbackUrl = 'https://shikimori.one/api/animes';
+  static const Map<String, dynamic> _headers = {
+    'User-Agent': 'SyncPai-App/1.0',
+    'Accept': 'application/json',
+  };
+
+  ShikimoriAnimeRemoteDataSourceImpl({
+    Dio? customDio,
+    SupabaseClient? customClient,
+  })  : _dio = customDio ??
+            Dio(
+              BaseOptions(
+                connectTimeout: const Duration(seconds: 12),
+                receiveTimeout: const Duration(seconds: 15),
+                sendTimeout: const Duration(seconds: 12),
+                headers: _headers,
+              ),
+            ),
+        _client = customClient;
 
   SupabaseClient? get _supabase {
     if (_client != null) return _client;
@@ -30,54 +51,91 @@ class SupabaseAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
   @override
   Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30}) async {
-    final client = _supabase;
-    if (client == null) {
-      throw const NetworkException('Supabase клиент не инициализирован');
-    }
-
     try {
-      final from = (page - 1) * limit;
-      final to = from + limit - 1;
+      dynamic responseData;
+      try {
+        final response = await _dio.get(
+          _primaryUrl,
+          queryParameters: {
+            'page': page,
+            'limit': limit,
+            'order': 'popularity',
+          },
+          options: Options(headers: _headers),
+        );
+        responseData = response.data;
+      } catch (primaryErr) {
+        // Fallback на зеркало shikimori.one
+        final response = await _dio.get(
+          _fallbackUrl,
+          queryParameters: {
+            'page': page,
+            'limit': limit,
+            'order': 'popularity',
+          },
+          options: Options(headers: _headers),
+        );
+        responseData = response.data;
+      }
 
-      final response = await client
-          .from('anime_catalog')
-          .select()
-          .order('score', ascending: false)
-          .range(from, to);
-
-      final List<dynamic> list = response as List<dynamic>;
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((json) => AnimeCatalogModel.fromJson(json))
-          .toList();
+      if (responseData is List) {
+        return responseData
+            .whereType<Map<String, dynamic>>()
+            .map((json) => AnimeCatalogModel.fromShikimori(json))
+            .toList();
+      }
+      return [];
     } catch (e) {
-      throw ServerException('Ошибка загрузки каталога из Supabase: $e');
+      if (e is ServerException || e is NetworkException) rethrow;
+      throw ServerException('Ошибка загрузки каталога Shikimori: $e');
     }
   }
 
   @override
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30}) async {
-    final client = _supabase;
-    if (client == null) {
-      throw const NetworkException('Supabase клиент не инициализирован');
+    final clean = query.trim();
+    if (clean.isEmpty) {
+      return getCatalog(page: 1, limit: limit);
     }
 
     try {
-      final clean = query.trim().replaceAll("'", "''");
-      final response = await client
-          .from('anime_catalog')
-          .select()
-          .or('title_ru.ilike.%$clean%,title_en.ilike.%$clean%')
-          .order('score', ascending: false)
-          .limit(limit);
+      dynamic responseData;
+      try {
+        final response = await _dio.get(
+          _primaryUrl,
+          queryParameters: {
+            'search': clean,
+            'page': 1,
+            'limit': limit,
+            'order': 'popularity',
+          },
+          options: Options(headers: _headers),
+        );
+        responseData = response.data;
+      } catch (primaryErr) {
+        final response = await _dio.get(
+          _fallbackUrl,
+          queryParameters: {
+            'search': clean,
+            'page': 1,
+            'limit': limit,
+            'order': 'popularity',
+          },
+          options: Options(headers: _headers),
+        );
+        responseData = response.data;
+      }
 
-      final List<dynamic> list = response as List<dynamic>;
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((json) => AnimeCatalogModel.fromJson(json))
-          .toList();
+      if (responseData is List) {
+        return responseData
+            .whereType<Map<String, dynamic>>()
+            .map((json) => AnimeCatalogModel.fromShikimori(json))
+            .toList();
+      }
+      return [];
     } catch (e) {
-      throw ServerException('Ошибка поиска по каталогу Supabase: $e');
+      if (e is ServerException || e is NetworkException) rethrow;
+      throw ServerException('Ошибка поиска по каталогу Shikimori: $e');
     }
   }
 
@@ -101,7 +159,6 @@ class SupabaseAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       if (data is Map<String, dynamic>) {
         return AnimePlayerDataModel.fromJson(data);
       } else if (data is String) {
-        // Если ответ пришел строкой
         return AnimePlayerDataModel(
           shikimoriId: shikimoriId,
           translations: const [],
@@ -116,3 +173,4 @@ class SupabaseAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }
 }
 
+typedef SupabaseAnimeRemoteDataSourceImpl = ShikimoriAnimeRemoteDataSourceImpl;

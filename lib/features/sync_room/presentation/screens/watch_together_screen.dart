@@ -91,11 +91,47 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
   void _showNotification(BuildContext ctx, String message, {Color? backgroundColor}) {
     if (!mounted) return;
+    final theme = Theme.of(ctx);
+    final primary = theme.colorScheme.primary;
+
     ScaffoldMessenger.of(ctx).clearSnackBars();
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor ?? AppColors.syncError,
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: (backgroundColor ?? primary).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.info_outline_rounded,
+                color: backgroundColor ?? primary,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: (backgroundColor ?? primary).withValues(alpha: 0.35),
+            width: 1.2,
+          ),
+        ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
@@ -658,12 +694,14 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                   }
                   final lower = text.toLowerCase();
                   if (lower == 'я' || lower == 'me' || lower == 'admin') {
+                    Navigator.pop(ctx);
                     _showNotification(context, 'Нельзя добавить самого себя');
                     return;
                   }
                   final cleanName = text.replaceAll('@', '').toLowerCase();
                   final isRealUser = _validUsernames.contains(cleanName);
                   if (!isRealUser) {
+                    Navigator.pop(ctx);
                     _showNotification(context, 'Такого друга не существует');
                     return;
                   }
@@ -672,6 +710,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     (f) => (f['name'] as String).toLowerCase() == lower,
                   );
                   if (alreadyExists) {
+                    Navigator.pop(ctx);
                     _showNotification(context, 'Пользователь $text уже в вашем списке', backgroundColor: AppColors.warning);
                     return;
                   }

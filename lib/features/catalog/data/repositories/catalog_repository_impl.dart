@@ -19,23 +19,21 @@ class CatalogRepositoryImpl implements CatalogRepository {
     if (animeCatalogRepository != null) {
       try {
         final list = await animeCatalogRepository!.getCatalog(page: page, limit: limit);
-        if (list.isNotEmpty) {
-          return list.map((e) => e.toAnimeTitle()).toList();
-        }
-      } catch (_) {}
+        return list.map((e) => e.toAnimeTitle()).toList();
+      } on NetworkException catch (e) {
+        throw NetworkFailure(e.message);
+      } on ServerException catch (e) {
+        throw ServerFailure(e.message, e.statusCode);
+      } catch (e) {
+        throw ServerFailure('Ошибка загрузки каталога: $e');
+      }
     }
 
     try {
       final dtos = await remoteDataSource.getUpdates(page: page, limit: limit);
       return dtos.map((dto) => dto.toDomain()).toList();
-    } on NetworkException catch (e) {
-      throw NetworkFailure(e.message);
-    } on ServerException catch (e) {
-      throw ServerFailure(e.message, e.statusCode);
-    } on ParsingException catch (e) {
-      throw ParsingFailure(e.message);
-    } catch (e) {
-      throw UnknownFailure(e.toString());
+    } catch (_) {
+      return [];
     }
   }
 
@@ -44,23 +42,21 @@ class CatalogRepositoryImpl implements CatalogRepository {
     if (animeCatalogRepository != null) {
       try {
         final list = await animeCatalogRepository!.searchCatalog(query, limit: limit);
-        if (list.isNotEmpty) {
-          return list.map((e) => e.toAnimeTitle()).toList();
-        }
-      } catch (_) {}
+        return list.map((e) => e.toAnimeTitle()).toList();
+      } on NetworkException catch (e) {
+        throw NetworkFailure(e.message);
+      } on ServerException catch (e) {
+        throw ServerFailure(e.message, e.statusCode);
+      } catch (e) {
+        throw ServerFailure('Ошибка поиска: $e');
+      }
     }
 
     try {
       final dtos = await remoteDataSource.searchTitles(query, limit: limit);
       return dtos.map((dto) => dto.toDomain()).toList();
-    } on NetworkException catch (e) {
-      throw NetworkFailure(e.message);
-    } on ServerException catch (e) {
-      throw ServerFailure(e.message, e.statusCode);
-    } on ParsingException catch (e) {
-      throw ParsingFailure(e.message);
-    } catch (e) {
-      throw UnknownFailure(e.toString());
+    } catch (_) {
+      return [];
     }
   }
 

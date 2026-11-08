@@ -3381,6 +3381,31 @@ Title,Status,Episodes
         expect(animeTitle.posterOriginal, 'https://desu.shikimori.me/original/57584.jpg');
       });
 
+      test('AnimeCatalogModel.fromShikimori parses Shikimori API structure correctly', () {
+        final shikimoriJson = {
+          'id': 57584,
+          'name': 'Kage no Jitsuryokusha ni Naritakute! Movie: Zankoku-hen',
+          'russian': 'Восхождение в тени! Реверберация',
+          'image': {
+            'original': '/system/animes/original/57584.jpg',
+            'preview': '/system/animes/preview/57584.jpg',
+          },
+          'score': '8.74',
+          'episodes': 1,
+          'kind': 'movie',
+          'status': 'released',
+        };
+
+        final model = AnimeCatalogModel.fromShikimori(shikimoriJson);
+        expect(model.id, '57584');
+        expect(model.shikimoriId, 57584);
+        expect(model.titleRu, 'Восхождение в тени! Реверберация');
+        expect(model.titleEn, 'Kage no Jitsuryokusha ni Naritakute! Movie: Zankoku-hen');
+        expect(model.posterUrl, 'https://shikimori.me/system/animes/original/57584.jpg');
+        expect(model.score, 8.74);
+        expect(model.episodesTotal, 1);
+      });
+
       test('SearchCatalogUseCase queries anime_catalog in PostgreSQL', () async {
         final mockRepo = _MockAnimeCatalogRepository();
         final searchUseCase = SearchCatalogUseCase(mockRepo);

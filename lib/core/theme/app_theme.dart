@@ -69,6 +69,25 @@ abstract final class AppTheme {
         ),
       ),
 
+      // SnackBar
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: surfElevated,
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: primary.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
+        ),
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+      ),
+
       // Card
       cardTheme: CardThemeData(
         color: surf,

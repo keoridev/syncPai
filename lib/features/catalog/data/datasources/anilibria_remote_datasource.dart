@@ -16,35 +16,8 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
 
   @override
   Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 40}) async {
-    try {
-      final response = await client.get(
-        ApiConstants.latestReleases,
-        queryParameters: {
-          'limit': limit,
-          'page': page,
-        },
-      );
-
-      final list = _parseList(response.data);
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((item) => AnimeTitleDto.fromJson(item))
-          .toList();
-    } catch (e) {
-      if (e is ServerException || e is NetworkException) rethrow;
-      throw ParsingException('Не удалось разобрать список релизов: $e');
-    }
-  }
-
-  List<dynamic> _parseList(dynamic data) {
-    if (data is List) {
-      return data;
-    } else if (data is Map<String, dynamic>) {
-      if (data['data'] is List) return data['data'] as List;
-      if (data['list'] is List) return data['list'] as List;
-      if (data['items'] is List) return data['items'] as List;
-    }
-    return [];
+    // Клиентский слой больше не обращается к anilibria.top для списков аниме (каталог работает через Shikimori)
+    return const [];
   }
 
   @override

@@ -26,14 +26,62 @@ class AnimeCatalogModel {
     this.updatedAt,
   });
 
+  factory AnimeCatalogModel.fromShikimori(Map<String, dynamic> json) {
+    final shikiId = json['id'] is int
+        ? json['id'] as int
+        : int.tryParse(json['id']?.toString() ?? '') ?? 0;
+    final russian = json['russian'] as String?;
+    final name = json['name'] as String? ?? '';
+    final titleRu = (russian != null && russian.trim().isNotEmpty) ? russian.trim() : name;
+
+    String? posterUrl;
+    if (json['image'] is Map<String, dynamic>) {
+      final img = json['image'] as Map<String, dynamic>;
+      final raw = (img['original'] ?? img['preview'] ?? '') as String;
+      if (raw.isNotEmpty) {
+        posterUrl = raw.startsWith('http') ? raw : 'https://shikimori.me$raw';
+      }
+    } else if (json['image'] is String) {
+      final raw = json['image'] as String;
+      if (raw.isNotEmpty) {
+        posterUrl = raw.startsWith('http') ? raw : 'https://shikimori.me$raw';
+      }
+    } else if (json['poster_url'] is String) {
+      posterUrl = json['poster_url'] as String;
+    }
+
+    final score = double.tryParse(json['score']?.toString() ?? '0.0') ?? 0.0;
+    final episodes = json['episodes'] as int? ??
+        (json['episodes_aired'] as int? ??
+            ((json['episodes_total'] as num?)?.toInt() ?? 0));
+
+    return AnimeCatalogModel(
+      id: shikiId.toString(),
+      shikimoriId: shikiId,
+      titleRu: titleRu,
+      titleEn: name,
+      posterUrl: posterUrl,
+      kind: json['kind'] as String?,
+      status: json['status'] as String? ?? 'ongoing',
+      score: score,
+      episodesTotal: episodes,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
+    );
+  }
+
   factory AnimeCatalogModel.fromJson(Map<String, dynamic> json) {
+    if (json.containsKey('image') && json['image'] is Map) {
+      return AnimeCatalogModel.fromShikimori(json);
+    }
     final rawShikiId = json['shikimori_id'] ?? json['id'];
     final shikimoriId = (rawShikiId is num)
         ? rawShikiId.toInt()
         : int.tryParse(rawShikiId?.toString() ?? '') ?? 0;
 
     return AnimeCatalogModel(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? shikimoriId.toString(),
       shikimoriId: shikimoriId,
       titleRu: json['title_ru'] as String? ?? json['russian'] as String? ?? '',
       titleEn: json['title_en'] as String? ?? json['name'] as String? ?? '',

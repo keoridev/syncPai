@@ -440,7 +440,12 @@ void main() {
     // Companion watch with friend button
     expect(find.byIcon(Icons.group_outlined), findsOneWidget);
     await tester.tap(find.byIcon(Icons.group_outlined));
+    await tester.pump();
     expect(syncEpisode?.episode, 1);
+    // Закрываем открывшийся SyncRoomConfigSheet
+    final navKey = tester.element(find.byType(AnimeDetailsScreen));
+    Navigator.of(navKey).pop();
+    await tester.pumpAndSettle();
 
     // Tap primary watch button -> Quality sheet appears
     await tester.tap(find.text('Смотреть'));

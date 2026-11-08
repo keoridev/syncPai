@@ -37,3 +37,4 @@ class AnimePlayerDataModel {
     return translations.map((t) => t.toDomain()).toList();
   }
 }
+

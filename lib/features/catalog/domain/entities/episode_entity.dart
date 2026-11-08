@@ -13,3 +13,4 @@ class EpisodeEntity extends Equatable {
   @override
   List<Object?> get props => [episode, link];
 }
+

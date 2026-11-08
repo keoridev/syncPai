@@ -10,3 +10,4 @@ class GetPlayerLinksUseCase {
     return repository.getPlayerLinks(shikimoriId, title: title);
   }
 }
+

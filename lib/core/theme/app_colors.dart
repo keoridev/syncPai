@@ -38,6 +38,7 @@ abstract final class AppColors {
   static const syncActive = Color(0xFF4EAA7A);       // Деликатный шалфейно-зеленый (В синхроне)
   static const syncWaiting = Color(0xFFD49B42);      // Теплый янтарный (Ожидание / буферизация друга)
   static const syncError = Color(0xFFD65C5C);        // Мягкий карминный (Рассинхрон / ошибка)
+  static const warning = Color(0xFFD49B42);          // Янтарно-оранжевый (Предупреждение / Буферизация)
 
   // Разделители, границы и затемнения
   static const stroke = Color(0x0DFFFFFF);           // 5% белого (едва заметный контур)

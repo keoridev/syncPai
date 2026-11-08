@@ -77,10 +77,17 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   }
 
   void _handleJoinRoom() {
-    final raw = _pinController.text.trim();
+    String raw = _pinController.text.trim();
     if (raw.isEmpty) {
       setState(() => _pinError = 'Введите код комнаты');
       return;
+    }
+    // Поддержка диплинков syncpai://room/CODE или https://syncpai.app/room/CODE
+    if (raw.contains('/room/')) {
+      final parts = raw.split('/room/');
+      if (parts.length > 1) {
+        raw = parts[1].split('?').first.split('#').first.trim();
+      }
     }
     setState(() => _pinError = null);
     context.push('/room/$raw');
@@ -583,26 +590,71 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 ),
                 onPressed: () {
                   final text = friendController.text.trim();
-                  if (text.isNotEmpty) {
-                    setState(() {
-                      _friends.insert(0, {
-                        'id': 'fr_${DateTime.now().millisecondsSinceEpoch}',
-                        'name': text,
-                        'avatar': 'star',
-                        'isOnline': true,
-                        'statusText': 'Только что добавлен в друзья',
-                        'canJoin': false,
-                        'roomCode': null,
-                      });
-                    });
-                    Navigator.pop(ctx);
+                  if (text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Друг $text успешно добавлен!'),
-                        backgroundColor: AppColors.syncActive,
+                      const SnackBar(
+                        content: Text('Введите никнейм друга'),
+                        backgroundColor: AppColors.syncError,
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
+                    return;
                   }
+                  if (text.length < 3) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Никнейм должен быть не короче 3 символов'),
+                        backgroundColor: AppColors.syncError,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                  final lower = text.toLowerCase();
+                  if (lower == 'я' || lower == 'me' || lower == 'admin') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Нельзя добавить самого себя'),
+                        backgroundColor: AppColors.syncError,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                  final alreadyExists = _friends.any(
+                    (f) => (f['name'] as String).toLowerCase() == lower,
+                  );
+                  if (alreadyExists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Пользователь $text уже в вашем списке'),
+                        backgroundColor: AppColors.warning,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  setState(() {
+                    _friends.insert(0, {
+                      'id': 'fr_${DateTime.now().millisecondsSinceEpoch}',
+                      'name': text,
+                      'avatar': 'star',
+                      'isOnline': false,
+                      'isPending': true,
+                      'statusText': 'Запрос отправлен • Ожидает подтверждения',
+                      'canJoin': false,
+                      'roomCode': null,
+                    });
+                  });
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Запрос на дружбу отправлен пользователю $text!'),
+                      backgroundColor: AppColors.syncActive,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
                 },
                 child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
@@ -1161,12 +1213,35 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    friend['name'] as String,
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        friend['name'] as String,
+                                        style: AppTypography.labelLarge.copyWith(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if (friend['isPending'] == true) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.warning.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                                          ),
+                                          child: Text(
+                                            'Ожидает',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              color: AppColors.warning,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                   const SizedBox(height: 2),
                                   Text(

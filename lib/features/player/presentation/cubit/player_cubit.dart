@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit/media_kit.dart' hide PlayerState;
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -16,6 +17,7 @@ import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.da
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
+import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -73,6 +75,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
         emit(state.copyWith(isPlaying: playing));
+        _updateDiscordPresence();
       }),
       player.stream.buffering.listen((buffering) {
         emit(state.copyWith(isBuffering: buffering));
@@ -92,6 +95,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       }),
       player.stream.duration.listen((dur) {
         emit(state.copyWith(duration: dur));
+        _updateDiscordPresence();
       }),
       player.stream.buffer.listen((buffer) {
         emit(state.copyWith(buffer: buffer));
@@ -259,6 +263,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     final myName = state.isHost ? 'Хост' : (state.peerName ?? 'Гость');
     final isFromSelf = packet.sender == myName;
 
+    // Измерение пинга между участниками комнаты
+    final ping = (DateTime.now().millisecondsSinceEpoch - packet.timestampMs).abs().clamp(12, 380);
+    if (!isFromSelf && (state.peerPingMs - ping).abs() > 4) {
+      emit(state.copyWith(peerPingMs: ping));
+    }
+
     switch (packet.action) {
       // HEARTBEAT от хоста (обработка ведомым клиентом с Drift Compensation)
       case SyncActionTypes.heartbeat:
@@ -395,6 +405,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         final updated = List<ChatMessage>.from(state.chatMessages)..add(message);
         if (updated.length > 50) updated.removeAt(0);
         emit(state.copyWith(chatMessages: updated));
+        _addDanmaku(text, packet.sender);
         break;
 
       // Запрос паузы от гостя
@@ -861,16 +872,56 @@ class PlayerCubit extends Cubit<PlayerState> {
     );
   }
 
-  /// Отправить текстовое сообщение в Twitch-чат
+  /// Отправить текстовое сообщение в чат и запустить бегущую строку (Danmaku)
   void sendChatMessage(String text) {
-    if (state.isSyncRoom && text.trim().isNotEmpty) {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    final sender = state.isHost ? 'Хост' : (state.peerName ?? 'Гость');
+    _addDanmaku(clean, sender);
+
+    if (state.isSyncRoom && state.roomCode != null) {
       syncRepository?.sendChatMessage(
         roomCode: state.roomCode!,
-        text: text.trim(),
-        sender: state.isHost ? 'Хост' : (state.peerName ?? 'Гость'),
+        text: clean,
+        sender: sender,
         isHost: state.isHost,
       );
     }
+  }
+
+  void toggleDanmaku() {
+    emit(state.copyWith(isDanmakuEnabled: !state.isDanmakuEnabled));
+  }
+
+  void _addDanmaku(String text, String sender) {
+    if (!state.isDanmakuEnabled || text.trim().isEmpty) return;
+    final item = DanmakuItem(
+      id: '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(9999)}',
+      text: text.trim(),
+      sender: sender,
+      lane: _random.nextInt(4),
+      color: sender == 'Хост' ? const Color(0xFF00CEC9) : const Color(0xFFFF7675),
+    );
+    final updated = List<DanmakuItem>.from(state.danmakuMessages)..add(item);
+    if (updated.length > 30) {
+      updated.removeRange(0, updated.length - 30);
+    }
+    emit(state.copyWith(danmakuMessages: updated));
+  }
+
+  void _updateDiscordPresence() {
+    try {
+      DiscordRpcService.instance.updatePresence(
+        animeTitle: state.title.displayTitle,
+        episodeNumber: state.episode.episode,
+        roomCode: state.roomCode,
+        currentPeers: state.isSyncRoom ? 2 : 1,
+        maxPeers: 2,
+        isPaused: !state.isPlaying,
+        position: state.position,
+        duration: state.duration,
+      );
+    } catch (_) {}
   }
 
   /// Запрос паузы от ведомого гостя

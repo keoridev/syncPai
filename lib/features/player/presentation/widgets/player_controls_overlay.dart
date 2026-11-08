@@ -120,11 +120,62 @@ class PlayerControlsOverlay extends StatelessWidget {
                           presence: state.peerPresence,
                           fallbackName: syncPeerName ?? 'Друг',
                         ),
+                        const SizedBox(width: 6),
+                        // Телеметрия пинга / десинхрона
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: state.isPeerBuffering
+                                ? AppColors.warning.withValues(alpha: 0.2)
+                                : AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: state.isPeerBuffering
+                                  ? AppColors.warning
+                                  : (state.peerPingMs > 150
+                                      ? AppColors.warning
+                                      : AppColors.syncActive.withValues(alpha: 0.6)),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                state.isPeerBuffering ? Icons.hourglass_top_rounded : Icons.wifi_rounded,
+                                size: 11,
+                                color: state.isPeerBuffering ? AppColors.warning : AppColors.syncActive,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                state.isPeerBuffering ? 'Буфер' : '${state.peerPingMs}ms',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: state.isPeerBuffering ? AppColors.warning : AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(width: AppDimensions.spacingSm),
                       ] else if (syncStatus != null) ...[
                         SyncBadge(status: syncStatus!, peerName: syncPeerName),
                         const SizedBox(width: AppDimensions.spacingSm),
                       ],
+
+                      // Danmaku переключатель (бегущие строки)
+                      IconButton(
+                        tooltip: state.isDanmakuEnabled ? 'Danmaku: ВКЛ' : 'Danmaku: ВЫКЛ',
+                        icon: Icon(
+                          state.isDanmakuEnabled ? Icons.subtitles_rounded : Icons.subtitles_off_rounded,
+                          color: state.isDanmakuEnabled ? AppColors.primary : AppColors.textSecondary,
+                          size: isLandscape ? 18 : 20,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => cubit.toggleDanmaku(),
+                      ),
+                      const SizedBox(width: 2),
 
                       // В ЛАНДШАФТНОМ РЕЖИМЕ: полный набор кнопок
                       if (isLandscape) ...[

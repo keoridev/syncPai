@@ -5,6 +5,7 @@ import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
+import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 
 class PlayerState extends Equatable {
@@ -34,6 +35,11 @@ class PlayerState extends Equatable {
   final List<ChatMessage> chatMessages;
   final List<FloatingReaction> activeReactions;
   final bool isChatOverlayVisible;
+
+  // Danmaku бегущие комментарии и телеметрия пинга
+  final bool isDanmakuEnabled;
+  final List<DanmakuItem> danmakuMessages;
+  final int peerPingMs;
 
   // 1. Presence онлайн-радар
   final PeerPresence? peerPresence;
@@ -84,6 +90,9 @@ class PlayerState extends Equatable {
     this.chatMessages = const [],
     this.activeReactions = const [],
     this.isChatOverlayVisible = true,
+    this.isDanmakuEnabled = true,
+    this.danmakuMessages = const [],
+    this.peerPingMs = 28,
     this.peerPresence,
     this.isPeerAway = false,
     this.activeQuickPhrase,
@@ -123,6 +132,9 @@ class PlayerState extends Equatable {
     List<ChatMessage>? chatMessages,
     List<FloatingReaction>? activeReactions,
     bool? isChatOverlayVisible,
+    bool? isDanmakuEnabled,
+    List<DanmakuItem>? danmakuMessages,
+    int? peerPingMs,
     PeerPresence? Function()? peerPresence,
     bool? isPeerAway,
     QuickPhraseToast? Function()? activeQuickPhrase,
@@ -159,6 +171,9 @@ class PlayerState extends Equatable {
       chatMessages: chatMessages ?? this.chatMessages,
       activeReactions: activeReactions ?? this.activeReactions,
       isChatOverlayVisible: isChatOverlayVisible ?? this.isChatOverlayVisible,
+      isDanmakuEnabled: isDanmakuEnabled ?? this.isDanmakuEnabled,
+      danmakuMessages: danmakuMessages ?? this.danmakuMessages,
+      peerPingMs: peerPingMs ?? this.peerPingMs,
       peerPresence: peerPresence != null ? peerPresence() : this.peerPresence,
       isPeerAway: isPeerAway ?? this.isPeerAway,
       activeQuickPhrase: activeQuickPhrase != null ? activeQuickPhrase() : this.activeQuickPhrase,
@@ -198,6 +213,9 @@ class PlayerState extends Equatable {
         chatMessages,
         activeReactions,
         isChatOverlayVisible,
+        isDanmakuEnabled,
+        danmakuMessages,
+        peerPingMs,
         peerPresence,
         isPeerAway,
         activeQuickPhrase,

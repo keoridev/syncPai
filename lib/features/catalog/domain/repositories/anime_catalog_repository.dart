@@ -8,3 +8,4 @@ abstract class AnimeCatalogRepository {
   /// Получение ссылок на видеопотоки и озвучки через Supabase BFF Edge Function
   Future<List<TranslationEntity>> getPlayerLinks(int shikimoriId, {String? title});
 }
+

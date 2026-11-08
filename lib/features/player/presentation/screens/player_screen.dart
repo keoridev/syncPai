@@ -24,8 +24,9 @@ import '../widgets/double_tap_seek_overlay.dart';
 import '../widgets/floating_reactions_layer.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/quick_phrase_toast_widget.dart';
-import '../widgets/sync_buffer_banner.dart';
 import '../widgets/twitch_chat_overlay.dart';
+import '../widgets/danmaku_overlay_layer.dart';
+import '../widgets/pulsing_radar_waiting_widget.dart';
 
 class PlayerScreen extends StatefulWidget {
   final AnimeTitle title;
@@ -477,13 +478,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       reactions: state.activeReactions,
                     ),
 
+                  // Danmaku бегущие строки поверх экрана (Bilibili / Nico Nico стиль)
+                  DanmakuOverlayLayer(
+                    items: state.danmakuMessages,
+                    isEnabled: state.isDanmakuEnabled,
+                  ),
+
                   // Всплывающее стеклянное уведомление быстрой фразы (шортката)
                   if (state.isSyncRoom && state.activeQuickPhrase != null)
                     QuickPhraseToastWidget(toast: state.activeQuickPhrase!),
 
-                  // Баннер ожидания при буферизации у друга или когда друг отошел
+                  // Живой радар и неоновые волны ожидания при буферизации или паузе у друга
                   if (state.isSyncRoom && state.bufferNotice != null)
-                    SyncBufferBanner(notice: state.bufferNotice!),
+                    PulsingRadarWaitingWidget(
+                      title: state.bufferNotice!,
+                      pingMs: state.peerPingMs,
+                    ),
 
                   // Баннер авто-перехода на следующую серию (Auto Next Episode)
                   if (state.isSyncRoom &&

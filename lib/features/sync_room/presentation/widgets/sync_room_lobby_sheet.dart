@@ -1404,6 +1404,10 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
         if (getIt.isRegistered<SyncRoomCubit>()) {
           getIt<SyncRoomCubit>().startMatchedTitlePlayback(matched);
         }
+        // Запускаем просмотр подобранного тайтла в плеере и закрываем лобби
+        final updatedRoom = room.copyWith(title: matched);
+        Navigator.of(context, rootNavigator: true).pop(); // закрываем лобби
+        widget.onStartPlayback(updatedRoom, isHost);
       },
     );
   }

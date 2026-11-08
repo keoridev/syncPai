@@ -10,3 +10,4 @@ class GetCatalogUseCase {
     return repository.getCatalog(page: page, limit: limit);
   }
 }
+

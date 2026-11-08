@@ -27,6 +27,7 @@ import 'package:sync_pai/features/anime_details/presentation/widgets/episode_qua
 import 'package:sync_pai/features/anime_details/presentation/widgets/related_releases_section.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/resume_progress_card.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_distribution_widget.dart';
+import 'package:sync_pai/features/sync_room/presentation/widgets/sync_room_config_sheet.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
@@ -981,7 +982,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             iconSize: iconSize,
                             tooltip: 'Смотреть с другом',
                             onTap: currentEpisode != null
-                                ? () => widget.onStartSyncRoom?.call(title, currentEpisode)
+                                ? () {
+                                    widget.onStartSyncRoom?.call(title, currentEpisode);
+                                    SyncRoomConfigSheet.show(
+                                      context,
+                                      title: title,
+                                      episode: currentEpisode,
+                                      onConfirm: ({
+                                        required int maxPeers,
+                                        required bool isHostControlOnly,
+                                        required PlayerQuality quality,
+                                        required String roomCode,
+                                      }) {},
+                                    );
+                                  }
                                 : null,
                           ),
 

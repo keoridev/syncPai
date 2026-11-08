@@ -36,3 +36,4 @@ class TranslationEntity extends Equatable {
         iframeUrl,
       ];
 }
+

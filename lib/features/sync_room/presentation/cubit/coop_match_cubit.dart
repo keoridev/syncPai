@@ -26,13 +26,13 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
         if (packet.sender == userName) return;
 
         if (packet.action == SyncActionTypes.swipeVote) {
-          final titleId = packet.payload['title_id'] as int?;
+          final titleId = (packet.payload['title_id'] as num?)?.toInt();
           final liked = packet.payload['liked'] as bool? ?? false;
           if (titleId != null) {
             _handlePeerVote(titleId, liked, packet.sender);
           }
         } else if (packet.action == SyncActionTypes.matchFound) {
-          final titleId = packet.payload['title_id'] as int?;
+          final titleId = (packet.payload['title_id'] as num?)?.toInt();
           if (titleId != null) {
             final matched = state.deck.firstWhere(
               (t) => t.id == titleId,
@@ -41,7 +41,7 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
             emit(state.copyWith(matchedTitle: () => matched));
           }
         } else if (packet.action == SyncActionTypes.startPlayback) {
-          final titleId = packet.payload['title_id'] as int?;
+          final titleId = (packet.payload['title_id'] as num?)?.toInt();
           AnimeTitle? matched = state.matchedTitle;
           if (titleId != null) {
             matched = state.deck.firstWhere(

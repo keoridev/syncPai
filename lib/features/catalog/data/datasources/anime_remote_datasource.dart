@@ -86,3 +86,4 @@ class SupabaseAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     }
   }
 }
+

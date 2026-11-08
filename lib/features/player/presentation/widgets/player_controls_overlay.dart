@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -45,6 +46,8 @@ class PlayerControlsOverlay extends StatelessWidget {
     final isGuestInSync = state.isSyncRoom && !state.isHost;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final isShort = MediaQuery.of(context).size.height < 520;
+
+    if (state.isScreenLocked) return const SizedBox.shrink();
 
     return IgnorePointer(
       ignoring: !state.areControlsVisible,
@@ -115,267 +118,272 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ),
                       ),
 
-                      // Онлайн-радар присутствия (Presence) или классический SyncBadge
-                      if (state.isSyncRoom) ...[
-                        PresenceRadarBadge(
-                          presence: state.peerPresence,
-                          fallbackName: syncPeerName ?? 'Друг',
-                        ),
-                        const SizedBox(width: 6),
-                        // Телеметрия пинга / десинхрона
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: state.isPeerBuffering
-                                ? AppColors.warning.withValues(alpha: 0.2)
-                                : AppColors.surfaceElevated,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: state.isPeerBuffering
-                                  ? AppColors.warning
-                                  : (state.peerPingMs > 150
-                                      ? AppColors.warning
-                                      : AppColors.syncActive.withValues(alpha: 0.6)),
-                              width: 1,
-                            ),
-                          ),
+                      const SizedBox(width: 4),
+
+                      // ТРЕЙЛИНГ-БЛОК ДЕЙСТВИЙ И СТАТУСОВ (Защищен от переполнения Flexible + SingleChildScrollView)
+                      Flexible(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                state.isPeerBuffering ? Icons.hourglass_top_rounded : Icons.wifi_rounded,
-                                size: 11,
-                                color: state.isPeerBuffering ? AppColors.warning : AppColors.syncActive,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                state.isPeerBuffering ? 'Буфер' : '${state.peerPingMs}ms',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: state.isPeerBuffering ? AppColors.warning : AppColors.textPrimary,
+                              // Онлайн-радар присутствия (Presence) или классический SyncBadge
+                              if (state.isSyncRoom) ...[
+                                PresenceRadarBadge(
+                                  presence: state.peerPresence,
+                                  fallbackName: syncPeerName ?? 'Друг',
                                 ),
+                                const SizedBox(width: 6),
+                                // Телеметрия пинга / десинхрона
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: state.isPeerBuffering
+                                        ? AppColors.warning.withValues(alpha: 0.2)
+                                        : AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: state.isPeerBuffering
+                                          ? AppColors.warning
+                                          : (state.peerPingMs > 150
+                                              ? AppColors.warning
+                                              : AppColors.syncActive.withValues(alpha: 0.6)),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        state.isPeerBuffering ? Icons.hourglass_top_rounded : Icons.wifi_rounded,
+                                        size: 11,
+                                        color: state.isPeerBuffering ? AppColors.warning : AppColors.syncActive,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        state.isPeerBuffering ? 'Буфер' : '${state.peerPingMs}ms',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: state.isPeerBuffering ? AppColors.warning : AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ] else if (syncStatus != null) ...[
+                                SyncBadge(status: syncStatus!, peerName: syncPeerName),
+                                const SizedBox(width: 4),
+                              ],
+
+                              // Кнопка блокировки экрана (Screen Lock)
+                              IconButton(
+                                tooltip: 'Заблокировать экран',
+                                icon: const Icon(Icons.lock_outline_rounded, color: AppColors.textPrimary),
+                                iconSize: isLandscape ? 18 : 20,
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  cubit.toggleScreenLock();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Экран заблокирован 🔒. Жесты звука и яркости активны'),
+                                      duration: Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
                               ),
+
+                              // В ЛАНДШАФТНОМ РЕЖИМЕ: расширенный набор
+                              if (isLandscape) ...[
+                                // Danmaku переключатель (бегущие строки)
+                                IconButton(
+                                  tooltip: state.isDanmakuEnabled ? 'Danmaku: ВКЛ' : 'Danmaku: ВЫКЛ',
+                                  icon: Icon(
+                                    state.isDanmakuEnabled ? Icons.subtitles_rounded : Icons.subtitles_off_rounded,
+                                    color: state.isDanmakuEnabled ? AppColors.primary : AppColors.textSecondary,
+                                    size: 18,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => cubit.toggleDanmaku(),
+                                ),
+
+                                // Переключатель оверлея чата (в режиме синхро-комнаты)
+                                if (state.isSyncRoom) ...[
+                                  IconButton(
+                                    tooltip: state.isChatOverlayVisible ? 'Скрыть чат' : 'Показать чат',
+                                    icon: Icon(
+                                      state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
+                                      color: state.isChatOverlayVisible ? AppColors.primary : AppColors.textSecondary,
+                                      size: 18,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => cubit.toggleChatOverlay(),
+                                  ),
+                                ],
+
+                                // Переключатель автопропуска опенингов
+                                IconButton(
+                                  tooltip: cubit.isAutoSkipOpening ? 'Автопропуск опенингов: ВКЛ' : 'Автопропуск опенингов: ВЫКЛ',
+                                  icon: Icon(
+                                    cubit.isAutoSkipOpening ? Icons.motion_photos_paused_rounded : Icons.motion_photos_off_rounded,
+                                    color: cubit.isAutoSkipOpening ? AppColors.primary : AppColors.textSecondary,
+                                    size: 18,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () {
+                                    cubit.toggleAutoSkipOpening();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          cubit.isAutoSkipOpening
+                                              ? 'Автопропуск опенингов включен'
+                                              : 'Автопропуск опенингов выключен',
+                                        ),
+                                        duration: const Duration(seconds: 1),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                                // Список серий
+                                IconButton(
+                                  tooltip: 'Список серий',
+                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                                ),
+
+                                // Кнопка Скорости и Настроек (Liquid Glass шторка)
+                                InkWell(
+                                  onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                  borderRadius: AppDimensions.borderRadiusSmall,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceElevated,
+                                      borderRadius: AppDimensions.borderRadiusSmall,
+                                      border: Border.all(color: AppColors.strokeMedium),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${state.playbackRate}x',
+                                          style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.tune_rounded, color: AppColors.textSecondary, size: 13),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+
+                                // Выбор качества потока (1080p, 720p, 480p)
+                                InkWell(
+                                  onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                  borderRadius: AppDimensions.borderRadiusSmall,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceElevated,
+                                      borderRadius: AppDimensions.borderRadiusSmall,
+                                      border: Border.all(color: AppColors.strokeMedium),
+                                    ),
+                                    child: Text(
+                                      state.selectedQuality == PlayerQuality.fhd
+                                          ? '1080p'
+                                          : state.selectedQuality == PlayerQuality.hd
+                                              ? '720p'
+                                              : '480p',
+                                      style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+
+                                // Кнопка перехода в режим Картинка-в-картинке (PiP)
+                                IconButton(
+                                  tooltip: 'Картинка в картинке (PiP)',
+                                  icon: const Icon(
+                                    Icons.picture_in_picture_alt_rounded,
+                                    color: AppColors.textSecondary,
+                                    size: 18,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () async {
+                                    final success = await PipService.instance.enterPip();
+                                    if (!success && context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Режим PiP поддерживается на устройствах Android 8.0+'),
+                                          behavior: SnackBarBehavior.floating,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+
+                                if (onToggleOrientation != null)
+                                  IconButton(
+                                    tooltip: 'Портретный режим',
+                                    icon: const Icon(
+                                      Icons.screen_lock_portrait_rounded,
+                                      color: AppColors.textSecondary,
+                                      size: 19,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: onToggleOrientation,
+                                  ),
+                              ] else ...[
+                                // В ПОРТРЕТНОМ РЕЖИМЕ: компактный чистый набор
+                                // Список серий
+                                IconButton(
+                                  tooltip: 'Серии',
+                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                                ),
+
+                                // Кнопка всех настроек (Liquid Glass шторка)
+                                IconButton(
+                                  tooltip: 'Настройки',
+                                  icon: const Icon(Icons.tune_rounded, color: AppColors.textPrimary, size: 20),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                ),
+
+                                if (onToggleOrientation != null)
+                                  IconButton(
+                                    tooltip: 'Альбомный режим',
+                                    icon: const Icon(
+                                      Icons.screen_rotation_rounded,
+                                      color: AppColors.textPrimary,
+                                      size: 20,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: onToggleOrientation,
+                                  ),
+
+                                // Кнопка Watch Party Wrapped Сторис (в режиме совместного просмотра)
+                                if (state.isSyncRoom)
+                                  IconButton(
+                                    tooltip: 'Итоги просмотра (Сторис)',
+                                    icon: Icon(Icons.auto_awesome_rounded, color: AppColors.primaryLight, size: 20),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => cubit.toggleWatchPartyStats(),
+                                  ),
+                              ],
                             ],
                           ),
                         ),
-                        const SizedBox(width: AppDimensions.spacingSm),
-                      ] else if (syncStatus != null) ...[
-                        SyncBadge(status: syncStatus!, peerName: syncPeerName),
-                        const SizedBox(width: AppDimensions.spacingSm),
-                      ],
-
-                      // Danmaku переключатель (бегущие строки)
-                      IconButton(
-                        tooltip: state.isDanmakuEnabled ? 'Danmaku: ВКЛ' : 'Danmaku: ВЫКЛ',
-                        icon: Icon(
-                          state.isDanmakuEnabled ? Icons.subtitles_rounded : Icons.subtitles_off_rounded,
-                          color: state.isDanmakuEnabled ? AppColors.primary : AppColors.textSecondary,
-                          size: isLandscape ? 18 : 20,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => cubit.toggleDanmaku(),
                       ),
-                      const SizedBox(width: 2),
-
-                      // В ЛАНДШАФТНОМ РЕЖИМЕ: полный набор кнопок
-                      if (isLandscape) ...[
-                        // Переключатель оверлея чата (в режиме синхро-комнаты)
-                        if (state.isSyncRoom) ...[
-                          IconButton(
-                            tooltip: state.isChatOverlayVisible ? 'Скрыть чат' : 'Показать чат',
-                            icon: Icon(
-                              state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
-                              color: state.isChatOverlayVisible ? AppColors.primary : AppColors.textSecondary,
-                              size: 18,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => cubit.toggleChatOverlay(),
-                          ),
-                          const SizedBox(width: AppDimensions.spacingSm),
-                        ],
-
-                        // Переключатель автопропуска опенингов
-                        IconButton(
-                          tooltip: cubit.isAutoSkipOpening ? 'Автопропуск опенингов: ВКЛ' : 'Автопропуск опенингов: ВЫКЛ',
-                          icon: Icon(
-                            cubit.isAutoSkipOpening ? Icons.motion_photos_paused_rounded : Icons.motion_photos_off_rounded,
-                            color: cubit.isAutoSkipOpening ? AppColors.primary : AppColors.textSecondary,
-                            size: 18,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () {
-                            cubit.toggleAutoSkipOpening();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  cubit.isAutoSkipOpening
-                                      ? 'Автопропуск опенингов включен'
-                                      : 'Автопропуск опенингов выключен',
-                                ),
-                                duration: const Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(width: AppDimensions.spacingSm),
-
-                        // Список серий
-                        IconButton(
-                          tooltip: 'Список серий',
-                          icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                        ),
-                        const SizedBox(width: AppDimensions.spacingSm),
-
-                        // Кнопка Скорости и Настроек (Liquid Glass шторка)
-                        InkWell(
-                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
-                          borderRadius: AppDimensions.borderRadiusSmall,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
-                              borderRadius: AppDimensions.borderRadiusSmall,
-                              border: Border.all(color: AppColors.strokeMedium),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${state.playbackRate}x',
-                                  style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.tune_rounded, color: AppColors.textSecondary, size: 13),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppDimensions.spacingSm),
-
-                        // Выбор качества потока (1080p, 720p, 480p)
-                        InkWell(
-                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
-                          borderRadius: AppDimensions.borderRadiusSmall,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
-                              borderRadius: AppDimensions.borderRadiusSmall,
-                              border: Border.all(color: AppColors.strokeMedium),
-                            ),
-                            child: Text(
-                              state.selectedQuality == PlayerQuality.fhd
-                                  ? '1080p'
-                                  : state.selectedQuality == PlayerQuality.hd
-                                      ? '720p'
-                                      : '480p',
-                              style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppDimensions.spacingSm),
-
-                        // Кнопка перехода в режим Картинка-в-картинке (PiP)
-                        IconButton(
-                          tooltip: 'Картинка в картинке (PiP)',
-                          icon: const Icon(
-                            Icons.picture_in_picture_alt_rounded,
-                            color: AppColors.textSecondary,
-                            size: 18,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () async {
-                            final success = await PipService.instance.enterPip();
-                            if (!success && context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Режим PiP поддерживается на устройствах Android 8.0+'),
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                        if (onToggleOrientation != null) ...[
-                          const SizedBox(width: AppDimensions.spacingSm),
-                          IconButton(
-                            tooltip: 'Портретный режим',
-                            icon: const Icon(
-                              Icons.screen_lock_portrait_rounded,
-                              color: AppColors.textSecondary,
-                              size: 19,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: onToggleOrientation,
-                          ),
-                        ],
-                      ] else ...[
-                        // В ПОРТРЕТНОМ РЕЖИМЕ: ультра-компактно (Качество + Меню Дополнительно ⋮)
-                        // Список серий
-                        IconButton(
-                          tooltip: 'Серии',
-                          icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                        ),
-                        const SizedBox(width: 2),
-
-                        // Качество потока
-                        InkWell(
-                          onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
-                          borderRadius: AppDimensions.borderRadiusSmall,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
-                              borderRadius: AppDimensions.borderRadiusSmall,
-                              border: Border.all(color: AppColors.strokeMedium),
-                            ),
-                            child: Text(
-                              state.selectedQuality == PlayerQuality.fhd
-                                  ? '1080p'
-                                  : state.selectedQuality == PlayerQuality.hd
-                                      ? '720p'
-                                      : '480p',
-                              style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-
-                        // Кнопка всех настроек (Liquid Glass шторка)
-                        IconButton(
-                          tooltip: 'Настройки',
-                          icon: const Icon(Icons.tune_rounded, color: AppColors.textPrimary, size: 20),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
-                        ),
-                        if (onToggleOrientation != null)
-                          IconButton(
-                            tooltip: 'Альбомный режим',
-                            icon: const Icon(
-                              Icons.screen_rotation_rounded,
-                              color: AppColors.textPrimary,
-                              size: 20,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: onToggleOrientation,
-                          ),
-
-                        // Кнопка Watch Party Wrapped Сторис (в режиме совместного просмотра)
-                        if (state.isSyncRoom)
-                          IconButton(
-                            tooltip: 'Итоги просмотра (Сторис)',
-                            icon: Icon(Icons.auto_awesome_rounded, color: AppColors.primaryLight, size: 20),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => cubit.toggleWatchPartyStats(),
-                          ),
-                      ],
                     ],
                   ),
                 ),

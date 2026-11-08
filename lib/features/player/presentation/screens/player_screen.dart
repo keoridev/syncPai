@@ -398,6 +398,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     totalDuration: state.duration,
                     currentVolume: state.volume,
                     currentBrightness: state.brightness,
+                    isScreenLocked: state.isScreenLocked,
+                    onScreenLockedTap: () {
+                      HapticFeedback.selectionClick();
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Экран заблокирован. Нажмите «Разблокировать» в углу экрана 🔒'),
+                          duration: Duration(milliseconds: 1400),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
                     opening: state.episode.opening,
                     ending: state.episode.ending,
                     previewUrl: state.episode.previewUrl ??
@@ -625,6 +637,60 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     syncStatus: state.isSyncRoom ? state.syncStatus : null,
                     syncPeerName: state.peerName,
                   ),
+
+                  // Плавающая кнопка разблокировки экрана при активной блокировке
+                  if (state.isScreenLocked)
+                    Positioned(
+                      left: 20,
+                      top: MediaQuery.paddingOf(context).top + 16,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            HapticFeedback.heavyImpact();
+                            _cubit.toggleScreenLock();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Экран разблокирован 🔓'),
+                                duration: Duration(seconds: 1),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(28),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceElevated.withValues(alpha: 0.90),
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(color: AppColors.primary, width: 1.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.35),
+                                  blurRadius: 16,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock_rounded, color: AppColors.primaryLight, size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Разблокировать',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
 
                   // Ошибка воспроизведения потока (рендерится ПОВЕРХ оверлея управления, чтобы кнопки всегда реагировали на нажатия)
                   if (state.errorMessage != null)

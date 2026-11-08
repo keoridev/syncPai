@@ -1185,6 +1185,27 @@ class PlayerCubit extends Cubit<PlayerState> {
     emit(state.copyWith(brightness: b));
   }
 
+  void toggleScreenLock() {
+    final nextLocked = !state.isScreenLocked;
+    emit(state.copyWith(
+      isScreenLocked: nextLocked,
+      areControlsVisible: !nextLocked,
+    ));
+    if (nextLocked) {
+      _controlsTimer?.cancel();
+    }
+  }
+
+  void setScreenLocked(bool locked) {
+    emit(state.copyWith(
+      isScreenLocked: locked,
+      areControlsVisible: !locked,
+    ));
+    if (locked) {
+      _controlsTimer?.cancel();
+    }
+  }
+
   void toggleControls() {
     final nextVisible = !state.areControlsVisible;
     emit(state.copyWith(areControlsVisible: nextVisible));

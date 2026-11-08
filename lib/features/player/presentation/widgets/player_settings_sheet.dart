@@ -48,9 +48,11 @@ class PlayerSettingsSheet extends StatelessWidget {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
+          child: Material(
+            color: Colors.transparent,
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -199,91 +201,112 @@ class PlayerSettingsSheet extends StatelessWidget {
                   const SizedBox(height: 10),
 
                   // Переключатель автопропуска опенингов
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                     ),
-                    tileColor: Colors.white.withValues(alpha: 0.04),
-                    leading: Icon(
-                      cubit.isAutoSkipOpening ? Icons.motion_photos_paused_rounded : Icons.motion_photos_off_rounded,
-                      color: cubit.isAutoSkipOpening ? primary : AppColors.textMuted,
-                    ),
-                    title: const Text(
-                      'Автопропуск опенингов',
-                      style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    subtitle: Text(
-                      cubit.isAutoSkipOpening ? 'Включен (+90 секунд при начале)' : 'Выключен',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
-                    ),
-                    trailing: Switch.adaptive(
-                      value: cubit.isAutoSkipOpening,
-                      activeTrackColor: primary,
-                      onChanged: (val) {
-                        HapticFeedback.lightImpact();
-                        cubit.toggleAutoSkipOpening();
-                        (context as Element).markNeedsBuild();
-                      },
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        leading: Icon(
+                          cubit.isAutoSkipOpening ? Icons.motion_photos_paused_rounded : Icons.motion_photos_off_rounded,
+                          color: cubit.isAutoSkipOpening ? primary : AppColors.textMuted,
+                        ),
+                        title: const Text(
+                          'Автопропуск опенингов',
+                          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        subtitle: Text(
+                          cubit.isAutoSkipOpening ? 'Включен (+90 секунд при начале)' : 'Выключен',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+                        ),
+                        trailing: Switch.adaptive(
+                          value: cubit.isAutoSkipOpening,
+                          activeTrackColor: primary,
+                          onChanged: (val) {
+                            HapticFeedback.lightImpact();
+                            cubit.toggleAutoSkipOpening();
+                            (context as Element).markNeedsBuild();
+                          },
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
 
                   // Режим Картинка-в-картинке (PiP)
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                     ),
-                    tileColor: Colors.white.withValues(alpha: 0.04),
-                    leading: const Icon(Icons.picture_in_picture_alt_rounded, color: AppColors.textPrimary),
-                    title: const Text(
-                      'Картинка в картинке (PiP)',
-                      style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        leading: const Icon(Icons.picture_in_picture_alt_rounded, color: AppColors.textPrimary),
+                        title: const Text(
+                          'Картинка в картинке (PiP)',
+                          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        subtitle: const Text(
+                          'Смотреть в плавающем окне поверх других приложений',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 14),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await PipService.instance.enterPip();
+                        },
+                      ),
                     ),
-                    subtitle: const Text(
-                      'Смотреть в плавающем окне поверх других приложений',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 14),
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await PipService.instance.enterPip();
-                    },
                   ),
 
                   // Оверлей чата (если синхро-комната)
                   if (state.isSyncRoom) ...[
                     const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.04),
                         borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                       ),
-                      tileColor: Colors.white.withValues(alpha: 0.04),
-                      leading: Icon(
-                        state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
-                        color: state.isChatOverlayVisible ? primary : AppColors.textMuted,
-                      ),
-                      title: const Text(
-                        'Оверлей стрим-чата',
-                        style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        state.isChatOverlayVisible ? 'Сообщения видны на экране' : 'Чат скрыт',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
-                      ),
-                      trailing: Switch.adaptive(
-                        value: state.isChatOverlayVisible,
-                        activeTrackColor: primary,
-                        onChanged: (val) {
-                          HapticFeedback.lightImpact();
-                          cubit.toggleChatOverlay();
-                          (context as Element).markNeedsBuild();
-                        },
+                      child: Material(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          leading: Icon(
+                            state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
+                            color: state.isChatOverlayVisible ? primary : AppColors.textMuted,
+                          ),
+                          title: const Text(
+                            'Оверлей стрим-чата',
+                            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            state.isChatOverlayVisible ? 'Сообщения видны на экране' : 'Чат скрыт',
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+                          ),
+                          trailing: Switch.adaptive(
+                            value: state.isChatOverlayVisible,
+                            activeTrackColor: primary,
+                            onChanged: (val) {
+                              HapticFeedback.lightImpact();
+                              cubit.toggleChatOverlay();
+                              (context as Element).markNeedsBuild();
+                            },
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -293,8 +316,9 @@ class PlayerSettingsSheet extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildQualityButton(
     BuildContext context, {

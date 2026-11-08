@@ -66,6 +66,7 @@ class PlayerState extends Equatable {
   // 7. Жесты: громкость и яркость
   final double volume;
   final double brightness;
+  final bool isScreenLocked;
 
   // 8. Психология, геймификация и анти-АФК
   final int awaySecondsCount;
@@ -115,6 +116,7 @@ class PlayerState extends Equatable {
     this.is2xFastForwarding = false,
     this.volume = 100.0,
     this.brightness = 1.0,
+    this.isScreenLocked = false,
     this.awaySecondsCount = 0,
     this.isSpoilerShieldActive = false,
     this.coopSkipVotes = 0,
@@ -165,6 +167,7 @@ class PlayerState extends Equatable {
     bool? is2xFastForwarding,
     double? volume,
     double? brightness,
+    bool? isScreenLocked,
     int? awaySecondsCount,
     bool? isSpoilerShieldActive,
     int? coopSkipVotes,
@@ -212,6 +215,7 @@ class PlayerState extends Equatable {
       is2xFastForwarding: is2xFastForwarding ?? this.is2xFastForwarding,
       volume: volume ?? this.volume,
       brightness: brightness ?? this.brightness,
+      isScreenLocked: isScreenLocked ?? this.isScreenLocked,
       awaySecondsCount: awaySecondsCount ?? this.awaySecondsCount,
       isSpoilerShieldActive: isSpoilerShieldActive ?? this.isSpoilerShieldActive,
       coopSkipVotes: coopSkipVotes ?? this.coopSkipVotes,
@@ -262,6 +266,7 @@ class PlayerState extends Equatable {
         is2xFastForwarding,
         volume,
         brightness,
+        isScreenLocked,
         awaySecondsCount,
         isSpoilerShieldActive,
         coopSkipVotes,

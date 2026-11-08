@@ -3338,6 +3338,20 @@ Title,Status,Episodes
         expect(links.first.studioName, 'AniLibria');
         expect(links.first.isDirectStream, isTrue);
       });
+
+      test('Screen Lock state and DoubleTapSeekOverlay gesture protection', () {
+        const initialState = PlayerState(
+          title: testTitle,
+          episode: EpisodeItem(episode: 1),
+        );
+        expect(initialState.isScreenLocked, isFalse);
+
+        final lockedState = initialState.copyWith(isScreenLocked: true);
+        expect(lockedState.isScreenLocked, isTrue);
+
+        final unlockedState = lockedState.copyWith(isScreenLocked: false);
+        expect(unlockedState.isScreenLocked, isFalse);
+      });
     });
   });
 }

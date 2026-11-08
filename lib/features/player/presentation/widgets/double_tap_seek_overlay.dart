@@ -37,6 +37,8 @@ class DoubleTapSeekOverlay extends StatefulWidget {
   final String? previewUrl;
   final bool isLocked;
   final VoidCallback? onLockedTap;
+  final bool isScreenLocked;
+  final VoidCallback? onScreenLockedTap;
 
   const DoubleTapSeekOverlay({
     super.key,
@@ -57,6 +59,8 @@ class DoubleTapSeekOverlay extends StatefulWidget {
     this.previewUrl,
     this.isLocked = false,
     this.onLockedTap,
+    this.isScreenLocked = false,
+    this.onScreenLockedTap,
   });
 
   @override
@@ -109,6 +113,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
   }
 
   void _triggerSeek(int seconds, bool left) {
+    if (widget.isScreenLocked) {
+      widget.onScreenLockedTap?.call();
+      return;
+    }
     if (widget.isLocked) {
       widget.onLockedTap?.call();
       return;
@@ -129,6 +137,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
   }
 
   void _triggerCenterDoubleTap() {
+    if (widget.isScreenLocked) {
+      widget.onScreenLockedTap?.call();
+      return;
+    }
     widget.onCenterDoubleTap?.call();
     _centerPulseTimer?.cancel();
     setState(() => _showCenterPulse = true);
@@ -172,6 +184,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
   }
 
   void _onHorizontalStart() {
+    if (widget.isScreenLocked) {
+      widget.onScreenLockedTap?.call();
+      return;
+    }
     if (widget.isLocked) {
       widget.onLockedTap?.call();
       return;
@@ -236,9 +252,16 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                 flex: 7,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: widget.onTap,
+                  onTap: () {
+                    if (widget.isScreenLocked) {
+                      widget.onScreenLockedTap?.call();
+                    } else {
+                      widget.onTap();
+                    }
+                  },
                   onDoubleTap: () => _triggerSeek(-10, true),
                   onLongPressStart: (_) {
+                    if (widget.isScreenLocked) return;
                     if (widget.isLocked) {
                       widget.onLockedTap?.call();
                       return;
@@ -271,9 +294,16 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                 flex: 6,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: widget.onTap,
+                  onTap: () {
+                    if (widget.isScreenLocked) {
+                      widget.onScreenLockedTap?.call();
+                    } else {
+                      widget.onTap();
+                    }
+                  },
                   onDoubleTap: _triggerCenterDoubleTap,
                   onLongPressStart: (_) {
+                    if (widget.isScreenLocked) return;
                     if (widget.isLocked) {
                       widget.onLockedTap?.call();
                       return;
@@ -293,9 +323,16 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                 flex: 7,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: widget.onTap,
+                  onTap: () {
+                    if (widget.isScreenLocked) {
+                      widget.onScreenLockedTap?.call();
+                    } else {
+                      widget.onTap();
+                    }
+                  },
                   onDoubleTap: () => _triggerSeek(10, false),
                   onLongPressStart: (_) {
+                    if (widget.isScreenLocked) return;
                     if (widget.isLocked) {
                       widget.onLockedTap?.call();
                       return;

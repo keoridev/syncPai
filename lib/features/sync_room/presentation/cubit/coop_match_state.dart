@@ -10,6 +10,7 @@ class CoopMatchState extends Equatable {
   final bool isSearching;
   final String? peerName;
   final bool isStartingPlayback;
+  final bool isSuspenseReveal;
 
   const CoopMatchState({
     this.deck = const [],
@@ -20,6 +21,7 @@ class CoopMatchState extends Equatable {
     this.isSearching = false,
     this.peerName,
     this.isStartingPlayback = false,
+    this.isSuspenseReveal = false,
   });
 
   AnimeTitle? get currentTitle =>
@@ -38,6 +40,7 @@ class CoopMatchState extends Equatable {
     bool? isSearching,
     String? peerName,
     bool? isStartingPlayback,
+    bool? isSuspenseReveal,
   }) {
     return CoopMatchState(
       deck: deck ?? this.deck,
@@ -48,6 +51,7 @@ class CoopMatchState extends Equatable {
       isSearching: isSearching ?? this.isSearching,
       peerName: peerName ?? this.peerName,
       isStartingPlayback: isStartingPlayback ?? this.isStartingPlayback,
+      isSuspenseReveal: isSuspenseReveal ?? this.isSuspenseReveal,
     );
   }
 
@@ -61,6 +65,7 @@ class CoopMatchState extends Equatable {
         isSearching,
         peerName,
         isStartingPlayback,
+        isSuspenseReveal,
       ];
 }
 

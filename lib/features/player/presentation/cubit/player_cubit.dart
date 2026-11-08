@@ -33,6 +33,8 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _heartbeatTimer;
   Timer? _countdownTimer;
   Timer? _quickPhraseTimer;
+  Timer? _awayDurationTimer;
+  Timer? _spoilerShieldTimer;
   final Random _random = Random();
 
   bool isAutoSkipOpening = false;
@@ -236,12 +238,27 @@ class PlayerCubit extends Cubit<PlayerState> {
 
     final wasAway = state.isPeerAway;
     final isAwayNow = peer.status == PresenceStatus.away;
+    final friendName = peer.name.isNotEmpty ? peer.name : (state.peerName ?? 'Друг');
+
+    // Таймер подсчета секунд АФК для анти-АФК кнопки «Кинуть тапок» (> 30 сек)
+    if (isAwayNow && !wasAway) {
+      _awayDurationTimer?.cancel();
+      _awayDurationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!isClosed && state.isPeerAway) {
+          emit(state.copyWith(awaySecondsCount: state.awaySecondsCount + 1));
+        }
+      });
+    } else if (!isAwayNow) {
+      _awayDurationTimer?.cancel();
+      _awayDurationTimer = null;
+    }
 
     emit(state.copyWith(
       peerPresence: () => peer,
       isPeerAway: isAwayNow,
+      awaySecondsCount: isAwayNow ? state.awaySecondsCount : 0,
       bufferNotice: isAwayNow
-          ? () => 'Друг отошел (свернул приложение или звонок)...'
+          ? () => '$friendName ждет вас. Плеер остановлен 🥺'
           : () => (wasAway ? null : state.bufferNotice),
       syncStatus: isAwayNow
           ? SyncStatus.buffering
@@ -300,6 +317,10 @@ class PlayerCubit extends Cubit<PlayerState> {
             emit(state.copyWith(syncStatus: SyncStatus.aligning));
           } else {
             // Разница > 3000 мс (хост мотанул или нажал пропуск опенинга)
+            // Спойлер-щит (Blur Mode при рассинхроне/прыжке вперед более 15 сек):
+            if (delta > 15000) {
+              _activateSpoilerShield();
+            }
             player.seek(Duration(milliseconds: estimatedHostPos));
             if (state.playbackRate != 1.0) player.setRate(1.0);
             emit(state.copyWith(syncStatus: SyncStatus.active));
@@ -318,6 +339,10 @@ class PlayerCubit extends Cubit<PlayerState> {
           } else if (act == 'pause') {
             player.pause();
           } else if (act == 'seek' && posMs != null) {
+            final diff = posMs - state.position.inMilliseconds;
+            if (diff > 15000) {
+              _activateSpoilerShield();
+            }
             player.seek(Duration(milliseconds: posMs));
           }
         }
@@ -467,7 +492,92 @@ class PlayerCubit extends Cubit<PlayerState> {
         emit(state.copyWith(isPeerTalking: isTalking));
         _applyAudioDucking();
         break;
+
+      // Анти-АФК «Кинуть тапок» (Poke Nudge)
+      case SyncActionTypes.pokeNudge:
+        if (!isFromSelf) {
+          _handleIncomingPokeNudge(packet.sender);
+        }
+        break;
+
+      // Кооперативный пропуск опенинга (Coop Skip Vote)
+      case SyncActionTypes.coopSkipVote:
+        final votes = packet.payload['votes'] as int? ?? 1;
+        emit(state.copyWith(coopSkipVotes: votes));
+        if (votes >= 2) {
+          skipOpening();
+        }
+        break;
     }
+  }
+
+  void _activateSpoilerShield() {
+    emit(state.copyWith(isSpoilerShieldActive: true));
+    _spoilerShieldTimer?.cancel();
+    _spoilerShieldTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!isClosed) {
+        emit(state.copyWith(isSpoilerShieldActive: false));
+      }
+    });
+  }
+
+  void _handleIncomingPokeNudge(String sender) {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 150), () => HapticFeedback.heavyImpact());
+    Future.delayed(const Duration(milliseconds: 300), () => HapticFeedback.heavyImpact());
+
+    emit(state.copyWith(
+      pokeNudgeMessage: () => '🩴 $sender кинул в вас тапок! Возвращайтесь к просмотру!',
+    ));
+
+    Timer(const Duration(seconds: 4), () {
+      if (!isClosed) {
+        emit(state.copyWith(pokeNudgeMessage: () => null));
+      }
+    });
+  }
+
+  /// Отправить тапок АФК-другу
+  void sendPokeNudge() {
+    if (!state.isSyncRoom) return;
+    HapticFeedback.mediumImpact();
+    syncRepository?.sendPacket(
+      SyncPacket(
+        action: SyncActionTypes.pokeNudge,
+        sender: state.isHost ? 'Хост' : (state.peerName ?? 'Гость'),
+        roomCode: state.roomCode!,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        payload: {},
+      ),
+    );
+  }
+
+  /// Голосование за кооперативный пропуск опенинга
+  void voteCoopSkip() {
+    if (state.hasVotedCoopSkip) return;
+    HapticFeedback.lightImpact();
+    final newVotes = state.coopSkipVotes + 1;
+    emit(state.copyWith(hasVotedCoopSkip: true, coopSkipVotes: newVotes));
+
+    if (state.isSyncRoom) {
+      syncRepository?.sendPacket(
+        SyncPacket(
+          action: SyncActionTypes.coopSkipVote,
+          sender: state.isHost ? 'Хост' : (state.peerName ?? 'Гость'),
+          roomCode: state.roomCode!,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          payload: {'votes': newVotes},
+        ),
+      );
+    }
+
+    if (newVotes >= 2 || !state.isSyncRoom) {
+      skipOpening();
+    }
+  }
+
+  void toggleWatchPartyStats() {
+    emit(state.copyWith(showWatchPartyStats: !state.showWatchPartyStats));
   }
 
   void _broadcastControlAction(String action) {
@@ -671,6 +781,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       return;
     }
     player.pause();
+    emit(state.copyWith(pauseCount: state.pauseCount + 1));
     _broadcastControlAction('pause');
     _resetControlsTimer();
   }
@@ -730,7 +841,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       timestamp: DateTime.now(),
     );
     final current = List<FloatingReaction>.from(state.activeReactions)..add(reaction);
-    emit(state.copyWith(activeReactions: current));
+    emit(state.copyWith(activeReactions: current, emojisSent: state.emojisSent + 1));
 
     Timer(const Duration(milliseconds: 3500), () {
       if (!isClosed) {
@@ -956,8 +1067,8 @@ class PlayerCubit extends Cubit<PlayerState> {
     if (dur <= const Duration(seconds: 20)) return;
 
     final remaining = dur - pos;
-    // Если осталось меньше 6 секунд и таймер еще не запущен
-    if (remaining.inSeconds <= 6 && remaining.inSeconds >= 0 && state.autoNextCountdown == null) {
+    // Эффект Зейгарник: Автоплей стартует за 15 секунд до конца эндинга с обратным отсчетом
+    if (remaining.inSeconds <= 15 && remaining.inSeconds >= 0 && state.autoNextCountdown == null) {
       final all = state.title.episodes;
       final curIdx = all.indexWhere((e) => e.episode == state.episode.episode);
       if (curIdx >= 0 && curIdx < all.length - 1) {
@@ -966,12 +1077,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
-  /// Запуск обратного 5-секундного отсчета
+  /// Запуск обратного отсчета следующей серии
   void startAutoNextCountdown(EpisodeItem nextEp) {
     if (state.autoNextCountdown != null) return;
 
     emit(state.copyWith(
-      autoNextCountdown: () => 5,
+      autoNextCountdown: () => 10,
       nextEpisode: () => nextEp,
     ));
 

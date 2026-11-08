@@ -106,6 +106,9 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
       value: widget.cubit,
       child: BlocConsumer<CoopMatchCubit, CoopMatchState>(
         listener: (context, state) {
+          if (state.isSuspenseReveal) {
+            HapticFeedback.mediumImpact();
+          }
           if (state.isStartingPlayback && state.matchedTitle != null) {
             HapticFeedback.vibrate();
             if (Navigator.of(context).canPop()) {
@@ -151,32 +154,81 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
               ),
             ),
             body: SafeArea(
-              child: Column(
+              child: Stack(
                 children: [
-                  // Подзаголовок режима
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                    child: Text(
-                      state.peerName != null
-                          ? 'Свайпайте вдвоем с ${state.peerName}. При совпадении серия запустится!'
-                          : 'Свайпайте вправо — хочу смотреть, влево — скип',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                  Column(
+                    children: [
+                      // Подзаголовок режима
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+                        child: Text(
+                          state.peerName != null
+                              ? 'Свайпайте вдвоем с ${state.peerName}. При совпадении серия запустится!'
+                              : 'Свайпайте вправо — хочу смотреть, влево — скип',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Центральная колода карточек
+                      Expanded(
+                        child: state.hasFinishedDeck
+                            ? _buildEmptyDeckView(context)
+                            : _buildCardStack(context, state),
+                      ),
+
+                      // Панель кнопок (Скип, Лайк)
+                      if (!state.hasFinishedDeck)
+                        _buildActionButtons(context),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+
+                  // Эффект интриги игрового автомата (Variable Reward Suspense)
+                  if (state.isSuspenseReveal)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.82),
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(0xFFFF2A68).withValues(alpha: 0.2),
+                                border: Border.all(color: const Color(0xFFFF2A68), width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFFFF2A68).withValues(alpha: 0.5),
+                                    blurRadius: 28,
+                                    spreadRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(Icons.favorite_rounded, color: Color(0xFFFF2A68), size: 48),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'ПРОВЕРКА СОВПАДЕНИЯ...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Кажется, ваши вкусы сошлись! 🎰',
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Центральная колода карточек
-                  Expanded(
-                    child: state.hasFinishedDeck
-                        ? _buildEmptyDeckView(context)
-                        : _buildCardStack(context, state),
-                  ),
-
-                  // Панель кнопок (Скип, Лайк)
-                  if (!state.hasFinishedDeck)
-                    _buildActionButtons(context),
-                  const SizedBox(height: 24),
                 ],
               ),
             ),

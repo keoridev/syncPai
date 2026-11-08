@@ -67,6 +67,16 @@ class PlayerState extends Equatable {
   final double volume;
   final double brightness;
 
+  // 8. Психология, геймификация и анти-АФК
+  final int awaySecondsCount;
+  final bool isSpoilerShieldActive;
+  final int coopSkipVotes;
+  final bool hasVotedCoopSkip;
+  final String? pokeNudgeMessage;
+  final bool showWatchPartyStats;
+  final int pauseCount;
+  final int emojisSent;
+
   const PlayerState({
     required this.title,
     required this.episode,
@@ -105,6 +115,14 @@ class PlayerState extends Equatable {
     this.is2xFastForwarding = false,
     this.volume = 100.0,
     this.brightness = 1.0,
+    this.awaySecondsCount = 0,
+    this.isSpoilerShieldActive = false,
+    this.coopSkipVotes = 0,
+    this.hasVotedCoopSkip = false,
+    this.pokeNudgeMessage,
+    this.showWatchPartyStats = false,
+    this.pauseCount = 0,
+    this.emojisSent = 0,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
@@ -147,6 +165,14 @@ class PlayerState extends Equatable {
     bool? is2xFastForwarding,
     double? volume,
     double? brightness,
+    int? awaySecondsCount,
+    bool? isSpoilerShieldActive,
+    int? coopSkipVotes,
+    bool? hasVotedCoopSkip,
+    String? Function()? pokeNudgeMessage,
+    bool? showWatchPartyStats,
+    int? pauseCount,
+    int? emojisSent,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -186,6 +212,14 @@ class PlayerState extends Equatable {
       is2xFastForwarding: is2xFastForwarding ?? this.is2xFastForwarding,
       volume: volume ?? this.volume,
       brightness: brightness ?? this.brightness,
+      awaySecondsCount: awaySecondsCount ?? this.awaySecondsCount,
+      isSpoilerShieldActive: isSpoilerShieldActive ?? this.isSpoilerShieldActive,
+      coopSkipVotes: coopSkipVotes ?? this.coopSkipVotes,
+      hasVotedCoopSkip: hasVotedCoopSkip ?? this.hasVotedCoopSkip,
+      pokeNudgeMessage: pokeNudgeMessage != null ? pokeNudgeMessage() : this.pokeNudgeMessage,
+      showWatchPartyStats: showWatchPartyStats ?? this.showWatchPartyStats,
+      pauseCount: pauseCount ?? this.pauseCount,
+      emojisSent: emojisSent ?? this.emojisSent,
     );
   }
 
@@ -228,5 +262,13 @@ class PlayerState extends Equatable {
         is2xFastForwarding,
         volume,
         brightness,
+        awaySecondsCount,
+        isSpoilerShieldActive,
+        coopSkipVotes,
+        hasVotedCoopSkip,
+        pokeNudgeMessage,
+        showWatchPartyStats,
+        pauseCount,
+        emojisSent,
       ];
 }

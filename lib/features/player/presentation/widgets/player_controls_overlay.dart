@@ -366,6 +366,15 @@ class PlayerControlsOverlay extends StatelessWidget {
                             visualDensity: VisualDensity.compact,
                             onPressed: onToggleOrientation,
                           ),
+
+                        // Кнопка Watch Party Wrapped Сторис (в режиме совместного просмотра)
+                        if (state.isSyncRoom)
+                          IconButton(
+                            tooltip: 'Итоги просмотра (Сторис)',
+                            icon: Icon(Icons.auto_awesome_rounded, color: AppColors.primaryLight, size: 20),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => cubit.toggleWatchPartyStats(),
+                          ),
                       ],
                     ],
                   ),
@@ -472,8 +481,39 @@ class PlayerControlsOverlay extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Кнопка кооперативного пропуска опенинга (Cooperative Skip в режиме Демократия)
+                      if (state.isSyncRoom &&
+                          ep.opening != null &&
+                          state.position.inSeconds >= ep.opening!.start &&
+                          state.position.inSeconds < ep.opening!.stop)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: state.hasVotedCoopSkip
+                                    ? AppColors.syncActive
+                                    : AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                elevation: state.coopSkipVotes > 0 ? 6 : 2,
+                                shadowColor: AppColors.primary.withValues(alpha: 0.6),
+                              ),
+                              icon: const Icon(Icons.fast_forward_rounded, size: 16),
+                              label: Text(
+                                state.coopSkipVotes > 0
+                                    ? 'Друг хочет скипнуть! (${state.coopSkipVotes}/2)'
+                                    : 'Пропустить опенинг (0/2)',
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                              ),
+                              onPressed: () => cubit.voteCoopSkip(),
+                            ),
+                          ),
+                        )
                       // Кнопка быстрого пропуска опенинга / эндинга по таймкодам (только для хоста / соло)
-                      if (!isGuestInSync &&
+                      else if (!isGuestInSync &&
                           ep.opening != null &&
                           state.position.inSeconds >= ep.opening!.start &&
                           state.position.inSeconds < ep.opening!.stop)

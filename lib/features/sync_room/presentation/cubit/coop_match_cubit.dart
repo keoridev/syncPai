@@ -9,6 +9,7 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
   final String? roomCode;
   final String userName;
   final SyncRoomRepository? syncRepository;
+  final Duration suspenseDuration;
   StreamSubscription<SyncPacket>? _packetSub;
 
   CoopMatchCubit({
@@ -16,6 +17,7 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
     this.roomCode,
     this.userName = 'Я',
     this.syncRepository,
+    this.suspenseDuration = const Duration(milliseconds: 1200),
   }) : super(CoopMatchState(deck: initialDeck)) {
     _initNetwork();
   }
@@ -38,7 +40,7 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
               (t) => t.id == titleId,
               orElse: () => state.deck.first,
             );
-            emit(state.copyWith(matchedTitle: () => matched));
+            _triggerSuspenseMatch(matched);
           }
         } else if (packet.action == SyncActionTypes.startPlayback) {
           final titleId = (packet.payload['title_id'] as num?)?.toInt();
@@ -70,7 +72,21 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
         (t) => t.id == titleId,
         orElse: () => state.deck.first,
       );
-      emit(state.copyWith(matchedTitle: () => matched));
+      _triggerSuspenseMatch(matched);
+    }
+  }
+
+  Future<void> _triggerSuspenseMatch(AnimeTitle match) async {
+    // Эффект игрового автомата (Variable Reward): микро-пауза интриги
+    emit(state.copyWith(isSuspenseReveal: true));
+    if (suspenseDuration > Duration.zero) {
+      await Future<void>.delayed(suspenseDuration);
+    }
+    if (!isClosed) {
+      emit(state.copyWith(
+        isSuspenseReveal: false,
+        matchedTitle: () => match,
+      ));
     }
   }
 
@@ -90,8 +106,11 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
     emit(state.copyWith(
       myVotes: updatedMyVotes,
       currentIndex: nextIndex,
-      matchedTitle: match != null ? () => match : null,
     ));
+
+    if (match != null) {
+      await _triggerSuspenseMatch(match);
+    }
 
     // Отправляем голос в комнату Supabase
     if (roomCode != null && syncRepository != null) {

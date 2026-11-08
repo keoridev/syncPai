@@ -38,7 +38,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   final FocusNode _pinFocusNode = FocusNode();
   String? _pinError;
 
-  // Демонстрационный список друзей с Presence-статусом
+  // Демонстрационный список друзей с Presence-статусом и счетчиком стрика (Watch Streak 🔥)
   final List<Map<String, dynamic>> _friends = [
     {
       'id': 'fr_1',
@@ -48,6 +48,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
       'statusText': 'Смотрит «Магическая битва: Серия 4»',
       'canJoin': true,
       'roomCode': 'SP-4821',
+      'streakDays': 14,
     },
     {
       'id': 'fr_2',
@@ -57,6 +58,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
       'statusText': 'В главном меню • Свободен',
       'canJoin': false,
       'roomCode': null,
+      'streakDays': 5,
     },
     {
       'id': 'fr_3',
@@ -66,6 +68,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
       'statusText': 'Был в сети 45 мин. назад',
       'canJoin': false,
       'roomCode': null,
+      'streakDays': 2,
     },
   ];
 
@@ -832,6 +835,54 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
             const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
+            // БАННЕР СИНДРОМА УПУЩЕННОЙ ВЫГОДЫ (FOMO)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0x33FF2A68), Color(0x227C83FD)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0x66FF2A68)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFFF2A68),
+                        ),
+                        child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 14),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'NekoChan_99 и Senpai_Kun сейчас в эфире!',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                            ),
+                            SizedBox(height: 1),
+                            Text(
+                              'Смотрят «Магическая битва». Присоединяйтесь, чтобы не отстать!',
+                              style: TextStyle(color: Colors.white70, fontSize: 10.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
             // КАРТОЧКА 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Подключиться по PIN»
             SliverToBoxAdapter(
               child: Padding(
@@ -1238,6 +1289,31 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                               color: AppColors.warning,
                                               fontWeight: FontWeight.bold,
                                             ),
+                                          ),
+                                        ),
+                                      ] else if (friend['streakDays'] != null) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFF5E3A).withValues(alpha: 0.18),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFFF5E3A).withValues(alpha: 0.45)),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Text('🔥', style: TextStyle(fontSize: 10)),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '${friend['streakDays']} дн.',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFFFF5E3A),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],

@@ -719,7 +719,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                   imageUrl: backdropUrl,
                                   fit: BoxFit.cover,
                                   alignment: Alignment.topCenter,
-                                  placeholder: (context, url) => Container(color: AppColors.surface),
+                                  placeholder: (context, url) => title.posterSmall.isNotEmpty
+                                      ? CachedNetworkImage(
+                                          imageUrl: title.posterSmall,
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment.topCenter,
+                                        )
+                                      : Container(color: AppColors.surface),
                                   errorWidget: (context, url, error) => Container(
                                     color: AppColors.surface,
                                     child: const Center(

@@ -10,12 +10,16 @@ class PulsingRadarWaitingWidget extends StatefulWidget {
   final String title;
   final String? subtitle;
   final int pingMs;
+  final int awaySeconds;
+  final VoidCallback? onPokeNudge;
 
   const PulsingRadarWaitingWidget({
     super.key,
     this.title = 'Ожидание хоста...',
     this.subtitle = 'Сокет слушает сервер • Серия запустится синхронно',
     this.pingMs = 28,
+    this.awaySeconds = 0,
+    this.onPokeNudge,
   });
 
   @override
@@ -160,6 +164,26 @@ class _PulsingRadarWaitingWidgetState extends State<PulsingRadarWaitingWidget>
                 ],
               ),
             ),
+
+            // Кнопка «Кинуть тапок» (Анти-АФК / Pudge Hook) при ожидании больше 30 секунд
+            if (widget.awaySeconds >= 10 && widget.onPokeNudge != null) ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF5E3A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 2,
+                ),
+                icon: const Text('🩴', style: TextStyle(fontSize: 18)),
+                label: Text(
+                  widget.awaySeconds >= 30 ? 'Кинуть тапок в друга!' : 'Пнуть друга (${30 - widget.awaySeconds}с)',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+                onPressed: widget.onPokeNudge,
+              ),
+            ],
           ],
         ),
       ),

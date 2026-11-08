@@ -68,6 +68,14 @@ class SteamBadge {
       level: 99,
     ),
     SteamBadge(
+      id: 'sakura_lord',
+      title: 'Повелитель Сакуры 🌸',
+      description: 'Открывается после 50 часов синхронного просмотра с друзьями',
+      icon: Icons.filter_vintage_rounded,
+      color: Color(0xFFFF76AC),
+      level: 150,
+    ),
+    SteamBadge(
       id: 'fhd_expert',
       title: 'Full HD Эксперт',
       description: 'Смотрит только в 1080p с максимальным битрейтом',
@@ -157,6 +165,13 @@ class SteamAvatarFrame {
       colors: [Color(0xFFFF1744), Color(0xFFFF5252), Color(0xFF880E4F)],
       previewIcon: Icons.nights_stay_rounded,
       animation: SteamFrameAnimation.pulse,
+    ),
+    SteamAvatarFrame(
+      id: 'sakura_lord_neon',
+      name: 'Повелитель Сакуры (50ч+)',
+      colors: [Color(0xFFFF76AC), Color(0xFFFFD700), Color(0xFFFF2A68)],
+      previewIcon: Icons.workspace_premium_rounded,
+      animation: SteamFrameAnimation.fire,
     ),
     SteamAvatarFrame(
       id: 'glacial_frost',

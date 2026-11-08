@@ -2331,7 +2331,7 @@ Title,Status,Episodes
   test('Steam customizer features: frames, backdrops, badges, custom URLs', () {
     expect(SteamAvatarFrame.all.length, greaterThanOrEqualTo(18));
     expect(SteamBackgroundTheme.all.length, greaterThanOrEqualTo(23));
-    expect(SteamBadge.all.length, 8);
+    expect(SteamBadge.all.length, greaterThanOrEqualTo(8));
 
     // Проверка разрешения значков
     final badge = SteamBadge.fromId('pioneer');

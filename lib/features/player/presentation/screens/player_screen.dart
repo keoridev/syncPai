@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,7 @@ import '../widgets/quick_phrase_toast_widget.dart';
 import '../widgets/twitch_chat_overlay.dart';
 import '../widgets/danmaku_overlay_layer.dart';
 import '../widgets/pulsing_radar_waiting_widget.dart';
+import '../widgets/watch_party_stats_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
   final AnimeTitle title;
@@ -493,6 +495,92 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     PulsingRadarWaitingWidget(
                       title: state.bufferNotice!,
                       pingMs: state.peerPingMs,
+                      awaySeconds: state.awaySecondsCount,
+                      onPokeNudge: () {
+                        _cubit.sendPokeNudge();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('🩴 Вы кинули тапок в друга!'),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: Color(0xFFFF5E3A),
+                          ),
+                        );
+                      },
+                    ),
+
+                  // Спойлер-щит (Blur Mode при резких скачках таймлайна вперед)
+                  if (state.isSpoilerShieldActive)
+                    Positioned.fill(
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            alignment: Alignment.center,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceElevated,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppColors.primary),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.shield_rounded, color: AppColors.primaryLight, size: 22),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Прыжок во времени (Спойлер-щит активен)',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Всплывающее уведомление о «летящем тапке» от друга
+                  if (state.pokeNudgeMessage != null)
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top + 70,
+                      left: 20,
+                      right: 20,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF5E3A),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF5E3A).withValues(alpha: 0.5),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            state.pokeNudgeMessage!,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Карточка-статистика Watch Party Wrapped
+                  if (state.showWatchPartyStats)
+                    Positioned.fill(
+                      child: WatchPartyStatsSheet(
+                        title: state.title,
+                        episode: state.episode,
+                        pauseCount: state.pauseCount,
+                        emojisSent: state.emojisSent,
+                        peerPingMs: state.peerPingMs,
+                        peerName: state.peerName ?? 'Друг',
+                        onClose: () => _cubit.toggleWatchPartyStats(),
+                      ),
                     ),
 
                   // Баннер авто-перехода на следующую серию (Auto Next Episode)

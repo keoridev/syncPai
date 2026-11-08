@@ -83,11 +83,24 @@ serve(async (req: Request) => {
       );
     }
 
-    // 3. Чтение безопасных секретов из окружения Supabase Secrets
+    // 3. Если название не передано — получаем через Shikimori API
+    if (!animeTitle && shikimoriId) {
+      try {
+        const shikiRes = await fetch(`https://shikimori.io/api/animes/${shikimoriId}`, {
+          headers: { "User-Agent": "SyncPai-BFF/1.0", Accept: "application/json" },
+        });
+        if (shikiRes.ok) {
+          const shikiJson = await shikiRes.json();
+          animeTitle = shikiJson.russian || shikiJson.name || null;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Чтение безопасных секретов из окружения Supabase Secrets
     const KODIK_TOKEN = Deno.env.get("KODIK_TOKEN") || "9a3a536480e4f80a934440a34b223c25"; // fallback dev/public token
     const ANILIBRIA_BASE = "https://anilibria.top";
 
-    // 4. Параллельные запросы к балансерам (Promise.allSettled)
+    // 5. Параллельные запросы к балансерам (Promise.allSettled)
     const [kodikResult, anilibriaResult] = await Promise.allSettled([
       fetchKodikData(shikimoriId, KODIK_TOKEN),
       fetchAniLibriaData(shikimoriId, animeTitle, ANILIBRIA_BASE),
@@ -229,6 +242,23 @@ async function fetchAniLibriaData(
     }
 
     if (!releaseData) return null;
+
+    // 2. Если у найденного релиза нет детального списка серий (пришел из поиска), запрашиваем детали
+    if (!releaseData.episodes || !Array.isArray(releaseData.episodes) || releaseData.episodes.length === 0) {
+      const releaseId = releaseData.id || releaseData.code;
+      if (releaseId) {
+        try {
+          const detailUrl = `${baseUrl}/api/v1/anime/releases/${releaseId}`;
+          const detailRes = await fetch(detailUrl, {
+            headers: { "User-Agent": "SyncPai-BFF/1.0" },
+          });
+          if (detailRes.ok) {
+            const detailJson = await detailRes.json();
+            releaseData = detailJson.data || detailJson;
+          }
+        } catch (_) {}
+      }
+    }
 
     // Извлечение прямых HLS потоков
     const episodes: EpisodeDirectStream[] = [];

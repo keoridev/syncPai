@@ -34,7 +34,7 @@ void main() async {
 }
 
 class SyncPaiApp extends StatelessWidget {
-  const SyncPaiApp({super.key});
+  const SyncPaiApp({super.key});                           
 
   @override
   Widget build(BuildContext context) {

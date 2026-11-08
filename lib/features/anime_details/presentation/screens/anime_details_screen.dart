@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -32,7 +34,6 @@ import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_useca
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
-import 'package:sync_pai/features/catalog/domain/usecases/get_title_details.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -338,99 +339,67 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   Future<void> _loadFullDetails() async {
     setState(() => _isLoadingDetails = true);
     try {
-      final getDetails = getIt<GetTitleDetails>();
-      final isTemporaryCode = _currentTitle.code.startsWith('title_') || _currentTitle.code.startsWith('search:');
+      final shikiId = _currentTitle.id;
+      final titleRu = _currentTitle.russianTitle;
+      final titleEn = _currentTitle.englishTitle;
+      final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
 
-      // 1. Если это официальный ID релиза AniLibria — пробуем загрузить напрямую
-      if (!isTemporaryCode) {
-        try {
-          final full = await getDetails(id: _currentTitle.id, code: _currentTitle.code);
-          if (mounted && full.episodes.isNotEmpty) {
-            setState(() {
-              _currentTitle = full;
-              _isLoadingDetails = false;
-            });
-            return;
-          }
-        } catch (_) {}
+      // Получаем видеопотоки напрямую через Supabase Edge Function get_anime_player_data
+      final response = await Supabase.instance.client.functions.invoke(
+        'get_anime_player_data',
+        body: {
+          'shikimori_id': shikiId,
+          if (displayTitle.isNotEmpty) 'title': displayTitle,
+        },
+      );
+
+      final dynamic resData = response.data;
+      Map<String, dynamic> data = {};
+      if (resData is Map<String, dynamic>) {
+        data = resData;
+      } else if (resData is Map) {
+        data = Map<String, dynamic>.from(resData);
       }
 
-      // 2. Если тайтл из стороннего источника (Anixart / Shikimori) или прямая загрузка не удалась:
-      // запускаем интеллектуальный поиск релиза в каталоге AniLibria по названию
-      if (getIt.isRegistered<CatalogRepository>()) {
-        final catalogRepo = getIt<CatalogRepository>();
-        List<AnimeTitle> searchResults = [];
+      final translationsList = data['translations'] as List? ?? [];
+      final List<EpisodeItem> directEpisodes = [];
 
-        // А) Поиск по русскому названию
-        if (_currentTitle.russianTitle.isNotEmpty) {
-          try {
-            searchResults = await catalogRepo.searchTitles(_currentTitle.russianTitle, limit: 10);
-          } catch (_) {}
-        }
-
-        // Б) Поиск по английскому названию
-        if (searchResults.isEmpty &&
-            _currentTitle.englishTitle.isNotEmpty &&
-            _currentTitle.englishTitle != _currentTitle.russianTitle) {
-          try {
-            searchResults = await catalogRepo.searchTitles(_currentTitle.englishTitle, limit: 10);
-          } catch (_) {}
-        }
-
-        // В) Поиск по базовому названию без номера сезона (например "Клинок 2" -> "Клинок")
-        if (searchResults.isEmpty && _currentTitle.russianTitle.contains(' ')) {
-          final baseName = _currentTitle.russianTitle
-              .split(RegExp(r'\s+\d+|\s+ТВ-\d+|\s+Сезон|\s+фильм', caseSensitive: false))
-              .first
-              .trim();
-          if (baseName.length >= 3) {
-            try {
-              searchResults = await catalogRepo.searchTitles(baseName, limit: 10);
-            } catch (_) {}
-          }
-        }
-
-        if (searchResults.isNotEmpty) {
-          final targetSeason = _extractSeasonNumber(_currentTitle.russianTitle) ??
-              _extractSeasonNumber(_currentTitle.englishTitle);
-
-          AnimeTitle target = searchResults.first;
-          if (targetSeason != null) {
-            try {
-              target = searchResults.firstWhere(
-                (s) =>
-                    _extractSeasonNumber(s.russianTitle) == targetSeason ||
-                    _extractSeasonNumber(s.englishTitle) == targetSeason,
-              );
-            } catch (_) {
-              target = searchResults.firstWhere(
-                (s) => s.russianTitle.toLowerCase().trim() == _currentTitle.russianTitle.toLowerCase().trim(),
-                orElse: () => searchResults.first,
-              );
+      for (final t in translationsList) {
+        if (t is Map && t['is_direct_stream'] == true && t['episodes'] is List) {
+          final eps = t['episodes'] as List;
+          for (final e in eps) {
+            if (e is Map) {
+              final epNum = (e['episode'] as num?)?.toInt() ?? 1;
+              final link = (e['link'] ?? '') as String;
+              if (link.isNotEmpty) {
+                directEpisodes.add(EpisodeItem(
+                  episode: epNum,
+                  sdUrl: link,
+                  hdUrl: link,
+                  fhdUrl: link,
+                ));
+              }
             }
-          } else {
-            target = searchResults.firstWhere(
-              (s) => s.russianTitle.toLowerCase().trim() == _currentTitle.russianTitle.toLowerCase().trim(),
-              orElse: () => searchResults.first,
+          }
+          if (directEpisodes.isNotEmpty) break;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoadingDetails = false;
+          if (directEpisodes.isNotEmpty) {
+            _currentTitle = _currentTitle.copyWith(
+              episodes: directEpisodes,
+              episodesTotal: directEpisodes.length,
             );
           }
-
-          try {
-            final full = await getDetails(id: target.id, code: target.code);
-            if (mounted && full.episodes.isNotEmpty) {
-              setState(() {
-                _currentTitle = full;
-                _isLoadingDetails = false;
-              });
-              return;
-            }
-          } catch (_) {}
-        }
+        });
       }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() => _isLoadingDetails = false);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingDetails = false);
+      }
     }
   }
 
@@ -675,9 +644,25 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   @override
   Widget build(BuildContext context) {
     final title = _currentTitle;
-    final backdropUrl = title.posterOriginal.isNotEmpty
-        ? title.posterOriginal
-        : (title.posterMedium.isNotEmpty ? title.posterMedium : title.posterSmall);
+    final initialPoster = widget.title.posterOriginal.isNotEmpty
+        ? widget.title.posterOriginal
+        : (widget.title.posterMedium.isNotEmpty ? widget.title.posterMedium : widget.title.posterSmall);
+
+    String backdropUrl;
+    if (initialPoster.isNotEmpty && !initialPoster.contains('anilibria.top/upload/release/350x500')) {
+      backdropUrl = initialPoster;
+    } else if (widget.title.id > 0) {
+      backdropUrl = 'https://shikimori.io/system/animes/original/${widget.title.id}.jpg';
+    } else {
+      backdropUrl = _currentTitle.posterOriginal.isNotEmpty
+          ? _currentTitle.posterOriginal
+          : (_currentTitle.posterMedium.isNotEmpty ? _currentTitle.posterMedium : _currentTitle.posterSmall);
+    }
+    backdropUrl = backdropUrl
+        .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+        .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+        .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+        .replaceFirst('http://shikimori.one', 'https://shikimori.io');
 
     final episodes = title.episodes;
     final currentEpisode = episodes.isNotEmpty && _selectedEpisodeIndex < episodes.length
@@ -726,16 +711,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                               child: ImageFiltered(
                                 imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
                                 child: CachedNetworkImage(
-                                  imageUrl: backdropUrl,
+                                  imageUrl: wrapCorsSafeUrl(backdropUrl),
                                   fit: BoxFit.cover,
                                   alignment: Alignment.topCenter,
-                                  placeholder: (context, url) => title.posterSmall.isNotEmpty
-                                      ? CachedNetworkImage(
-                                          imageUrl: title.posterSmall,
-                                          fit: BoxFit.cover,
-                                          alignment: Alignment.topCenter,
-                                        )
-                                      : Container(color: AppColors.surface),
+                                  httpHeaders: const {
+                                    'User-Agent': 'SyncPai-App/1.0',
+                                    'Referer': 'https://shikimori.io/',
+                                  },
+                                  placeholder: (context, url) => Container(color: AppColors.surface),
                                   errorWidget: (context, url, error) => Container(
                                     color: AppColors.surface,
                                     child: const Center(
@@ -1748,7 +1731,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Ищем серии и плеер в базе AniLibria...',
+                                'Загрузка серий и плеера...',
                                 style: AppTypography.bodySmall.copyWith(
                                   color: AppColors.textSecondary,
                                 ),
@@ -1761,7 +1744,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Озвучка AniLibria для этого тайтла не найдена',
+                                'Серии для этого тайтла пока не найдены',
                                 textAlign: TextAlign.center,
                                 style: AppTypography.bodyMedium.copyWith(
                                   color: AppColors.textMuted,
@@ -1775,7 +1758,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                                label: const Text('Повторить поиск в AniLibria'),
+                                label: const Text('Обновить серии'),
                                 onPressed: () => _loadFullDetails(),
                               ),
                             ],

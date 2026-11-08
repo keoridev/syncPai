@@ -31,6 +31,7 @@ abstract class AnimeListRepository {
     String rawCsv, {
     required String userId,
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    AnimeListStatus? overrideStatus,
     void Function(int current, int total, String currentTitle)? onProgress,
   });
 

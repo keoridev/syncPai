@@ -119,6 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               content,
               userId: userId,
               defaultStatus: selection.defaultStatus,
+              overrideStatus: selection.autoDistribute ? null : selection.defaultStatus,
               onProgress: (current, total, currentTitle) {
                 progressNotifier.value = ImportProgressData(
                   current: current,

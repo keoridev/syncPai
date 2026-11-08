@@ -114,7 +114,18 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         // Если по ID вернулась 404 ошибка (например, ID из Anixart/Shikimori не совпадает с AniLibria),
         // пробуем запросить по коду/slug тайтла (если он есть)
         if (hasValidCode && target != code) {
-          response = await client.get('${ApiConstants.releaseDetails}/$code');
+          try {
+            response = await client.get('${ApiConstants.releaseDetails}/$code');
+          } catch (_) {
+            // Если прямой запрос по слагу тоже вернул 404, пробуем найти через поисковый эндпоинт
+            try {
+              final searchResults = await searchTitles(code);
+              if (searchResults.isNotEmpty) {
+                return searchResults.first;
+              }
+            } catch (_) {}
+            rethrow;
+          }
         } else {
           rethrow;
         }

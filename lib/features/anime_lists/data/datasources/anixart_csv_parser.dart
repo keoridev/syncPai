@@ -34,8 +34,55 @@ class AnixartCsvParser {
   }) {
     if (rawCsv.trim().isEmpty) return [];
 
-    // Определяем разделитель: в Anixart обычно запятая, но может быть и ';'
-    final firstLine = rawCsv.split(RegExp(r'\r?\n')).firstWhere(
+    final lines = rawCsv.split(RegExp(r'\r?\n'));
+
+    // 1. Проверяем формат Anixart со слэш-разделителями (например: 1 / "Название" / "Ромадзи" / ... / В планах)
+    final isSlashDelimited = lines.any((l) => l.contains(' / ') && (l.contains('"') || l.contains('В планах') || l.contains('Просмотрено') || l.contains('Брошено') || l.contains('Смотрю')));
+
+    if (isSlashDelimited) {
+      final List<AnixartRawEntry> slashResults = [];
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+
+        final parts = trimmed.split(RegExp(r'\s+/\s+'));
+        if (parts.length < 2) continue;
+
+        // Первая колонка - номер (например 1), вторая - русское название в кавычках
+        final isFirstColNum = RegExp(r'^\d+$').hasMatch(parts[0].trim());
+        final titlePart = isFirstColNum && parts.length > 1 ? parts[1] : parts[0];
+        final clean = cleanTitle(titlePart);
+        if (clean.isEmpty || clean.toLowerCase() == 'русское название') continue;
+
+        // Ищем статус в частях строки с конца
+        String foundStatus = '';
+        for (int p = parts.length - 1; p >= (isFirstColNum ? 2 : 1); p--) {
+          final sLower = parts[p].toLowerCase().trim();
+          if (sLower.contains('просмотр') ||
+              sLower.contains('заверш') ||
+              sLower.contains('смотр') ||
+              sLower.contains('план') ||
+              sLower.contains('брош') ||
+              sLower.contains('отлож')) {
+            foundStatus = parts[p];
+            break;
+          }
+        }
+
+        final status = foundStatus.isNotEmpty ? mapStatus(foundStatus) : defaultStatus;
+        slashResults.add(AnixartRawEntry(
+          title: clean,
+          status: status,
+        ));
+      }
+
+      if (slashResults.isNotEmpty) {
+        return slashResults;
+      }
+    }
+
+    // 2. Стандартный CSV-парсер (запятая или точка с запятой)
+    final firstLine = lines.firstWhere(
           (l) => l.trim().isNotEmpty,
           orElse: () => '',
         );
@@ -95,6 +142,22 @@ class AnixartCsvParser {
         rawTitle = firstColStr;
         statusRaw = row.length > 1 ? row[1].toString().trim() : '';
         episodesRaw = row.length > 2 ? row[2].toString().trim() : '0';
+      }
+
+      // Если статус не найден в ожидаемой колонке, ищем в любой колонке строки с конца
+      if (statusRaw.isEmpty) {
+        for (int c = row.length - 1; c >= 1; c--) {
+          final cStr = row[c].toString().toLowerCase().trim();
+          if (cStr.contains('план') ||
+              cStr.contains('смотр') ||
+              cStr.contains('просмотр') ||
+              cStr.contains('заверш') ||
+              cStr.contains('брош') ||
+              cStr.contains('отлож')) {
+            statusRaw = row[c].toString().trim();
+            break;
+          }
+        }
       }
 
       final title = cleanTitle(rawTitle);
@@ -161,6 +224,7 @@ class AnixartCsvParser {
     String rawCsv, {
     String userId = '',
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    AnimeListStatus? overrideStatus,
   }) {
     final rawEntries = extractRawTitles(rawCsv, defaultStatus: defaultStatus);
     final now = DateTime.now();
@@ -175,7 +239,7 @@ class AnixartCsvParser {
         userId: userId,
         animeId: animeId,
         titleRu: raw.title,
-        status: raw.status,
+        status: overrideStatus ?? raw.status,
         lastEpisode: raw.watchedEpisodes > 0 ? raw.watchedEpisodes : 1,
         episodesTotal: raw.totalEpisodes,
         updatedAt: now,
@@ -188,6 +252,7 @@ class AnixartCsvParser {
     String rawCsv, {
     required String userId,
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    AnimeListStatus? overrideStatus,
     ShikimoriSearchService? searchService,
     void Function(int current, int total, String currentTitle)? onProgress,
   }) async {
@@ -226,7 +291,7 @@ class AnixartCsvParser {
           animeId: effectiveAnimeId,
           titleRu: finalTitle,
           posterUrl: posterUrl,
-          status: raw.status,
+          status: overrideStatus ?? raw.status,
           lastEpisode: raw.watchedEpisodes > 0 ? raw.watchedEpisodes : 1,
           episodesTotal: totalEpisodes,
           updatedAt: now,

@@ -333,3 +333,4 @@ class EvangelionAtFieldPainter extends CustomPainter {
   bool shouldRepaint(covariant EvangelionAtFieldPainter oldDelegate) =>
       oldDelegate.animationValue != animationValue;
 }
+

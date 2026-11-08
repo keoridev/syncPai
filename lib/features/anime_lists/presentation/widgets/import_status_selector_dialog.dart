@@ -4,10 +4,12 @@ import '../../domain/entities/user_anime_entry.dart';
 
 /// Результат выбора настроек в диалоге импорта
 class ImportStatusSelection {
+  final bool autoDistribute;
   final AnimeListStatus defaultStatus;
   final bool useShikimoriSearch;
 
   const ImportStatusSelection({
+    this.autoDistribute = true,
     required this.defaultStatus,
     required this.useShikimoriSearch,
   });
@@ -45,6 +47,7 @@ class ImportStatusSelectorDialog extends StatefulWidget {
 }
 
 class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog> {
+  bool _autoDistribute = true;
   AnimeListStatus _selectedStatus = AnimeListStatus.planned;
   bool _useShikimoriSearch = true;
 
@@ -109,7 +112,7 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
             const SizedBox(height: 18),
 
             const Text(
-              'В какую категорию поместить тайтлы:',
+              'Распределение по категориям:',
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 13,
@@ -118,35 +121,109 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
             ),
             const SizedBox(height: 10),
 
-            // Выбор статуса
+            // 1. Автоматическое распределение по категориям из файла Anixart
+            InkWell(
+              onTap: () => setState(() => _autoDistribute = true),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _autoDistribute
+                      ? primary.withValues(alpha: 0.16)
+                      : Colors.white.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _autoDistribute ? primary : Colors.white.withValues(alpha: 0.08),
+                    width: _autoDistribute ? 1.5 : 1.0,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      color: _autoDistribute ? primary : AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'Автоматически из файла',
+                                style: TextStyle(
+                                  color: _autoDistribute ? Colors.white : AppColors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: _autoDistribute ? FontWeight.w700 : FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: primary.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'ТОП',
+                                  style: TextStyle(
+                                    color: primary,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Раскидает по спискам «В планах», «Просмотрено», «Смотрю», «Брошено» согласно файлу',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_autoDistribute)
+                      Icon(Icons.check_circle_rounded, color: primary, size: 18),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Ручной выбор единой категории
             _buildStatusTile(
               status: AnimeListStatus.planned,
               title: 'В планах',
-              subtitle: 'Буду смотреть позже',
+              subtitle: 'Буду смотреть позже (все тайтлы)',
               icon: Icons.bookmark_outline_rounded,
               color: const Color(0xFF3B82F6),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildStatusTile(
               status: AnimeListStatus.watching,
               title: 'Смотрю',
-              subtitle: 'Активный просмотр онгоингов',
+              subtitle: 'Активный просмотр (все тайтлы)',
               icon: Icons.play_circle_outline_rounded,
               color: const Color(0xFF10B981),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildStatusTile(
               status: AnimeListStatus.completed,
               title: 'Просмотрено',
-              subtitle: 'Полностью просмотренные тайтлы',
+              subtitle: 'Полностью просмотренные (все тайтлы)',
               icon: Icons.check_circle_outline_rounded,
               color: const Color(0xFF8B5CF6),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildStatusTile(
               status: AnimeListStatus.dropped,
               title: 'Брошено',
-              subtitle: 'Тайтлы, которые не понравились',
+              subtitle: 'Тайтлы, которые не понравились (все)',
               icon: Icons.delete_outline_rounded,
               color: const Color(0xFFEF4444),
             ),
@@ -236,6 +313,7 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
                       FocusScope.of(context).unfocus();
                       Navigator.of(context).pop(
                         ImportStatusSelection(
+                          autoDistribute: _autoDistribute,
                           defaultStatus: _selectedStatus,
                           useShikimoriSearch: _useShikimoriSearch,
                         ),
@@ -262,9 +340,12 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
     required IconData icon,
     required Color color,
   }) {
-    final isSelected = _selectedStatus == status;
+    final isSelected = !_autoDistribute && _selectedStatus == status;
     return InkWell(
-      onTap: () => setState(() => _selectedStatus = status),
+      onTap: () => setState(() {
+        _autoDistribute = false;
+        _selectedStatus = status;
+      }),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

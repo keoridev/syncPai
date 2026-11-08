@@ -89,6 +89,19 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     super.dispose();
   }
 
+  void _showNotification(BuildContext ctx, String message, {Color? backgroundColor}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(ctx).clearSnackBars();
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor ?? AppColors.syncError,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _handleJoinRoom() async {
     if (_isJoiningRoom) return;
 
@@ -121,13 +134,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
           _isJoiningRoom = false;
           _pinError = 'Комната не найдена или сессия завершена';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Комната не найдена или сессия завершена'),
-            backgroundColor: AppColors.syncError,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showNotification(context, 'Комната не найдена или сессия завершена');
         return;
       }
 
@@ -140,13 +147,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
         _isJoiningRoom = false;
         _pinError = 'Не удалось проверить комнату';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Комната не найдена или сессия завершена'),
-          backgroundColor: AppColors.syncError,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showNotification(context, 'Комната не найдена или сессия завершена');
     }
   }
 
@@ -648,46 +649,22 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 onPressed: () {
                   final text = friendController.text.trim();
                   if (text.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Введите никнейм друга'),
-                        backgroundColor: AppColors.syncError,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    _showNotification(context, 'Введите никнейм друга');
                     return;
                   }
                   if (text.length < 3) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Никнейм должен быть не короче 3 символов'),
-                        backgroundColor: AppColors.syncError,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    _showNotification(context, 'Никнейм должен быть не короче 3 символов');
                     return;
                   }
                   final lower = text.toLowerCase();
                   if (lower == 'я' || lower == 'me' || lower == 'admin') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Нельзя добавить самого себя'),
-                        backgroundColor: AppColors.syncError,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    _showNotification(context, 'Нельзя добавить самого себя');
                     return;
                   }
                   final cleanName = text.replaceAll('@', '').toLowerCase();
                   final isRealUser = _validUsernames.contains(cleanName);
                   if (!isRealUser) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Хватит ботов добавлять! Такого друга не существует.'),
-                        backgroundColor: AppColors.syncError,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    _showNotification(context, 'Такого друга не существует');
                     return;
                   }
 
@@ -695,13 +672,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     (f) => (f['name'] as String).toLowerCase() == lower,
                   );
                   if (alreadyExists) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Пользователь $text уже в вашем списке'),
-                        backgroundColor: AppColors.warning,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    _showNotification(context, 'Пользователь $text уже в вашем списке', backgroundColor: AppColors.warning);
                     return;
                   }
 
@@ -718,13 +689,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                     });
                   });
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Запрос на дружбу отправлен пользователю $text!'),
-                      backgroundColor: AppColors.syncActive,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                  _showNotification(context, 'Запрос на дружбу отправлен пользователю $text!', backgroundColor: AppColors.syncActive);
                 },
                 child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w700)),
               ),

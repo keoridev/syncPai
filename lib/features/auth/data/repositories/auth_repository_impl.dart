@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/api_constants.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -279,49 +280,55 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserProfile?> signInWithGoogle() async {
-    final client = _supabase;
-    if (client != null) {
-      try {
-        final googleSignIn = GoogleSignIn(
-          scopes: ['email', 'profile'],
-        );
-        final googleUser = await googleSignIn.signIn();
-        if (googleUser == null) {
-          // Пользователь отменил диалог входа
-          return null;
-        }
+    try {
+      final googleSignIn = GoogleSignIn(
+        serverClientId: ApiConstants.googleServerClientId.isNotEmpty
+            ? ApiConstants.googleServerClientId
+            : null,
+        scopes: ['email', 'profile'],
+      );
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        // Пользователь отменил системный диалог выбора аккаунта
+        return null;
+      }
 
-        final googleAuth = await googleUser.authentication;
-        final idToken = googleAuth.idToken;
-        final accessToken = googleAuth.accessToken;
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      final accessToken = googleAuth.accessToken;
 
-        if (idToken != null) {
+      final client = _supabase;
+      if (client != null && idToken != null) {
+        try {
           await client.auth.signInWithIdToken(
             provider: OAuthProvider.google,
             idToken: idToken,
             accessToken: accessToken,
           );
-        } else {
-          // Fallback на signInWithOAuth (например на Web/десктопе)
-          await client.auth.signInWithOAuth(
-            OAuthProvider.google,
-            redirectTo: kIsWeb ? null : 'syncpai://auth-callback',
-          );
-        }
 
-        final user = client.auth.currentUser;
-        if (user != null) {
-          final profile = await _fetchAndMigrateCloudProfile(user);
-          await _saveLocalProfile(profile);
-          _authController.add(profile);
-          return profile;
+          final user = client.auth.currentUser;
+          if (user != null) {
+            final profile = await _fetchAndMigrateCloudProfile(user);
+            await _saveLocalProfile(profile);
+            _authController.add(profile);
+            return profile;
+          }
+        } catch (supabaseErr) {
+          debugPrint('Supabase signInWithIdToken warning: $supabaseErr. Using local Google profile link.');
         }
-      } catch (e) {
-        debugPrint('Google Sign-In error: $e');
-        rethrow;
       }
+
+      // Бесшовный fallback: связываем полученный профиль Google локально
+      final local = await linkGoogleAccount(
+        email: googleUser.email,
+        displayName: googleUser.displayName,
+        photoUrl: googleUser.photoUrl,
+      );
+      return local;
+    } catch (e) {
+      debugPrint('Google Sign-In error: $e');
+      rethrow;
     }
-    return null;
   }
 
   @override

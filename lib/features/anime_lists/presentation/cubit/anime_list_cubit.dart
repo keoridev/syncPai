@@ -167,6 +167,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     String rawCsv, {
     required String userId,
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    AnimeListStatus? overrideStatus,
     void Function(int current, int total, String currentTitle)? onProgress,
   }) async {
     emit(state.copyWith(isLoading: true, errorMessage: null));
@@ -175,6 +176,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
         rawCsv,
         userId: userId,
         defaultStatus: defaultStatus,
+        overrideStatus: overrideStatus,
         onProgress: onProgress,
       );
       final entries = await repository.getAllEntries();

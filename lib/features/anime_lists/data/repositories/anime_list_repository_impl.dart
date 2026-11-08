@@ -199,12 +199,14 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     String rawCsv, {
     required String userId,
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
+    AnimeListStatus? overrideStatus,
     void Function(int current, int total, String currentTitle)? onProgress,
   }) async {
     final result = await AnixartCsvParser.parseWithShikimori(
       rawCsv,
       userId: userId,
       defaultStatus: defaultStatus,
+      overrideStatus: overrideStatus,
       onProgress: onProgress,
     );
 

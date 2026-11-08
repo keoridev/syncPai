@@ -3513,6 +3513,53 @@ Title,Status,Episodes
         expect(find.text('Email'), findsOneWidget);
         expect(find.text('Пароль'), findsOneWidget);
       });
+
+      test('AnixartCsvParser automatically distributes slash-delimited titles into separate categories', () {
+        const slashSample = '''
+1 / "100 девушек" / "100 Girlfriends" / Не указаны / Не добавлено в избранное / В планах
+2 / "Адский рай" / "Jigokuraku" / Не указаны / Не добавлено в избранное / Просмотрено
+4 / "Аллель Кидзуны" / "Kizuna no Allele" / Не указаны / Не добавлено в избранное / Брошено
+5 / "Аля кокетничает" / "Alya-san" / Не указаны / В избранном / Смотрю
+''';
+        final entries = AnixartCsvParser.parseCsv(slashSample);
+        expect(entries.length, 4);
+        expect(entries[0].titleRu, '100 девушек');
+        expect(entries[0].status, AnimeListStatus.planned);
+        expect(entries[1].titleRu, 'Адский рай');
+        expect(entries[1].status, AnimeListStatus.completed);
+        expect(entries[2].titleRu, 'Аллель Кидзуны');
+        expect(entries[2].status, AnimeListStatus.dropped);
+        expect(entries[3].titleRu, 'Аля кокетничает');
+        expect(entries[3].status, AnimeListStatus.watching);
+      });
+
+      testWidgets('WatchTogetherScreen shows exact error message when friend is not found', (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(),
+            home: const WatchTogetherScreen(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Открываем диалог добавления друга
+        final openDialogButton = find.text('Добавить').first;
+        expect(openDialogButton, findsOneWidget);
+        await tester.tap(openDialogButton);
+        await tester.pumpAndSettle();
+
+        // Вводим несуществующего друга
+        final input = find.byType(TextField).last;
+        await tester.enterText(input, 'NonExistentUserXYZ999');
+        await tester.pumpAndSettle();
+
+        // Нажимаем добавить
+        final submitButton = find.widgetWithText(ElevatedButton, 'Добавить');
+        await tester.tap(submitButton);
+        await tester.pump();
+
+        expect(find.text('Такого друга не существует'), findsOneWidget);
+      });
     });
   });
 }

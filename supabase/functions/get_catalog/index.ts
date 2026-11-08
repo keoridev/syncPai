@@ -1,6 +1,6 @@
 // ==============================================================================
-// SyncPai: Supabase Edge Function - get_catalog
-// BFF (Backend-For-Frontend) Прокси для каталога и поиска Shikimori API v1
+// SyncPai: Supabase Edge Function - get_catalog (Production BFF)
+// Агрегатор и прокси каталога Shikimori API v1 с поддержкой фильтров, жанров и CDN
 // Стек: TypeScript / Deno / Supabase Edge Functions
 // ==============================================================================
 
@@ -16,6 +16,9 @@ interface RequestPayload {
   page?: number | string;
   limit?: number | string;
   search?: string;
+  order?: string;
+  status?: string;
+  genre?: string | number;
 }
 
 const PRIMARY_URL = "https://shikimori.me/api/animes";
@@ -32,6 +35,9 @@ serve(async (req: Request) => {
     let page = 1;
     let limit = 30;
     let search = "";
+    let order = "popularity";
+    let status: string | null = null;
+    let genre: string | null = null;
 
     // 2. Чтение входных параметров из JSON body (POST) или searchParams (GET)
     if (req.method === "POST") {
@@ -42,12 +48,21 @@ serve(async (req: Request) => {
         if (body.search && typeof body.search === "string") {
           search = body.search.trim();
         }
+        if (body.order && typeof body.order === "string") {
+          order = body.order.trim();
+        }
+        if (body.status && typeof body.status === "string") {
+          status = body.status.trim();
+        }
+        if (body.genre !== undefined && body.genre !== null) {
+          genre = String(body.genre).trim();
+        }
       } catch (_) {
         // Fallback на query параметры при невалидном body
       }
     }
 
-    if (req.method === "GET" || (page === 1 && limit === 30 && !search)) {
+    if (req.method === "GET") {
       const url = new URL(req.url);
       const qPage = url.searchParams.get("page");
       if (qPage) page = Math.max(1, Number(qPage) || 1);
@@ -55,16 +70,29 @@ serve(async (req: Request) => {
       if (qLimit) limit = Math.min(50, Math.max(1, Number(qLimit) || 30));
       const qSearch = url.searchParams.get("search");
       if (qSearch) search = qSearch.trim();
+      const qOrder = url.searchParams.get("order");
+      if (qOrder) order = qOrder.trim();
+      const qStatus = url.searchParams.get("status");
+      if (qStatus) status = qStatus.trim();
+      const qGenre = url.searchParams.get("genre");
+      if (qGenre) genre = qGenre.trim();
     }
 
     const queryParams = new URLSearchParams({
       page: String(page),
       limit: String(limit),
-      order: "popularity",
     });
 
     if (search.length > 0) {
       queryParams.set("search", search);
+    } else {
+      queryParams.set("order", order || "popularity");
+      if (status && status.length > 0) {
+        queryParams.set("status", status);
+      }
+      if (genre && genre.length > 0) {
+        queryParams.set("genre", genre);
+      }
     }
 
     const headers = {
@@ -114,7 +142,11 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify(data), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=180", // Кэш на 3 минуты для CDN Edge
+      },
     });
   } catch (error) {
     return new Response(
@@ -126,4 +158,3 @@ serve(async (req: Request) => {
     );
   }
 });
-

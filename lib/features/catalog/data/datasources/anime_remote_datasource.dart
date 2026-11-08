@@ -6,7 +6,13 @@ import '../models/anime_player_data_model.dart';
 
 abstract class AnimeRemoteDataSource {
   /// Получение каталога через Supabase Edge Function get_catalog (BFF для Shikimori API v1)
-  Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30});
+  Future<List<AnimeCatalogModel>> getCatalog({
+    int page = 1,
+    int limit = 30,
+    String? order,
+    String? status,
+    String? genre,
+  });
 
   /// Поиск по аниме через Supabase Edge Function get_catalog
   Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30});
@@ -49,7 +55,13 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }
 
   @override
-  Future<List<AnimeCatalogModel>> getCatalog({int page = 1, int limit = 30}) async {
+  Future<List<AnimeCatalogModel>> getCatalog({
+    int page = 1,
+    int limit = 30,
+    String? order,
+    String? status,
+    String? genre,
+  }) async {
     final client = _supabase;
     if (client != null) {
       try {
@@ -58,6 +70,9 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
           body: {
             'page': page,
             'limit': limit,
+            if (order != null && order.isNotEmpty) 'order': order,
+            if (status != null && status.isNotEmpty) 'status': status,
+            if (genre != null && genre.isNotEmpty) 'genre': genre,
           },
         );
 
@@ -75,13 +90,17 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
     // Резервный канал напрямую к зеркалам Shikimori API
     try {
+      final qParams = <String, dynamic>{
+        'page': page,
+        'limit': limit,
+        'order': order ?? 'popularity',
+      };
+      if (status != null && status.isNotEmpty) qParams['status'] = status;
+      if (genre != null && genre.isNotEmpty) qParams['genre'] = genre;
+
       final response = await _dio.get(
         _fallbackShikimoriUrl,
-        queryParameters: {
-          'page': page,
-          'limit': limit,
-          'order': 'popularity',
-        },
+        queryParameters: qParams,
       );
       if (response.data is List) {
         return (response.data as List)
@@ -91,13 +110,17 @@ class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       }
     } catch (_) {
       try {
+        final qParams = <String, dynamic>{
+          'page': page,
+          'limit': limit,
+          'order': order ?? 'popularity',
+        };
+        if (status != null && status.isNotEmpty) qParams['status'] = status;
+        if (genre != null && genre.isNotEmpty) qParams['genre'] = genre;
+
         final mirrorRes = await _dio.get(
           _mirrorShikimoriUrl,
-          queryParameters: {
-            'page': page,
-            'limit': limit,
-            'order': 'popularity',
-          },
+          queryParameters: qParams,
         );
         if (mirrorRes.data is List) {
           return (mirrorRes.data as List)

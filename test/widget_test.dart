@@ -3631,7 +3631,13 @@ Title,Status,Episodes
 
 class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
   @override
-  Future<List<AnimeEntity>> getCatalog({int page = 1, int limit = 30}) async {
+  Future<List<AnimeEntity>> getCatalog({
+    int page = 1,
+    int limit = 30,
+    String? order,
+    String? status,
+    String? genre,
+  }) async {
     return [
       const AnimeEntity(
         id: 'test-uuid',

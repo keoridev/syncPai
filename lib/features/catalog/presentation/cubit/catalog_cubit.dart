@@ -20,8 +20,98 @@ class CatalogCubit extends Cubit<CatalogState> {
   Timer? _debounceTimer;
   List<AnimeTitle> _cachedUpdates = [];
   bool _isFetchingMore = false;
+  int _activeRequestId = 0;
   late CatalogViewMode _currentViewMode;
   late CatalogGridDensity _currentGridDensity;
+
+  static const Map<String, int> shikimoriGenreMap = {
+    'экшен': 1,
+    'action': 1,
+    'приключения': 2,
+    'adventure': 2,
+    'комедия': 4,
+    'comedy': 4,
+    'детектив': 7,
+    'mystery': 7,
+    'мистика': 7,
+    'драма': 8,
+    'drama': 8,
+    'фэнтези': 10,
+    'fantasy': 10,
+    'игры': 11,
+    'game': 11,
+    'исторический': 13,
+    'historical': 13,
+    'ужасы': 14,
+    'horror': 14,
+    'магия': 16,
+    'magic': 16,
+    'меха': 18,
+    'mecha': 18,
+    'музыка': 19,
+    'music': 19,
+    'романтика': 22,
+    'romance': 22,
+    'школа': 23,
+    'school': 23,
+    'фантастика': 24,
+    'sci-fi': 24,
+    'киберпанк': 24,
+    'сёнэн': 27,
+    'shounen': 27,
+    'спорт': 30,
+    'sports': 30,
+    'повседневность': 36,
+    'slice of life': 36,
+    'сверхъестественное': 37,
+    'supernatural': 37,
+    'военное': 38,
+    'military': 38,
+    'психология': 40,
+    'psychological': 40,
+    'триллер': 41,
+    'thriller': 41,
+    'сэйнэн': 42,
+    'seinen': 42,
+  };
+
+  String? _mapGenresToShikimori(Set<String> genres) {
+    if (genres.isEmpty) return null;
+    final ids = <int>{};
+    for (final g in genres) {
+      final key = g.toLowerCase().trim();
+      final id = shikimoriGenreMap[key];
+      if (id != null) {
+        ids.add(id);
+      }
+    }
+    return ids.isEmpty ? null : ids.join(',');
+  }
+
+  String _mapSortToOrder(CatalogSort sort) {
+    switch (sort) {
+      case CatalogSort.rating:
+        return 'ranked';
+      case CatalogSort.alphabetical:
+        return 'name';
+      case CatalogSort.yearDesc:
+      case CatalogSort.yearAsc:
+      case CatalogSort.updates:
+        return 'aired_on';
+      case CatalogSort.episodes:
+        return 'popularity';
+    }
+  }
+
+  String? _mapStatus(CatalogSort sort, String? statusFilter) {
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      return statusFilter;
+    }
+    if (sort == CatalogSort.updates) {
+      return 'ongoing';
+    }
+    return null;
+  }
 
   CatalogCubit({
     required this.getUpdates,
@@ -49,15 +139,31 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
+    final requestId = ++_activeRequestId;
     emit(const CatalogLoading());
     try {
+      final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+      final sort = current?.sortBy ?? CatalogSort.updates;
+      final genres = current?.selectedGenres ?? const <String>{};
+      final statusFilter = current?.statusFilter;
+
+      final order = _mapSortToOrder(sort);
+      final status = _mapStatus(sort, statusFilter);
+      final genreStr = _mapGenresToShikimori(genres);
+
       List<AnimeTitle> titles = [];
       final useCase = getCatalogUseCase ??
           (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
 
       if (useCase != null) {
         try {
-          final entities = await useCase(page: 1, limit: 40);
+          final entities = await useCase(
+            page: 1,
+            limit: 40,
+            order: order,
+            status: status,
+            genre: genreStr,
+          );
           if (entities.isNotEmpty) {
             titles = entities.map((e) => e.toAnimeTitle()).toList();
           }
@@ -66,23 +172,37 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (titles.isEmpty) {
         titles = await getUpdates(page: 1, limit: 40);
+        titles = _applyFiltersAndSorting(
+          titles,
+          genres: genres,
+          sortBy: sort,
+          matchAll: current?.matchAllGenres ?? false,
+          statusFilter: statusFilter,
+        );
       }
+
+      if (requestId != _activeRequestId) return;
 
       _cachedUpdates = titles;
       emit(CatalogLoaded(
         titles: titles,
         filteredTitles: titles,
+        selectedGenres: genres,
+        sortBy: sort,
+        matchAllGenres: current?.matchAllGenres ?? false,
+        statusFilter: statusFilter,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: 1,
         hasMore: titles.length >= 15,
       ));
     } catch (e) {
+      if (requestId != _activeRequestId) return;
       emit(CatalogError(e.toString()));
     }
   }
 
-  /// Подгрузка следующей страницы каталога (Supabase PostgreSQL / AniLibria с бесконечным скроллом)
+  /// Подгрузка следующей страницы каталога (Supabase PostgreSQL / Shikimori BFF)
   Future<void> loadMore() async {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
@@ -90,17 +210,28 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
+    final requestId = _activeRequestId;
     _isFetchingMore = true;
     emit(current.copyWith(isLoadingMore: true));
     try {
       final nextPage = current.currentPage + 1;
+      final order = _mapSortToOrder(current.sortBy);
+      final status = _mapStatus(current.sortBy, current.statusFilter);
+      final genreStr = _mapGenresToShikimori(current.selectedGenres);
+
       List<AnimeTitle> newTitles = [];
       final useCase = getCatalogUseCase ??
           (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
 
       if (useCase != null) {
         try {
-          final entities = await useCase(page: nextPage, limit: 40);
+          final entities = await useCase(
+            page: nextPage,
+            limit: 40,
+            order: order,
+            status: status,
+            genre: genreStr,
+          );
           if (entities.isNotEmpty) {
             newTitles = entities.map((e) => e.toAnimeTitle()).toList();
           }
@@ -109,7 +240,16 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (newTitles.isEmpty) {
         newTitles = await getUpdates(page: nextPage, limit: 40);
+        newTitles = _applyFiltersAndSorting(
+          newTitles,
+          genres: current.selectedGenres,
+          sortBy: current.sortBy,
+          matchAll: current.matchAllGenres,
+          statusFilter: current.statusFilter,
+        );
       }
+
+      if (requestId != _activeRequestId) return;
 
       if (newTitles.isEmpty) {
         emit(current.copyWith(hasMore: false, isLoadingMore: false));
@@ -123,22 +263,15 @@ class CatalogCubit extends Cubit<CatalogState> {
       final combined = List<AnimeTitle>.from(current.titles)..addAll(uniqueNew);
       _cachedUpdates = combined;
 
-      final filtered = _applyFiltersAndSorting(
-        combined,
-        genres: current.selectedGenres,
-        sortBy: current.sortBy,
-        matchAll: current.matchAllGenres,
-        statusFilter: current.statusFilter,
-      );
-
       emit(current.copyWith(
         titles: combined,
-        filteredTitles: filtered,
+        filteredTitles: combined,
         currentPage: nextPage,
         hasMore: newTitles.length >= 10,
         isLoadingMore: false,
       ));
     } catch (e) {
+      if (requestId != _activeRequestId) return;
       emit(current.copyWith(isLoadingMore: false));
     } finally {
       _isFetchingMore = false;
@@ -192,12 +325,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
       await performSearch(trimmed);
     });
   }
 
   Future<void> performSearch(String query) async {
+    final requestId = ++_activeRequestId;
     if (state is CatalogLoaded) {
       emit((state as CatalogLoaded).copyWith(isSearching: true, searchQuery: query));
     } else {
@@ -221,6 +355,9 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (results.isEmpty) {
         results = await searchTitles(query, limit: 40);
       }
+
+      if (requestId != _activeRequestId) return;
+
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final genres = current?.selectedGenres ?? const {};
       final sort = current?.sortBy ?? CatalogSort.updates;
@@ -248,7 +385,86 @@ class CatalogCubit extends Cubit<CatalogState> {
         gridDensity: _currentGridDensity,
       ));
     } catch (e) {
+      if (requestId != _activeRequestId) return;
       emit(CatalogError('Поиск не удался: $e'));
+    }
+  }
+
+  Future<void> _fetchFilteredCatalog({
+    required Set<String> genres,
+    required CatalogSort sortBy,
+    String? statusFilter,
+    bool matchAll = false,
+  }) async {
+    final requestId = ++_activeRequestId;
+    if (state is CatalogLoaded) {
+      final current = state as CatalogLoaded;
+      emit(current.copyWith(
+        selectedGenres: genres,
+        sortBy: sortBy,
+        matchAllGenres: matchAll,
+        statusFilter: statusFilter,
+        clearStatusFilter: statusFilter == null,
+        isLoadingMore: true,
+      ));
+    } else {
+      emit(const CatalogLoading());
+    }
+
+    try {
+      final order = _mapSortToOrder(sortBy);
+      final status = _mapStatus(sortBy, statusFilter);
+      final genreStr = _mapGenresToShikimori(genres);
+
+      List<AnimeTitle> titles = [];
+      final useCase = getCatalogUseCase ??
+          (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
+
+      if (useCase != null) {
+        try {
+          final entities = await useCase(
+            page: 1,
+            limit: 40,
+            order: order,
+            status: status,
+            genre: genreStr,
+          );
+          if (entities.isNotEmpty) {
+            titles = entities.map((e) => e.toAnimeTitle()).toList();
+          }
+        } catch (_) {}
+      }
+
+      if (titles.isEmpty) {
+        titles = await getUpdates(page: 1, limit: 40);
+        titles = _applyFiltersAndSorting(
+          titles,
+          genres: genres,
+          sortBy: sortBy,
+          matchAll: matchAll,
+          statusFilter: statusFilter,
+        );
+      }
+
+      if (requestId != _activeRequestId) return;
+
+      _cachedUpdates = titles;
+      emit(CatalogLoaded(
+        titles: titles,
+        filteredTitles: titles,
+        selectedGenres: genres,
+        sortBy: sortBy,
+        matchAllGenres: matchAll,
+        statusFilter: statusFilter,
+        viewMode: _currentViewMode,
+        gridDensity: _currentGridDensity,
+        currentPage: 1,
+        hasMore: titles.length >= 15,
+        isLoadingMore: false,
+      ));
+    } catch (e) {
+      if (requestId != _activeRequestId) return;
+      emit(CatalogError(e.toString()));
     }
   }
 
@@ -264,18 +480,26 @@ class CatalogCubit extends Cubit<CatalogState> {
       nextGenres.add(genre);
     }
 
-    final filtered = _applyFiltersAndSorting(
-      current.titles,
-      genres: nextGenres,
-      sortBy: current.sortBy,
-      matchAll: current.matchAllGenres,
-      statusFilter: current.statusFilter,
-    );
-
-    emit(current.copyWith(
-      selectedGenres: nextGenres,
-      filteredTitles: filtered,
-    ));
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: nextGenres,
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
+      emit(current.copyWith(
+        selectedGenres: nextGenres,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: nextGenres,
+        sortBy: current.sortBy,
+        statusFilter: current.statusFilter,
+        matchAll: current.matchAllGenres,
+      );
+    }
   }
 
   /// Одиночный выбор жанра (для совместимости)
@@ -292,19 +516,27 @@ class CatalogCubit extends Cubit<CatalogState> {
       nextGenres = {genre};
     }
 
-    final filtered = _applyFiltersAndSorting(
-      current.titles,
-      genres: nextGenres,
-      sortBy: current.sortBy,
-      matchAll: current.matchAllGenres,
-      statusFilter: current.statusFilter,
-    );
-
-    emit(current.copyWith(
-      selectedGenres: nextGenres,
-      clearGenre: nextGenres.isEmpty,
-      filteredTitles: filtered,
-    ));
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: nextGenres,
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
+      emit(current.copyWith(
+        selectedGenres: nextGenres,
+        clearGenre: nextGenres.isEmpty,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: nextGenres,
+        sortBy: current.sortBy,
+        statusFilter: current.statusFilter,
+        matchAll: current.matchAllGenres,
+      );
+    }
   }
 
   /// Очистить все фильтры жанров
@@ -312,19 +544,27 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
 
-    final filtered = _applyFiltersAndSorting(
-      current.titles,
-      genres: const {},
-      sortBy: current.sortBy,
-      matchAll: current.matchAllGenres,
-      statusFilter: current.statusFilter,
-    );
-
-    emit(current.copyWith(
-      selectedGenres: const {},
-      clearGenre: true,
-      filteredTitles: filtered,
-    ));
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: const {},
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
+      emit(current.copyWith(
+        selectedGenres: const {},
+        clearGenre: true,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: const {},
+        sortBy: current.sortBy,
+        statusFilter: current.statusFilter,
+        matchAll: current.matchAllGenres,
+      );
+    }
   }
 
   /// Установить сортировку каталога
@@ -332,18 +572,26 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
 
-    final filtered = _applyFiltersAndSorting(
-      current.titles,
-      genres: current.selectedGenres,
-      sortBy: sort,
-      matchAll: current.matchAllGenres,
-      statusFilter: current.statusFilter,
-    );
-
-    emit(current.copyWith(
-      sortBy: sort,
-      filteredTitles: filtered,
-    ));
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: current.selectedGenres,
+        sortBy: sort,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
+      emit(current.copyWith(
+        sortBy: sort,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: current.selectedGenres,
+        sortBy: sort,
+        statusFilter: current.statusFilter,
+        matchAll: current.matchAllGenres,
+      );
+    }
   }
 
   /// Переключить режим совпадения: все выбранные жанры или хотя бы один
@@ -370,19 +618,27 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
 
-    final filtered = _applyFiltersAndSorting(
-      current.titles,
-      genres: current.selectedGenres,
-      sortBy: current.sortBy,
-      matchAll: current.matchAllGenres,
-      statusFilter: status,
-    );
-
-    emit(current.copyWith(
-      statusFilter: status,
-      clearStatusFilter: status == null,
-      filteredTitles: filtered,
-    ));
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: current.selectedGenres,
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: status,
+      );
+      emit(current.copyWith(
+        statusFilter: status,
+        clearStatusFilter: status == null,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: current.selectedGenres,
+        sortBy: current.sortBy,
+        statusFilter: status,
+        matchAll: current.matchAllGenres,
+      );
+    }
   }
 
   /// Комплексный движок фильтрации и сортировки

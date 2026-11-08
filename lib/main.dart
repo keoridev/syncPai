@@ -18,7 +18,6 @@ void main() async {
   
   MediaKit.ensureInitialized();
 
-  // Гарантированная инициализация Supabase до создания BLoC/Cubit и вызова runApp
   try {
     await Supabase.initialize(
       url: ApiConstants.supabaseUrl,

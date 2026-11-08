@@ -6,8 +6,20 @@ class GetCatalogUseCase {
 
   const GetCatalogUseCase(this.repository);
 
-  Future<List<AnimeEntity>> call({int page = 1, int limit = 30}) {
-    return repository.getCatalog(page: page, limit: limit);
+  Future<List<AnimeEntity>> call({
+    int page = 1,
+    int limit = 30,
+    String? order,
+    String? status,
+    String? genre,
+  }) {
+    return repository.getCatalog(
+      page: page,
+      limit: limit,
+      order: order,
+      status: status,
+      genre: genre,
+    );
   }
 }
 

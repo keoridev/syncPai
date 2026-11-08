@@ -11,9 +11,21 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
   AnimeCatalogRepositoryImpl(this.remoteDataSource);
 
   @override
-  Future<List<AnimeEntity>> getCatalog({int page = 1, int limit = 30}) async {
+  Future<List<AnimeEntity>> getCatalog({
+    int page = 1,
+    int limit = 30,
+    String? order,
+    String? status,
+    String? genre,
+  }) async {
     try {
-      final models = await remoteDataSource.getCatalog(page: page, limit: limit);
+      final models = await remoteDataSource.getCatalog(
+        page: page,
+        limit: limit,
+        order: order,
+        status: status,
+        genre: genre,
+      );
       return models.map((m) => m.toDomain()).toList();
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);

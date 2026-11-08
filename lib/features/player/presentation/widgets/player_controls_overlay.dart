@@ -59,12 +59,13 @@ class PlayerControlsOverlay extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                stops: const [0.0, 0.25, 0.75, 1.0],
+                stops: const [0.0, 0.22, 0.65, 0.88, 1.0],
                 colors: [
-                  Colors.black.withValues(alpha: isLandscape ? 0.65 : 0.75),
+                  Colors.black.withValues(alpha: isLandscape ? 0.70 : 0.80),
+                  Colors.black.withValues(alpha: 0.35),
                   Colors.transparent,
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: isLandscape ? 0.75 : 0.85),
+                  Colors.black.withValues(alpha: isLandscape ? 0.72 : 0.82),
+                  Colors.black.withValues(alpha: isLandscape ? 0.90 : 0.95),
                 ],
               ),
             ),

@@ -11,6 +11,7 @@ import '../../../../core/widgets/tv_focusable.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../cubit/coop_match_cubit.dart';
 import '../cubit/coop_match_state.dart';
+import '../widgets/match_confetti_blast_widget.dart';
 
 class CoopMatchScreen extends StatefulWidget {
   final CoopMatchCubit cubit;
@@ -73,6 +74,10 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
+    // Легкая тактильная отдача при активном движении карточки
+    if (_dragOffset.dx.abs() > 40 && (_dragOffset.dx - details.delta.dx).abs() <= 40) {
+      HapticFeedback.selectionClick();
+    }
     setState(() {
       _dragOffset += details.delta;
     });
@@ -102,7 +107,7 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
       child: BlocConsumer<CoopMatchCubit, CoopMatchState>(
         listener: (context, state) {
           if (state.isStartingPlayback && state.matchedTitle != null) {
-            HapticFeedback.heavyImpact();
+            HapticFeedback.vibrate();
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             }
@@ -110,7 +115,7 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
             return;
           }
           if (state.matchedTitle != null && !state.isStartingPlayback) {
-            HapticFeedback.heavyImpact();
+            HapticFeedback.vibrate();
             _showMatchDialog(context, state.matchedTitle!);
           }
         },
@@ -448,105 +453,117 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Dialog(
           backgroundColor: Colors.transparent,
-          child: GlassContainer(
-            borderRadius: BorderRadius.circular(28),
-            blurSigma: 24,
-            backgroundOpacity: 0.18,
-            customBorder: Border.all(color: AppColors.syncActive.withValues(alpha: 0.6), width: 1.5),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GlassContainer(
+                borderRadius: BorderRadius.circular(28),
+                blurSigma: 24,
+                backgroundOpacity: 0.18,
+                customBorder: Border.all(color: AppColors.syncActive.withValues(alpha: 0.6), width: 1.5),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
-                    SizedBox(width: 8),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                        SizedBox(width: 8),
+                        Text(
+                          'ЭТО МЭТЧ!',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
-                      'ЭТО МЭТЧ!',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 1.5,
+                      'Вы оба хотите смотреть:',
+                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Картинка совпавшего аниме
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        width: 140,
+                        height: 200,
+                        child: CachedNetworkImage(
+                          imageUrl: matched.posterMedium.isNotEmpty
+                              ? matched.posterMedium
+                              : matched.posterSmall,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
+                        ),
                       ),
                     ),
-                    SizedBox(width: 8),
-                    Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                    const SizedBox(height: 14),
+
+                    Text(
+                      matched.displayTitle,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.titleMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Кнопка запуска серии
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.syncActive,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 4,
+                          shadowColor: AppColors.syncActive.withValues(alpha: 0.4),
+                        ),
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text(
+                          'Смотреть 1-ю серию вместе',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        onPressed: () async {
+                          await widget.cubit.startWatchingMatch();
+                          if (ctx.mounted) Navigator.of(ctx).pop();
+                          if (context.mounted && Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          }
+                          widget.onStartWatching?.call(matched);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    TextButton(
+                      onPressed: () {
+                        widget.cubit.clearMatch();
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Продолжить поиск', style: TextStyle(color: AppColors.textMuted)),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Вы оба хотите смотреть:',
-                  style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 16),
+              ),
 
-                // Картинка совпавшего аниме
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: SizedBox(
-                    width: 140,
-                    height: 200,
-                    child: CachedNetworkImage(
-                      imageUrl: matched.posterMedium.isNotEmpty
-                          ? matched.posterMedium
-                          : matched.posterSmall,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                Text(
-                  matched.displayTitle,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.titleMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Кнопка запуска серии
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.syncActive,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text(
-                      'Смотреть 1-ю серию вместе',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    onPressed: () async {
-                      await widget.cubit.startWatchingMatch();
-                      if (ctx.mounted) Navigator.of(ctx).pop();
-                      if (context.mounted && Navigator.of(context).canPop()) {
-                        Navigator.of(context).pop();
-                      }
-                      widget.onStartWatching?.call(matched);
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                TextButton(
-                  onPressed: () {
-                    widget.cubit.clearMatch();
-                    Navigator.of(ctx).pop();
-                  },
-                  child: const Text('Продолжить поиск', style: TextStyle(color: AppColors.textMuted)),
-                ),
-              ],
-            ),
+              // Праздничный салют конфетти поверх модального окна
+              const Positioned.fill(
+                child: MatchConfettiBlastWidget(),
+              ),
+            ],
           ),
         ),
       ),

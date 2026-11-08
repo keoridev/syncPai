@@ -32,8 +32,6 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/data/models/anime_catalog_model.dart';
 import 'package:sync_pai/features/catalog/data/models/anime_player_data_model.dart';
-import 'package:sync_pai/features/catalog/data/models/episode_model.dart';
-import 'package:sync_pai/features/catalog/data/models/translation_model.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_entity.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_entity.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';

@@ -60,24 +60,27 @@ class AnimePosterCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     if (posterUrl.isNotEmpty)
-                      CachedNetworkImage(
-                        imageUrl: wrapCorsSafeUrl(posterUrl),
-                        fit: BoxFit.cover,
-                        memCacheWidth: 260,
-                        memCacheHeight: 390,
-                        maxWidthDiskCache: 450,
-                        maxHeightDiskCache: 675,
-                        fadeInDuration: const Duration(milliseconds: 120),
-                        filterQuality: FilterQuality.low,
-                        placeholder: (context, url) =>
-                            const ShimmerPlaceholder.card(),
-                        errorWidget: (context, url, error) => Container(
-                          color: AppColors.surfaceElevated,
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.movie_creation_outlined,
-                            color: AppColors.textMuted,
-                            size: 32,
+                      Hero(
+                        tag: 'anime-poster-${title.id}',
+                        child: CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(posterUrl),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 260,
+                          memCacheHeight: 390,
+                          maxWidthDiskCache: 450,
+                          maxHeightDiskCache: 675,
+                          fadeInDuration: const Duration(milliseconds: 120),
+                          filterQuality: FilterQuality.low,
+                          placeholder: (context, url) =>
+                              const ShimmerPlaceholder.card(),
+                          errorWidget: (context, url, error) => Container(
+                            color: AppColors.surfaceElevated,
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.movie_creation_outlined,
+                              color: AppColors.textMuted,
+                              size: 32,
+                            ),
                           ),
                         ),
                       )

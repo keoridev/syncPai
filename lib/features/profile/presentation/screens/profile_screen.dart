@@ -13,6 +13,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/glass_container.dart';
+import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
@@ -254,7 +255,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  if (isSubmitting) ...[
+                    const SizedBox(height: 18),
+                    const ShimmerPlaceholder(width: double.infinity, height: 16),
+                    const SizedBox(height: 8),
+                    const ShimmerPlaceholder(width: double.infinity, height: 16),
+                    const SizedBox(height: 12),
+                  ],
+                  const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
                     height: 48,

@@ -876,14 +876,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
       itemBuilder: (context, index) {
         if (index == titles.length) {
           return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.2),
-              ),
-            ),
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: ShimmerPlaceholder(width: double.infinity, height: 80),
           );
         }
         final title = titles[index];

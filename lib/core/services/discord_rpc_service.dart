@@ -168,3 +168,4 @@ class DiscordRpcService {
     _isConnected = false;
   }
 }
+

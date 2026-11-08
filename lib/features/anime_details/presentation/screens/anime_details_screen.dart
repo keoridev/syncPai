@@ -711,17 +711,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                         children: [
                           // Фоновый арт с эффектом прогрессивного размытия при скролле
                           if (backdropUrl.isNotEmpty)
-                            ImageFiltered(
-                              imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-                              child: CachedNetworkImage(
-                                imageUrl: backdropUrl,
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter,
-                                placeholder: (context, url) => Container(color: AppColors.surface),
-                                errorWidget: (context, url, error) => Container(
-                                  color: AppColors.surface,
-                                  child: const Center(
-                                    child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 48),
+                            Hero(
+                              tag: 'anime-poster-${title.id}',
+                              child: ImageFiltered(
+                                imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                                child: CachedNetworkImage(
+                                  imageUrl: backdropUrl,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.topCenter,
+                                  placeholder: (context, url) => Container(color: AppColors.surface),
+                                  errorWidget: (context, url, error) => Container(
+                                    color: AppColors.surface,
+                                    child: const Center(
+                                      child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 48),
+                                    ),
                                   ),
                                 ),
                               ),

@@ -213,3 +213,4 @@ class _RadarWavePainter extends CustomPainter {
     return oldDelegate.progress != progress;
   }
 }
+

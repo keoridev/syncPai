@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
+import 'package:sync_pai/core/services/adaptive_palette_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -74,6 +75,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
   final FocusNode _pinFocusNode = FocusNode();
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  Color _themeAccent = AppColors.primary;
 
   @override
   void initState() {
@@ -87,6 +89,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // Извлечение динамической палитры из постера тайтла (Adaptive Theming)
+    _extractAdaptivePalette();
+
     // По умолчанию сразу создаем комнату для выбранного тайтла и серии в 720p HD
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SyncRoomCubit>().createRoom(
@@ -95,6 +100,21 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
             quality: widget.initialQuality,
           );
     });
+  }
+
+  Future<void> _extractAdaptivePalette() async {
+    final poster = widget.title.posterMedium.isNotEmpty
+        ? widget.title.posterMedium
+        : widget.title.posterSmall;
+    if (poster.isNotEmpty) {
+      final color = await AdaptivePaletteService.instance.extractDominantColor(
+        poster,
+        fallbackColor: AppColors.primary,
+      );
+      if (mounted) {
+        setState(() => _themeAccent = color);
+      }
+    }
   }
 
   @override
@@ -137,14 +157,24 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
               color: AppColors.surface.withValues(alpha: 0.96),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
-                width: 1.0,
+                color: _themeAccent.withValues(alpha: 0.35),
+                width: 1.5,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: _themeAccent.withValues(alpha: 0.18),
+                  blurRadius: 32,
+                  spreadRadius: 2,
+                  offset: const Offset(0, -6),
+                ),
+              ],
             ),
             padding: EdgeInsets.only(
               bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -294,11 +324,19 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
         },
         borderRadius: BorderRadius.circular(10),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 250),
           padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary : Colors.transparent,
+            color: isSelected ? _themeAccent : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: _themeAccent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -367,16 +405,19 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                     child: SizedBox(
                       width: 90,
                       height: 52,
-                      child: previewUrl.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: previewUrl,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) =>
-                                  const ShimmerPlaceholder.card(),
-                              errorWidget: (context, url, error) =>
-                                  Container(color: AppColors.surfaceElevated),
-                            )
-                          : Container(color: AppColors.surfaceElevated),
+                      child: Hero(
+                        tag: 'anime-poster-${widget.title.id}',
+                        child: previewUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: previewUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) =>
+                                    const ShimmerPlaceholder.card(),
+                                errorWidget: (context, url, error) =>
+                                    Container(color: AppColors.surfaceElevated),
+                              )
+                            : Container(color: AppColors.surfaceElevated),
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppDimensions.spacingMd),
@@ -552,8 +593,8 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.25),
-                    blurRadius: 18,
+                    color: _themeAccent.withValues(alpha: 0.35),
+                    blurRadius: 20,
                     offset: const Offset(0, 4),
                   ),
                 ],
@@ -858,9 +899,16 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                 border: Border.all(
                   color: errorMsg != null
                       ? AppColors.syncError
-                      : AppColors.primary.withValues(alpha: 0.5),
-                  width: 1.2,
+                      : _themeAccent.withValues(alpha: 0.65),
+                  width: 1.4,
                 ),
+                boxShadow: [
+                  if (errorMsg == null)
+                    BoxShadow(
+                      color: _themeAccent.withValues(alpha: 0.15),
+                      blurRadius: 14,
+                    ),
+                ],
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: TextField(
@@ -877,7 +925,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                   letterSpacing: 4,
                   color: AppColors.textPrimary,
                 ),
-                cursorColor: AppColors.primary,
+                cursorColor: _themeAccent,
                 decoration: InputDecoration(
                   counterText: '',
                   hintText: 'SP-XXXX',

@@ -180,24 +180,26 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                             ),
 
-                          // 1. Фоновая дорожка
-                          Container(
-                            height: 4.0,
+                          // 1. Фоновая дорожка (с динамическим увеличением толщины при зажатии)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            height: _isDragging ? 7.0 : 4.0,
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: AppColors.strokeMedium,
-                              borderRadius: BorderRadius.circular(2.0),
+                              borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
                             ),
                           ),
 
                           // 2. Буфер воспроизведения
                           FractionallySizedBox(
                             widthFactor: bufferRatio,
-                            child: Container(
-                              height: 4.0,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              height: _isDragging ? 7.0 : 4.0,
                               decoration: BoxDecoration(
                                 color: Colors.white.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(2.0),
+                                borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
                               ),
                             ),
                           ),
@@ -207,10 +209,12 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                             Positioned(
                               left: barWidth * opStartRatio,
                               width: barWidth * (opStopRatio - opStartRatio),
-                              child: Container(
-                                height: 4.0,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                height: _isDragging ? 7.0 : 4.0,
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFFB300).withValues(alpha: 0.8),
+                                  borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
                                   boxShadow: [
                                     BoxShadow(
                                       color: const Color(0xFFFFB300).withValues(alpha: 0.5),
@@ -225,10 +229,12 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                             Positioned(
                               left: barWidth * edStartRatio,
                               width: barWidth * (edStopRatio - edStartRatio),
-                              child: Container(
-                                height: 4.0,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                height: _isDragging ? 7.0 : 4.0,
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF00E5FF).withValues(alpha: 0.8),
+                                  borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
                                   boxShadow: [
                                     BoxShadow(
                                       color: const Color(0xFF00E5FF).withValues(alpha: 0.5),
@@ -239,14 +245,22 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                             ),
 
-                          // 4. Линия текущего прогресса воспроизведения
+                          // 4. Линия текущего прогресса воспроизведения (сочная iOS / Netflix анимация)
                           FractionallySizedBox(
                             widthFactor: progressRatio,
-                            child: Container(
-                              height: _isDragging ? 6.0 : 4.0,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              height: _isDragging ? 7.0 : 4.0,
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.primary,
-                                borderRadius: BorderRadius.circular(3.0),
+                                borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
+                                boxShadow: [
+                                  if (_isDragging)
+                                    BoxShadow(
+                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+                                      blurRadius: 8,
+                                    ),
+                                ],
                               ),
                             ),
                           ),
@@ -313,21 +327,26 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               ),
                             ),
 
-                          // 6. Ползунок (Thumb)
+                          // 6. Ползунок (Thumb) с плавной трансформацией размера
                           Positioned(
-                            left: (barWidth * progressRatio - (_isDragging ? 8 : 6))
-                                .clamp(0.0, barWidth - (_isDragging ? 16 : 12)),
-                            child: Container(
-                              width: _isDragging ? 16.0 : 12.0,
-                              height: _isDragging ? 16.0 : 12.0,
+                            left: (barWidth * progressRatio - (_isDragging ? 10 : 6))
+                                .clamp(0.0, barWidth - (_isDragging ? 20 : 12)),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: _isDragging ? 20.0 : 12.0,
+                              height: _isDragging ? 20.0 : 12.0,
                               decoration: BoxDecoration(
                                 color: AppColors.textPrimary,
                                 shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: _isDragging ? 2.5 : 0.0,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                                    blurRadius: _isDragging ? 10 : 6,
-                                    spreadRadius: _isDragging ? 2 : 0,
+                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: _isDragging ? 0.85 : 0.4),
+                                    blurRadius: _isDragging ? 14 : 6,
+                                    spreadRadius: _isDragging ? 3 : 0,
                                   ),
                                 ],
                               ),

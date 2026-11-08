@@ -200,3 +200,4 @@ class _DanmakuTextBubble extends StatelessWidget {
     );
   }
 }
+

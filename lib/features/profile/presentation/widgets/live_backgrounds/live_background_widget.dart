@@ -19,15 +19,19 @@ import 'starfield_painter.dart';
 class LiveBackgroundWidget extends StatefulWidget {
   final String? backgroundId;
   final String? assetOrUrl;
+  final String? fallbackImageUrl;
   final List<Color>? fallbackGradient;
   final BoxFit fit;
+  final bool isPaused;
 
   const LiveBackgroundWidget({
     super.key,
     this.backgroundId,
     this.assetOrUrl,
+    this.fallbackImageUrl,
     this.fallbackGradient,
     this.fit = BoxFit.cover,
+    this.isPaused = false,
   });
 
   @override
@@ -91,8 +95,18 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
   @override
   void didUpdateWidget(covariant LiveBackgroundWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.isPaused != oldWidget.isPaused) {
+      if (widget.isPaused) {
+        _videoPlayer?.pause();
+        if (_animController.isAnimating) _animController.stop();
+      } else {
+        _videoPlayer?.play();
+        if (_isProcedural && !_animController.isAnimating) _animController.repeat();
+      }
+    }
+
     if (_isProcedural) {
-      if (!_animController.isAnimating) _animController.repeat();
+      if (!widget.isPaused && !_animController.isAnimating) _animController.repeat();
     } else {
       if (_animController.isAnimating) _animController.stop();
     }
@@ -169,18 +183,44 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
     // 1. Если инициализировано видео — воспроизводим зацикленный mp4
     if (_isVideoInitialized && _videoController != null) {
       return RepaintBoundary(
-        child: SizedBox.expand(
-          child: FittedBox(
-            fit: widget.fit,
-            child: SizedBox(
-              width: _videoController!.player.state.width?.toDouble() ?? 1280,
-              height: _videoController!.player.state.height?.toDouble() ?? 720,
-              child: Video(
-                controller: _videoController!,
-                controls: NoVideoControls,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Статичный резервный кадр при загрузке или отсутствии сети
+            if (widget.fallbackImageUrl != null && widget.fallbackImageUrl!.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: wrapCorsSafeUrl(widget.fallbackImageUrl!),
+                fit: widget.fit,
+                placeholder: (_, __) => _buildFallbackGradient(),
+                errorWidget: (_, __, ___) => _buildFallbackGradient(),
+              )
+            else
+              _buildFallbackGradient(),
+
+            // Фоновый видео-луп
+            SizedBox.expand(
+              child: FittedBox(
+                fit: widget.fit,
+                child: SizedBox(
+                  width: _videoController!.player.state.width?.toDouble() ?? 1280,
+                  height: _videoController!.player.state.height?.toDouble() ?? 720,
+                  child: Video(
+                    controller: _videoController!,
+                    controls: NoVideoControls,
+                  ),
+                ),
               ),
             ),
-          ),
+
+            // Темный градиент-фильтр поверх видео для сохранения читаемости текста
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }

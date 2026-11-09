@@ -233,6 +233,8 @@ class AuthRepositoryImpl implements AuthRepository {
           'favorite_anime_id': profile.favoriteAnimeId,
           'favorite_anime_poster': profile.favoriteAnimePoster,
           'accent_color': profile.accentColor,
+          'showcase_type': profile.showcaseType,
+          'customization': profile.customization.toJson(),
           'created_at': profile.createdAt.toIso8601String(),
         });
       } catch (e) {
@@ -478,6 +480,7 @@ class AuthRepositoryImpl implements AuthRepository {
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
     String? accentColor,
+    String? showcaseType,
   }) async {
     final current = await getCurrentProfile();
     final updated = current.copyWith(
@@ -499,6 +502,7 @@ class AuthRepositoryImpl implements AuthRepository {
           ? (favoriteAnimePoster.isEmpty ? null : favoriteAnimePoster)
           : current.favoriteAnimePoster,
       accentColor: accentColor ?? current.accentColor,
+      showcaseType: showcaseType ?? current.showcaseType,
     );
 
     await _saveLocalProfile(updated);

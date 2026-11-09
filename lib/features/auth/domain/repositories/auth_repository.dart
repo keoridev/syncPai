@@ -44,6 +44,7 @@ abstract class AuthRepository {
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
     String? accentColor,
+    String? showcaseType,
   });
 
   /// Выход из аккаунта

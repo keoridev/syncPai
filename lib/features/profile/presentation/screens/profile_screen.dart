@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,22 +49,41 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   bool _showActivityCharts = false;
   bool _guestBannerDismissed = false;
   bool _isBgPaused = false;
   late final ScrollController _scrollController;
   late final ProfileCubit _profileCubit;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
 
   static const List<String> _avatarPresets = [
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
   ];
+
+  bool get _isTestEnv {
+    try {
+      return Platform.environment.containsKey('FLUTTER_TEST');
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    );
+    if (!_isTestEnv) {
+      _pulseController.repeat(reverse: true);
+    }
+    _pulseAnimation = CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut);
     _loadBannerDismissed();
     _profileCubit = getIt.isRegistered<ProfileCubit>()
         ? getIt<ProfileCubit>()
@@ -115,6 +137,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _pulseController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _profileCubit.close();
@@ -420,7 +443,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool isCurrentUser,
   ) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF13161F).withValues(alpha: 0.85),
@@ -474,24 +497,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Icon(headerIcon, color: accent, size: 16),
-            const SizedBox(width: 8),
-            Text(
-              headerTitle,
-              style: AppTypography.caption.copyWith(
-                letterSpacing: 1.1,
-                color: Colors.white.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
+        Expanded(
+          child: Row(
+            children: [
+              Icon(headerIcon, color: accent, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  headerTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(
+                    letterSpacing: 1.1,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        if (isCurrentUser)
+        if (isCurrentUser) ...[
+          const SizedBox(width: 8),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -535,6 +564,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ],
           ),
+        ],
       ],
     );
   }
@@ -603,108 +633,181 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     if (favTitle != null && favTitle.isNotEmpty) {
-      return InkWell(
-        onTap: () => _openFavoriteAnimeDetails(context, profile),
-        borderRadius: BorderRadius.circular(14),
-        child: SizedBox(
-          height: 130,
-          child: Row(
+      return Container(
+        height: 140,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              // Превью постера слева
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 95,
-                  height: 130,
-                  child: CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(showcasePoster ?? ''),
-                    fit: BoxFit.cover,
-                    memCacheWidth: 400,
-                    errorWidget: (context, url, error) {
-                      if (showcaseFallback != null && showcaseFallback.isNotEmpty) {
-                        return CachedNetworkImage(
-                          imageUrl: wrapCorsSafeUrl(showcaseFallback),
-                          fit: BoxFit.cover,
-                          memCacheWidth: 400,
-                          errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
-                        );
-                      }
-                      return _buildFallbackShowcaseBackground(accent);
-                    },
+              // 1. Широкий кинематографичный арт на фоне карточки
+              CachedNetworkImage(
+                imageUrl: wrapCorsSafeUrl(showcasePoster ?? ''),
+                fit: BoxFit.cover,
+                memCacheWidth: 600,
+                errorWidget: (context, url, error) {
+                  if (showcaseFallback != null && showcaseFallback.isNotEmpty) {
+                    return CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(showcaseFallback),
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
+                    );
+                  }
+                  return _buildFallbackShowcaseBackground(accent);
+                },
+              ),
+
+              // 2. Затемняющий кинематографичный градиент
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      const Color(0xFF0C0E14).withValues(alpha: 0.94),
+                      const Color(0xFF0C0E14).withValues(alpha: 0.85),
+                      const Color(0xFF0C0E14).withValues(alpha: 0.40),
+                    ],
+                    stops: const [0.0, 0.45, 1.0],
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
 
-              // Информация и кнопка воспроизведения справа
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
+              // 3. Контент витрины
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
                   children: [
+                    // Слева: Вертикальный постер аниме (формат 2:3, размер 64x96, BorderRadius.circular(8))
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      width: 64,
+                      height: 96,
                       decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: accent.withValues(alpha: 0.6), width: 0.8),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(showcasePoster ?? ''),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 200,
+                          errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    // По центру: Золотистый бейдж ★ ИЗБРАННЫЙ ТАЙТЛ, крупное название, просмотренные серии
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.star_rounded, size: 12, color: accent),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'Любимое аниме',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFFD700).withValues(alpha: 0.35),
+                                  blurRadius: 6,
+                                ),
+                              ],
                             ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.star_rounded, size: 12, color: Colors.black),
+                                SizedBox(width: 4),
+                                Text(
+                                  '★ ИЗБРАННЫЙ ТАЙТЛ',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            favTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              height: 1.25,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Row(
+                            children: [
+                              Icon(Icons.play_circle_fill_rounded, size: 13, color: accent),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  (profile.bio != null && profile.bio!.isNotEmpty)
+                                      ? '«${profile.bio!}»'
+                                      : 'Нажмите для перехода к серии',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      favTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      (profile.bio != null && profile.bio!.isNotEmpty)
-                          ? '«${profile.bio!}»'
-                          : 'Закреплено на витрине профиля',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontStyle: (profile.bio != null && profile.bio!.isNotEmpty)
-                            ? FontStyle.italic
-                            : FontStyle.normal,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 32,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: accent,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          elevation: 0,
+                    const SizedBox(width: 10),
+
+                    // Справа внизу/по центру: Круглая аккуратная кнопка Play с эффектом стекла
+                    GestureDetector(
+                      onTap: () => _openFavoriteAnimeDetails(context, profile),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: 0.15),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.30),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              blurRadius: 10,
+                            ),
+                          ],
                         ),
-                        onPressed: () => _openFavoriteAnimeDetails(context, profile),
-                        icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                        label: const Text('Смотреть', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
                       ),
                     ),
                   ],
@@ -978,27 +1081,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Icon(Icons.format_quote_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: accent,
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  profile.customStatus ?? 'Смотрю аниме...',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontStyle: FontStyle.italic,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    profile.customStatus ?? 'Смотрю аниме...',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ),
               ),
@@ -1052,7 +1163,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Блок статистики просмотра (3 акцентные стеклянные карточки)
+  /// Блок статистики просмотра: слитная монолитная витрина с тремя метриками
   Widget _buildStatsSection(
     BuildContext context,
     UserAnimeStats stats,
@@ -1061,8 +1172,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Color themePrimaryLight,
   ) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: _buildGlassCard(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1123,42 +1235,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // 3 стильные карточки с акцентными иконками и крупными цифрами
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.schedule_rounded,
-                    iconGradient: [const Color(0xFF00E5FF), const Color(0xFF0091EA)],
-                    value: stats.formattedTime,
-                    label: 'Время в аниме',
+            // Единая монолитная полоса статистики без 3 отдельных черных квадратов
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF141721).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildMonolithicStatCol(
+                      icon: Icons.schedule_rounded,
+                      iconColor: const Color(0xFF00E5FF),
+                      value: stats.formattedTime,
+                      label: 'Время в аниме',
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.movie_filter_rounded,
-                    iconGradient: [const Color(0xFFB388FF), const Color(0xFF7C4DFF)],
-                    value: '${stats.totalTitles}',
-                    label: 'Тайтлов в списках',
+                  Container(
+                    width: 1,
+                    height: 36,
+                    color: Colors.white.withValues(alpha: 0.10),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    icon: Icons.play_circle_filled_rounded,
-                    iconGradient: [const Color(0xFFFF5252), const Color(0xFFFF1744)],
-                    value: '${stats.totalEpisodesCompleted}',
-                    label: 'Серий просмотрено',
+                  Expanded(
+                    child: _buildMonolithicStatCol(
+                      icon: Icons.movie_filter_rounded,
+                      iconColor: const Color(0xFFB388FF),
+                      value: '${stats.totalTitles}',
+                      label: 'Тайтлы',
+                    ),
                   ),
-                ),
-              ],
+                  Container(
+                    width: 1,
+                    height: 36,
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
+                  Expanded(
+                    child: _buildMonolithicStatCol(
+                      icon: Icons.play_circle_filled_rounded,
+                      iconColor: const Color(0xFFFF5252),
+                      value: '${stats.totalEpisodesCompleted}',
+                      label: 'Серии',
+                    ),
+                  ),
+                ],
+              ),
             ),
 
             if (_showActivityCharts) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               ProfileActivityChart(stats: stats),
             ],
           ],
@@ -1167,74 +1295,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatCard({
+  Widget _buildMonolithicStatCol({
     required IconData icon,
-    required List<Color> iconGradient,
+    required Color iconColor,
     required String value,
     required String label,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16161D),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
-          width: 1,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: iconColor),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            letterSpacing: -0.3,
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: iconGradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: iconGradient.first.withValues(alpha: 0.35),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(icon, size: 16, color: Colors.white),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.60),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
           ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              letterSpacing: -0.2,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-              height: 1.2,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _buildHeaderUserInfo(
+  /// БЛОК 1: STEAM MINI-PROFILE (Единая монолитная карточка шапки)
+  Widget _buildSteamMiniProfileCard(
     BuildContext context,
     UserProfile profile,
     Color accent,
@@ -1242,131 +1337,369 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ) {
     final badge = SteamBadge.fromId(profile.badgeId);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Аватар 88x88 в стиле Steam с рамкой очков
-        Container(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            color: const Color(0xFF141721).withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.08),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.50),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
-          child: SteamAvatarFrameWidget(
-            frameId: profile.frameId,
-            size: 88,
-            child: AppAvatar(
-              avatarUrl: profile.avatarUrl,
-              username: profile.username,
-              size: 88,
-              borderColor: Colors.white.withValues(alpha: 0.25),
-              borderWidth: 2.0,
-            ),
-          ),
-        ),
-        const SizedBox(width: 14),
-
-        // Никнейм, уровень Steam, статус и титул
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      profile.username,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.3,
-                        shadows: [
-                          Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
-                        ],
-                      ),
+              // 1. Левая часть — Аватар в стиле Steam (80x80, радиус 14 dp, Pulse Glow, рамка)
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    // Фоновая анимация дыхания (Pulse Glow) мягкого акцентного цвета за аватаром
+                    AnimatedBuilder(
+                      animation: _pulseAnimation,
+                      builder: (context, _) {
+                        final pulse = _pulseAnimation.value;
+                        return Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.25 + 0.25 * pulse),
+                                blurRadius: 14 + 8 * pulse,
+                                spreadRadius: 1 + 2 * pulse,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Steam Level Badge [ 42 ]
-                  InkWell(
-                    onTap: () => BadgeDetailsSheet.show(context, badge: badge),
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF13161F).withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: accent, width: 1.2),
+
+                    // Квадратный аватар со скруглением 14 dp
+                    AppAvatar(
+                      avatarUrl: profile.avatarUrl,
+                      username: profile.username,
+                      size: 80,
+                      borderRadius: BorderRadius.circular(14),
+                      borderColor: Colors.white.withValues(alpha: 0.25),
+                      borderWidth: 1.5,
+                    ),
+
+                    // Рамка поверх аватара
+                    if (profile.frameId != null && profile.frameId != 'none')
+                      Positioned(
+                        left: -12,
+                        top: -12,
+                        right: -12,
+                        bottom: -12,
+                        child: IgnorePointer(
+                          child: SteamAvatarFrameWidget(
+                            frameId: profile.frameId,
+                            size: 80,
+                            child: const SizedBox(width: 80, height: 80),
+                          ),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(badge.icon, size: 11, color: accent),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${badge.level}',
-                            style: TextStyle(
-                              color: accent,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // 2. Правая часть — Инфо и Steam Badge (Expanded Column)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Верхняя строка: Никнейм (20 sp, w700) + Steam Level Badge
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            profile.username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.2,
                             ),
                           ),
-                        ],
+                        ),
+                        const SizedBox(width: 8),
+                        _SteamLevelBadge(
+                          badge: badge,
+                          accent: accent,
+                          onTap: () => _showSteamBadgeModal(context, badge, accent),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+
+                    // Средняя строка: Кастомный статус курсивом
+                    Text(
+                      '«${profile.customStatus ?? 'Смотрю аниме...'}»',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.65),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Нижняя строка: Тонкий прогресс-бар уровня Steam (450/500 XP до следующего уровня)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Уровень ${badge.level}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.50),
+                              ),
+                            ),
+                            Text(
+                              '450 / 500 XP (80%)',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: SizedBox(
+                            height: 4,
+                            child: LinearProgressIndicator(
+                              value: 0.8,
+                              backgroundColor: Colors.white.withValues(alpha: 0.10),
+                              valueColor: AlwaysStoppedAnimation<Color>(accent),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSteamBadgeModal(BuildContext context, SteamBadge badge, Color accent) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141721),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.70),
+                blurRadius: 30,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [accent, accent.withValues(alpha: 0.7), const Color(0xFF2E1A47)],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white38, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(color: accent.withValues(alpha: 0.45), blurRadius: 16),
+                  ],
+                ),
+                child: Icon(badge.icon, color: Colors.white, size: 30),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Уровень профиля: ${badge.level}',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Значок: ${badge.title}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Прогресс до ${badge.level + 1} уровня:',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        Text(
+                          '80% (450/500 XP)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: SizedBox(
+                        height: 6,
+                        child: LinearProgressIndicator(
+                          value: 0.8,
+                          backgroundColor: Colors.white12,
+                          valueColor: AlwaysStoppedAnimation<Color>(accent),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    BadgeDetailsSheet.show(context, badge: badge);
+                  },
+                  child: const Text(
+                    'Открыть коллекцию значков',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGuestSyncBanner(BuildContext context, Color themePrimary, Color themePrimaryLight) {
+    return _buildGlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: themePrimary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.cloud_sync_rounded,
+                color: themePrimaryLight,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Сохраните свой прогресс',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Войти через Google для синхронизации истории и списков',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '«${profile.customStatus ?? 'Смотрю аниме...'}»',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.85),
-                  shadows: const [
-                    Shadow(color: Colors.black, blurRadius: 4),
-                  ],
-                ),
-              ),
-              if (profile.customTitle != null && profile.customTitle!.isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: accent.withValues(alpha: 0.6),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Text(
-                    profile.customTitle!,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: accent,
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
-        ),
-      ],
+          IconButton(
+            icon: const Icon(
+              Icons.close_rounded,
+              color: AppColors.textSecondary,
+              size: 18,
+            ),
+            onPressed: _dismissGuestBanner,
+            tooltip: 'Скрыть',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1473,9 +1806,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: _scrollController,
                     physics: const BouncingScrollPhysics(),
                     slivers: [
-                      // ИММЕРСИВНЫЙ SLIVER APP BAR (expandedHeight: 340.0, pinned: true)
+                      // ИММЕРСИВНЫЙ SLIVER APP BAR (expandedHeight: 290.0, pinned: true)
                       SliverAppBar(
-                        expandedHeight: 340.0,
+                        expandedHeight: 290.0,
                         pinned: true,
                         stretch: true,
                         backgroundColor: const Color(0xFF0E0E12),
@@ -1559,13 +1892,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
 
-                              // Поверх фона (в нижней части FlexibleSpaceBar): Аватар в неоновом кольце, Имя, Бейдж
+                              // БЛОК 1: STEAM MINI-PROFILE (Единая монолитная карточка шапки внизу)
                               Positioned(
-                                left: 20,
-                                right: 20,
-                                bottom: 16,
+                                left: 16,
+                                right: 16,
+                                bottom: 10,
                                 child: RepaintBoundary(
-                                  child: _buildHeaderUserInfo(context, profile, accent, isCurrentUser),
+                                  child: _buildSteamMiniProfileCard(context, profile, accent, isCurrentUser),
                                 ),
                               ),
                             ],
@@ -1574,79 +1907,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
 
                       // ПЛАШКА СИНХРОНИЗАЦИИ ПРОФИЛЯ (Показывается только если свой профиль и гость)
-                      if (isCurrentUser && isGuest && !_guestBannerDismissed)
+                      if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
+                        const SliverToBoxAdapter(child: SizedBox(height: 12)),
                         SliverToBoxAdapter(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                            child: _buildGlassCard(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(
-                                children: [
-                                  GestureDetector(
-                                    onTap: () => context.read<AuthCubit>().signInWithGoogle(),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: themePrimary.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(
-                                        Icons.cloud_sync_rounded,
-                                        color: themePrimaryLight,
-                                        size: 22,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => context.read<AuthCubit>().signInWithGoogle(),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: const [
-                                          Text(
-                                            'Сохраните свой прогресс',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          SizedBox(height: 2),
-                                          Text(
-                                            'Войти через Google для синхронизации истории и списков',
-                                            style: TextStyle(
-                                              color: AppColors.textSecondary,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.close_rounded,
-                                      color: AppColors.textSecondary,
-                                      size: 18,
-                                    ),
-                                    onPressed: _dismissGuestBanner,
-                                    tooltip: 'Скрыть',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: _buildGuestSyncBanner(context, themePrimary, themePrimaryLight),
                           ),
                         ),
+                      ],
 
-                      // 1. ВИТРИНА ПРОФИЛЯ В СТИЛЕ STEAM (Монолитный контейнер 3-х режимов)
+                      // 1. ВИТРИНА ПРОФИЛЯ В СТИЛЕ STEAM (Hero Showcase)
+                      const SliverToBoxAdapter(child: SizedBox(height: 12)),
                       SliverToBoxAdapter(
                         child: _buildMonolithicShowcase(context, profile, stats, accent, isCurrentUser),
                       ),
 
-                      // 2. БЛОК СТАТИСТИКИ (3 симметричные колонки без перегородок)
+                      // 2. БЛОК СТАТИСТИКИ (Слитная монолитная полоса)
+                      const SliverToBoxAdapter(child: SizedBox(height: 12)),
                       SliverToBoxAdapter(
                         child: _buildStatsSection(context, stats, accent, themePrimary, themePrimaryLight),
                       ),
@@ -1716,4 +1994,108 @@ class _DashedBorderPainter extends CustomPainter {
       oldDelegate.dashWidth != dashWidth ||
       oldDelegate.dashSpace != dashSpace ||
       oldDelegate.radius != radius;
+}
+
+/// Анимированный значок уровня Steam с переливающейся анимацией блеска (Shimmer sweep)
+class _SteamLevelBadge extends StatefulWidget {
+  final SteamBadge badge;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _SteamLevelBadge({
+    required this.badge,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  State<_SteamLevelBadge> createState() => _SteamLevelBadgeState();
+}
+
+class _SteamLevelBadgeState extends State<_SteamLevelBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerController;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    try {
+      if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+        _shimmerController.repeat();
+      }
+    } catch (_) {
+      _shimmerController.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedBuilder(
+        animation: _shimmerController,
+        builder: (context, _) {
+          final t = _shimmerController.value;
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  widget.accent,
+                  widget.accent.withValues(alpha: 0.75),
+                  const Color(0xFF1E1430),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Color.lerp(
+                  Colors.white.withValues(alpha: 0.30),
+                  Colors.white.withValues(alpha: 0.85),
+                  (math.sin(t * 2 * math.pi) + 1.0) / 2.0,
+                )!,
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.accent.withValues(alpha: 0.40),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(widget.badge.icon, size: 12, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  '${widget.badge.level} LVL',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }

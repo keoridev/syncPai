@@ -1,224 +1,260 @@
 import 'package:dio/dio.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../domain/entities/episode_item.dart';
 import '../models/anime_catalog_model.dart';
 import '../models/anime_player_data_model.dart';
+import '../models/episode_model.dart';
+import '../models/translation_model.dart';
 
 abstract class AnimeRemoteDataSource {
-  /// Получение каталога через Supabase Edge Function get_catalog (BFF для Shikimori API v1)
+  /// Получение каталога напрямую через AniLiberty (AniLibria v1) API
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
-    int limit = 30,
-    String? order,
-    String? status,
-    String? genre,
+    int limit = 40,
+    String? genres,
+    String? year,
   });
 
-  /// Поиск по аниме через Supabase Edge Function get_catalog
-  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30});
+  /// Поиск по аниме через AniLiberty (AniLibria v1) API
+  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 20});
 
-  /// Получение прямых ссылок и озвучек через Supabase Edge Function get_anime_player_data
-  Future<AnimePlayerDataModel> getPlayerLinks(int shikimoriId, {String? title});
+  /// Получение прямых ссылок и озвучек напрямую через AniLiberty API
+  Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title});
 }
 
-class ShikimoriAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
-  final SupabaseClient? _client;
+class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   final Dio _dio;
 
-  static const String _fallbackShikimoriUrl = 'https://shikimori.one/api/animes';
-  static const String _mirrorShikimoriUrl = 'https://shikimori.io/api/animes';
+  static const String _catalogUrl = 'https://anilibria.top/api/v1/anime/catalog/releases';
+  static const String _searchUrl = 'https://anilibria.top/api/v1/app/search/releases';
+  static const String _releaseUrl = 'https://anilibria.top/api/v1/anime/releases';
 
-  ShikimoriAnimeRemoteDataSourceImpl({
+  static const String _fallbackCatalogUrl = 'https://api.anilibria.app/api/v1/anime/catalog/releases';
+  static const String _fallbackSearchUrl = 'https://api.anilibria.app/api/v1/app/search/releases';
+  static const String _fallbackReleaseUrl = 'https://api.anilibria.app/api/v1/anime/releases';
+
+  AniLibertyAnimeRemoteDataSourceImpl({
     Dio? customDio,
-    SupabaseClient? customClient,
-  })  : _client = customClient,
-        _dio = customDio ??
+    dynamic customClient,
+  }) : _dio = customDio ??
             Dio(
               BaseOptions(
                 connectTimeout: const Duration(seconds: 4),
                 receiveTimeout: const Duration(seconds: 5),
                 sendTimeout: const Duration(seconds: 4),
                 headers: const {
-                  'User-Agent': 'SyncPai-App/1.0',
                   'Accept': 'application/json',
+                  'User-Agent': 'SyncPai-App/1.0',
                 },
               ),
             );
 
-  SupabaseClient? get _supabase {
-    if (_client != null) return _client;
-    try {
-      return Supabase.instance.client;
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
-    int limit = 30,
-    String? order,
-    String? status,
-    String? genre,
+    int limit = 40,
+    String? genres,
+    String? year,
   }) async {
-    final client = _supabase;
-    if (client != null) {
-      try {
-        final response = await client.functions.invoke(
-          'get_catalog',
-          body: {
-            'page': page,
-            'limit': limit,
-            if (order != null && order.isNotEmpty) 'order': order,
-            if (status != null && status.isNotEmpty) 'status': status,
-            if (genre != null && genre.isNotEmpty) 'genre': genre,
-          },
-        );
-
-        final dynamic data = response.data;
-        if (data is List) {
-          return data
-              .whereType<Map>()
-              .map((json) => AnimeCatalogModel.fromShikimori(json))
-              .toList();
-        }
-      } catch (e) {
-        // Fallback к прямому зеркалу Shikimori при ошибке Edge Function
-      }
+    final queryParams = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+    };
+    if (genres != null && genres.trim().isNotEmpty) {
+      queryParams['genres'] = genres.trim();
+    }
+    if (year != null && year.trim().isNotEmpty) {
+      queryParams['years'] = year.trim();
     }
 
-    // Резервный канал напрямую к зеркалам Shikimori API
     try {
-      final qParams = <String, dynamic>{
-        'page': page,
-        'limit': limit,
-        'order': order ?? 'popularity',
-      };
-      if (status != null && status.isNotEmpty) qParams['status'] = status;
-      if (genre != null && genre.isNotEmpty) qParams['genre'] = genre;
-
       final response = await _dio.get(
-        _fallbackShikimoriUrl,
-        queryParameters: qParams,
+        _catalogUrl,
+        queryParameters: queryParams,
       );
-      if (response.data is List) {
-        return (response.data as List)
-            .whereType<Map>()
-            .map((json) => AnimeCatalogModel.fromShikimori(json))
-            .toList();
-      }
+      return _parseReleases(response.data);
     } catch (_) {
       try {
-        final qParams = <String, dynamic>{
-          'page': page,
-          'limit': limit,
-          'order': order ?? 'popularity',
-        };
-        if (status != null && status.isNotEmpty) qParams['status'] = status;
-        if (genre != null && genre.isNotEmpty) qParams['genre'] = genre;
-
-        final mirrorRes = await _dio.get(
-          _mirrorShikimoriUrl,
-          queryParameters: qParams,
+        final fallbackRes = await _dio.get(
+          _fallbackCatalogUrl,
+          queryParameters: queryParams,
         );
-        if (mirrorRes.data is List) {
-          return (mirrorRes.data as List)
-              .whereType<Map>()
-              .map((json) => AnimeCatalogModel.fromShikimori(json))
-              .toList();
-        }
-      } catch (_) {}
+        return _parseReleases(fallbackRes.data);
+      } catch (e) {
+        throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
+      }
     }
-
-    return [];
   }
 
   @override
-  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 30}) async {
+  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 20}) async {
     final clean = query.trim();
     if (clean.isEmpty) {
       return getCatalog(page: 1, limit: limit);
     }
 
-    final client = _supabase;
-    if (client != null) {
-      try {
-        final response = await client.functions.invoke(
-          'get_catalog',
-          body: {
-            'page': 1,
-            'limit': limit,
-            'search': clean,
-          },
-        );
-
-        final dynamic data = response.data;
-        if (data is List) {
-          return data
-              .whereType<Map>()
-              .map((json) => AnimeCatalogModel.fromShikimori(json))
-              .toList();
-        }
-      } catch (_) {
-        // Fallback к прямому поиску
-      }
-    }
-
-    // Резервный прямой поиск
     try {
       final response = await _dio.get(
-        _fallbackShikimoriUrl,
+        _searchUrl,
         queryParameters: {
-          'search': clean,
-          'page': 1,
-          'limit': limit,
-          'order': 'popularity',
+          'query': clean,
         },
       );
-      if (response.data is List) {
-        return (response.data as List)
-            .whereType<Map>()
-            .map((json) => AnimeCatalogModel.fromShikimori(json))
-            .toList();
+      return _parseReleases(response.data);
+    } catch (_) {
+      try {
+        final fallbackRes = await _dio.get(
+          _fallbackSearchUrl,
+          queryParameters: {
+            'query': clean,
+          },
+        );
+        return _parseReleases(fallbackRes.data);
+      } catch (e) {
+        throw ServerException('Ошибка поиска AniLiberty: $e');
       }
-    } catch (_) {}
-
-    return [];
+    }
   }
 
   @override
-  Future<AnimePlayerDataModel> getPlayerLinks(int shikimoriId, {String? title}) async {
-    final client = _supabase;
-    if (client == null) {
-      throw const NetworkException('Supabase клиент не инициализирован');
-    }
-
+  Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title}) async {
     try {
-      final response = await client.functions.invoke(
-        'get_anime_player_data',
-        body: {
-          'shikimori_id': shikimoriId,
-          if (title != null && title.isNotEmpty) 'title': title,
-        },
-      );
-
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
-        return AnimePlayerDataModel.fromJson(data);
-      } else if (data is String) {
-        return AnimePlayerDataModel(
-          shikimoriId: shikimoriId,
-          translations: const [],
-          error: data,
-        );
+      Response? res;
+      try {
+        res = await _dio.get('$_releaseUrl/$releaseId');
+      } catch (_) {
+        if (title != null && title.trim().isNotEmpty) {
+          try {
+            final sRes = await _dio.get(
+              _searchUrl,
+              queryParameters: {'query': title.trim()},
+            );
+            final items = _parseReleases(sRes.data);
+            if (items.isNotEmpty) {
+              final relId = items.first.id;
+              res = await _dio.get('$_releaseUrl/$relId');
+            }
+          } catch (_) {}
+        }
       }
 
-      throw const ParsingException('Некорректный формат ответа Edge Function');
-    } catch (e) {
-      throw ServerException('Ошибка вызова Edge Function get_anime_player_data: $e');
+      if (res == null && title != null && title.trim().isNotEmpty) {
+        try {
+          final fallbackSRes = await _dio.get(
+            _fallbackSearchUrl,
+            queryParameters: {'query': title.trim()},
+          );
+          final items = _parseReleases(fallbackSRes.data);
+          if (items.isNotEmpty) {
+            final relId = items.first.id;
+            res = await _dio.get('$_fallbackReleaseUrl/$relId');
+          }
+        } catch (_) {}
+      }
+
+      if (res != null && res.data != null) {
+        final dynamic relData = (res.data is Map && res.data['data'] is Map)
+            ? res.data['data']
+            : res.data;
+        if (relData is Map<String, dynamic>) {
+          final List<EpisodeModel> directEpisodes = [];
+          final rawEps = (relData['episodes'] as List? ?? []);
+          for (final e in rawEps) {
+            if (e is Map<String, dynamic>) {
+              final epNum = (e['episode'] ?? e['ordinal'] as num?)?.toInt() ?? 1;
+              final fhd = e['fhd'] ?? e['hls_1080'] as String?;
+              final hd = e['hd'] ?? e['hls_720'] as String?;
+              final sd = e['sd'] ?? e['hls_480'] as String?;
+              final link = fhd ?? hd ?? sd ?? (e['link'] as String? ?? '');
+
+              TimecodeRange? opRange;
+              TimecodeRange? edRange;
+              if (e['opening'] is Map) {
+                final op = e['opening'] as Map;
+                if (op['start'] != null && op['stop'] != null) {
+                  opRange = TimecodeRange(
+                    start: (op['start'] as num).toInt(),
+                    stop: (op['stop'] as num).toInt(),
+                  );
+                }
+              }
+              if (e['ending'] is Map) {
+                final ed = e['ending'] as Map;
+                if (ed['start'] != null && ed['stop'] != null) {
+                  edRange = TimecodeRange(
+                    start: (ed['start'] as num).toInt(),
+                    stop: (ed['stop'] as num).toInt(),
+                  );
+                }
+              }
+
+              final previewPath = (e['preview'] ?? e['thumbnail'] ?? (e['poster'] is Map ? (e['poster']['preview'] ?? e['poster']['src']) : null))?.toString();
+              final fullPreviewUrl = (previewPath != null && previewPath.isNotEmpty)
+                  ? (previewPath.startsWith('http') ? previewPath : 'https://anilibria.top$previewPath')
+                  : null;
+
+              if (link.isNotEmpty) {
+                directEpisodes.add(EpisodeModel(
+                  episode: epNum,
+                  link: link,
+                  name: e['name'] as String?,
+                  fhd: fhd,
+                  hd: hd,
+                  sd: sd,
+                  preview: fullPreviewUrl,
+                  opening: opRange,
+                  ending: edRange,
+                ));
+              }
+            }
+          }
+          final translations = [
+            TranslationModel(
+              studioName: 'AniLibria',
+              translationType: 'voice',
+              isDirectStream: true,
+              episodes: directEpisodes,
+            ),
+          ];
+          return AnimePlayerDataModel(
+            shikimoriId: releaseId,
+            source: 'anilibria',
+            title: title,
+            episodes: directEpisodes,
+            translations: translations,
+          );
+        }
+      }
+
+      return AnimePlayerDataModel(
+        shikimoriId: releaseId,
+        source: 'anilibria',
+        title: title,
+        translations: const [],
+      );
+    } catch (_) {
+      return AnimePlayerDataModel(
+        shikimoriId: releaseId,
+        source: 'anilibria',
+        title: title,
+        translations: const [],
+      );
     }
+  }
+
+  List<AnimeCatalogModel> _parseReleases(dynamic data) {
+    List<dynamic> items = [];
+    if (data is Map && data['data'] is List) {
+      items = data['data'] as List;
+    } else if (data is List) {
+      items = data;
+    }
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map((json) => AnimeCatalogModel.fromJson(json))
+        .toList();
   }
 }
 
-typedef SupabaseAnimeRemoteDataSourceImpl = ShikimoriAnimeRemoteDataSourceImpl;
+typedef ShikimoriAnimeRemoteDataSourceImpl = AniLibertyAnimeRemoteDataSourceImpl;
+typedef SupabaseAnimeRemoteDataSourceImpl = AniLibertyAnimeRemoteDataSourceImpl;

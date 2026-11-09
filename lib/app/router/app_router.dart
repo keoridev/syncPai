@@ -5,15 +5,18 @@ import '../../features/anime_details/domain/entities/anime_video_item.dart';
 import '../../features/anime_details/presentation/screens/anime_details_screen.dart';
 import '../../features/anime_details/presentation/screens/anime_videos_screen.dart';
 import '../../features/auth/presentation/screens/auth_screen.dart';
+import '../../features/catalog/domain/entities/anime_entity.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import '../../features/catalog/domain/entities/episode_item.dart';
 import '../../features/main/presentation/screens/main_screen.dart';
 import '../../features/player/domain/entities/player_quality.dart';
 import '../../features/player/presentation/screens/player_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../features/splash/presentation/screens/splash_screen.dart';
 import '../../features/sync_room/presentation/screens/join_room_screen.dart';
+import '../../features/sync_room/presentation/screens/watch_together_screen.dart';
 import '../../features/sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -50,7 +53,51 @@ final GoRouter appRouter = GoRouter(
       path: '/details',
       name: 'details',
       builder: (context, state) {
-        final title = state.extra as AnimeTitle?;
+        AnimeTitle? title;
+        if (state.extra is AnimeTitle) {
+          title = state.extra as AnimeTitle;
+        } else if (state.extra is AnimeEntity) {
+          title = (state.extra as AnimeEntity).toAnimeTitle();
+        } else if (state.extra is Map) {
+          final extraMap = state.extra as Map;
+          if (extraMap['title'] is AnimeTitle) {
+            title = extraMap['title'] as AnimeTitle;
+          } else if (extraMap['anime'] is AnimeEntity) {
+            title = (extraMap['anime'] as AnimeEntity).toAnimeTitle();
+          } else if (extraMap['id'] != null) {
+            final idInt = int.tryParse(extraMap['id'].toString()) ?? 0;
+            title = AnimeTitle(
+              id: idInt,
+              code: 'release-${extraMap['id']}',
+              russianTitle: extraMap['russianTitle']?.toString() ?? extraMap['title']?.toString() ?? '',
+              englishTitle: extraMap['englishTitle']?.toString() ?? '',
+              posterSmall: extraMap['poster']?.toString() ?? '',
+              posterMedium: extraMap['poster']?.toString() ?? '',
+              posterOriginal: extraMap['poster']?.toString() ?? '',
+              genres: const [],
+              description: '',
+              status: '',
+            );
+          }
+        }
+
+        final queryId = state.uri.queryParameters['id'] ?? state.pathParameters['id'];
+        if (title == null && queryId != null && queryId.isNotEmpty) {
+          final idInt = int.tryParse(queryId) ?? 0;
+          title = AnimeTitle(
+            id: idInt,
+            code: 'release-$queryId',
+            russianTitle: '',
+            englishTitle: '',
+            posterSmall: '',
+            posterMedium: '',
+            posterOriginal: '',
+            genres: const [],
+            description: '',
+            status: '',
+          );
+        }
+
         if (title == null) {
           return const Scaffold(
             body: Center(child: Text('Тайтл не найден')),
@@ -96,7 +143,27 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/profile',
       name: 'profile',
-      builder: (context, state) => const ProfileScreen(),
+      builder: (context, state) {
+        String? userId;
+        if (state.extra is String) {
+          userId = state.extra as String;
+        } else if (state.extra is Map && (state.extra as Map)['userId'] != null) {
+          userId = (state.extra as Map)['userId']?.toString();
+        } else {
+          userId = state.uri.queryParameters['userId'] ?? state.uri.queryParameters['id'];
+        }
+        return ProfileScreen(userId: userId);
+      },
+    ),
+    GoRoute(
+      path: '/settings',
+      name: 'settings',
+      builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/watch_together',
+      name: 'watch_together',
+      builder: (context, state) => const WatchTogetherScreen(),
     ),
     GoRoute(
       path: '/shorts',

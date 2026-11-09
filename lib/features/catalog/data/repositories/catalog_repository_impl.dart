@@ -5,8 +5,6 @@ import '../../domain/repositories/anime_catalog_repository.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../datasources/anilibria_remote_datasource.dart';
 
-import '../../domain/entities/episode_item.dart';
-
 class CatalogRepositoryImpl implements CatalogRepository {
   final AnilibriaRemoteDataSource remoteDataSource;
   final AnimeCatalogRepository? animeCatalogRepository;
@@ -64,40 +62,53 @@ class CatalogRepositoryImpl implements CatalogRepository {
 
   @override
   Future<AnimeTitle> getTitleDetails({int? id, String? code}) async {
-    // 1. Приоритетный источник: Supabase Edge Function get_anime_player_data (BFF)
-    // Предотвращает каскадные 404 ошибки на клиенте по Shikimori ID
+    // 1. Сначала пробуем получить полные метаданные через AniLibria API (название, описание, жанры, год, постер)
+    AnimeTitle? baseTitle;
+    try {
+      final dto = await remoteDataSource.getTitleDetails(id: id, code: code);
+      baseTitle = dto.toDomain();
+    } catch (_) {}
+
+    // 2. Получаем прямые ссылки на видеопотоки эпизодов через getPlayerLinks
     if (animeCatalogRepository != null && id != null && id > 0) {
       try {
-        final translations = await animeCatalogRepository!.getPlayerLinks(id, title: code);
+        final translations = await animeCatalogRepository!.getPlayerLinks(
+          id,
+          title: baseTitle?.displayTitle ?? code,
+        );
         if (translations.isNotEmpty) {
           final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
-          final epList = direct.isNotEmpty
-              ? direct.first.episodes
-                  .map((e) => EpisodeItem(
-                        episode: e.episode,
-                        sdUrl: e.link,
-                        hdUrl: e.link,
-                        fhdUrl: e.link,
-                      ))
-                  .toList()
-              : <EpisodeItem>[];
+          if (direct.isNotEmpty) {
+            final epList = direct.first.episodes.map((e) => e.toEpisodeItem()).toList();
+            if (baseTitle != null) {
+              return baseTitle.copyWith(
+                episodes: epList,
+                episodesTotal: epList.length,
+              );
+            }
 
-          return AnimeTitle(
-            id: id,
-            code: code ?? 'shikimori-$id',
-            russianTitle: code ?? '',
-            englishTitle: code ?? '',
-            posterSmall: 'https://shikimori.io/system/animes/original/$id.jpg',
-            posterMedium: 'https://shikimori.io/system/animes/original/$id.jpg',
-            posterOriginal: 'https://shikimori.io/system/animes/original/$id.jpg',
-            episodesTotal: epList.length,
-            genres: const [],
-            description: '',
-            status: 'Завершен',
-            episodes: epList,
-          );
+            return AnimeTitle(
+              id: id,
+              code: code ?? 'shikimori-$id',
+              russianTitle: code ?? '',
+              englishTitle: code ?? '',
+              posterSmall: 'https://desu.shikimori.one/system/animes/original/$id.jpg',
+              posterMedium: 'https://desu.shikimori.one/system/animes/original/$id.jpg',
+              posterOriginal: 'https://desu.shikimori.one/system/animes/original/$id.jpg',
+              fallbackPosterUrl: 'https://shikimori.one/system/animes/original/$id.jpg',
+              episodesTotal: epList.length,
+              genres: const [],
+              description: '',
+              status: 'Завершен',
+              episodes: epList,
+            );
+          }
         }
       } catch (_) {}
+    }
+
+    if (baseTitle != null) {
+      return baseTitle;
     }
 
     try {

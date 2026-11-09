@@ -13,18 +13,16 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
   @override
   Future<List<AnimeEntity>> getCatalog({
     int page = 1,
-    int limit = 30,
-    String? order,
-    String? status,
-    String? genre,
+    int limit = 40,
+    String? genres,
+    String? year,
   }) async {
     try {
       final models = await remoteDataSource.getCatalog(
         page: page,
         limit: limit,
-        order: order,
-        status: status,
-        genre: genre,
+        genres: genres,
+        year: year,
       );
       return models.map((m) => m.toDomain()).toList();
     } on NetworkException catch (e) {
@@ -55,9 +53,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
   }
 
   @override
-  Future<List<TranslationEntity>> getPlayerLinks(int shikimoriId, {String? title}) async {
+  Future<List<TranslationEntity>> getPlayerLinks(int releaseId, {String? title}) async {
     try {
-      final dataModel = await remoteDataSource.getPlayerLinks(shikimoriId, title: title);
+      final dataModel = await remoteDataSource.getPlayerLinks(releaseId, title: title);
       return dataModel.toDomain();
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);

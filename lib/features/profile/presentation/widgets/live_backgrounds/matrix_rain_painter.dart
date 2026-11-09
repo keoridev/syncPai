@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Высокопроизводительный процедурный холст эффекта «Матрица» (Matrix Digital Rain).
-/// Падающие неоновые столбцы японской катаканы и бинарного кода
-/// с разной скоростью, плотностью и затуханием шлейфа (fade trail).
+/// Высокопроизводительный процедурный холст эффекта «Матрица / Hacker Code» (Matrix Digital Rain).
+/// Быстро падающие неоновые столбцы японской катаканы, шестнадцатеричного и бинарного кода
+/// с яркими мерцающими белыми головами потоков, затухающим шлейфом и киберпанк-свечением.
 class MatrixRainPainter extends CustomPainter {
   final double animationValue;
   final Color primaryColor;
@@ -12,13 +12,14 @@ class MatrixRainPainter extends CustomPainter {
     'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ',
     'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ',
     'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ',
-    '0', '1', 'X', 'Y', 'Z', '9', '7', '4', '2',
+    '0', '1', 'A', 'F', 'X', 'Y', 'Z', '9', '7', '4', '2', '8',
+    'λ', 'π', 'Ω', '§', '%', '#', '&',
   ];
 
   MatrixRainPainter({
     required this.animationValue,
     this.primaryColor = const Color(0xFF00FF66),
-    this.columnCount = 28,
+    this.columnCount = 26,
   });
 
   @override
@@ -26,19 +27,19 @@ class MatrixRainPainter extends CustomPainter {
     if (size.width <= 0 || size.height <= 0) return;
 
     final columnWidth = size.width / columnCount;
-    final rowHeight = 16.0;
-    final maxRows = (size.height / rowHeight).ceil() + 4;
+    const rowHeight = 15.0;
+    final maxRows = (size.height / rowHeight).ceil() + 3;
 
     for (int col = 0; col < columnCount; col++) {
-      // Псевдослучайное смещение для каждого столбца
-      final seed = (col * 17 + 31) % 100;
-      final speedFactor = 0.6 + ((seed % 10) * 0.08);
+      final seed = (col * 19 + 43) % 100;
+      // Высокая скорость для эффекта реального хакерского терминала
+      final speedFactor = 1.2 + ((seed % 10) * 0.16);
       final colOffset = (seed / 100.0);
 
-      // Текущая ведущая позиция капли (drop head)
-      final dropHeadY = ((animationValue * speedFactor + colOffset) % 1.0) * (size.height + 120) - 40;
+      // Ведущая позиция капли (drop head)
+      final dropHeadY = ((animationValue * speedFactor + colOffset) % 1.0) * (size.height + 140) - 30;
       final leadRow = (dropHeadY / rowHeight).floor();
-      final trailLength = 8 + (seed % 10);
+      final trailLength = 7 + (seed % 9);
 
       final colX = col * columnWidth + (columnWidth / 2);
 
@@ -47,18 +48,17 @@ class MatrixRainPainter extends CustomPainter {
         if (currentRow < 0 || currentRow > maxRows) continue;
 
         final y = currentRow * rowHeight;
-        if (y < -10 || y > size.height + 10) continue;
+        if (y < -12 || y > size.height + 12) continue;
 
-        final glyphIndex = (col * 7 + currentRow * 13 + (animationValue * 10).floor()) % _glyphs.length;
+        final glyphIndex = (col * 11 + currentRow * 17 + (animationValue * 22).floor()) % _glyphs.length;
         final char = _glyphs[glyphIndex];
 
-        // Голова капли — ярко-белая/сверхсветлая, шлейф плавно затухает в темный неон
         final isHead = t == 0;
         final alpha = isHead
-            ? 0.95
-            : (1.0 - (t / trailLength)).clamp(0.05, 0.85);
+            ? 1.0
+            : (1.0 - (t / trailLength)).clamp(0.08, 0.85);
 
-        final color = isHead
+        final textColor = isHead
             ? Colors.white
             : primaryColor.withValues(alpha: alpha);
 
@@ -66,18 +66,29 @@ class MatrixRainPainter extends CustomPainter {
           text: TextSpan(
             text: char,
             style: TextStyle(
-              color: color,
-              fontSize: isHead ? 13 : 11.5,
+              color: textColor,
+              fontSize: isHead ? 13.5 : 11.0,
               fontWeight: isHead ? FontWeight.w900 : FontWeight.w600,
               fontFamily: 'monospace',
               shadows: isHead
                   ? [
                       Shadow(
                         color: primaryColor,
-                        blurRadius: 8,
+                        blurRadius: 9,
+                      ),
+                      const Shadow(
+                        color: Colors.white,
+                        blurRadius: 4,
                       ),
                     ]
-                  : null,
+                  : (t < 3
+                      ? [
+                          Shadow(
+                            color: primaryColor.withValues(alpha: 0.5),
+                            blurRadius: 4,
+                          ),
+                        ]
+                      : null),
             ),
           ),
           textDirection: TextDirection.ltr,

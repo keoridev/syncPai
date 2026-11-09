@@ -634,6 +634,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
 
             const SizedBox(height: AppDimensions.spacingMd),
 
+            // Статус связи и общения в комнате
+            _buildRoomCommunicationBanner(),
+
             // Список участников комнаты («Кто есть, кого нет»)
             _buildParticipantsList(
               hostName: room?.hostName ?? 'Хост (Вы)',
@@ -790,6 +793,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
               ),
 
               const SizedBox(height: AppDimensions.spacingMd),
+
+              // Статус связи и общения в комнате
+              _buildRoomCommunicationBanner(),
 
               // Список участников («Кто в комнате»)
               _buildParticipantsList(
@@ -1293,6 +1299,81 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
     );
   }
 
+  Widget _buildRoomCommunicationBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF00E676).withValues(alpha: 0.25),
+          width: 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF00E676).withValues(alpha: 0.15),
+            ),
+            child: const Icon(Icons.record_voice_over_rounded, color: Color(0xFF00E676), size: 18),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Связь в комнате активна',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                ),
+                SizedBox(height: 1),
+                Text(
+                  'Вы можете разговаривать и переписываться в комнате',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00E676).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.mic_rounded, color: Color(0xFF00E676), size: 12),
+                SizedBox(width: 3),
+                Text(
+                  'Голос ON',
+                  style: TextStyle(
+                    color: Color(0xFF00E676),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInRoomAnimeMatchBanner(SyncRoom room, {required bool isHost}) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1356,7 +1437,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
-                        'Вдвоем',
+                        'В комнате',
                         style: TextStyle(
                           fontSize: 9.5,
                           color: Color(0xFFFF5E3A),
@@ -1368,7 +1449,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                 ),
                 const SizedBox(height: 2),
                 const Text(
-                  'Свайпайте тайтлы — совпадение сразу включит серию!',
+                  'Свайпайте карточки тайтлов вдвоем — первое совпадение сразу включит серию!',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

@@ -52,6 +52,13 @@ abstract class SyncRoomRepository {
     required String sender,
   });
 
+  /// Отправка быстрого Broadcast-события синхронизации плеера по WebSockets (sync_player)
+  Future<void> sendSyncEvent({
+    required String roomCode,
+    required double time,
+    required bool isPlaying,
+  });
+
   /// BUFFER_WAIT / BUFFER_READY: состояние буферизации
   Future<void> sendBufferState({
     required String roomCode,

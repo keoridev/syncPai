@@ -8,17 +8,15 @@ class GetCatalogUseCase {
 
   Future<List<AnimeEntity>> call({
     int page = 1,
-    int limit = 30,
-    String? order,
-    String? status,
-    String? genre,
+    int limit = 40,
+    String? genres,
+    String? year,
   }) {
     return repository.getCatalog(
       page: page,
       limit: limit,
-      order: order,
-      status: status,
-      genre: genre,
+      genres: genres,
+      year: year,
     );
   }
 }

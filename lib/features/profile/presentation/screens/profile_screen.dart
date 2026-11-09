@@ -1,45 +1,44 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/widgets/theme_selector_sheet.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
-import '../../../../core/widgets/glass_container.dart';
-import '../../../../core/widgets/shimmer_placeholder.dart';
-import '../../../../core/network/image_cors_helper.dart';
-import '../../../../core/network/smart_mirror_interceptor.dart';
-import '../../../anime_lists/data/datasources/anixart_csv_parser.dart';
+import '../../../../core/widgets/steam_avatar_frame.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
+import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
-import '../../../anime_lists/presentation/cubit/anime_list_state.dart';
-import '../../../anime_lists/presentation/widgets/import_progress_dialog.dart';
-import '../../../anime_lists/presentation/widgets/import_status_selector_dialog.dart';
 import '../../../auth/domain/entities/user_profile.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
-import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
-import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
+import '../cubit/profile_cubit.dart';
+import '../cubit/profile_state.dart';
+import '../widgets/badge_details_sheet.dart';
+import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
 import '../widgets/steam_profile_customizer_sheet.dart';
-import '../widgets/steam_style_profile_header.dart';
 
 class ProfileScreen extends StatefulWidget {
+  final String? userId; // Если null — это мой профиль. Если передано — профиль друга.
   final VoidCallback? onBack;
   final bool showBackButton;
 
   const ProfileScreen({
     super.key,
+    this.userId,
     this.onBack,
     this.showBackButton = true,
   });
@@ -48,342 +47,53 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool _autoSkipOpenings = true;
-  bool _autoPauseOnLeave = true;
-  bool _liquidGlassEffects = true;
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   bool _showActivityCharts = false;
-  String _defaultQuality = '1080p FHD';
+  late final AnimationController _neonPulseController;
+  late final Animation<double> _neonPulseAnim;
+  late final ProfileCubit _profileCubit;
+
   static const List<String> _avatarPresets = [
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
   ];
 
-  Future<void> _pickAndImportAnixart(BuildContext context, String userId) async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv', 'txt', 'json'],
-      );
+  @override
+  void initState() {
+    super.initState();
+    _neonPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    final isInTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+    if (!isInTest) {
+      _neonPulseController.repeat(reverse: true);
+    }
+    _neonPulseAnim = Tween<double>(begin: 0.55, end: 1.0).animate(
+      CurvedAnimation(parent: _neonPulseController, curve: Curves.easeInOut),
+    );
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        String content = '';
-
-        if (file.bytes != null) {
-          try {
-            content = utf8.decode(file.bytes!);
-          } catch (_) {
-            content = String.fromCharCodes(file.bytes!);
-          }
-        } else if (file.path != null) {
-          final ioFile = File(file.path!);
-          try {
-            content = await ioFile.readAsString(encoding: utf8);
-          } catch (_) {
-            final bytes = await ioFile.readAsBytes();
-            content = utf8.decode(bytes, allowMalformed: true);
-          }
-        }
-
-        if (content.isEmpty || !context.mounted) return;
-
-        final rawTitles = AnixartCsvParser.extractRawTitles(content);
-        final detectedCount = rawTitles.isNotEmpty ? rawTitles.length : 1;
-
-        // 1. Показываем диалог выбора статуса по умолчанию
-        final selection = await ImportStatusSelectorDialog.show(
-          context,
-          totalTitlesDetected: detectedCount,
-          fileName: file.name,
-        );
-
-        if (selection == null || !context.mounted) return;
-
-        // 2. Показываем анимированный модальный диалог прогресса
-        final progressNotifier = ValueNotifier<ImportProgressData>(
-          ImportProgressData(
-            current: 0,
-            total: detectedCount,
-            currentTitle: 'Инициализация подключения...',
-          ),
-        );
-
-        ImportProgressDialog.show(context, progressNotifier: progressNotifier);
-
-        final cubit = context.read<AnimeListCubit>();
-        dynamic importResult;
-
-        try {
-          if (selection.useShikimoriSearch) {
-            importResult = await cubit.importAnixartCsvWithShikimori(
-              content,
-              userId: userId,
-              defaultStatus: selection.defaultStatus,
-              overrideStatus: selection.autoDistribute ? null : selection.defaultStatus,
-              onProgress: (current, total, currentTitle) {
-                progressNotifier.value = ImportProgressData(
-                  current: current,
-                  total: total,
-                  currentTitle: currentTitle,
-                );
-              },
-            );
-          } else {
-            await cubit.importAnixartBackup(content, userId: userId);
-            importResult = cubit.state.lastImportResult;
-          }
-        } finally {
-          // Закрываем диалог прогресса
-          if (context.mounted) {
-            Navigator.of(context, rootNavigator: true).pop();
-          }
-        }
-
-        if (context.mounted) {
-          final res = importResult ?? cubit.state.lastImportResult;
-          final totalCount = res?.totalParsed ?? detectedCount;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Успешно импортировано $totalCount тайтлов! Ваша коллекция синхронизирована.',
-              ),
-              backgroundColor: AppColors.syncActive,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 4),
-            ),
+    _profileCubit = getIt.isRegistered<ProfileCubit>()
+        ? getIt<ProfileCubit>()
+        : ProfileCubit(
+            authRepository: getIt.isRegistered<AuthRepository>() ? getIt<AuthRepository>() : null,
+            animeListRepository: getIt.isRegistered<AnimeListRepository>() ? getIt<AnimeListRepository>() : null,
           );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при импорте файла: $e'),
-            backgroundColor: AppColors.syncError,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    _profileCubit.loadProfile(targetUserId: widget.userId);
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _profileCubit.loadProfile(targetUserId: widget.userId);
     }
   }
 
-  void _showOnlineImportDialog(BuildContext context, String userId) {
-    final controller = TextEditingController();
-    bool isSubmitting = false;
-    String? localError;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: AppDimensions.spacingXl,
-                right: AppDimensions.spacingXl,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                  Center(
-                    child: Container(
-                      width: 38,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.strokeMedium,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.cloud_download_outlined, color: AppColors.primary, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Импорт профиля Anixart',
-                        style: AppTypography.titleMedium.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Введите цифровой ID (например, 482190) или логин в Anixart. Все закладки будут загружены прямо в SyncPai.',
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'ID профиля или логин (например 123456)',
-                      hintStyle: const TextStyle(color: AppColors.textMuted),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textSecondary),
-                      suffixIcon: IconButton(
-                        icon: Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 20),
-                        tooltip: 'Вставить из буфера',
-                        onPressed: () async {
-                          final data = await Clipboard.getData('text/plain');
-                          if (data?.text != null && data!.text!.isNotEmpty) {
-                            controller.text = data.text!.trim();
-                          }
-                        },
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.strokeMedium),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: AppColors.primary),
-                      ),
-                    ),
-                  ),
-                  if (localError != null) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.syncError.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.syncError.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              localError!,
-                              style: const TextStyle(color: AppColors.syncError, fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.strokeMedium),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.privacy_tip_outlined, color: AppColors.syncWaiting, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Ваш профиль в Anixart должен быть открытым: Настройки -> Приватность -> Списки аниме: Всем',
-                            style: AppTypography.caption.copyWith(color: AppColors.textMuted, fontSize: 11.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (isSubmitting) ...[
-                    const SizedBox(height: 18),
-                    const ShimmerPlaceholder(width: double.infinity, height: 16),
-                    const SizedBox(height: 8),
-                    const ShimmerPlaceholder(width: double.infinity, height: 16),
-                    const SizedBox(height: 12),
-                  ],
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: AppColors.textPrimary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: isSubmitting
-                          ? null
-                          : () async {
-                              final text = controller.text.trim();
-                              if (text.isEmpty) {
-                                setModalState(() => localError = 'Пожалуйста, укажите ID или логин.');
-                                return;
-                              }
-                              setModalState(() {
-                                isSubmitting = true;
-                                localError = null;
-                              });
-
-                              try {
-                                final cubit = context.read<AnimeListCubit>();
-                                final res = await cubit.importAnixartOnline(text, userId: userId);
-                                if (sheetContext.mounted) {
-                                  FocusScope.of(sheetContext).unfocus();
-                                  Navigator.pop(sheetContext);
-                                }
-                                if (context.mounted && res != null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: AppColors.syncActive,
-                                      content: Text(
-                                        'Успешно импортировано ${res.totalParsed} тайтлов (${res.totalEpisodes} серий)!',
-                                        style: const TextStyle(color: AppColors.textPrimary),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                setModalState(() {
-                                  isSubmitting = false;
-                                  localError = e.toString().replaceFirst('Exception: ', '');
-                                });
-                              }
-                            },
-                      child: isSubmitting
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(color: AppColors.textPrimary, strokeWidth: 2),
-                            )
-                          : const Text(
-                              'Начать импорт',
-                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              ),
-            );
-          },
-        );
-      },
-    );
+  @override
+  void dispose() {
+    _neonPulseController.dispose();
+    _profileCubit.close();
+    super.dispose();
   }
 
   void _showEditProfileSheet(BuildContext context, UserProfile profile) {
@@ -410,264 +120,853 @@ class _ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.strokeMedium,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Редактировать профиль',
-                style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Выберите аватар профиля',
-                style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _avatarPresets.map((av) {
-                  final isSel = selectedAvatar == av;
-                  return InkWell(
-                    onTap: () => setSheetState(() => selectedAvatar = av),
-                    borderRadius: BorderRadius.circular(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSel ? AppColors.primary : Colors.transparent,
-                          width: 2.0,
-                        ),
-                      ),
-                      child: AppAvatar(
-                        avatarUrl: av,
-                        size: 38,
-                      ),
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.strokeMedium,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: InputDecoration(
-                  labelText: 'Никнейм',
-                  labelStyle: const TextStyle(color: AppColors.textSecondary),
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.strokeMedium),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.primary),
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () {
-                    final newName = controller.text.trim();
-                    if (newName.isNotEmpty) {
-                      context.read<AuthCubit>().updateProfile(
-                            username: newName,
-                            avatarUrl: selectedAvatar,
-                          );
-                      Navigator.pop(sheetContext);
-                    }
-                  },
-                  child: const Text('Сохранить', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                Text(
+                  'Редактировать профиль',
+                  style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(height: 16),
+                Text(
+                  'Выберите аватар профиля',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 60,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _avatarPresets.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final preset = _avatarPresets[index];
+                      final isSelected = selectedAvatar == preset;
+                      return GestureDetector(
+                        onTap: () => setSheetState(() => selectedAvatar = preset),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                              width: 2.5,
+                            ),
+                          ),
+                          child: AppAvatar(avatarUrl: preset, size: 50),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: controller,
+                  maxLength: 24,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Имя профиля',
+                    labelStyle: const TextStyle(color: AppColors.textSecondary),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    counterStyle: const TextStyle(color: AppColors.textMuted),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.strokeMedium),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      final newName = controller.text.trim();
+                      if (newName.isNotEmpty) {
+                        context.read<AuthCubit>().updateProfile(
+                          username: newName,
+                          avatarUrl: selectedAvatar,
+                        );
+                        _profileCubit.loadProfile(targetUserId: widget.userId);
+                        Navigator.pop(sheetContext);
+                      }
+                    },
+                    child: const Text('Сохранить', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _showAccountDetailsSheet(BuildContext context, UserProfile profile) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+  Future<void> _openFavoriteAnimeDetails(BuildContext context, UserProfile profile) async {
+    final favTitle = profile.favoriteAnimeTitle;
+    if (favTitle == null || favTitle.isEmpty) return;
+
+    AnimeTitle? matched;
+    try {
+      final catalogState = getIt.isRegistered<CatalogCubit>()
+          ? getIt<CatalogCubit>().state
+          : (context.mounted ? context.read<CatalogCubit>().state : null);
+      if (catalogState is CatalogLoaded) {
+        matched = catalogState.titles.firstWhere(
+          (t) =>
+              (profile.favoriteAnimeId != null && t.id.toString() == profile.favoriteAnimeId) ||
+              t.russianTitle.toLowerCase().trim() == favTitle.toLowerCase().trim() ||
+              (t.englishTitle.isNotEmpty && t.englishTitle.toLowerCase().trim() == favTitle.toLowerCase().trim()),
+          orElse: () => catalogState.titles.firstWhere(
+            (t) =>
+                t.russianTitle.toLowerCase().contains(favTitle.toLowerCase().trim()) ||
+                favTitle.toLowerCase().trim().contains(t.russianTitle.toLowerCase()),
+            orElse: () => const AnimeTitle(
+              id: 0,
+              code: '',
+              russianTitle: '',
+              englishTitle: '',
+              posterSmall: '',
+              posterMedium: '',
+              posterOriginal: '',
+              genres: [],
+              description: '',
+              status: '',
+            ),
+          ),
+        );
+      }
+    } catch (_) {}
+
+    if (matched == null || matched.id == 0) {
+      try {
+        final listState = context.read<AnimeListCubit>().state;
+        final entry = listState.allEntries.firstWhere(
+          (e) =>
+              (profile.favoriteAnimeId != null && e.animeId.toString() == profile.favoriteAnimeId) ||
+              e.cleanTitleRu.toLowerCase().trim() == favTitle.toLowerCase().trim() ||
+              e.titleRu.toLowerCase().trim() == favTitle.toLowerCase().trim(),
+          orElse: () => listState.allEntries.firstWhere(
+            (e) =>
+                e.cleanTitleRu.toLowerCase().contains(favTitle.toLowerCase().trim()) ||
+                favTitle.toLowerCase().trim().contains(e.cleanTitleRu.toLowerCase()),
+            orElse: () => listState.allEntries.first,
+          ),
+        );
+        matched = AnimeTitle(
+          id: entry.animeId,
+          code: 'shikimori_${entry.animeId}',
+          russianTitle: entry.cleanTitleRu,
+          englishTitle: entry.titleRu,
+          posterSmall: entry.posterUrl ?? '',
+          posterMedium: entry.posterUrl ?? '',
+          posterOriginal: entry.posterUrl ?? '',
+          genres: const [],
+          description: '',
+          status: 'В списках',
+        );
+      } catch (_) {}
+    }
+
+    if (matched == null || matched.id == 0) {
+      matched = AnimeTitle(
+        id: int.tryParse(profile.favoriteAnimeId ?? '0') ?? 0,
+        code: favTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+        russianTitle: favTitle,
+        englishTitle: favTitle,
+        posterSmall: profile.favoriteAnimePoster ?? '',
+        posterMedium: profile.favoriteAnimePoster ?? '',
+        posterOriginal: profile.favoriteAnimePoster ?? '',
+        fallbackPosterUrl: profile.favoriteAnimePoster ?? '',
+        genres: const [],
+        description: '',
+        status: 'Любимый тайтл',
+      );
+    }
+
+    if (context.mounted) {
+      context.pushNamed('details', extra: matched);
+    }
+  }
+
+  Widget _buildFallbackShowcaseBackground(Color accent) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.35),
+            Colors.black,
+          ],
+        ),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: Center(
+        child: Icon(
+          Icons.movie_filter_rounded,
+          color: Colors.white.withValues(alpha: 0.3),
+          size: 48,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoundHeaderAction({
+    required IconData icon,
+    required VoidCallback onTap,
+    required String tooltip,
+    Color iconColor = Colors.white,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.black38,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+            ),
+            child: IconButton(
+              icon: Icon(icon, color: iconColor, size: 18),
+              tooltip: tooltip,
+              onPressed: onTap,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    VoidCallback? onTap,
+  }) {
+    Widget content = Container(
+      padding: padding ?? const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
+      ),
+      child: child,
+    );
+
+    if (onTap != null) {
+      content = InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: content,
+      );
+    }
+
+    return RepaintBoundary(child: content);
+  }
+
+  /// Витрина любимого тайтла в стиле Steam (горизонтальный баннер 140-160 dp)
+  Widget _buildFavoriteAnimeShowcase(
+    BuildContext context,
+    UserProfile profile,
+    Color accent,
+    bool isCurrentUser,
+  ) {
+    final favTitle = profile.favoriteAnimeTitle;
+
+    String? showcasePoster = profile.favoriteAnimePoster;
+    String? showcaseFallback = profile.favoriteAnimePoster;
+
+    if (favTitle != null && favTitle.isNotEmpty) {
+      try {
+        final catalogState = getIt.isRegistered<CatalogCubit>()
+            ? getIt<CatalogCubit>().state
+            : (context.mounted ? context.read<CatalogCubit>().state : null);
+        if (catalogState is CatalogLoaded) {
+          final m = catalogState.titles.firstWhere(
+            (t) =>
+                (profile.favoriteAnimeId != null && t.id.toString() == profile.favoriteAnimeId) ||
+                t.russianTitle.toLowerCase().trim() == favTitle.toLowerCase().trim() ||
+                (t.englishTitle.isNotEmpty && t.englishTitle.toLowerCase().trim() == favTitle.toLowerCase().trim()),
+          );
+          showcasePoster ??= m.posterUrl;
+          showcaseFallback = m.effectiveFallbackPoster;
+        }
+      } catch (_) {}
+
+      if (showcasePoster == null || showcasePoster.isEmpty) {
+        try {
+          final listState = context.read<AnimeListCubit>().state;
+          final m = listState.allEntries.firstWhere(
+            (e) =>
+                (profile.favoriteAnimeId != null && e.animeId.toString() == profile.favoriteAnimeId) ||
+                e.cleanTitleRu.toLowerCase().trim() == favTitle.toLowerCase().trim(),
+          );
+          showcasePoster = m.posterUrl;
+          showcaseFallback = m.posterUrl;
+        } catch (_) {}
+      }
+
+      if ((showcasePoster == null || showcasePoster.isEmpty) && profile.favoriteAnimeId != null) {
+        showcasePoster = 'https://desu.shikimori.one/system/animes/original/${profile.favoriteAnimeId}.jpg';
+        showcaseFallback = 'https://shikimori.one/system/animes/original/${profile.favoriteAnimeId}.jpg';
+      }
+
+      if (showcaseFallback == null || showcaseFallback.isEmpty) {
+        if (profile.favoriteAnimePoster != null &&
+            profile.favoriteAnimePoster!.isNotEmpty &&
+            profile.favoriteAnimePoster != showcasePoster) {
+          showcaseFallback = profile.favoriteAnimePoster;
+        } else if (profile.favoriteAnimeId != null) {
+          showcaseFallback = 'https://shikimori.one/system/animes/original/${profile.favoriteAnimeId}.jpg';
+        }
+      }
+
+      if (showcasePoster != null && showcasePoster.startsWith('/')) {
+        showcasePoster = 'https://anilibria.top$showcasePoster';
+      }
+      if (showcaseFallback != null && showcaseFallback.startsWith('/')) {
+        showcaseFallback = 'https://anilibria.top$showcaseFallback';
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.strokeMedium,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
               Row(
                 children: [
-                  AppAvatar(
-                    avatarUrl: profile.avatarUrl,
-                    username: profile.username,
-                    size: 52,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              profile.username,
-                              style: AppTypography.titleMedium.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(
-                              Icons.verified_rounded,
-                              size: 16,
-                              color: AppColors.syncActive,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          profile.email ?? 'Аккаунт подключен',
-                          style: AppTypography.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
+                  Icon(Icons.workspace_premium_rounded, color: accent, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'ВИТРИНА ПРОФИЛЯ • ЛЮБИМЫЙ ТАЙТЛ',
+                    style: AppTypography.caption.copyWith(
+                      letterSpacing: 1.1,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.strokeMedium),
+              if (isCurrentUser)
+                InkWell(
+                  onTap: () => SteamProfileCustomizerSheet.show(context, profile, initialTabIndex: 4),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text(
+                      favTitle != null ? 'Изменить' : 'Настроить',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: accent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          if (favTitle != null && favTitle.isNotEmpty)
+            _buildGlassCard(
+              padding: const EdgeInsets.all(12),
+              onTap: () => _openFavoriteAnimeDetails(context, profile),
+              child: SizedBox(
+                height: 130,
                 child: Row(
                   children: [
-                    const Icon(Icons.cloud_done_rounded, color: AppColors.syncActive, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Синхронизация списков аниме, истории и кастомизации Steam-профиля активна.',
-                        style: AppTypography.caption.copyWith(
-                          color: AppColors.textSecondary,
-                          height: 1.35,
+                    // Превью постера слева
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: 95,
+                        height: 130,
+                        child: CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(showcasePoster ?? ''),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 400,
+                          errorWidget: (context, url, error) {
+                            if (showcaseFallback != null && showcaseFallback.isNotEmpty) {
+                              return CachedNetworkImage(
+                                imageUrl: wrapCorsSafeUrl(showcaseFallback),
+                                fit: BoxFit.cover,
+                                memCacheWidth: 400,
+                                errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
+                              );
+                            }
+                            return _buildFallbackShowcaseBackground(accent);
+                          },
                         ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    // Информация и кнопка воспроизведения справа
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: accent.withValues(alpha: 0.6), width: 0.8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.star_rounded, size: 12, color: accent),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'Любимое аниме',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            favTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            (profile.bio != null && profile.bio!.isNotEmpty)
+                                ? '«${profile.bio!}»'
+                                : 'Закреплено на витрине профиля',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontStyle: (profile.bio != null && profile.bio!.isNotEmpty)
+                                  ? FontStyle.italic
+                                  : FontStyle.normal,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 32,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                elevation: 0,
+                              ),
+                              onPressed: () => _openFavoriteAnimeDetails(context, profile),
+                              icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                              label: const Text('Смотреть', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
+            )
+          else if (isCurrentUser)
+            CustomPaint(
+              painter: _DashedBorderPainter(
+                color: accent.withValues(alpha: 0.45),
+                strokeWidth: 1.5,
+                dashWidth: 6.0,
+                dashSpace: 4.0,
+                radius: 20.0,
+              ),
+              child: _buildGlassCard(
+                onTap: () => SteamProfileCustomizerSheet.show(context, profile, initialTabIndex: 4),
+                child: SizedBox(
+                  height: 110,
+                  width: double.infinity,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: accent.withValues(alpha: 0.4), width: 1.2),
+                        ),
+                        child: Icon(Icons.add_rounded, color: accent, size: 20),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Добавить витрину',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Закрепите тайтл на витрине вашего профиля в стиле Steam',
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            _buildGlassCard(
+              child: Center(
+                child: Text(
+                  'Пользователь еще не настроил витрину профиля',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Блок статистики просмотра (3 симметричные колонки без перегородок)
+  Widget _buildStatsSection(
+    BuildContext context,
+    UserAnimeStats stats,
+    Color accent,
+    Color themePrimary,
+    Color themePrimaryLight,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      child: _buildGlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'СТАТИСТИКА ПРОСМОТРА',
+                  style: AppTypography.caption.copyWith(
+                    letterSpacing: 1.2,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: themePrimary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
+                          size: 13,
+                          color: themePrimaryLight,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _showActivityCharts ? 'Скрыть график' : 'Графики',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: themePrimaryLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+
+            // 3 симметричные колонки, разделенные воздухом
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        stats.formattedTime,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Время потрачено',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        '${stats.totalTitles}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Тайтлы в списках',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        '${stats.totalEpisodesCompleted}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Серии просмотрено',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            if (_showActivityCharts) ...[
               const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
+              ProfileActivityChart(stats: stats),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderUserInfo(
+    BuildContext context,
+    UserProfile profile,
+    Color accent,
+    bool isCurrentUser,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Аватар 96x96 в анимированном неоновом кольце с дышащим BoxShadow
+        AnimatedBuilder(
+          animation: _neonPulseAnim,
+          builder: (context, child) {
+            final shadowFactor = _neonPulseAnim.value;
+            return Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: (0.65 * shadowFactor).clamp(0.0, 1.0)),
+                    blurRadius: 20 * shadowFactor,
+                    spreadRadius: 2 * shadowFactor,
                   ),
-                  child: Icon(Icons.sync_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
-                ),
-                title: const Text('Синхронизировать сейчас', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: const Text('Отправить локальные закладки в облако', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Все списки и настройки синхронизированы с облаком!'),
-                      backgroundColor: AppColors.syncActive,
-                      behavior: SnackBarBehavior.floating,
+                ],
+              ),
+              child: child,
+            );
+          },
+          child: SteamAvatarFrameWidget(
+            frameId: profile.frameId,
+            size: 96,
+            child: AppAvatar(
+              avatarUrl: profile.avatarUrl,
+              username: profile.username,
+              size: 96,
+              borderColor: accent,
+              borderWidth: 2.5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+
+        // Никнейм, статус, значок и титул
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      profile.username,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
+                        shadows: [
+                          Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
+                        ],
+                      ),
                     ),
-                  );
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.switch_account_rounded, color: AppColors.textPrimary, size: 20),
-                ),
-                title: const Text('Сменить аккаунт', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: const Text('Войти через другой Google аккаунт или почту', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  AuthModalSheet.show(context, profile);
-                },
-              ),
-              const Divider(color: AppColors.strokeMedium, height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.syncError.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.logout_rounded, color: AppColors.syncError, size: 20),
-                ),
-                title: const Text('Выйти из профиля', style: TextStyle(color: AppColors.syncError, fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: const Text('Вернуться в режим гостя', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  context.read<AuthCubit>().signOut();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Вы вышли из профиля SyncPai'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      behavior: SnackBarBehavior.floating,
+                  if (profile.badgeId != null) ...[
+                    const SizedBox(width: 8),
+                    Builder(
+                      builder: (context) {
+                        final badge = SteamBadge.fromId(profile.badgeId);
+                        return InkWell(
+                          onTap: () => BadgeDetailsSheet.show(context, badge: badge),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  badge.color.withValues(alpha: 0.35),
+                                  badge.color.withValues(alpha: 0.15),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: badge.color.withValues(alpha: 0.8), width: 1.0),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(badge.icon, size: 12, color: badge.color),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${badge.level}',
+                                  style: TextStyle(
+                                    color: badge.color,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
+                  ],
+                ],
               ),
+              const SizedBox(height: 4),
+              Text(
+                '«${profile.customStatus ?? 'Смотрю аниме...'}»',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.85),
+                  shadows: const [
+                    Shadow(color: Colors.black, blurRadius: 4),
+                  ],
+                ),
+              ),
+              if (profile.customTitle != null && profile.customTitle!.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: accent.withValues(alpha: 0.6),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Text(
+                    profile.customTitle!,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: accent,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -679,65 +978,208 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .toColor();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: BlocBuilder<AuthCubit, AuthState>(
-          builder: (context, authState) {
-            final rawProfile = authState is Authenticated ? authState.profile : UserProfile.guest();
-            // Если в профиле стандартный цвет, но тема приложения изменена — синхронизируем с темой
-            final profile = rawProfile;
+      backgroundColor: const Color(0xFF0E0E12),
+      body: BlocBuilder<ProfileCubit, ProfileState>(
+        bloc: _profileCubit,
+        builder: (context, profileState) {
+          // Проверяем текущего пользователя
+          User? currentUser;
+          try {
+            currentUser = Supabase.instance.client.auth.currentUser;
+          } catch (_) {}
 
-            return BlocBuilder<AnimeListCubit, AnimeListState>(
-              builder: (context, listState) {
-                final stats = listState.stats;
+          UserProfile rawProfile = profileState.profile;
+          String? currentUserId = currentUser?.id;
 
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 860),
-                    child: CustomScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      slivers: [
-                        // ШАПКА В СТИЛЕ STEAM (Арт/обои на 240dp + Аватарка в неоновой рамке + Статус + Кнопки)
-                        SliverToBoxAdapter(
-                          child: SteamStyleProfileHeader(
-                            profile: profile,
-                            showBackButton: widget.showBackButton,
-                            onBackTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
-                            onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                            onEditProfileTap: () => _showEditProfileSheet(context, profile),
+          try {
+            final authState = context.watch<AuthCubit>().state;
+            if (authState is Authenticated) {
+              currentUserId ??= authState.profile.id;
+              if (widget.userId == null || widget.userId == currentUserId) {
+                rawProfile = authState.profile;
+              }
+            }
+          } catch (_) {}
+
+          final bool isCurrentUser = widget.userId == null ||
+              widget.userId!.trim().isEmpty ||
+              widget.userId == currentUserId ||
+              (rawProfile.id.isNotEmpty && widget.userId == rawProfile.id);
+
+          final isUserAnonymous = currentUser == null || currentUser.isAnonymous;
+          final isGuest = rawProfile.isAnonymous || isUserAnonymous;
+
+          final metadata = currentUser?.userMetadata;
+          final googleName = (metadata?['full_name'] ?? metadata?['name']) as String?;
+          final googleAvatar = (metadata?['avatar_url'] ?? metadata?['picture']) as String?;
+
+          final profile = (isCurrentUser && !isGuest && googleName != null && (rawProfile.username.startsWith('Сенпай') || rawProfile.username == 'Гость'))
+              ? rawProfile.copyWith(
+                  username: googleName,
+                  avatarUrl: (rawProfile.avatarUrl == null || rawProfile.avatarUrl == 'cat' || rawProfile.avatarUrl == 'none')
+                      ? googleAvatar
+                      : rawProfile.avatarUrl,
+                )
+              : rawProfile;
+
+          UserAnimeStats stats = profileState.stats;
+          if (isCurrentUser) {
+            try {
+              final listState = context.watch<AnimeListCubit>().state;
+              stats = listState.stats;
+            } catch (_) {}
+          }
+
+          final bgTheme = SteamBackgroundTheme.fromId(profile.backgroundId);
+          final accent = (profile.accentColor != null && profile.accentColor != '#E06C53')
+              ? SteamProfileThemeAccent.fromHex(profile.accentColor).color
+              : themePrimary;
+
+          // Фоновый арт: обои профиля или постер любимого аниме с витрины
+          final headerBgUrl = (bgTheme.assetOrUrl != null && bgTheme.assetOrUrl!.isNotEmpty)
+              ? bgTheme.assetOrUrl!
+              : (profile.favoriteAnimePoster ?? '');
+
+          return Stack(
+            children: [
+              // 1. Процедурный живой фон и частицы растянуты НА ВСЮ СТРАНИЦУ
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: Opacity(
+                    opacity: 0.40,
+                    child: LiveBackgroundWidget(
+                      backgroundId: profile.backgroundId,
+                      assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
+                      fallbackGradient: bgTheme.gradient,
+                    ),
+                  ),
+                ),
+              ),
+
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0E0E12).withValues(alpha: 0.78),
+                  ),
+                ),
+              ),
+
+              // 2. Основной CustomScrollView со SliverAppBar в стиле Steam (высота 340.0)
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      // ИММЕРСИВНЫЙ SLIVER APP BAR (expandedHeight: 340.0, pinned: true)
+                      SliverAppBar(
+                        expandedHeight: 340.0,
+                        pinned: true,
+                        stretch: true,
+                        backgroundColor: const Color(0xFF0E0E12),
+                        elevation: 0,
+                        leading: widget.showBackButton
+                            ? Center(
+                                child: _buildRoundHeaderAction(
+                                  icon: Icons.arrow_back_ios_new_rounded,
+                                  tooltip: 'Назад',
+                                  onTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
+                                ),
+                              )
+                            : null,
+                        title: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                          ),
+                          child: Text(
+                            isCurrentUser ? 'Мой профиль' : 'Профиль друга',
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                              fontSize: 11,
+                            ),
                           ),
                         ),
+                        actions: [
+                          if (isCurrentUser) ...[
+                            _buildRoundHeaderAction(
+                              icon: Icons.edit_outlined,
+                              tooltip: 'Редактировать профиль',
+                              onTap: () => _showEditProfileSheet(context, profile),
+                            ),
+                            _buildRoundHeaderAction(
+                              icon: Icons.palette_outlined,
+                              tooltip: 'Палитра оформления',
+                              iconColor: accent,
+                              onTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                            ),
+                            _buildRoundHeaderAction(
+                              icon: Icons.settings,
+                              tooltip: 'Настройки',
+                              onTap: () => context.push('/settings'),
+                            ),
+                          ],
+                          const SizedBox(width: 8),
+                        ],
+                        flexibleSpace: FlexibleSpaceBar(
+                          collapseMode: CollapseMode.parallax,
+                          background: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              // Фоновый арт профиля во всю ширину и высоту шапки
+                              if (headerBgUrl.isNotEmpty)
+                                CachedNetworkImage(
+                                  imageUrl: wrapCorsSafeUrl(headerBgUrl),
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 600,
+                                  errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
+                                )
+                              else
+                                _buildFallbackShowcaseBackground(accent),
 
-                    // КАРТОЧКА СИНХРОНИЗАЦИИ ПРОФИЛЯ (Гость / Облако)
-                    if (profile.isAnonymous)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppDimensions.spacingXl,
-                            AppDimensions.spacingMd,
-                            AppDimensions.spacingXl,
-                            0,
-                          ),
-                          child: InkWell(
-                            onTap: () => AuthModalSheet.show(context, profile),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: themePrimary.withValues(alpha: 0.4),
-                                  width: 1.2,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: themePrimary.withValues(alpha: 0.08),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                              // Вертикальный градиент: Colors.transparent сверху -> 0xFF0E0E12 снизу
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withValues(alpha: 0.35),
+                                      const Color(0xFF0E0E12).withValues(alpha: 0.85),
+                                      const Color(0xFF0E0E12),
+                                    ],
+                                    stops: const [0.0, 0.35, 0.75, 1.0],
                                   ),
-                                ],
+                                ),
                               ),
+
+                              // Поверх фона (в нижней части FlexibleSpaceBar): Аватар в неоновом кольце, Имя, Бейдж
+                              Positioned(
+                                left: 20,
+                                right: 20,
+                                bottom: 16,
+                                child: RepaintBoundary(
+                                  child: _buildHeaderUserInfo(context, profile, accent, isCurrentUser),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // ПЛАШКА СИНХРОНИЗАЦИИ ПРОФИЛЯ (Показывается только если свой профиль и гость)
+                      if (isCurrentUser && isGuest)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                            child: _buildGlassCard(
+                              onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               child: Row(
                                 children: [
                                   Container(
@@ -756,30 +1198,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Синхронизация профиля',
+                                      children: const [
+                                        Text(
+                                          'Сохраните свой прогресс',
                                           style: TextStyle(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w700,
                                             fontSize: 14,
                                           ),
                                         ),
-                                        const SizedBox(height: 2),
+                                        SizedBox(height: 2),
                                         Text(
-                                          'Привяжите Google или создайте аккаунт, чтобы перенести кастомный арт и списки',
-                                          style: AppTypography.caption.copyWith(
-                                            color: AppColors.textMuted,
-                                            fontSize: 11.5,
+                                          'Войти через Google для синхронизации истории и списков',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  Icon(
+                                  const Icon(
                                     Icons.arrow_forward_ios_rounded,
-                                    color: AppColors.primary,
+                                    color: AppColors.textSecondary,
                                     size: 14,
                                   ),
                                 ],
@@ -787,877 +1229,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
                         ),
-                      )
-                    else
+
+                      // 1. ВИТРИНА ПРОФИЛЯ В СТИЛЕ STEAM (Горизонтальный баннер 140-160 dp)
                       SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppDimensions.spacingXl,
-                            AppDimensions.spacingMd,
-                            AppDimensions.spacingXl,
-                            0,
-                          ),
-                          child: InkWell(
-                            onTap: () => _showAccountDetailsSheet(context, profile),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: AppColors.syncActive.withValues(alpha: 0.35),
-                                  width: 1.2,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.syncActive.withValues(alpha: 0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      profile.provider == 'google'
-                                          ? Icons.verified_user_rounded
-                                          : Icons.cloud_done_rounded,
-                                      color: AppColors.syncActive,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          profile.provider == 'google'
-                                              ? 'Google аккаунт привязан'
-                                              : 'Облачная синхронизация активна',
-                                          style: AppTypography.caption.copyWith(
-                                            color: AppColors.textPrimary,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        if (profile.email != null && profile.email!.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            profile.email!,
-                                            style: AppTypography.caption.copyWith(
-                                              color: AppColors.textSecondary,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(
-                                    Icons.tune_rounded,
-                                    color: AppColors.textSecondary,
-                                    size: 18,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: _buildFavoriteAnimeShowcase(context, profile, accent, isCurrentUser),
                       ),
 
-                    // ВИТРИНА ПРОФИЛЯ В СТИЛЕ STEAM (Любимый тайтл)
-                    SliverToBoxAdapter(
-                      child: _buildFavoriteAnimeShowcase(context, profile),
-                    ),
-
-                    // БЛОК СТАТИСТИКИ «КАК В ANIXART»
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppDimensions.spacingXl,
-                          AppDimensions.spacingLg,
-                          AppDimensions.spacingXl,
-                          AppDimensions.spacingMd,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceElevated.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.strokeMedium),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'СТАТИСТИКА ПРОСМОТРА',
-                                    style: AppTypography.caption.copyWith(
-                                      letterSpacing: 1.2,
-                                      color: AppColors.textMuted,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10.5,
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () => setState(() => _showActivityCharts = !_showActivityCharts),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: themePrimary.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: themePrimary.withValues(alpha: 0.3),
-                                          width: 0.8,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
-                                            size: 13,
-                                            color: themePrimaryLight,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _showActivityCharts ? 'Скрыть график' : 'Графики',
-                                            style: TextStyle(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: themePrimaryLight,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  _buildStatItem('Время', stats.formattedTime, 'потрачено', Icons.schedule_rounded, themePrimaryLight),
-                                  _buildDivider(),
-                                  _buildStatItem('Тайтлы', '${stats.totalTitles}', 'в списках', Icons.video_collection_outlined, themePrimaryLight),
-                                  _buildDivider(),
-                                  _buildStatItem('Серии', '${stats.totalEpisodesCompleted}', 'просмотрено', Icons.play_circle_outline_rounded, themePrimaryLight),
-                                ],
-                              ),
-                              if (_showActivityCharts) ...[
-                                const SizedBox(height: 16),
-                                ProfileActivityChart(stats: stats),
-                              ],
-                            ],
-                          ),
-                        ),
+                      // 2. БЛОК СТАТИСТИКИ (3 симметричные колонки без перегородок)
+                      SliverToBoxAdapter(
+                        child: _buildStatsSection(context, stats, accent, themePrimary, themePrimaryLight),
                       ),
-                    ),
 
-                    // КНОПКА ИМПОРТА ИЗ ANIXART
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: themePrimary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: themePrimary.withValues(alpha: 0.3)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: themePrimary.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(Icons.file_upload_outlined, color: themePrimary, size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Импорт из Anixart',
-                                      style: AppTypography.titleSmall.copyWith(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'По логину / ID онлайн или из .csv / .json файла',
-                                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _buildGlassImportButton(
-                                icon: Icons.cloud_download_outlined,
-                                label: 'По ID',
-                                onTap: () => _showOnlineImportDialog(context, profile.id),
-                              ),
-                              const SizedBox(width: 8),
-                              _buildGlassImportButton(
-                                icon: Icons.folder_open_rounded,
-                                label: 'Файл',
-                                onTap: () => _pickAndImportAnixart(context, profile.id),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // РАЗДЕЛ: «НАСТРОЙКИ ПРИЛОЖЕНИЯ И ПЛЕЕРА»
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppDimensions.spacingXl,
-                          AppDimensions.spacingXl,
-                          AppDimensions.spacingXl,
-                          AppDimensions.spacingSm,
-                        ),
-                        child: Text(
-                          'НАСТРОЙКИ ПЛЕЕРА И СИСТЕМЫ',
-                          style: AppTypography.caption.copyWith(
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // КАРТОЧКА НАСТРОЕК В СТИЛЕ ЖИДКОГО СТЕКЛА
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                        child: GlassContainer(
-                          borderRadius: BorderRadius.circular(20),
-                          blurSigma: 16,
-                          backgroundOpacity: 0.08,
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              // Тема оформления и палитра приложения
-                              InkWell(
-                                onTap: () => ThemeSelectorSheet.show(context),
-                                borderRadius: BorderRadius.circular(10),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: themePrimary,
-                                          border: Border.all(color: Colors.white30, width: 1.5),
-                                        ),
-                                        child: const Icon(Icons.palette_rounded, color: Colors.white, size: 16),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Цветовая палитра оформления',
-                                              style: AppTypography.titleSmall.copyWith(
-                                                color: AppColors.textPrimary,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '8 дизайнерских тем (Мандарин, Неон, Сакура, Ева...)',
-                                              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const Divider(color: AppColors.strokeMedium, height: 18),
-
-                              // Качество видео по умолчанию
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.hd_rounded, color: themePrimary, size: 20),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        'Качество видео',
-                                        style: AppTypography.bodyMedium.copyWith(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  DropdownButton<String>(
-                                    value: _defaultQuality,
-                                    dropdownColor: AppColors.surfaceElevated,
-                                    underline: const SizedBox.shrink(),
-                                    style: TextStyle(
-                                      color: themePrimaryLight,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(value: '1080p FHD', child: Text('1080p FHD')),
-                                      DropdownMenuItem(value: '720p HD', child: Text('720p HD')),
-                                      DropdownMenuItem(value: '480p SD', child: Text('480p SD')),
-                                    ],
-                                    onChanged: (val) {
-                                      if (val != null) setState(() => _defaultQuality = val);
-                                    },
-                                  ),
-                                ],
-                              ),
-                              const Divider(color: AppColors.strokeMedium, height: 18),
-
-                              // Авто-пропуск опенингов
-                              _buildSettingSwitch(
-                                title: 'Авто-пропуск опенингов',
-                                subtitle: 'Умный таймкод-скип вступительных заставок',
-                                value: _autoSkipOpenings,
-                                onChanged: (val) => setState(() => _autoSkipOpenings = val),
-                              ),
-                              const Divider(color: AppColors.strokeMedium, height: 18),
-
-                              // Авто-пауза при уходе друга
-                              _buildSettingSwitch(
-                                title: 'Авто-пауза при уходе друга',
-                                subtitle: 'Останавливать плеер, если друг свернул приложение',
-                                value: _autoPauseOnLeave,
-                                onChanged: (val) => setState(() => _autoPauseOnLeave = val),
-                              ),
-                              const Divider(color: AppColors.strokeMedium, height: 18),
-
-                              // Эффекты жидкого стекла
-                              _buildSettingSwitch(
-                                title: 'Эффекты жидкого стекла',
-                                subtitle: 'Аппаратный блур BackdropFilter и световые блики',
-                                value: _liquidGlassEffects,
-                                onChanged: (val) => setState(() => _liquidGlassEffects = val),
-                              ),
-                              const Divider(color: AppColors.strokeMedium, height: 18),
-
-                              // Умная ретрансляция и анти-блокировка (DoH Cloudflare)
-                              _buildSettingSwitch(
-                                title: 'Умная ретрансляция (Анти-блокировка)',
-                                subtitle: SmartMirrorInterceptor.isAntiBlockEnabled
-                                    ? 'DoH Cloudflare 1.1.1.1 и авто-ротация зеркал видео'
-                                    : 'Прямое подключение к серверам',
-                                value: SmartMirrorInterceptor.isAntiBlockEnabled,
-                                onChanged: (val) {
-                                  setState(() {
-                                    SmartMirrorInterceptor.isAntiBlockEnabled = val;
-                                  });
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        val
-                                            ? 'Анти-блокировка включена: зеркала ротируются автоматически'
-                                            : 'Анти-блокировка выключена',
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-                    // КНОПКА ОЧИСТКИ КЭША И ИСТОРИИ
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.syncError,
-                            side: const BorderSide(color: AppColors.strokeMedium),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          icon: const Icon(Icons.delete_sweep_outlined, size: 20),
-                          label: const Text('Очистить кэш плеера и историю', style: TextStyle(fontWeight: FontWeight.w600)),
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                  'Кэш плеера и временные файлы очищены!',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                ),
-                                backgroundColor: const Color(0xFF242730),
-                                behavior: SnackBarBehavior.floating,
-                                margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-
-                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openFavoriteAnimeDetails(BuildContext context, UserProfile profile) async {
-    final favTitle = profile.favoriteAnimeTitle;
-    if (favTitle == null || favTitle.isEmpty) return;
-
-    AnimeTitle? matched;
-    // 1. Поиск в каталоге в памяти
-    try {
-      final catalogState = getIt.isRegistered<CatalogCubit>()
-          ? getIt<CatalogCubit>().state
-          : (context.mounted ? context.read<CatalogCubit>().state : null);
-      if (catalogState is CatalogLoaded) {
-        matched = catalogState.titles.firstWhere(
-          (t) =>
-              (profile.favoriteAnimeId != null && t.id.toString() == profile.favoriteAnimeId) ||
-              t.russianTitle.toLowerCase().trim() == favTitle.toLowerCase().trim() ||
-              (t.englishTitle.isNotEmpty &&
-                  t.englishTitle.toLowerCase().trim() == favTitle.toLowerCase().trim()),
-        );
-      }
-    } catch (_) {}
-
-    // 2. Поиск в сохраненных списках пользователя
-    if (matched == null) {
-      try {
-        final listState = context.read<AnimeListCubit>().state;
-        final savedMatch = listState.allEntries.firstWhere(
-          (e) =>
-              (profile.favoriteAnimeId != null && e.animeId.toString() == profile.favoriteAnimeId) ||
-              e.cleanTitleRu.toLowerCase().trim() == favTitle.toLowerCase().trim() ||
-              e.titleRu.toLowerCase().trim() == favTitle.toLowerCase().trim(),
-        );
-        matched = AnimeTitle(
-          id: savedMatch.animeId,
-          code: 'saved_${savedMatch.animeId}',
-          russianTitle: savedMatch.cleanTitleRu,
-          englishTitle: savedMatch.cleanTitleRu,
-          posterSmall: savedMatch.posterUrl ?? '',
-          posterMedium: savedMatch.posterUrl ?? '',
-          posterOriginal: savedMatch.posterUrl ?? '',
-          genres: const [],
-          description: '',
-          status: savedMatch.status.labelRu,
-          episodesTotal: savedMatch.episodesTotal,
-        );
-      } catch (_) {}
-    }
-
-    // 3. Поиск через репозиторий каталога
-    if (matched == null && getIt.isRegistered<CatalogRepository>()) {
-      try {
-        final results = await getIt<CatalogRepository>().searchTitles(favTitle, limit: 1);
-        if (results.isNotEmpty) {
-          matched = results.first;
-        }
-      } catch (_) {}
-    }
-
-    // 4. Fallback AnimeTitle
-    final target = matched ??
-        AnimeTitle(
-          id: profile.favoriteAnimeId != null ? int.tryParse(profile.favoriteAnimeId!) ?? 0 : 0,
-          code: 'showcase_${profile.favoriteAnimeId ?? favTitle}',
-          russianTitle: favTitle,
-          englishTitle: favTitle,
-          posterSmall: '',
-          posterMedium: '',
-          posterOriginal: '',
-          genres: const [],
-          description: '',
-          status: 'В эфире',
-        );
-
-    if (context.mounted) {
-      context.pushNamed('details', extra: target);
-    }
-  }
-
-  Widget _buildFavoriteAnimeShowcase(BuildContext context, UserProfile profile) {
-    final accent = SteamProfileThemeAccent.fromHex(profile.accentColor).color;
-    final favTitle = profile.favoriteAnimeTitle;
-
-    // Приоритет: 1) сохранённый постер из профиля, 2) поиск в каталоге, 3) поиск в списках
-    String? showcasePoster = profile.favoriteAnimePoster;
-
-    if ((showcasePoster == null || showcasePoster.isEmpty) && favTitle != null && favTitle.isNotEmpty) {
-      try {
-        final catalogState = getIt.isRegistered<CatalogCubit>()
-          ? getIt<CatalogCubit>().state
-          : (context.mounted ? context.read<CatalogCubit>().state : null);
-        if (catalogState is CatalogLoaded) {
-          final m = catalogState.titles.firstWhere(
-            (t) =>
-                (profile.favoriteAnimeId != null && t.id.toString() == profile.favoriteAnimeId) ||
-                t.russianTitle.toLowerCase().trim() == favTitle.toLowerCase().trim(),
-          );
-          showcasePoster = m.posterMedium.isNotEmpty ? m.posterMedium : m.posterOriginal;
-        }
-      } catch (_) {}
-      if (showcasePoster == null || showcasePoster.isEmpty) {
-        try {
-          final listState = context.read<AnimeListCubit>().state;
-          final m = listState.allEntries.firstWhere(
-            (e) =>
-                (profile.favoriteAnimeId != null && e.animeId.toString() == profile.favoriteAnimeId) ||
-                e.cleanTitleRu.toLowerCase().trim() == favTitle.toLowerCase().trim(),
-          );
-          showcasePoster = m.posterUrl;
-        } catch (_) {}
-      }
-      // Fallback: Shikimori poster via favoriteAnimeId
-      if ((showcasePoster == null || showcasePoster.isEmpty) && profile.favoriteAnimeId != null) {
-        showcasePoster = 'https://shikimori.one/system/animes/original/${profile.favoriteAnimeId}.jpg';
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.spacingXl,
-        AppDimensions.spacingMd,
-        AppDimensions.spacingXl,
-        0,
-      ),
-      child: InkWell(
-        onTap: favTitle != null && favTitle.isNotEmpty
-            ? () => _openFavoriteAnimeDetails(context, profile)
-            : () => SteamProfileCustomizerSheet.show(context, profile),
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: favTitle != null ? accent.withValues(alpha: 0.5) : AppColors.strokeMedium,
-              width: favTitle != null ? 1.5 : 1.0,
-            ),
-            boxShadow: favTitle != null
-                ? [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.12),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.workspace_premium_rounded, color: accent, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'ВИТРИНА ПРОФИЛЯ • ЛЮБИМЫЙ ТАЙТЛ',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption.copyWith(
-                        letterSpacing: 1.1,
-                        color: AppColors.textMuted,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      child: Text(
-                        favTitle != null ? 'Изменить' : 'Настроить',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: accent,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (favTitle != null && favTitle.isNotEmpty)
-                Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        width: 52,
-                        height: 68,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: accent.withValues(alpha: 0.4)),
-                        ),
-                        child: showcasePoster != null && showcasePoster.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: wrapCorsSafeUrl(showcasePoster),
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                                errorWidget: (_, __, ___) => Center(
-                                  child: Icon(Icons.movie_creation_rounded, color: accent, size: 28),
-                                ),
-                              )
-                            : Center(
-                                child: Icon(Icons.movie_creation_rounded, color: accent, size: 28),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            favTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.titleMedium.copyWith(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Row(
-                            children: [
-                              Icon(Icons.star_rounded, color: Color(0xFFFFD700), size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                '10 / 10 • Личный выбор',
-                                style: TextStyle(
-                                  color: Color(0xFFFFD700),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (profile.customStatus != null && profile.customStatus!.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              '«${profile.customStatus}»',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontStyle: FontStyle.italic,
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(Icons.chevron_right_rounded, color: accent.withValues(alpha: 0.7), size: 22),
-                  ],
-                )
-              else
-                InkWell(
-                  onTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.03),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.strokeMedium,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_circle_outline_rounded, color: accent, size: 18),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Выбрать любимый тайтл на витрину',
-                            style: TextStyle(
-                              color: accent,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                    ],
                   ),
                 ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String title, String value, String subtitle, [IconData? icon, Color? accentColor]) {
-    final effectiveAccent = accentColor ?? Theme.of(context).colorScheme.primary;
-    return Column(
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 16, color: effectiveAccent),
-          const SizedBox(height: 3),
-        ],
-        Text(
-          value,
-          style: AppTypography.titleMedium.copyWith(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          title,
-          style: AppTypography.caption.copyWith(
-            fontSize: 11,
-            color: effectiveAccent,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        Text(
-          subtitle,
-          style: AppTypography.caption.copyWith(
-            fontSize: 10.5,
-            color: Colors.white70,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDivider() {
-    return Container(
-      width: 1,
-      height: 36,
-      color: AppColors.strokeMedium,
-    );
-  }
-
-  Widget _buildSettingSwitch({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    final themePrimary = Theme.of(context).colorScheme.primary;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: AppTypography.caption.copyWith(color: Colors.white70),
               ),
             ],
-          ),
-        ),
-        Switch(
-          value: value,
-          activeTrackColor: themePrimary,
-          thumbColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return Colors.white;
-            }
-            return Colors.white54;
-          }),
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGlassImportButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    final themePrimary = Theme.of(context).colorScheme.primary;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.14),
-            width: 1.0,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: themePrimary),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
+/// Художник пунктирной рамки в стиле Steam (Dashed Border)
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double dashWidth;
+  final double dashSpace;
+  final double radius;
+
+  _DashedBorderPainter({
+    required this.color,
+    this.strokeWidth = 1.5,
+    this.dashWidth = 6.0,
+    this.dashSpace = 4.0,
+    this.radius = 16.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Radius.circular(radius),
+    );
+    final path = Path()..addRRect(rrect);
+
+    final dashPath = Path();
+    for (final metric in path.computeMetrics()) {
+      double distance = 0.0;
+      while (distance < metric.length) {
+        final length = dashWidth.clamp(0.0, metric.length - distance);
+        dashPath.addPath(
+          metric.extractPath(distance, distance + length),
+          Offset.zero,
+        );
+        distance += dashWidth + dashSpace;
+      }
+    }
+
+    canvas.drawPath(dashPath, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.dashWidth != dashWidth ||
+      oldDelegate.dashSpace != dashSpace ||
+      oldDelegate.radius != radius;
+}

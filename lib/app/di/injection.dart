@@ -38,6 +38,7 @@ import '../../features/shorts/domain/repositories/anime_clips_repository.dart';
 import '../../features/kodik/data/datasources/kodik_remote_datasource.dart';
 import '../../features/kodik/data/datasources/kodik_stream_extractor.dart';
 import '../../features/kodik/presentation/cubit/kodik_cubit.dart';
+import '../../features/profile/presentation/cubit/profile_cubit.dart';
 import '../../core/theme/cubit/theme_cubit.dart';
 
 final getIt = GetIt.instance;
@@ -75,6 +76,14 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton<AnimeListCubit>(
     () => AnimeListCubit(repository: getIt<AnimeListRepository>()),
+  );
+
+  // Profile: Steam-стиль профили и профили друзей
+  getIt.registerFactory<ProfileCubit>(
+    () => ProfileCubit(
+      authRepository: getIt<AuthRepository>(),
+      animeListRepository: getIt<AnimeListRepository>(),
+    ),
   );
 
   // Watch History (История просмотров и позиций серий)
@@ -127,9 +136,9 @@ Future<void> configureDependencies() async {
   // Core: Network
   getIt.registerLazySingleton<DioClient>(() => DioClient());
 
-  // Features: Supabase Anime Catalog & Player Data Layer (High Priority)
+  // Features: AniLiberty Anime Catalog & Player Data Layer (Direct Dio)
   getIt.registerLazySingleton<AnimeRemoteDataSource>(
-    () => SupabaseAnimeRemoteDataSourceImpl(),
+    () => AniLibertyAnimeRemoteDataSourceImpl(customDio: getIt<DioClient>().dio),
   );
   getIt.registerLazySingleton<AnimeCatalogRepository>(
     () => AnimeCatalogRepositoryImpl(getIt<AnimeRemoteDataSource>()),

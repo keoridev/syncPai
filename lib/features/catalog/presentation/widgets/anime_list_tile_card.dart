@@ -5,7 +5,6 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_decorations.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../domain/entities/anime_title.dart';
 
 /// Карточка аниме для режима «Целый список» (List view).
@@ -24,9 +23,8 @@ class AnimeListTileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final posterUrl = title.posterMedium.isNotEmpty
-        ? title.posterMedium
-        : title.posterSmall;
+    final posterUrl = title.posterUrl;
+    final fallbackPoster = title.effectiveFallbackPoster;
 
     return RepaintBoundary(
       child: Material(
@@ -52,38 +50,28 @@ class AnimeListTileCard extends StatelessWidget {
                       if (posterUrl.isNotEmpty)
                         CachedNetworkImage(
                           imageUrl: wrapCorsSafeUrl(posterUrl),
+                          memCacheWidth: 400,
+                          fit: BoxFit.cover,
                           httpHeaders: const {
                             'User-Agent': 'SyncPai-App/1.0',
                             'Referer': 'https://shikimori.io/',
                           },
-                          fit: BoxFit.cover,
-                          memCacheWidth: 220,
-                          memCacheHeight: 330,
-                          maxWidthDiskCache: 400,
-                          maxHeightDiskCache: 600,
-                          fadeInDuration: const Duration(milliseconds: 140),
-                          filterQuality: FilterQuality.low,
                           placeholder: (context, url) =>
-                              const ShimmerPlaceholder.card(),
-                          errorWidget: (context, url, error) => Container(
-                            color: AppColors.surfaceElevated,
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.movie_creation_outlined,
-                              color: AppColors.textMuted,
-                              size: 28,
+                              const ColoredBox(color: Colors.black26),
+                          errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(fallbackPoster),
+                            memCacheWidth: 400,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) =>
+                                const ColoredBox(color: Colors.black26),
+                            errorWidget: (context, fallbackUrl, error) => const Center(
+                              child: Icon(Icons.broken_image, color: Colors.white54),
                             ),
                           ),
                         )
                       else
-                        Container(
-                          color: AppColors.surfaceElevated,
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.movie_creation_outlined,
-                            color: AppColors.textMuted,
-                            size: 28,
-                          ),
+                        const Center(
+                          child: Icon(Icons.broken_image, color: Colors.white54),
                         ),
 
                       // Мягкое затемнение снизу постера
@@ -131,7 +119,6 @@ class AnimeListTileCard extends StatelessWidget {
                           ),
                         ),
 
-                      // Тонкая полоска сохраненного прогресса просмотра
                       if (watchProgress != null && watchProgress! > 0.0 && watchProgress! < 0.98)
                         Positioned(
                           bottom: 0,

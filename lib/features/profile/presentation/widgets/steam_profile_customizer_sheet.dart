@@ -40,10 +40,15 @@ import 'media_crop_editor_modal.dart';
 /// 6. Акцент (Theme Accent) - палитра неонового свечения
 class SteamProfileCustomizerSheet extends StatefulWidget {
   final UserProfile profile;
+  final int initialTabIndex;
 
-  const SteamProfileCustomizerSheet({super.key, required this.profile});
+  const SteamProfileCustomizerSheet({
+    super.key,
+    required this.profile,
+    this.initialTabIndex = 0,
+  });
 
-  static void show(BuildContext context, UserProfile profile) {
+  static void show(BuildContext context, UserProfile profile, {int initialTabIndex = 0}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -62,7 +67,10 @@ class SteamProfileCustomizerSheet extends StatefulWidget {
             if (getIt.isRegistered<AnimeListCubit>())
               BlocProvider.value(value: getIt<AnimeListCubit>()),
           ],
-          child: SteamProfileCustomizerSheet(profile: profile),
+          child: SteamProfileCustomizerSheet(
+            profile: profile,
+            initialTabIndex: initialTabIndex,
+          ),
         ),
       ),
     );
@@ -112,7 +120,11 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(
+      length: 6,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 5),
+    );
     _selectedFrameId = widget.profile.frameId ?? 'none';
     _selectedBgId = widget.profile.backgroundId ?? 'none';
     _selectedAccentHex = widget.profile.accentColor ??
@@ -238,9 +250,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     if (newFavAnime.isNotEmpty && (effectiveFavPoster == null || effectiveFavPoster.isEmpty)) {
       if (_searchedCatalogTitles.isNotEmpty) {
         final searchMatch = _searchedCatalogTitles.first;
-        effectiveFavPoster = searchMatch.posterMedium.isNotEmpty
-            ? searchMatch.posterMedium
-            : (searchMatch.posterOriginal.isNotEmpty ? searchMatch.posterOriginal : searchMatch.posterSmall);
+        effectiveFavPoster = searchMatch.posterUrl.isNotEmpty
+            ? searchMatch.posterUrl
+            : searchMatch.effectiveFallbackPoster;
         effectiveFavId = searchMatch.id.toString();
       } else {
         try {
@@ -251,7 +263,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 (t) => t.russianTitle.toLowerCase().contains(newFavAnime.toLowerCase()) ||
                        t.englishTitle.toLowerCase().contains(newFavAnime.toLowerCase()),
               );
-              effectiveFavPoster = m.posterMedium.isNotEmpty ? m.posterMedium : m.posterOriginal;
+              effectiveFavPoster = m.posterUrl.isNotEmpty ? m.posterUrl : m.effectiveFallbackPoster;
               effectiveFavId = m.id.toString();
             }
           }
@@ -1712,12 +1724,25 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                             child: SizedBox(
                               width: 32,
                               height: 44,
-                              child: t.posterSmall.isNotEmpty
+                              child: t.posterUrl.isNotEmpty
                                   ? CachedNetworkImage(
-                                      imageUrl: wrapCorsSafeUrl(t.posterSmall),
+                                      imageUrl: wrapCorsSafeUrl(t.posterUrl),
+                                      memCacheWidth: 150,
                                       fit: BoxFit.cover,
                                       filterQuality: FilterQuality.high,
-                                      errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                      httpHeaders: const {
+                                        'User-Agent': 'SyncPai-App/1.0',
+                                        'Referer': 'https://shikimori.io/',
+                                      },
+                                      placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                      errorWidget: (_, __, ___) => t.effectiveFallbackPoster.isNotEmpty
+                                          ? CachedNetworkImage(
+                                              imageUrl: wrapCorsSafeUrl(t.effectiveFallbackPoster),
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                              errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                            )
+                                          : const Icon(Icons.movie, size: 16),
                                     )
                                   : const Icon(Icons.movie, size: 16),
                             ),
@@ -1747,9 +1772,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                             setState(() {
                               _favAnimeController.text = t.russianTitle;
                               _selectedFavAnimeId = t.id.toString();
-                              _selectedFavAnimePoster = t.posterMedium.isNotEmpty
-                                  ? t.posterMedium
-                                  : (t.posterOriginal.isNotEmpty ? t.posterOriginal : t.posterSmall);
+                              _selectedFavAnimePoster = t.posterUrl.isNotEmpty
+                                  ? t.posterUrl
+                                  : t.effectiveFallbackPoster;
                               _searchedCatalogTitles = [];
                             });
                           },
@@ -1761,11 +1786,157 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
               );
             },
           ),
-          ],
+        ] else ...[
+          const SizedBox(height: 10),
+          Builder(
+            builder: (context) {
+              final catalogState = getIt.isRegistered<CatalogCubit>()
+                  ? getIt<CatalogCubit>().state
+                  : null;
+              final savedEntries = getIt.isRegistered<AnimeListCubit>()
+                  ? getIt<AnimeListCubit>().state.allEntries
+                  : const <UserAnimeEntry>[];
+
+              final List<AnimeTitle> quickPicks = [];
+              if (savedEntries.isNotEmpty) {
+                for (final e in savedEntries.take(6)) {
+                  quickPicks.add(AnimeTitle(
+                    id: e.animeId,
+                    code: 'saved_${e.animeId}',
+                    russianTitle: e.cleanTitleRu,
+                    englishTitle: e.cleanTitleRu,
+                    posterSmall: e.posterUrl ?? '',
+                    posterMedium: e.posterUrl ?? '',
+                    posterOriginal: e.posterUrl ?? '',
+                    fallbackPosterUrl: e.posterUrl ?? '',
+                    genres: const [],
+                    description: '',
+                    status: e.status.labelRu,
+                  ));
+                }
+              }
+
+              if (catalogState is CatalogLoaded && catalogState.titles.isNotEmpty) {
+                for (final t in catalogState.titles) {
+                  if (quickPicks.every((p) => p.id != t.id) && quickPicks.length < 8) {
+                    quickPicks.add(t);
+                  }
+                }
+              }
+
+              if (quickPicks.isEmpty) return const SizedBox.shrink();
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome_rounded, size: 14, color: accent),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Рекомендуемые для витрины:',
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 110,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: quickPicks.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final t = quickPicks[index];
+                        final isChosen = _selectedFavAnimeId == t.id.toString() ||
+                            _favAnimeController.text.trim().toLowerCase() == t.russianTitle.toLowerCase();
+
+                        return InkWell(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              _favAnimeController.text = t.russianTitle;
+                              _selectedFavAnimeId = t.id.toString();
+                              _selectedFavAnimePoster = t.posterUrl.isNotEmpty
+                                  ? t.posterUrl
+                                  : t.effectiveFallbackPoster;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            width: 72,
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceElevated,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isChosen ? accent : AppColors.strokeMedium,
+                                width: isChosen ? 2 : 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
+                                    child: t.posterUrl.isNotEmpty
+                                        ? CachedNetworkImage(
+                                            imageUrl: wrapCorsSafeUrl(t.posterUrl),
+                                            memCacheWidth: 200,
+                                            fit: BoxFit.cover,
+                                            httpHeaders: const {
+                                              'User-Agent': 'SyncPai-App/1.0',
+                                              'Referer': 'https://shikimori.io/',
+                                            },
+                                            placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                            errorWidget: (_, __, ___) => t.effectiveFallbackPoster.isNotEmpty
+                                                ? CachedNetworkImage(
+                                                    imageUrl: wrapCorsSafeUrl(t.effectiveFallbackPoster),
+                                                    memCacheWidth: 200,
+                                                    fit: BoxFit.cover,
+                                                    placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                                    errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 20),
+                                                  )
+                                                : const Icon(Icons.movie, size: 20),
+                                          )
+                                        : const Icon(Icons.movie, size: 20),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                                  child: Text(
+                                    t.russianTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: isChosen ? accent : Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: isChosen ? FontWeight.w700 : FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   // --- 6. ВКЛАДКА «ЦВЕТА» ---
   Widget _buildColorsTab(Color accent) {

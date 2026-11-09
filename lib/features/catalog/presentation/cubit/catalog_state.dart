@@ -64,6 +64,7 @@ class CatalogLoaded extends CatalogState {
 
   /// Геттер для обратной совместимости с существующим кодом
   String? get selectedGenre => selectedGenres.isNotEmpty ? selectedGenres.first : null;
+  bool get hasReachedMax => !hasMore;
 
   CatalogLoaded copyWith({
     List<AnimeTitle>? titles,

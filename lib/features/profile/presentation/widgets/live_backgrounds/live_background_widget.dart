@@ -8,6 +8,7 @@ import 'anime_procedural_painters.dart';
 import 'cyberpunk_grid_painter.dart';
 import 'matrix_rain_painter.dart';
 import 'sakura_petals_painter.dart';
+import 'snowfall_painter.dart';
 import 'starfield_painter.dart';
 
 /// Универсальный виджет анимированных фонов профиля (Live Backgrounds & Video):
@@ -63,6 +64,11 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
         media == 'matrix' ||
         bgId.contains('sakura') ||
         media == 'sakura' ||
+        bgId.contains('snow') ||
+        bgId.contains('winter') ||
+        bgId.contains('frost') ||
+        media == 'snow' ||
+        media == 'snowfall' ||
         bgId.contains('cyberpunk') ||
         media == 'cyberpunk' ||
         bgId.contains('space') ||
@@ -220,6 +226,35 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
               painter: SakuraPetalsPainter(
                 animationValue: _animController.value,
                 petalColor: const Color(0xFFFF76AC),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 3.1. Процедурный живой фон: «Падающий снег» (Live Snowfall)
+    if (bgId.contains('snow') || bgId.contains('winter') || bgId.contains('frost') || media == 'snow' || media == 'snowfall') {
+      return RepaintBoundary(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF0B1626),
+                Color(0xFF14243B),
+                Color(0xFF0D1724),
+              ],
+            ),
+          ),
+          child: AnimatedBuilder(
+            animation: _animController,
+            builder: (context, _) => CustomPaint(
+              size: Size.infinite,
+              painter: LiveSnowfallPainter(
+                animationValue: _animController.value,
+                snowColor: Colors.white,
               ),
             ),
           ),

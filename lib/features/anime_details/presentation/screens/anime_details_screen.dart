@@ -5,14 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/glass_container.dart';
-import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
@@ -110,7 +108,10 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
     _loadShikimoriReviews();
     if (getIt.isRegistered<KodikCubit>()) {
-      getIt<KodikCubit>().loadVoiceovers(title: _currentTitle.displayTitle);
+      getIt<KodikCubit>().loadVoiceovers(
+        shikimoriId: _currentTitle.shikimoriId,
+        title: _currentTitle.displayTitle,
+      );
     }
   }
 
@@ -133,7 +134,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         });
         if (getIt.isRegistered<KodikCubit>()) {
           getIt<KodikCubit>().loadVoiceovers(
-            shikimoriId: result.shikimoriId,
+            shikimoriId: result.shikimoriId ?? _currentTitle.shikimoriId,
             title: _currentTitle.displayTitle,
           );
         }
@@ -339,108 +340,26 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   Future<void> _loadFullDetails() async {
     setState(() => _isLoadingDetails = true);
     try {
-      final shikiId = _currentTitle.id;
+      final releaseId = _currentTitle.id;
       final titleRu = _currentTitle.russianTitle;
       final titleEn = _currentTitle.englishTitle;
       final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
 
-      // Получаем видеопотоки напрямую через Supabase Edge Function get_anime_player_data (BFF)
-      final response = await Supabase.instance.client.functions.invoke(
-        'get_anime_player_data',
-        body: {
-          'shikimori_id': shikiId,
-          'title_ru': titleRu,
-          'title_en': titleEn,
-          if (displayTitle.isNotEmpty) 'title': displayTitle,
-        },
-      );
-
-      final dynamic resData = response.data;
-      Map<String, dynamic> data = {};
-      if (resData is Map<String, dynamic>) {
-        data = resData;
-      } else if (resData is Map) {
-        data = Map<String, dynamic>.from(resData);
-      }
-
+      // Получаем видеопотоки напрямую через AniLiberty API
       final List<EpisodeItem> directEpisodes = [];
-
-      // 1. Приоритет: парсинг серий из AniLibria со всеми метаданными (FHD/HD/SD, скипы, превью)
-      final rawEps = (data['episodes'] as List? ?? []);
-      for (final e in rawEps) {
-        if (e is Map) {
-          final epNum = (e['episode'] as num?)?.toInt() ?? 1;
-          final link = (e['link'] ?? '') as String;
-          final fhd = e['fhd'] as String?;
-          final hd = e['hd'] as String?;
-          final sd = e['sd'] as String?;
-          final preview = e['preview'] as String?;
-
-          TimecodeRange? opRange;
-          TimecodeRange? edRange;
-          final skips = e['skips'] as Map?;
-          if (skips != null) {
-            final op = skips['opening'] as List?;
-            if (op != null && op.length >= 2) {
-              opRange = TimecodeRange(
-                start: (op[0] as num).toInt(),
-                stop: (op[1] as num).toInt(),
-              );
-            }
-            final ed = skips['ending'] as List?;
-            if (ed != null && ed.length >= 2) {
-              edRange = TimecodeRange(
-                start: (ed[0] as num).toInt(),
-                stop: (ed[1] as num).toInt(),
-              );
+      if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
+        try {
+          final translations = await getIt<GetPlayerLinksUseCase>().call(
+            releaseId,
+            title: displayTitle,
+          );
+          if (translations.isNotEmpty) {
+            final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
+            if (direct.isNotEmpty) {
+              directEpisodes.addAll(direct.first.episodes.map((e) => e.toEpisodeItem()));
             }
           }
-
-          if (link.isNotEmpty) {
-            directEpisodes.add(EpisodeItem(
-              episode: epNum,
-              name: e['name'] as String?,
-              previewUrl: preview,
-              sdUrl: sd ?? link,
-              hdUrl: hd ?? link,
-              fhdUrl: fhd ?? hd ?? link,
-              opening: opRange,
-              ending: edRange,
-            ));
-          }
-        }
-      }
-
-      // 2. Резервный источник: translations с флагом is_direct_stream
-      if (directEpisodes.isEmpty) {
-        final translationsList = data['translations'] as List? ?? [];
-        for (final t in translationsList) {
-          if (t is Map && t['is_direct_stream'] == true && t['episodes'] is List) {
-            final eps = t['episodes'] as List;
-            for (final e in eps) {
-              if (e is Map) {
-                final epNum = (e['episode'] as num?)?.toInt() ?? 1;
-                final link = (e['link'] ?? '') as String;
-                final fhd = e['fhd'] as String?;
-                final hd = e['hd'] as String?;
-                final sd = e['sd'] as String?;
-                final preview = e['preview'] as String?;
-
-                if (link.isNotEmpty) {
-                  directEpisodes.add(EpisodeItem(
-                    episode: epNum,
-                    name: e['name'] as String?,
-                    previewUrl: preview,
-                    sdUrl: sd ?? link,
-                    hdUrl: hd ?? link,
-                    fhdUrl: fhd ?? hd ?? link,
-                  ));
-                }
-              }
-            }
-            if (directEpisodes.isNotEmpty) break;
-          }
-        }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -704,6 +623,8 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     String backdropUrl;
     if (initialPoster.isNotEmpty && !initialPoster.contains('anilibria.top/upload/release/350x500')) {
       backdropUrl = initialPoster;
+    } else if (widget.title.shikimoriId != null && widget.title.shikimoriId! > 0) {
+      backdropUrl = 'https://shikimori.io/system/animes/original/${widget.title.shikimoriId}.jpg';
     } else if (widget.title.id > 0) {
       backdropUrl = 'https://shikimori.io/system/animes/original/${widget.title.id}.jpg';
     } else {
@@ -770,11 +691,18 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                   'User-Agent': 'SyncPai-App/1.0',
                                   'Referer': 'https://shikimori.io/',
                                 },
-                                placeholder: (context, url) => Container(color: AppColors.surface),
-                                errorWidget: (context, url, error) => Container(
-                                  color: AppColors.surface,
-                                  child: const Center(
-                                    child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 48),
+                                placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                                errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
+                                  imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
+                                  memCacheWidth: 1080,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.topCenter,
+                                  placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                                  errorWidget: (context, fallbackUrl, error) => Container(
+                                    color: AppColors.surface,
+                                    child: const Center(
+                                      child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1492,12 +1420,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                 ),
                                 child: Row(
                                     children: [
-                                      // 16:9 Превью серии
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: SizedBox(
-                                          width: 110,
-                                          height: 62,
+                                      // Превью серии с наложенной кнопкой Play
+                                      SizedBox(
+                                        width: 120,
+                                        height: 70,
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
                                           child: Stack(
                                             fit: StackFit.expand,
                                             children: [
@@ -1505,45 +1433,35 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                                 CachedNetworkImage(
                                                   imageUrl: epPreview,
                                                   fit: BoxFit.cover,
+                                                  memCacheWidth: 250,
                                                   placeholder: (context, url) =>
-                                                      const ShimmerPlaceholder.card(),
+                                                      const ColoredBox(color: Colors.black26),
                                                   errorWidget: (context, url, error) =>
-                                                      Container(
-                                                    color: AppColors.surfaceElevated,
-                                                    child: const Icon(
-                                                      Icons.movie_creation_outlined,
-                                                      color: AppColors.textMuted,
-                                                      size: 24,
-                                                    ),
-                                                  ),
+                                                      const ColoredBox(color: Colors.black26),
                                                 )
                                               else
-                                                Container(
-                                                  color: AppColors.surfaceElevated,
-                                                ),
+                                                const ColoredBox(color: Colors.black26),
 
-                                              // Мягкое затемнение для контраста иконки Play
+                                              // Полупрозрачный слой и кнопка Play поверх картинки
                                               Container(
-                                                color: Colors.black.withValues(alpha: 0.25),
+                                                color: isSelected
+                                                    ? Colors.black.withValues(alpha: 0.35)
+                                                    : Colors.black45,
                                               ),
-
-                                              // Иконка Play по центру
                                               Center(
                                                 child: Container(
-                                                  width: 28,
-                                                  height: 28,
+                                                  width: 32,
+                                                  height: 32,
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
                                                     color: isSelected
                                                         ? AppColors.primary
-                                                        : Colors.black.withValues(alpha: 0.5),
+                                                        : Colors.black.withValues(alpha: 0.45),
                                                   ),
-                                                  child: Icon(
-                                                    isSelected
-                                                        ? Icons.play_arrow_rounded
-                                                        : Icons.play_arrow_outlined,
-                                                    size: 18,
-                                                    color: AppColors.textPrimary,
+                                                  child: const Icon(
+                                                    Icons.play_arrow,
+                                                    color: Colors.white,
+                                                    size: 22,
                                                   ),
                                                 ),
                                               ),

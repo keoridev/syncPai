@@ -512,10 +512,10 @@ class SteamBackgroundTheme {
     ),
     SteamBackgroundTheme(
       id: 'snowy_mountain',
-      name: 'Зимняя Фудзияма',
+      name: 'Падающий Снег (Зимняя Фудзи)',
       gradient: [Color(0xFF0D1B2A), Color(0xFF1B263B), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1200&q=80',
-      icon: Icons.landscape_rounded,
+      assetOrUrl: 'snow',
+      icon: Icons.ac_unit_rounded,
     ),
     SteamBackgroundTheme(
       id: 'neon_samurai',
@@ -561,9 +561,9 @@ class SteamBackgroundTheme {
     ),
     SteamBackgroundTheme(
       id: 'snowy_village',
-      name: 'Зимняя Снежная Деревня',
+      name: 'Снежная Деревня (Live Снегопад)',
       gradient: [Color(0xFF0F1E36), Color(0xFF182848), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1200&q=80',
+      assetOrUrl: 'snow',
       icon: Icons.ac_unit_rounded,
     ),
     SteamBackgroundTheme(

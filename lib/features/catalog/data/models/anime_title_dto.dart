@@ -11,6 +11,7 @@ class AnimeTitleDto {
   final String posterSmall;
   final String posterMedium;
   final String posterOriginal;
+  final String fallbackPosterUrl;
   final int? episodesTotal;
   final int? latestEpisode;
   final String? season;
@@ -31,6 +32,7 @@ class AnimeTitleDto {
     required this.posterSmall,
     required this.posterMedium,
     required this.posterOriginal,
+    this.fallbackPosterUrl = '',
     this.episodesTotal,
     this.latestEpisode,
     this.season,
@@ -89,6 +91,16 @@ class AnimeTitleDto {
       smallUrl = _formatPosterUrl(posters['small']?['url'] as String?);
       mediumUrl = _formatPosterUrl(posters['medium']?['url'] as String?);
       origUrl = _formatPosterUrl(posters['original']?['url'] as String?);
+    }
+
+    final int? shikiId = (json['shikimori'] is Map)
+        ? (json['shikimori']['id'] as num?)?.toInt()
+        : null;
+    final String fallbackPoster = origUrl.isNotEmpty ? origUrl : mediumUrl;
+    if (shikiId != null && shikiId > 0) {
+      final shikiPoster = 'https://desu.shikimori.one/system/animes/original/$shikiId.jpg';
+      origUrl = shikiPoster;
+      mediumUrl = shikiPoster;
     }
 
     // 4. Сезон и год
@@ -214,6 +226,7 @@ class AnimeTitleDto {
       posterSmall: smallUrl,
       posterMedium: mediumUrl,
       posterOriginal: origUrl,
+      fallbackPosterUrl: fallbackPoster,
       episodesTotal: episodesTotal,
       latestEpisode: maxEpisode,
       season: seasonStr,
@@ -341,6 +354,7 @@ class AnimeTitleDto {
       posterSmall: posterSmall,
       posterMedium: posterMedium,
       posterOriginal: posterOriginal,
+      fallbackPosterUrl: fallbackPosterUrl.isNotEmpty ? fallbackPosterUrl : (posterMedium.isNotEmpty ? posterMedium : (posterOriginal.isNotEmpty ? posterOriginal : posterSmall)),
       episodesTotal: episodesTotal,
       latestEpisode: latestEpisode,
       season: season,

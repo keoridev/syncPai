@@ -174,6 +174,8 @@ class AuthRepositoryImpl implements AuthRepository {
         cloudRow?['favorite_anime_title'] as String? ?? local.favoriteAnimeTitle;
     String? effectiveFavAnimeId =
         cloudRow?['favorite_anime_id'] as String? ?? local.favoriteAnimeId;
+    String? effectiveFavAnimePoster =
+        cloudRow?['favorite_anime_poster'] as String? ?? local.favoriteAnimePoster;
 
     // 10. Акцентный цвет
     String effectiveAccent =
@@ -191,6 +193,7 @@ class AuthRepositoryImpl implements AuthRepository {
       badgeId: effectiveBadge ?? 'sync_master',
       favoriteAnimeTitle: effectiveFavAnimeTitle,
       favoriteAnimeId: effectiveFavAnimeId,
+      favoriteAnimePoster: effectiveFavAnimePoster,
       accentColor: effectiveAccent,
       isAnonymous: isAnon,
       createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ?? DateTime.now(),
@@ -228,6 +231,7 @@ class AuthRepositoryImpl implements AuthRepository {
           'badge_id': profile.badgeId,
           'favorite_anime_title': profile.favoriteAnimeTitle,
           'favorite_anime_id': profile.favoriteAnimeId,
+          'favorite_anime_poster': profile.favoriteAnimePoster,
           'accent_color': profile.accentColor,
           'created_at': profile.createdAt.toIso8601String(),
         });
@@ -485,9 +489,15 @@ class AuthRepositoryImpl implements AuthRepository {
       customStatus: customStatus ?? current.customStatus,
       bio: bio ?? current.bio,
       badgeId: badgeId ?? current.badgeId,
-      favoriteAnimeTitle: favoriteAnimeTitle ?? current.favoriteAnimeTitle,
-      favoriteAnimeId: favoriteAnimeId ?? current.favoriteAnimeId,
-      favoriteAnimePoster: favoriteAnimePoster ?? current.favoriteAnimePoster,
+      favoriteAnimeTitle: favoriteAnimeTitle != null
+          ? (favoriteAnimeTitle.isEmpty ? null : favoriteAnimeTitle)
+          : current.favoriteAnimeTitle,
+      favoriteAnimeId: favoriteAnimeId != null
+          ? (favoriteAnimeId.isEmpty ? null : favoriteAnimeId)
+          : current.favoriteAnimeId,
+      favoriteAnimePoster: favoriteAnimePoster != null
+          ? (favoriteAnimePoster.isEmpty ? null : favoriteAnimePoster)
+          : current.favoriteAnimePoster,
       accentColor: accentColor ?? current.accentColor,
     );
 

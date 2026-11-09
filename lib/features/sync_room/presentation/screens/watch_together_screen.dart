@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -48,7 +47,6 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     'alex', 'sakura', 'kaito', 'yuki', 'zero_two', 'megumin'
   };
 
-  // Демонстрационный список друзей с Presence-статусом и счетчиком стрика (Watch Streak)
   final List<Map<String, dynamic>> _friends = [
     {
       'id': 'fr_1',
@@ -407,8 +405,8 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     onPressed: () async {
-                      Navigator.of(sheetCtx).pop();
                       if (selectedTitle.id == 0) {
+                        Navigator.of(sheetCtx).pop();
                         // Свободная комната: переходим в каталог для выбора тайтла
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -442,6 +440,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
                       if (fullTitle.episodes.isEmpty) {
                         if (context.mounted) {
+                          Navigator.of(sheetCtx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -883,114 +882,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     );
   }
 
-  void _openCoopMatch(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.95),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
-                  ),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFF2A68).withValues(alpha: 0.45),
-                      blurRadius: 18,
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.style_rounded, color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Anime Match для двоих',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 20,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Anime Match работает только внутри комнаты совместного просмотра!\n\n'
-                'Создайте комнату или подключитесь по коду: внутри лобби откроется совместный свайп карточек аниме. '
-                'Как только ваши вкусы совпадут — серия мгновенно запустится сразу для вас обоих!',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF2A68),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    elevation: 4,
-                  ),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Создать комнату', style: TextStyle(fontWeight: FontWeight.w700)),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    _showCreateRoomSheet(context);
-                  },
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: AppColors.strokeMedium),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  icon: const Icon(Icons.login_rounded),
-                  label: const Text('Присоединиться по коду', style: TextStyle(fontWeight: FontWeight.w700)),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    _pinFocusNode.requestFocus();
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -1163,11 +1055,11 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                               onSubmitted: (_) => _handleJoinRoom(),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           GlassIconButton(
                             icon: Icons.qr_code_scanner_rounded,
                             tooltip: 'Сканировать QR камерой',
-                            size: 46,
+                            size: 42,
                             iconColor: AppColors.syncActive,
                             onTap: () {
                               QrScannerSheet.show(
@@ -1179,11 +1071,11 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                               );
                             },
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           GlassIconButton(
                             icon: Icons.content_paste_rounded,
                             tooltip: 'Вставить из буфера',
-                            size: 46,
+                            size: 42,
                             iconColor: AppColors.primaryLight,
                             onTap: () async {
                               final data = await Clipboard.getData('text/plain');
@@ -1192,12 +1084,12 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                               }
                             },
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: AppColors.textPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                               visualDensity: VisualDensity.compact,
@@ -1214,7 +1106,10 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                   )
                                 : const FittedBox(
                                     fit: BoxFit.scaleDown,
-                                    child: Text('Войти', style: TextStyle(fontWeight: FontWeight.w700)),
+                                    child: Text(
+                                      'Войти',
+                                      style: TextStyle(fontWeight: FontWeight.w700),
+                                    ),
                                   ),
                           ),
                         ],
@@ -1287,96 +1182,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
               ),
             ),
 
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-            // КАРТОЧКА 3 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Anime Match»
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                child: GlassContainer(
-                  borderRadius: BorderRadius.circular(22),
-                  blurSigma: 16,
-                  backgroundOpacity: 0.08,
-                  padding: const EdgeInsets.all(18),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFFF2A68).withValues(alpha: 0.4),
-                              blurRadius: 12,
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.style_rounded, color: Colors.white, size: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
-                              runSpacing: 2,
-                              children: [
-                                Text(
-                                  'Anime Match',
-                                  style: AppTypography.titleMedium.copyWith(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFF2A68).withValues(alpha: 0.16),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Text('В комнате', style: TextStyle(fontSize: 10, color: Color(0xFFFF5E3A), fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Свайпайте аниме вдвоем в комнате до первого совпадения',
-                              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 38,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFF2A68),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () => _openCoopMatch(context),
-                          child: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Свайпать', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
@@ -1387,33 +1193,40 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Друзья онлайн',
-                          style: AppTypography.titleMedium.copyWith(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.syncActive.withValues(alpha: 0.20),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppColors.syncActive.withValues(alpha: 0.4)),
-                          ),
-                          child: Text(
-                            '${_friends.where((f) => f['isOnline'] == true).length} в сети',
-                            style: AppTypography.caption.copyWith(
-                              color: AppColors.syncActive,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 11,
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Друзья онлайн',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.titleMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.syncActive.withValues(alpha: 0.20),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.syncActive.withValues(alpha: 0.4)),
+                            ),
+                            child: Text(
+                              '${_friends.where((f) => f['isOnline'] == true).length} в сети',
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.syncActive,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     TextButton.icon(
                       style: TextButton.styleFrom(
@@ -1490,11 +1303,15 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
-                                        friend['name'] as String,
-                                        style: AppTypography.labelLarge.copyWith(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w700,
+                                      Flexible(
+                                        child: Text(
+                                          friend['name'] as String,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.labelLarge.copyWith(
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                         ),
                                       ),
                                       if (friend['isPending'] == true) ...[

@@ -15,7 +15,7 @@ import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   MediaKit.ensureInitialized();
 
   try {
@@ -33,7 +33,7 @@ void main() async {
 }
 
 class SyncPaiApp extends StatelessWidget {
-  const SyncPaiApp({super.key});                           
+  const SyncPaiApp({super.key});
 
   @override
   Widget build(BuildContext context) {

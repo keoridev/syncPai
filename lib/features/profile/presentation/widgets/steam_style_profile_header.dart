@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
@@ -18,6 +19,7 @@ class SteamStyleProfileHeader extends StatelessWidget {
   final VoidCallback onCustomizerTap;
   final VoidCallback onEditProfileTap;
   final VoidCallback? onBackTap;
+  final VoidCallback? onSettingsTap;
   final bool showBackButton;
 
   const SteamStyleProfileHeader({
@@ -26,13 +28,17 @@ class SteamStyleProfileHeader extends StatelessWidget {
     required this.onCustomizerTap,
     required this.onEditProfileTap,
     this.onBackTap,
+    this.onSettingsTap,
     this.showBackButton = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final bgTheme = SteamBackgroundTheme.fromId(profile.backgroundId);
-    final accent = SteamProfileThemeAccent.fromHex(profile.accentColor).color;
+    final themeAccent = Theme.of(context).colorScheme.primary;
+    final accent = (profile.accentColor != null && profile.accentColor != '#E06C53')
+        ? SteamProfileThemeAccent.fromHex(profile.accentColor).color
+        : themeAccent;
 
     return Stack(
       children: [
@@ -104,7 +110,23 @@ class SteamStyleProfileHeader extends StatelessWidget {
           ),
         ),
 
-        // 5. Данные пользователя поверх фона
+        // 5. Кнопка настроек в правом верхнем углу
+        Positioned(
+          top: 14,
+          right: 16,
+          child: CircleAvatar(
+            backgroundColor: Colors.black.withValues(alpha: 0.5),
+            radius: 18,
+            child: IconButton(
+              icon: const Icon(Icons.settings, color: Colors.white, size: 20),
+              tooltip: 'Настройки',
+              onPressed: onSettingsTap ?? () => context.push('/settings'),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+
+        // 6. Данные пользователя поверх фона
         Positioned(
           bottom: 12,
           left: 18,

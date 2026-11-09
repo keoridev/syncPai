@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Генеративный голографический аватар-монограмма из матового стекла (Glassmorphism)
@@ -33,7 +34,7 @@ class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
       vsync: this,
       duration: const Duration(seconds: 6),
     );
-    final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
     if (widget.animate && !isTest) {
       _animController.repeat();
     }
@@ -42,7 +43,7 @@ class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
   @override
   void didUpdateWidget(covariant HolographicMonogramAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
     if (widget.animate && !isTest) {
       if (!_animController.isAnimating) _animController.repeat();
     } else {

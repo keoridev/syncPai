@@ -9,6 +9,7 @@ class AnimeTitle extends Equatable {
   final String posterSmall;
   final String posterMedium;
   final String posterOriginal;
+  final String fallbackPosterUrl;
   final int? episodesTotal;
   final int? latestEpisode;
   final String? season;
@@ -20,15 +21,18 @@ class AnimeTitle extends Equatable {
   final List<EpisodeItem> episodes;
   final String? trailerUrl;
   final String? shikimoriUrl;
+  final int? shikimoriId;
 
   const AnimeTitle({
     required this.id,
+    this.shikimoriId,
     required this.code,
     required this.russianTitle,
     required this.englishTitle,
     required this.posterSmall,
     required this.posterMedium,
     required this.posterOriginal,
+    this.fallbackPosterUrl = '',
     this.episodesTotal,
     this.latestEpisode,
     this.season,
@@ -41,6 +45,17 @@ class AnimeTitle extends Equatable {
     this.trailerUrl,
     this.shikimoriUrl,
   });
+
+  /// Основной постер
+  String get posterUrl => posterMedium.isNotEmpty
+      ? posterMedium
+      : (posterOriginal.isNotEmpty ? posterOriginal : posterSmall);
+
+  /// Резервный постер при 404 японского постера Shikimori
+  String get effectiveFallbackPoster {
+    if (fallbackPosterUrl.isNotEmpty) return fallbackPosterUrl;
+    return posterUrl;
+  }
 
   /// Отображаемое название (русское или fallback на английское)
   String get displayTitle => russianTitle.isNotEmpty ? russianTitle : englishTitle;
@@ -67,12 +82,14 @@ class AnimeTitle extends Equatable {
 
   AnimeTitle copyWith({
     int? id,
+    int? shikimoriId,
     String? code,
     String? russianTitle,
     String? englishTitle,
     String? posterSmall,
     String? posterMedium,
     String? posterOriginal,
+    String? fallbackPosterUrl,
     int? episodesTotal,
     int? latestEpisode,
     String? season,
@@ -87,12 +104,14 @@ class AnimeTitle extends Equatable {
   }) {
     return AnimeTitle(
       id: id ?? this.id,
+      shikimoriId: shikimoriId ?? this.shikimoriId,
       code: code ?? this.code,
       russianTitle: russianTitle ?? this.russianTitle,
       englishTitle: englishTitle ?? this.englishTitle,
       posterSmall: posterSmall ?? this.posterSmall,
       posterMedium: posterMedium ?? this.posterMedium,
       posterOriginal: posterOriginal ?? this.posterOriginal,
+      fallbackPosterUrl: fallbackPosterUrl ?? this.fallbackPosterUrl,
       episodesTotal: episodesTotal ?? this.episodesTotal,
       latestEpisode: latestEpisode ?? this.latestEpisode,
       season: season ?? this.season,
@@ -110,12 +129,14 @@ class AnimeTitle extends Equatable {
   @override
   List<Object?> get props => [
         id,
+        shikimoriId,
         code,
         russianTitle,
         englishTitle,
         posterSmall,
         posterMedium,
         posterOriginal,
+        fallbackPosterUrl,
         episodesTotal,
         latestEpisode,
         season,

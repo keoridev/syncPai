@@ -323,19 +323,29 @@ class PlayerCubit extends Cubit<PlayerState> {
       // Управление хоста (Play, Pause, Seek)
       case SyncActionTypes.controlAction:
         if (!state.isHost && !isFromSelf) {
-          final act = packet.payload['control_action'] as String?;
+          final act = packet.payload['control_action'] as String? ?? packet.payload['action'] as String?;
           final posMs = packet.payload['position_ms'] as int?;
+          final isPlayingVal = packet.payload['is_playing'] as bool?;
+          final timeVal = packet.payload['time'];
+          final timeMs = timeVal is num ? (timeVal * 1000).toInt() : null;
+          final effectivePosMs = posMs ?? timeMs;
 
-          if (act == 'play') {
+          if (act == 'play' || isPlayingVal == true) {
+            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() > 1000) {
+              player.seek(Duration(milliseconds: effectivePosMs));
+            }
             player.play();
-          } else if (act == 'pause') {
+          } else if (act == 'pause' || isPlayingVal == false) {
+            if (effectivePosMs != null) {
+              player.seek(Duration(milliseconds: effectivePosMs));
+            }
             player.pause();
-          } else if (act == 'seek' && posMs != null) {
-            final diff = posMs - state.position.inMilliseconds;
+          } else if (act == 'seek' && effectivePosMs != null) {
+            final diff = effectivePosMs - state.position.inMilliseconds;
             if (diff > 15000) {
               _activateSpoilerShield();
             }
-            player.seek(Duration(milliseconds: posMs));
+            player.seek(Duration(milliseconds: effectivePosMs));
           }
         }
         break;
@@ -573,12 +583,21 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void _broadcastControlAction(String action) {
-    if (state.isSyncRoom && state.isHost) {
+    if (state.isSyncRoom && state.isHost && state.roomCode != null) {
+      final posMs = state.position.inMilliseconds;
+      final isPlaying = action == 'play';
+
       syncRepository?.sendControlAction(
         roomCode: state.roomCode!,
         action: action,
-        positionMs: state.position.inMilliseconds,
+        positionMs: posMs,
         sender: 'Хост',
+      );
+
+      syncRepository?.sendSyncEvent(
+        roomCode: state.roomCode!,
+        time: posMs / 1000.0,
+        isPlaying: isPlaying,
       );
     }
   }
@@ -641,12 +660,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (links.isNotEmpty) {
           final direct = links.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
           if (direct.isNotEmpty) {
-            final directEps = direct.first.episodes.map((e) => EpisodeItem(
-              episode: e.episode,
-              sdUrl: e.link,
-              hdUrl: e.link,
-              fhdUrl: e.link,
-            )).toList();
+            final directEps = direct.first.episodes.map((e) => e.toEpisodeItem()).toList();
             final updatedTitle = state.title.copyWith(episodes: directEps);
             final targetEp = directEps.firstWhere(
               (e) => e.episode == state.episode.episode,
@@ -776,8 +790,18 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   void playOrPause() {
     if (state.isSyncRoom && !state.isHost) {
-      // Для гостя: отправляем запрос на паузу хосту
-      requestPauseFromHost();
+      if (state.isPlaying) {
+        requestPauseFromHost();
+      } else {
+        emit(state.copyWith(
+          errorMessage: () => 'Только хост может запустить воспроизведение комнаты',
+        ));
+        Timer(const Duration(seconds: 3), () {
+          if (!isClosed && state.errorMessage == 'Только хост может запустить воспроизведение комнаты') {
+            emit(state.copyWith(errorMessage: () => null));
+          }
+        });
+      }
       return;
     }
 
@@ -793,7 +817,17 @@ class PlayerCubit extends Cubit<PlayerState> {
   void togglePlayPause() => playOrPause();
 
   void play() {
-    if (state.isSyncRoom && !state.isHost) return;
+    if (state.isSyncRoom && !state.isHost) {
+      emit(state.copyWith(
+        errorMessage: () => 'Только хост может запустить воспроизведение комнаты',
+      ));
+      Timer(const Duration(seconds: 3), () {
+        if (!isClosed && state.errorMessage == 'Только хост может запустить воспроизведение комнаты') {
+          emit(state.copyWith(errorMessage: () => null));
+        }
+      });
+      return;
+    }
     player.play();
     _broadcastControlAction('play');
     _resetControlsTimer();
@@ -1063,6 +1097,14 @@ class PlayerCubit extends Cubit<PlayerState> {
   void requestPauseFromHost() {
     if (state.isSyncRoom && !state.isHost) {
       player.pause();
+      emit(state.copyWith(
+        errorMessage: () => 'Запрос на паузу отправлен хосту',
+      ));
+      Timer(const Duration(seconds: 3), () {
+        if (!isClosed && state.errorMessage == 'Запрос на паузу отправлен хосту') {
+          emit(state.copyWith(errorMessage: () => null));
+        }
+      });
       syncRepository?.sendRequestPause(
         roomCode: state.roomCode!,
         sender: state.peerName ?? 'Гость',

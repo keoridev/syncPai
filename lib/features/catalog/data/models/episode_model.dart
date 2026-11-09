@@ -67,14 +67,19 @@ class EpisodeModel {
 
     final link = (json['link'] ?? json['fhd'] ?? json['hd'] ?? json['sd'] ?? '') as String;
 
+    final previewPath = (json['preview'] ?? json['preview_url'] ?? json['thumbnail'] ?? (json['poster'] is Map ? (json['poster']['preview'] ?? json['poster']['src']) : null))?.toString();
+    final fullPreviewUrl = (previewPath != null && previewPath.isNotEmpty)
+        ? (previewPath.startsWith('http') ? previewPath : 'https://anilibria.top$previewPath')
+        : null;
+
     return EpisodeModel(
-      episode: (json['episode'] as num?)?.toInt() ?? 1,
+      episode: (json['episode'] as num?)?.toInt() ?? (json['ordinal'] as num?)?.toInt() ?? 1,
       link: link,
       name: json['name'] as String?,
       fhd: json['fhd'] as String?,
       hd: json['hd'] as String?,
       sd: json['sd'] as String?,
-      preview: (json['preview'] ?? json['preview_url']) as String?,
+      preview: fullPreviewUrl,
       opening: opRange,
       ending: edRange,
     );

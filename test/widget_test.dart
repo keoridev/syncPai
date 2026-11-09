@@ -28,6 +28,7 @@ import 'package:sync_pai/features/anime_details/presentation/widgets/resume_prog
 import 'package:sync_pai/features/anime_details/presentation/widgets/score_distribution_chart.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_distribution_widget.dart';
 import 'package:sync_pai/features/profile/presentation/widgets/profile_activity_chart.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/data/models/anime_catalog_model.dart';
@@ -91,6 +92,7 @@ import 'package:sync_pai/features/main/presentation/screens/main_screen.dart';
 import 'package:sync_pai/features/sync_room/presentation/screens/watch_together_screen.dart';
 import 'package:sync_pai/features/anime_lists/presentation/screens/saved_anime_screen.dart';
 import 'package:sync_pai/features/profile/presentation/screens/profile_screen.dart';
+import 'package:sync_pai/features/settings/presentation/screens/settings_screen.dart';
 import 'package:sync_pai/features/watch_history/data/repositories/watch_history_repository_impl.dart';
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/domain/repositories/watch_history_repository.dart';
@@ -567,9 +569,15 @@ void main() {
       sender: 'Алиса',
     );
 
+    await repo.sendSyncEvent(
+      roomCode: roomCode,
+      time: 125.5,
+      isPlaying: true,
+    );
+
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    expect(receivedPackets.length, 4);
+    expect(receivedPackets.length, 5);
     expect(receivedPackets[0].action, SyncActionTypes.heartbeat);
     expect(receivedPackets[0].payload['position_ms'], 42000);
     expect(receivedPackets[1].action, SyncActionTypes.reaction);
@@ -577,6 +585,10 @@ void main() {
     expect(receivedPackets[2].action, SyncActionTypes.chatMessage);
     expect(receivedPackets[2].payload['text'], 'Привет всем!');
     expect(receivedPackets[3].action, SyncActionTypes.bufferWait);
+    expect(receivedPackets[4].action, SyncActionTypes.controlAction);
+    expect(receivedPackets[4].payload['time'], 125.5);
+    expect(receivedPackets[4].payload['position_ms'], 125500);
+    expect(receivedPackets[4].payload['is_playing'], true);
 
     await sub.cancel();
   });
@@ -1412,10 +1424,36 @@ Title,Status,Episodes
 
     expect(find.text('Мой профиль'), findsOneWidget);
     expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsOneWidget);
-    expect(find.text('Импорт из Anixart'), findsOneWidget);
-    expect(find.text('По ID'), findsOneWidget);
-    expect(find.text('Файл'), findsOneWidget);
+    expect(find.byIcon(Icons.settings), findsOneWidget);
     expect(find.textContaining('Смотрю'), findsOneWidget);
+  });
+
+  testWidgets('ProfileScreen with friend userId hides settings, auth banner and renders friend header', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: getIt<AuthCubit>()),
+          BlocProvider.value(value: getIt<AnimeListCubit>()),
+        ],
+        child: const MaterialApp(
+          home: ProfileScreen(userId: 'friend_user_999'),
+        ),
+      ),
+    );
+
+    // Должна отображаться плашка "Профиль друга", а не "Мой профиль"
+    expect(find.text('Профиль друга'), findsOneWidget);
+    expect(find.text('Мой профиль'), findsNothing);
+
+    // Шестеренка настроек скрыта для чужих профилей
+    expect(find.byIcon(Icons.settings), findsNothing);
+
+    // Плашка авторизации Google скрыта
+    expect(find.text('Сохраните свой прогресс'), findsNothing);
   });
 
   test('ShikimoriRemoteDataSource BBCode parser and sanitizer', () {
@@ -1448,7 +1486,7 @@ Title,Status,Episodes
     );
   });
 
-  testWidgets('ProfileScreen renders online import modal when tapping По ID', (tester) async {
+  testWidgets('SettingsScreen renders online import modal when tapping По ID', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -1463,16 +1501,16 @@ Title,Status,Episodes
           BlocProvider.value(value: getIt<AnimeListCubit>()),
         ],
         child: const MaterialApp(
-          home: ProfileScreen(),
+          home: SettingsScreen(),
         ),
       ),
     );
 
-    expect(find.text('По ID'), findsOneWidget);
+    expect(find.text('Импорт из Anixart по ID'), findsOneWidget);
 
-    // Тапаем по кнопке «По ID»
-    await tester.ensureVisible(find.text('По ID'));
-    await tester.tap(find.text('По ID'));
+    // Тапаем по кнопке «Импорт из Anixart по ID»
+    await tester.ensureVisible(find.text('Импорт из Anixart по ID'));
+    await tester.tap(find.text('Импорт из Anixart по ID'));
     await tester.pumpAndSettle();
 
     expect(find.text('Импорт профиля Anixart'), findsOneWidget);
@@ -1550,7 +1588,7 @@ Title,Status,Episodes
     expect(find.text('Просмотрено'), findsOneWidget);
   });
 
-  testWidgets('ProfileScreen renders settings section and player options', (tester) async {
+  testWidgets('SettingsScreen renders settings section and player options', (tester) async {
     await tester.pumpWidget(
       MultiBlocProvider(
         providers: [
@@ -1558,12 +1596,12 @@ Title,Status,Episodes
           BlocProvider.value(value: getIt<AnimeListCubit>()),
         ],
         child: const MaterialApp(
-          home: ProfileScreen(showBackButton: false),
+          home: SettingsScreen(),
         ),
       ),
     );
 
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
     await tester.pumpAndSettle();
 
     expect(find.text('НАСТРОЙКИ ПЛЕЕРА И СИСТЕМЫ'), findsOneWidget);
@@ -1573,6 +1611,10 @@ Title,Status,Episodes
   });
 
   testWidgets('MainScreen integrates 4 tabs with LiquidGlassNavBar and switches between them', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.pumpWidget(
       MultiBlocProvider(
         providers: [
@@ -1597,17 +1639,17 @@ Title,Status,Episodes
     expect(find.byType(LiquidGlassNavBar), findsOneWidget);
     expect(find.text('Каталог'), findsAtLeast(1));
 
-    // Переключаемся на Вкладку 1: Вместе
+    // Переключаемся на Вкладку 2: Вместе
     await tester.tap(find.text('Вместе'));
     await tester.pumpAndSettle();
     expect(find.text('Смотреть вместе'), findsOneWidget);
 
-    // Переключаемся на Вкладку 2: Списки
+    // Переключаемся на Вкладку 3: Списки
     await tester.tap(find.text('Списки'));
     await tester.pumpAndSettle();
     expect(find.text('Мои списки'), findsOneWidget);
 
-    // Переключаемся на Вкладку 3: Профиль
+    // Переключаемся на Вкладку 4: Профиль
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
     expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsOneWidget);
@@ -3625,18 +3667,90 @@ Title,Status,Episodes
 
         expect(find.text('Такого друга не существует'), findsOneWidget);
       });
+
+      test('CatalogCubit caches category lists in-memory and switches instantaneously without re-fetching', () async {
+        int getCatalogCalls = 0;
+        final mockRepo = _CountingMockAnimeCatalogRepository(
+          onGetCatalog: () => getCatalogCalls++,
+        );
+        final cubit = CatalogCubit(
+          getUpdates: getIt<GetUpdates>(),
+          searchTitles: getIt<SearchTitles>(),
+          getCatalogUseCase: GetCatalogUseCase(mockRepo),
+        );
+
+        // 1. Первая загрузка «Сёнэн» (нет в кэше)
+        cubit.onCategoryChanged('Сёнэн');
+        await Future.delayed(const Duration(milliseconds: 50));
+        expect(cubit.state, isA<CatalogLoaded>());
+        expect(getCatalogCalls, 1);
+        expect((cubit.state as CatalogLoaded).titles.first.russianTitle, contains('Сёнэн'));
+
+        // 2. Первая загрузка «Экшен» (нет в кэше)
+        cubit.onCategoryChanged('Экшен');
+        await Future.delayed(const Duration(milliseconds: 50));
+        expect(cubit.state, isA<CatalogLoaded>());
+        expect(getCatalogCalls, 2);
+        expect((cubit.state as CatalogLoaded).titles.first.russianTitle, contains('Экшен'));
+
+        // 3. Возврат на «Сёнэн» — отдается мгновенно из In-Memory кэша, счетчик вызовов не растет!
+        cubit.onCategoryChanged('Сёнэн');
+        expect(cubit.state, isA<CatalogLoaded>());
+        expect(getCatalogCalls, 2); // Снова 2! Никакого сетевого запроса!
+        expect((cubit.state as CatalogLoaded).titles.first.russianTitle, contains('Сёнэн'));
+
+        // 4. Пагинация loadMore() прибавляет элементы
+        await cubit.loadMore();
+        expect(getCatalogCalls, 3);
+        expect((cubit.state as CatalogLoaded).currentPage, 2);
+      });
     });
   });
+}
+
+class _CountingMockAnimeCatalogRepository implements AnimeCatalogRepository {
+  final VoidCallback? onGetCatalog;
+
+  _CountingMockAnimeCatalogRepository({this.onGetCatalog});
+
+  @override
+  Future<List<AnimeEntity>> getCatalog({
+    int page = 1,
+    int limit = 40,
+    String? genres,
+    String? year,
+  }) async {
+    onGetCatalog?.call();
+    final genreName = genres ?? 'Все';
+    return List.generate(
+      20,
+      (i) => AnimeEntity(
+        id: '${genreName}_p${page}_$i',
+        shikimoriId: page * 1000 + i,
+        titleRu: 'Тайтл $genreName (Стр. $page - $i)',
+        titleEn: 'Title $genreName Page $page $i',
+        status: 'ongoing',
+        score: 9.0,
+        episodesTotal: 12,
+        genres: [genreName],
+      ),
+    );
+  }
+
+  @override
+  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async => [];
+
+  @override
+  Future<List<TranslationEntity>> getPlayerLinks(int releaseId, {String? title}) async => [];
 }
 
 class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
   @override
   Future<List<AnimeEntity>> getCatalog({
     int page = 1,
-    int limit = 30,
-    String? order,
-    String? status,
-    String? genre,
+    int limit = 40,
+    String? genres,
+    String? year,
   }) async {
     return [
       const AnimeEntity(
@@ -3667,7 +3781,7 @@ class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
   }
 
   @override
-  Future<List<TranslationEntity>> getPlayerLinks(int shikimoriId, {String? title}) async {
+  Future<List<TranslationEntity>> getPlayerLinks(int releaseId, {String? title}) async {
     return [
       const TranslationEntity(
         studioName: 'AniLibria',

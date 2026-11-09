@@ -6,8 +6,8 @@ class GetPlayerLinksUseCase {
 
   const GetPlayerLinksUseCase(this.repository);
 
-  Future<List<TranslationEntity>> call(int shikimoriId, {String? title}) {
-    return repository.getPlayerLinks(shikimoriId, title: title);
+  Future<List<TranslationEntity>> call(int releaseId, {String? title}) {
+    return repository.getPlayerLinks(releaseId, title: title);
   }
 }
 

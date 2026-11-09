@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -259,13 +261,26 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                   // Постер аниме с закруглениями
                   ClipRRect(
                     borderRadius: BorderRadius.circular(24),
-                    child: title.posterOriginal.isNotEmpty || title.posterMedium.isNotEmpty
+                    child: title.posterUrl.isNotEmpty
                         ? CachedNetworkImage(
-                            imageUrl: title.posterOriginal.isNotEmpty
-                                ? title.posterOriginal
-                                : title.posterMedium,
+                            imageUrl: wrapCorsSafeUrl(title.posterUrl),
+                            memCacheWidth: 600,
                             fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
+                            httpHeaders: const {
+                              'User-Agent': 'SyncPai-App/1.0',
+                              'Referer': 'https://shikimori.io/',
+                            },
+                            placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                            errorWidget: (_, __, ___) => title.effectiveFallbackPoster.isNotEmpty &&
+                                    title.effectiveFallbackPoster != title.posterUrl
+                                ? CachedNetworkImage(
+                                    imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
+                                    memCacheWidth: 600,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                    errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
+                                  )
+                                : Container(color: AppColors.surfaceElevated),
                           )
                         : Container(color: AppColors.surfaceElevated),
                   ),
@@ -498,126 +513,165 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
   }
 
   void _showMatchDialog(BuildContext context, AnimeTitle matched) {
+    int countdown = 3;
+    Timer? countdownTimer;
+
+    Future<void> launchPlayback(BuildContext dialogCtx) async {
+      countdownTimer?.cancel();
+      await widget.cubit.startWatchingMatch();
+      if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      widget.onStartWatching?.call(matched);
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Dialog(
-          backgroundColor: Colors.transparent,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              GlassContainer(
-                borderRadius: BorderRadius.circular(28),
-                blurSigma: 24,
-                backgroundOpacity: 0.18,
-                customBorder: Border.all(color: AppColors.syncActive.withValues(alpha: 0.6), width: 1.5),
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          countdownTimer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+            if (!dialogCtx.mounted) {
+              t.cancel();
+              return;
+            }
+            if (countdown > 1) {
+              setDialogState(() => countdown--);
+            } else {
+              t.cancel();
+              launchPlayback(dialogCtx);
+            }
+          });
+
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GlassContainer(
+                    borderRadius: BorderRadius.circular(28),
+                    blurSigma: 24,
+                    backgroundOpacity: 0.18,
+                    customBorder: Border.all(color: AppColors.syncActive.withValues(alpha: 0.6), width: 1.5),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
-                        SizedBox(width: 8),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                            SizedBox(width: 8),
+                            Text(
+                              'ЭТО МЭТЧ!',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         Text(
-                          'ЭТО МЭТЧ!',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            letterSpacing: 1.5,
+                          'Вы оба выбрали этот тайтл! Включаем серию...',
+                          style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Картинка совпавшего аниме
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: SizedBox(
+                            width: 140,
+                            height: 200,
+                            child: matched.posterUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: wrapCorsSafeUrl(matched.posterUrl),
+                                    memCacheWidth: 450,
+                                    fit: BoxFit.cover,
+                                    httpHeaders: const {
+                                      'User-Agent': 'SyncPai-App/1.0',
+                                      'Referer': 'https://shikimori.io/',
+                                    },
+                                    placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                    errorWidget: (_, __, ___) => matched.effectiveFallbackPoster.isNotEmpty &&
+                                            matched.effectiveFallbackPoster != matched.posterUrl
+                                        ? CachedNetworkImage(
+                                            imageUrl: wrapCorsSafeUrl(matched.effectiveFallbackPoster),
+                                            memCacheWidth: 450,
+                                            fit: BoxFit.cover,
+                                            placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                            errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
+                                          )
+                                        : Container(color: AppColors.surfaceElevated),
+                                  )
+                                : Container(color: AppColors.surfaceElevated),
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.auto_awesome, color: AppColors.syncActive, size: 22),
+                        const SizedBox(height: 14),
+
+                        Text(
+                          matched.displayTitle,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.titleMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Кнопка запуска серии
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.syncActive,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 4,
+                              shadowColor: AppColors.syncActive.withValues(alpha: 0.4),
+                            ),
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            label: Text(
+                              'Смотреть вместе ($countdown с.) ▶',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            onPressed: () => launchPlayback(dialogCtx),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        TextButton(
+                          onPressed: () {
+                            countdownTimer?.cancel();
+                            widget.cubit.clearMatch();
+                            Navigator.of(dialogCtx).pop();
+                          },
+                          child: const Text('Продолжить поиск', style: TextStyle(color: AppColors.textMuted)),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Вы оба хотите смотреть:',
-                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 16),
+                  ),
 
-                    // Картинка совпавшего аниме
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        width: 140,
-                        height: 200,
-                        child: CachedNetworkImage(
-                          imageUrl: matched.posterMedium.isNotEmpty
-                              ? matched.posterMedium
-                              : matched.posterSmall,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    Text(
-                      matched.displayTitle,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.titleMedium.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Кнопка запуска серии
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.syncActive,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 4,
-                          shadowColor: AppColors.syncActive.withValues(alpha: 0.4),
-                        ),
-                        icon: const Icon(Icons.play_arrow_rounded),
-                        label: const Text(
-                          'Смотреть 1-ю серию вместе',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        onPressed: () async {
-                          await widget.cubit.startWatchingMatch();
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                          if (context.mounted && Navigator.of(context).canPop()) {
-                            Navigator.of(context).pop();
-                          }
-                          widget.onStartWatching?.call(matched);
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    TextButton(
-                      onPressed: () {
-                        widget.cubit.clearMatch();
-                        Navigator.of(ctx).pop();
-                      },
-                      child: const Text('Продолжить поиск', style: TextStyle(color: AppColors.textMuted)),
-                    ),
-                  ],
-                ),
+                  // Праздничный салют конфетти поверх модального окна
+                  const Positioned.fill(
+                    child: MatchConfettiBlastWidget(),
+                  ),
+                ],
               ),
-
-              // Праздничный салют конфетти поверх модального окна
-              const Positioned.fill(
-                child: MatchConfettiBlastWidget(),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

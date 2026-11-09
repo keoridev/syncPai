@@ -68,17 +68,36 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
           try {
             response = await client.get('${ApiConstants.releaseDetails}/$code');
           } catch (_) {
-            // Если прямой запрос по слагу тоже вернул 404, пробуем найти через поисковый эндпоинт
             try {
               final searchResults = await searchTitles(code);
               if (searchResults.isNotEmpty) {
                 return searchResults.first;
               }
             } catch (_) {}
-            rethrow;
           }
-        } else {
-          rethrow;
+        }
+
+        if (response == null) {
+          // Безопасный fallback DTO для Shikimori тайтлов без релиза в AniLibria
+          final poster = (id != null && id > 0)
+              ? 'https://desu.shikimori.one/system/animes/original/$id.jpg'
+              : '';
+          final fallback = (id != null && id > 0)
+              ? 'https://shikimori.one/system/animes/original/$id.jpg'
+              : '';
+          return AnimeTitleDto(
+            id: id ?? 0,
+            code: code ?? 'shikimori_${id ?? 0}',
+            russianTitle: code ?? 'Аниме #${id ?? 0}',
+            englishTitle: code ?? '',
+            posterSmall: poster,
+            posterMedium: poster,
+            posterOriginal: poster,
+            fallbackPosterUrl: fallback,
+            genres: const [],
+            description: '',
+            status: 'В эфире',
+          );
         }
       }
 

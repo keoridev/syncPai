@@ -12,6 +12,7 @@ class AnimeClip extends Equatable {
   final String caption;
   final String videoUrl;
   final String? youtubeUrl;
+  final String? youtubeId;
   final int likesCount;
   final String authorName;
   final List<String> tags;
@@ -29,6 +30,7 @@ class AnimeClip extends Equatable {
     required this.caption,
     required this.videoUrl,
     this.youtubeUrl,
+    this.youtubeId,
     this.likesCount = 0,
     this.authorName = 'SyncPai Moments',
     this.tags = const [],
@@ -62,6 +64,7 @@ class AnimeClip extends Equatable {
     String? caption,
     String? videoUrl,
     String? youtubeUrl,
+    String? youtubeId,
     int? likesCount,
     String? authorName,
     List<String>? tags,
@@ -79,6 +82,7 @@ class AnimeClip extends Equatable {
       caption: caption ?? this.caption,
       videoUrl: videoUrl ?? this.videoUrl,
       youtubeUrl: youtubeUrl ?? this.youtubeUrl,
+      youtubeId: youtubeId ?? this.youtubeId,
       likesCount: likesCount ?? this.likesCount,
       authorName: authorName ?? this.authorName,
       tags: tags ?? this.tags,
@@ -99,6 +103,7 @@ class AnimeClip extends Equatable {
       'caption': caption,
       'videoUrl': videoUrl,
       'youtubeUrl': youtubeUrl,
+      if (youtubeId != null) 'youtubeId': youtubeId,
       'likesCount': likesCount,
       'authorName': authorName,
       'tags': tags,
@@ -119,6 +124,7 @@ class AnimeClip extends Equatable {
       caption: json['caption'] as String? ?? '',
       videoUrl: json['videoUrl'] as String? ?? '',
       youtubeUrl: json['youtubeUrl'] as String?,
+      youtubeId: json['youtubeId'] as String?,
       likesCount: (json['likesCount'] as num?)?.toInt() ?? 0,
       authorName: json['authorName'] as String? ?? 'SyncPai Moments',
       tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
@@ -139,6 +145,7 @@ class AnimeClip extends Equatable {
         caption,
         videoUrl,
         youtubeUrl,
+        youtubeId,
         likesCount,
         authorName,
         tags,

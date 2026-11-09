@@ -21,6 +21,15 @@ create table if not exists public.anime_catalog (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+alter table public.anime_catalog add column if not exists title_ru text not null default '';
+alter table public.anime_catalog add column if not exists title_en text not null default '';
+alter table public.anime_catalog add column if not exists poster_url text;
+alter table public.anime_catalog add column if not exists kind text;
+alter table public.anime_catalog add column if not exists status text not null default 'ongoing';
+alter table public.anime_catalog add column if not exists score numeric(3, 1) default 0.0;
+alter table public.anime_catalog add column if not exists episodes_total int default 0;
+alter table public.anime_catalog add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now()) not null;
+
 -- 3. Индексы для сверхбыстрой фильтрации, пагинации и сортировки в UI
 create index if not exists idx_anime_catalog_status 
   on public.anime_catalog (status);
@@ -166,10 +175,9 @@ begin
     perform cron.schedule(
       'update_shikimori_catalog',
       '0 * * * *',
-      $$ 
+      $cron$ 
         select public.fetch_ongoing_anime();
-        select public.process_shikimori_ongoing_response();
-      $$
+      $cron$
     );
   end if;
 end;

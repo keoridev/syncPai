@@ -97,4 +97,37 @@ create policy "Service role can manage anime catalog"
 -- Включение Realtime для каталога
 alter publication supabase_realtime add table public.anime_catalog;
 
+-- ==============================================================================
+-- 6. Таблица аниме-моментов (anime_moments) для ленты Shorts / Reels
+-- ==============================================================================
+create table if not exists public.anime_moments (
+  id uuid default gen_random_uuid() primary key,
+  anime_id text not null,       -- AniLibria ID для перехода к просмотру
+  title text not null default '',         -- Название аниме
+  description text not null default '',   -- Описание момента
+  episode int not null default 1,         -- Номер серии
+  start_timestamp int not null default 0, -- Таймкод момента в секундах
+  video_url text not null default '',     -- Прямой URL к оптимизированному MP4 или HLS
+  youtube_id text,                        -- Исходный ID YouTube Shorts
+  likes_count int not null default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create index if not exists idx_anime_moments_anime_id on public.anime_moments (anime_id);
+create index if not exists idx_anime_moments_created_at on public.anime_moments (created_at desc);
+
+alter table public.anime_moments enable row level security;
+
+create policy "Public moments are viewable by everyone" 
+  on public.anime_moments for select 
+  using (true);
+
+create policy "Service role can manage anime moments" 
+  on public.anime_moments for all 
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+alter publication supabase_realtime add table public.anime_moments;
+
+
 

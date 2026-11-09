@@ -62,12 +62,18 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          maxWidth: 520,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Заголовок и иконка
             Row(
               children: [
@@ -330,8 +336,9 @@ class _ImportStatusSelectorDialogState extends State<ImportStatusSelectorDialog>
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildStatusTile({
     required AnimeListStatus status,

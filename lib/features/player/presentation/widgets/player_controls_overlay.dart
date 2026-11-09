@@ -520,7 +520,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                               icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
-                              label: const Text('Пропустить опенинг', style: TextStyle(color: AppColors.textPrimary)),
+                              label: Text(
+                                'Пропустить опенинг (${(ep.opening!.stop - state.position.inSeconds).clamp(1, 999)}с)',
+                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                              ),
                               onPressed: () => cubit.skipOpening(),
                             ),
                           ),
@@ -548,8 +551,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                         )
                       else if (!isGuestInSync &&
                           ep.ending != null &&
-                          state.position.inSeconds >= ep.ending!.start &&
-                          state.position.inSeconds < ep.ending!.stop)
+                          state.position.inSeconds >= (ep.ending!.start - 10) &&
+                          state.position.inSeconds <= ep.ending!.stop)
                         Align(
                           alignment: Alignment.centerRight,
                           child: Padding(
@@ -562,7 +565,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                               icon: const Icon(Icons.skip_next_rounded, color: AppColors.syncActive, size: 16),
-                              label: const Text('Пропустить эндинг', style: TextStyle(color: AppColors.textPrimary)),
+                              label: Text(
+                                hasNextEpisode ? 'Следующая серия (Эндинг)' : 'Пропустить эндинг',
+                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                              ),
                               onPressed: () {
                                 if (hasNextEpisode) {
                                   cubit.switchEpisode(allEpisodes[currentIndex + 1]);

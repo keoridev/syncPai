@@ -1695,7 +1695,6 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
 
               return Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: accent.withValues(alpha: 0.4)),
                   boxShadow: [
@@ -1707,7 +1706,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                   ],
                 ),
                 child: Material(
-                  color: Colors.transparent,
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: [
                       if (_isSearchingTitles)

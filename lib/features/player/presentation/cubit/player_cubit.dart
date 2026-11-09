@@ -105,6 +105,11 @@ class PlayerCubit extends Cubit<PlayerState> {
           _pendingInitialSeek = null;
           if (seekTarget < dur) {
             player.seek(seekTarget);
+            Future.delayed(const Duration(milliseconds: 350), () {
+              if (!isClosed && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
+                player.seek(seekTarget);
+              }
+            });
           }
         }
       }),

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -193,6 +194,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         final match = catalogState.titles.firstWhere(
           (t) =>
               t.id == entry.animeId ||
+              (t.shikimoriId != null && t.shikimoriId == entry.animeId) ||
               t.russianTitle.toLowerCase().trim() == clean ||
               (t.englishTitle.isNotEmpty &&
                   t.englishTitle.toLowerCase().trim() == clean),
@@ -202,6 +204,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         if (match.posterSmall.isNotEmpty) return match.posterSmall;
       }
     } catch (_) {}
+    if (entry.animeId > 0) {
+      return 'https://shikimori.io/system/animes/original/${entry.animeId}.jpg';
+    }
     return entry.posterUrl ?? '';
   }
 
@@ -258,10 +263,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     }
 
     return CachedNetworkImage(
-      imageUrl: posterUrl,
+      imageUrl: wrapCorsSafeUrl(posterUrl),
       width: width,
       height: height,
       fit: BoxFit.cover,
+      alignment: Alignment.topCenter,
       filterQuality: FilterQuality.high,
       placeholder: (_, __) => ShimmerPlaceholder(
         width: width ?? double.infinity,

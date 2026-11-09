@@ -506,7 +506,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         : (screenWidth > 600
                             ? 4
                             : state.gridDensity.mobileColumns);
-                    final ratio = columns >= 3 ? 0.60 : 0.68;
+                    // Дефолтный естественный аспект 2:3 без сильной обрезки по вертикали
+                    final ratio = columns >= 3 ? 0.54 : 0.59;
                     final spacing = columns >= 3 ? 8.0 : 12.0;
 
                     return SliverPadding(

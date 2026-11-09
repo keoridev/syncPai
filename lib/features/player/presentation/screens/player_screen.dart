@@ -212,7 +212,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     if (pos.inSeconds >= 5 && dur.inSeconds > 0) {
       if (getIt.isRegistered<WatchHistoryCubit>()) {
-        getIt<WatchHistoryCubit>().saveProgress(
+        final hist = getIt<WatchHistoryCubit>();
+        hist.saveProgress(
           titleId: widget.title.id,
           titleName: widget.title.displayTitle,
           posterUrl: widget.title.posterMedium.isNotEmpty
@@ -223,13 +224,33 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           position: pos,
           duration: dur,
         );
+        if (widget.title.shikimoriId != null &&
+            widget.title.shikimoriId! > 0 &&
+            widget.title.shikimoriId != widget.title.id) {
+          hist.saveProgress(
+            titleId: widget.title.shikimoriId!,
+            titleName: widget.title.displayTitle,
+            posterUrl: widget.title.posterMedium.isNotEmpty
+                ? widget.title.posterMedium
+                : widget.title.posterSmall,
+            episode: ep,
+            episodeName: _cubit.state.episode.name,
+            position: pos,
+            duration: dur,
+          );
+        }
       }
     }
 
     if (getIt.isRegistered<AnimeListCubit>()) {
       try {
         final listCubit = getIt<AnimeListCubit>();
-        final existing = listCubit.state.getEntryFor(widget.title.id);
+        var existing = listCubit.state.getEntryFor(widget.title.id);
+        if (existing == null &&
+            widget.title.shikimoriId != null &&
+            widget.title.shikimoriId! > 0) {
+          existing = listCubit.state.getEntryFor(widget.title.shikimoriId!);
+        }
         if (existing != null) {
           final isEpDone = dur.inSeconds > 0 &&
               (pos.inSeconds >= (dur.inSeconds - 60) ||

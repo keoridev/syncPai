@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -48,11 +46,9 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen> {
   bool _showActivityCharts = false;
   bool _guestBannerDismissed = false;
-  late final AnimationController _neonPulseController;
-  late final Animation<double> _neonPulseAnim;
   late final ProfileCubit _profileCubit;
 
   static const List<String> _avatarPresets = [
@@ -63,18 +59,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _loadBannerDismissed();
-    _neonPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    );
-    final isInTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
-    if (!isInTest) {
-      _neonPulseController.repeat(reverse: true);
-    }
-    _neonPulseAnim = Tween<double>(begin: 0.55, end: 1.0).animate(
-      CurvedAnimation(parent: _neonPulseController, curve: Curves.easeInOut),
-    );
-
     _profileCubit = getIt.isRegistered<ProfileCubit>()
         ? getIt<ProfileCubit>()
         : ProfileCubit(
@@ -108,7 +92,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   @override
   void dispose() {
-    _neonPulseController.dispose();
     _profileCubit.close();
     super.dispose();
   }
@@ -879,25 +862,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Аватар 96x96 в анимированном неоновом кольце с дышащим BoxShadow
-        AnimatedBuilder(
-          animation: _neonPulseAnim,
-          builder: (context, child) {
-            final shadowFactor = _neonPulseAnim.value;
-            return Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: (0.65 * shadowFactor).clamp(0.0, 1.0)),
-                    blurRadius: 20 * shadowFactor,
-                    spreadRadius: 2 * shadowFactor,
-                  ),
-                ],
+        // Аватар 96x96 в чистом стиле Liquid Glass
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
               ),
-              child: child,
-            );
-          },
+            ],
+          ),
           child: SteamAvatarFrameWidget(
             frameId: profile.frameId,
             size: 96,
@@ -905,8 +881,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               avatarUrl: profile.avatarUrl,
               username: profile.username,
               size: 96,
-              borderColor: accent,
-              borderWidth: 2.5,
+              borderColor: Colors.white.withValues(alpha: 0.25),
+              borderWidth: 2.0,
             ),
           ),
         ),

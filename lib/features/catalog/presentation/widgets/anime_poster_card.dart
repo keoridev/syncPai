@@ -64,10 +64,10 @@ class AnimePosterCard extends StatelessWidget {
                           imageUrl: wrapCorsSafeUrl(posterUrl),
                           memCacheWidth: 400,
                           fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
                           httpHeaders: const {
                             'User-Agent':
                                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                            'Referer': 'https://shikimori.io/',
                           },
                           placeholder: (context, url) =>
                               const ColoredBox(color: Colors.black26),
@@ -78,10 +78,10 @@ class AnimePosterCard extends StatelessWidget {
                                 imageUrl: wrapCorsSafeUrl(fallbackPoster),
                                 memCacheWidth: 400,
                                 fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
                                 httpHeaders: const {
                                   'User-Agent':
                                       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                                  'Referer': 'https://shikimori.io/',
                                 },
                                 placeholder: (context, url) =>
                                     const ColoredBox(color: Colors.black26),

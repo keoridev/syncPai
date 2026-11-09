@@ -501,17 +501,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       );
                     }
 
-                    // СЕТКА НА 2 КОЛОНКИ С КРУПНЫМ АСПЕКТ-РЕЙШИО 0.68
+                    final columns = screenWidth > 900
+                        ? 5
+                        : (screenWidth > 600
+                            ? 4
+                            : state.gridDensity.mobileColumns);
+                    final ratio = columns >= 3 ? 0.60 : 0.68;
+                    final spacing = columns >= 3 ? 8.0 : 12.0;
+
                     return SliverPadding(
                       padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                       sliver: SliverGrid(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: screenWidth > 900
-                              ? 5
-                              : (screenWidth > 600 ? 4 : 2), // Ровно 2 колонки на смартфонах!
-                          childAspectRatio: 0.68,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 16,
+                          crossAxisCount: columns,
+                          childAspectRatio: ratio,
+                          crossAxisSpacing: spacing,
+                          mainAxisSpacing: spacing + 4,
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {

@@ -394,8 +394,22 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       orElse: () => PlayerQuality.fhd,
     );
 
-    // Если начальная позиция передана напрямую (из карточки продолжения просмотра),
-    // стартуем плеер сразу с сохраненным качеством
+    Duration? effectiveInitialPosition = initialPosition;
+    if (effectiveInitialPosition == null) {
+      if (getIt.isRegistered<WatchHistoryCubit>()) {
+        final history = getIt<WatchHistoryCubit>().state.getForTitle(_currentTitle.id);
+        if (history != null && history.episode == episode.episode && history.positionMs > 2000) {
+          effectiveInitialPosition = Duration(milliseconds: history.positionMs);
+        }
+      }
+      if (effectiveInitialPosition == null && getIt.isRegistered<AnimeListCubit>()) {
+        final entry = getIt<AnimeListCubit>().state.getEntryFor(_currentTitle.id);
+        if (entry != null && entry.lastEpisode == episode.episode && entry.positionMs > 2000) {
+          effectiveInitialPosition = Duration(milliseconds: entry.positionMs);
+        }
+      }
+    }
+
     if (getIt.isRegistered<AnimeListCubit>()) {
       try {
         final listCubit = getIt<AnimeListCubit>();
@@ -409,7 +423,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 : _currentTitle.posterSmall,
             status: existing.status,
             lastEpisode: episode.episode,
-            positionMs: initialPosition?.inMilliseconds ?? 0,
+            positionMs: effectiveInitialPosition?.inMilliseconds ?? existing.positionMs,
             episodesTotal: _currentTitle.episodesTotal,
           );
         }
@@ -489,13 +503,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       return;
     }
 
-    if (initialPosition != null) {
+    if (effectiveInitialPosition != null && effectiveInitialPosition > Duration.zero) {
       if (widget.onResumeEpisode != null) {
-        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, defaultQuality, initialPosition);
-      } else {
-        widget.onPlayEpisode?.call(_currentTitle, targetEpisode, defaultQuality);
+        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, defaultQuality, effectiveInitialPosition);
+        return;
       }
-      return;
     }
 
     if (!mounted) return;
@@ -509,7 +521,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
     if (chosenQuality != null && mounted) {
       prefs?.setString('preferred_player_quality', chosenQuality.name);
-      widget.onPlayEpisode?.call(_currentTitle, targetEpisode, chosenQuality);
+      if (effectiveInitialPosition != null && effectiveInitialPosition > Duration.zero && widget.onResumeEpisode != null) {
+        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, chosenQuality, effectiveInitialPosition);
+      } else {
+        widget.onPlayEpisode?.call(_currentTitle, targetEpisode, chosenQuality);
+      }
     }
     } finally {
       _isOpeningEpisode = false;

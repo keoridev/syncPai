@@ -630,54 +630,43 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     syncPeerName: state.peerName,
                   ),
 
-                  // Плавающая кнопка разблокировки экрана при активной блокировке
+                  // Ненавязчивая плавающая иконка замка при активной блокировке
                   if (state.isScreenLocked)
                     Positioned(
                       left: 20,
                       top: MediaQuery.paddingOf(context).top + 16,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            HapticFeedback.heavyImpact();
-                            _cubit.toggleScreenLock();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Экран разблокирован'),
-                                duration: Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0.9, end: 0.4),
+                        duration: const Duration(seconds: 3),
+                        builder: (context, opacity, child) {
+                          return Opacity(
+                            opacity: opacity,
+                            child: child,
+                          );
+                        },
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              _cubit.toggleScreenLock();
+                            },
+                            borderRadius: BorderRadius.circular(24),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  width: 1.2,
+                                ),
                               ),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(28),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated.withValues(alpha: 0.90),
-                              borderRadius: BorderRadius.circular(28),
-                              border: Border.all(color: AppColors.primary, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.35),
-                                  blurRadius: 16,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.lock_rounded, color: AppColors.primaryLight, size: 20),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Разблокировать',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
+                              child: const Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
                             ),
                           ),
                         ),

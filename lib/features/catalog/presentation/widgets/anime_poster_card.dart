@@ -65,30 +65,36 @@ class AnimePosterCard extends StatelessWidget {
                           memCacheWidth: 400,
                           fit: BoxFit.cover,
                           httpHeaders: const {
-                            'User-Agent': 'SyncPai-App/1.0',
+                            'User-Agent':
+                                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                             'Referer': 'https://shikimori.io/',
                           },
                           placeholder: (context, url) =>
                               const ColoredBox(color: Colors.black26),
-                          errorWidget: (context, primaryUrl, error) =>
-                              CachedNetworkImage(
-                            imageUrl: wrapCorsSafeUrl(fallbackPoster),
-                            memCacheWidth: 400,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) =>
-                                const ColoredBox(color: Colors.black26),
-                            errorWidget: (context, fallbackUrl, error) =>
-                                const Center(
-                              child: Icon(Icons.broken_image,
-                                  color: Colors.white54),
-                            ),
-                          ),
+                          errorWidget: (context, primaryUrl, error) {
+                            if (fallbackPoster.isNotEmpty &&
+                                fallbackPoster != posterUrl) {
+                              return CachedNetworkImage(
+                                imageUrl: wrapCorsSafeUrl(fallbackPoster),
+                                memCacheWidth: 400,
+                                fit: BoxFit.cover,
+                                httpHeaders: const {
+                                  'User-Agent':
+                                      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                                  'Referer': 'https://shikimori.io/',
+                                },
+                                placeholder: (context, url) =>
+                                    const ColoredBox(color: Colors.black26),
+                                errorWidget: (context, fallbackUrl, error) =>
+                                    _buildImagePlaceholder(),
+                              );
+                            }
+                            return _buildImagePlaceholder();
+                          },
                         ),
                       )
                     else
-                      const Center(
-                        child: Icon(Icons.broken_image, color: Colors.white54),
-                      ),
+                      _buildImagePlaceholder(),
 
                     // Тончайший виньеточный градиент снизу для глубины (без тяжелых плашек)
             Positioned.fill(
@@ -189,6 +195,18 @@ class AnimePosterCard extends StatelessWidget {
     ),
   ],
 ),
+      ),
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Container(
+      color: AppColors.surfaceElevated,
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.movie_creation_outlined,
+        color: AppColors.textMuted,
+        size: 32,
       ),
     );
   }

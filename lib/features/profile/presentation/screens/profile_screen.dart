@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -49,6 +50,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   bool _showActivityCharts = false;
+  bool _guestBannerDismissed = false;
   late final AnimationController _neonPulseController;
   late final Animation<double> _neonPulseAnim;
   late final ProfileCubit _profileCubit;
@@ -60,6 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
+    _loadBannerDismissed();
     _neonPulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
@@ -79,6 +82,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             animeListRepository: getIt.isRegistered<AnimeListRepository>() ? getIt<AnimeListRepository>() : null,
           );
     _profileCubit.loadProfile(targetUserId: widget.userId);
+  }
+
+  void _loadBannerDismissed() {
+    if (getIt.isRegistered<SharedPreferences>()) {
+      final prefs = getIt<SharedPreferences>();
+      _guestBannerDismissed = prefs.getBool('guest_sync_banner_dismissed') ?? false;
+    }
+  }
+
+  void _dismissGuestBanner() {
+    setState(() => _guestBannerDismissed = true);
+    if (getIt.isRegistered<SharedPreferences>()) {
+      getIt<SharedPreferences>().setBool('guest_sync_banner_dismissed', true);
+    }
   }
 
   @override
@@ -671,7 +688,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  /// Блок статистики просмотра (3 симметричные колонки без перегородок)
+  /// Блок статистики просмотра (3 акцентные стеклянные карточки)
   Widget _buildStatsSection(
     BuildContext context,
     UserAnimeStats stats,
@@ -688,37 +705,51 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'СТАТИСТИКА ПРОСМОТРА',
-                  style: AppTypography.caption.copyWith(
-                    letterSpacing: 1.2,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.insights_rounded,
+                      size: 16,
+                      color: themePrimaryLight,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'СТАТИСТИКА ПРОСМОТРА',
+                      style: AppTypography.caption.copyWith(
+                        letterSpacing: 1.2,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
                 ),
                 GestureDetector(
                   onTap: () => setState(() => _showActivityCharts = !_showActivityCharts),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                     decoration: BoxDecoration(
-                      color: themePrimary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: themePrimary.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: themePrimary.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
-                          size: 13,
+                          size: 14,
                           color: themePrimaryLight,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _showActivityCharts ? 'Скрыть график' : 'Графики',
                           style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
                             color: themePrimaryLight,
                           ),
                         ),
@@ -728,81 +759,35 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
-            // 3 симметричные колонки, разделенные воздухом
+            // 3 стильные карточки с акцентными иконками и крупными цифрами
             Row(
               children: [
                 Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        stats.formattedTime,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Время потрачено',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                  child: _buildStatCard(
+                    icon: Icons.schedule_rounded,
+                    iconGradient: [const Color(0xFF00E5FF), const Color(0xFF0091EA)],
+                    value: stats.formattedTime,
+                    label: 'Время в аниме',
                   ),
                 ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        '${stats.totalTitles}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Тайтлы в списках',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                  child: _buildStatCard(
+                    icon: Icons.movie_filter_rounded,
+                    iconGradient: [const Color(0xFFB388FF), const Color(0xFF7C4DFF)],
+                    value: '${stats.totalTitles}',
+                    label: 'Тайтлов в списках',
                   ),
                 ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        '${stats.totalEpisodesCompleted}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Серии просмотрено',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                  child: _buildStatCard(
+                    icon: Icons.play_circle_filled_rounded,
+                    iconGradient: [const Color(0xFFFF5252), const Color(0xFFFF1744)],
+                    value: '${stats.totalEpisodesCompleted}',
+                    label: 'Серий просмотрено',
                   ),
                 ),
               ],
@@ -814,6 +799,73 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required List<Color> iconGradient,
+    required String value,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16161D),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: iconGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: iconGradient.first.withValues(alpha: 0.35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Icon(icon, size: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+              height: 1.2,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1046,7 +1098,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Positioned.fill(
                 child: RepaintBoundary(
                   child: Opacity(
-                    opacity: 0.40,
+                    opacity: 0.70,
                     child: LiveBackgroundWidget(
                       backgroundId: profile.backgroundId,
                       assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
@@ -1059,7 +1111,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0E0E12).withValues(alpha: 0.78),
+                    color: const Color(0xFF0E0E12).withValues(alpha: 0.45),
                   ),
                 ),
               ),
@@ -1130,16 +1182,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           background: Stack(
                             fit: StackFit.expand,
                             children: [
-                              // Фоновый арт профиля во всю ширину и высоту шапки
-                              if (headerBgUrl.isNotEmpty)
-                                CachedNetworkImage(
-                                  imageUrl: wrapCorsSafeUrl(headerBgUrl),
-                                  fit: BoxFit.cover,
-                                  memCacheWidth: 600,
-                                  errorWidget: (_, __, ___) => _buildFallbackShowcaseBackground(accent),
-                                )
-                              else
-                                _buildFallbackShowcaseBackground(accent),
+                              // Фоновый арт профиля / живое видео / процедурный шейдер
+                              LiveBackgroundWidget(
+                                backgroundId: profile.backgroundId,
+                                assetOrUrl: headerBgUrl.isNotEmpty
+                                    ? headerBgUrl
+                                    : (bgTheme.assetOrUrl ?? profile.backgroundId),
+                                fallbackGradient: bgTheme.gradient,
+                              ),
 
                               // Вертикальный градиент: Colors.transparent сверху -> 0xFF0E0E12 снизу
                               DecoratedBox(
@@ -1173,56 +1223,66 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       ),
 
                       // ПЛАШКА СИНХРОНИЗАЦИИ ПРОФИЛЯ (Показывается только если свой профиль и гость)
-                      if (isCurrentUser && isGuest)
+                      if (isCurrentUser && isGuest && !_guestBannerDismissed)
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                             child: _buildGlassCard(
-                              onTap: () => context.read<AuthCubit>().signInWithGoogle(),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               child: Row(
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: themePrimary.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(
-                                      Icons.cloud_sync_rounded,
-                                      color: themePrimaryLight,
-                                      size: 22,
+                                  GestureDetector(
+                                    onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: themePrimary.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        Icons.cloud_sync_rounded,
+                                        color: themePrimaryLight,
+                                        size: 22,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 14),
                                   Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: const [
-                                        Text(
-                                          'Сохраните свой прогресс',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
+                                    child: GestureDetector(
+                                      onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: const [
+                                          Text(
+                                            'Сохраните свой прогресс',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
                                           ),
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Войти через Google для синхронизации истории и списков',
-                                          style: TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12,
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Войти через Google для синхронизации истории и списков',
+                                            style: TextStyle(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12,
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.arrow_forward_ios_rounded,
-                                    color: AppColors.textSecondary,
-                                    size: 14,
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      color: AppColors.textSecondary,
+                                      size: 18,
+                                    ),
+                                    onPressed: _dismissGuestBanner,
+                                    tooltip: 'Скрыть',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                   ),
                                 ],
                               ),

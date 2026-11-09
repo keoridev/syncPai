@@ -49,6 +49,8 @@ class AnimeEntity extends Equatable {
         cleanPoster = 'https://shikimori.io$cleanPoster';
       }
       cleanPoster = cleanPoster
+          .replaceFirst('https://desu.shikimori.one', 'https://shikimori.io')
+          .replaceFirst('http://desu.shikimori.one', 'https://shikimori.io')
           .replaceFirst('https://shikimori.me', 'https://shikimori.io')
           .replaceFirst('https://shikimori.one', 'https://shikimori.io')
           .replaceFirst('http://shikimori.me', 'https://shikimori.io')
@@ -63,6 +65,8 @@ class AnimeEntity extends Equatable {
         cleanFallback = 'https://shikimori.io$cleanFallback';
       }
       cleanFallback = cleanFallback
+          .replaceFirst('https://desu.shikimori.one', 'https://shikimori.io')
+          .replaceFirst('http://desu.shikimori.one', 'https://shikimori.io')
           .replaceFirst('https://shikimori.me', 'https://shikimori.io')
           .replaceFirst('https://shikimori.one', 'https://shikimori.io')
           .replaceFirst('http://shikimori.me', 'https://shikimori.io')

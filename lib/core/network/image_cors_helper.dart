@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 String wrapCorsSafeUrl(String url) {
   if (url.isEmpty) return '';
 
-  final trimmed = url.trim();
+  var trimmed = url.trim();
   // Если ссылка уже локальная или уже проходит через прокси — возвращаем как есть
   if (trimmed.startsWith('blob:') ||
       trimmed.startsWith('data:') ||
@@ -16,9 +16,21 @@ String wrapCorsSafeUrl(String url) {
     return trimmed;
   }
 
-  final isShikimori = trimmed.contains('shikimori.one') ||
-      trimmed.contains('shikimori.me') ||
-      trimmed.contains('shikimori.io');
+  // Заменяем недействительные/устаревшие зеркала Shikimori на рабочий домен shikimori.io
+  trimmed = trimmed
+      .replaceFirst('https://desu.shikimori.one', 'https://shikimori.io')
+      .replaceFirst('http://desu.shikimori.one', 'https://shikimori.io')
+      .replaceFirst('//desu.shikimori.one', '//shikimori.io')
+      .replaceFirst('https://shikimori.me', 'https://shikimori.io')
+      .replaceFirst('http://shikimori.me', 'https://shikimori.io')
+      .replaceFirst('//shikimori.me', '//shikimori.io')
+      .replaceFirst('https://shikimori.one', 'https://shikimori.io')
+      .replaceFirst('http://shikimori.one', 'https://shikimori.io')
+      .replaceFirst('//shikimori.one', '//shikimori.io');
+
+  final isShikimori = trimmed.contains('shikimori.io') ||
+      trimmed.contains('shikimori.one') ||
+      trimmed.contains('shikimori.me');
 
   // Если это не Web и не домен Shikimori, используем прямой URL
   if (!kIsWeb && !isShikimori) {

@@ -96,9 +96,11 @@ class AnimeTitleDto {
     final int? shikiId = (json['shikimori'] is Map)
         ? (json['shikimori']['id'] as num?)?.toInt()
         : null;
-    final String fallbackPoster = origUrl.isNotEmpty ? origUrl : mediumUrl;
-    if (shikiId != null && shikiId > 0) {
-      final shikiPoster = 'https://desu.shikimori.one/system/animes/original/$shikiId.jpg';
+    final String fallbackPoster = (shikiId != null && shikiId > 0)
+        ? 'https://shikimori.io/system/animes/original/$shikiId.jpg'
+        : (origUrl.isNotEmpty ? origUrl : mediumUrl);
+    if ((origUrl.isEmpty && mediumUrl.isEmpty) && shikiId != null && shikiId > 0) {
+      final shikiPoster = 'https://shikimori.io/system/animes/original/$shikiId.jpg';
       origUrl = shikiPoster;
       mediumUrl = shikiPoster;
     }

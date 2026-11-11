@@ -79,6 +79,11 @@ import 'package:sync_pai/features/shorts/data/datasources/anime_clips_datasource
 import 'package:sync_pai/features/shorts/data/repositories/anime_clips_repository_impl.dart';
 import 'package:sync_pai/features/shorts/presentation/widgets/clip_bottom_overlay.dart';
 import 'package:sync_pai/features/shorts/presentation/widgets/clip_side_actions.dart';
+import 'package:sync_pai/features/shorts/data/models/anime_moment_model.dart';
+import 'package:sync_pai/features/shorts/presentation/controllers/moments_player_pool.dart';
+import 'package:sync_pai/features/shorts/presentation/widgets/moments_page_view.dart';
+import 'package:sync_pai/features/shorts/presentation/widgets/short_video_player_item.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
 import 'package:sync_pai/core/theme/theme_preset.dart';
 import 'package:sync_pai/core/theme/cubit/theme_cubit.dart';
@@ -3703,6 +3708,146 @@ Title,Status,Episodes
         await cubit.loadMore();
         expect(getCatalogCalls, 3);
         expect((cubit.state as CatalogLoaded).currentPage, 2);
+      });
+    });
+
+    group('Anime Moments & Shorts 3-Player Pool Buffering Tests', () {
+      test('AnimeMomentModel fromJson, toJson and toDomain mapping', () {
+        final json = {
+          'id': 'moment_solo_leveling_arise',
+          'anime_id': '10344',
+          'title': 'Поднятие уровня в одиночку',
+          'description': 'Кульминация сезона! Сон Джин-ву произносит заветное «Восстань»',
+          'episode': 12,
+          'start_timestamp': 1115,
+          'video_url': 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
+          'youtube_id': '9g0H2gKqQ5Y',
+          'likes_count': 28420,
+        };
+
+        final model = AnimeMomentModel.fromJson(json);
+        expect(model.id, 'moment_solo_leveling_arise');
+        expect(model.animeId, '10344');
+        expect(model.title, 'Поднятие уровня в одиночку');
+        expect(model.episode, 12);
+        expect(model.startTimestamp, 1115);
+        expect(model.youtubeId, '9g0H2gKqQ5Y');
+        expect(model.likesCount, 28420);
+
+        final mappedJson = model.toJson();
+        expect(mappedJson['id'], 'moment_solo_leveling_arise');
+        expect(mappedJson['youtube_id'], '9g0H2gKqQ5Y');
+
+        final domain = model.toDomain(posterUrl: 'https://custom-poster.jpg');
+        expect(domain.id, 'moment_solo_leveling_arise');
+        expect(domain.animeId, 10344);
+        expect(domain.animeTitle, 'Поднятие уровня в одиночку');
+        expect(domain.episodeNumber, 12);
+        expect(domain.targetTimestampSeconds, 1115);
+        expect(domain.posterUrl, 'https://custom-poster.jpg');
+        expect(domain.youtubeId, '9g0H2gKqQ5Y');
+        expect(domain.youtubeUrl, 'https://www.youtube.com/watch?v=9g0H2gKqQ5Y');
+      });
+
+      test('MomentsPlayerPool state and mute control', () {
+        final pool = MomentsPlayerPool();
+        expect(pool.currentIndex, 0);
+        expect(pool.isMuted, isFalse);
+
+        pool.toggleMute();
+        expect(pool.isMuted, isTrue);
+
+        pool.toggleMute();
+        expect(pool.isMuted, isFalse);
+
+        pool.dispose();
+      });
+
+      testWidgets('ShortVideoPlayerItem renders YouTube Shorts card when videoUrl is empty', (tester) async {
+        VisibilityDetectorController.instance.updateInterval = Duration.zero;
+        const testClip = AnimeClip(
+          id: 'moment_yt_only',
+          animeId: 10344,
+          animeTitle: 'Поднятие уровня в одиночку',
+          englishTitle: 'Solo Leveling',
+          posterUrl: 'https://desu.shikimori.one/system/animes/original/10344.jpg',
+          episodeNumber: 12,
+          targetTimestampSeconds: 1115,
+          caption: 'Кульминация сезона! Сон Джин-ву произносит заветное «Восстань»',
+          videoUrl: '', // Прямого потока нет
+          youtubeId: '9g0H2gKqQ5Y',
+        );
+
+        bool ytOpened = false;
+        bool liked = false;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ShortVideoPlayerItem(
+                clip: testClip,
+                isActive: true,
+                onOpenYouTube: () => ytOpened = true,
+                onDoubleTapLike: () => liked = true,
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('YouTube Shorts'), findsOneWidget);
+        expect(find.text('Смотреть в YouTube Shorts'), findsOneWidget);
+        expect(find.text('Нативный запуск без лагов WebView'), findsOneWidget);
+
+        // Клик открывает YouTube (выжидаем таймер double-tap в 350 мс)
+        await tester.tap(find.text('Смотреть в YouTube Shorts'));
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(ytOpened, isTrue);
+
+        // Двойной тап вызывает лайк
+        await tester.tap(find.byType(ShortVideoPlayerItem));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.byType(ShortVideoPlayerItem));
+        await tester.pumpAndSettle();
+        expect(liked, isTrue);
+      });
+
+      testWidgets('MomentsPageView renders PageView with VisibilityDetector items', (tester) async {
+        VisibilityDetectorController.instance.updateInterval = Duration.zero;
+        final pool = MomentsPlayerPool();
+        final controller = PageController();
+        const testClips = [
+          AnimeClip(
+            id: 'clip_1',
+            animeId: 10344,
+            animeTitle: 'Solo Leveling',
+            englishTitle: 'Solo Leveling',
+            posterUrl: '',
+            episodeNumber: 1,
+            targetTimestampSeconds: 100,
+            caption: 'Epic moment',
+            videoUrl: '',
+            youtubeId: 'test_yt_id',
+          ),
+        ];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: MomentsPageView(
+                clips: testClips,
+                pool: pool,
+                pageController: controller,
+              ),
+            ),
+          ),
+        );
+
+        expect(find.byType(MomentsPageView), findsOneWidget);
+        expect(find.byType(PageView), findsOneWidget);
+        expect(find.text('Solo Leveling'), findsAtLeastNWidgets(1));
+
+        pool.dispose();
+        controller.dispose();
       });
     });
   });

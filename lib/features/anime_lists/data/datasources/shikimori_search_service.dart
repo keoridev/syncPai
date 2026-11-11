@@ -76,9 +76,72 @@ class ShikimoriSearchService {
   }
 
   Future<ShikimoriAnimeMatch?> _searchSingle(String search) async {
+    // 1. Приоритетный поиск через AniLibria API (красивые постеры, русские названия и привязка к shikimori_id)
+    try {
+      final anilibriaRes = await _dio.get(
+        'https://anilibria.top/api/v1/app/search/releases',
+        queryParameters: {'query': search},
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 5),
+        ),
+      );
+
+      final dynamic aData = anilibriaRes.data;
+      List<dynamic> releases = [];
+      if (aData is List) {
+        releases = aData;
+      } else if (aData is Map && aData['data'] is List) {
+        releases = aData['data'] as List;
+      }
+
+      if (releases.isNotEmpty) {
+        final firstRel = releases.first as Map<String, dynamic>;
+        final relId = (firstRel['id'] as num?)?.toInt() ?? 0;
+        final shikiObj = firstRel['shikimori'] as Map<String, dynamic>?;
+        final shikiId = (shikiObj?['id'] as num?)?.toInt() ?? relId;
+
+        final nameObj = firstRel['name'] as Map<String, dynamic>?;
+        final ruTitle = nameObj?['main']?.toString() ?? search;
+        final enTitle = nameObj?['english']?.toString() ?? '';
+
+        String poster = '';
+        if (firstRel['poster'] is Map) {
+          final pMap = firstRel['poster'] as Map;
+          final raw = pMap['preview'] ??
+              (pMap['optimized'] is Map ? (pMap['optimized']['thumbnail'] ?? pMap['optimized']['url']) : null) ??
+              pMap['src'] ??
+              pMap['url'];
+          if (raw != null && raw.toString().isNotEmpty) {
+            final pathStr = raw.toString();
+            poster = pathStr.startsWith('http') ? pathStr : 'https://anilibria.top$pathStr';
+          }
+        }
+
+        if (poster.isEmpty && shikiId > 0) {
+          poster = 'https://shikimori.io/system/animes/original/$shikiId.jpg';
+        }
+
+        final episodes = (firstRel['episodes_total'] as num?)?.toInt() ??
+            (firstRel['type'] is Map ? (firstRel['type']['episodes'] as num?)?.toInt() : null);
+
+        final score = (shikiObj?['rating'] as num?)?.toDouble() ?? 0.0;
+
+        return ShikimoriAnimeMatch(
+          id: shikiId > 0 ? shikiId : relId,
+          russianTitle: ruTitle,
+          englishTitle: enTitle,
+          posterUrl: poster,
+          episodesTotal: episodes,
+          score: score,
+        );
+      }
+    } catch (_) {}
+
+    // 2. Резервный поиск через Shikimori API
     try {
       final response = await _dio.get(
-        '/animes',
+        'https://shikimori.io/api/animes',
         queryParameters: {
           'search': search,
           'limit': 1,
@@ -94,8 +157,8 @@ class ShikimoriSearchService {
             final imageObj = first['image'] as Map<String, dynamic>?;
             final rawOriginal = imageObj?['original'] as String? ?? imageObj?['preview'] as String? ?? '';
             final poster = rawOriginal.isNotEmpty
-                ? (rawOriginal.startsWith('http') ? rawOriginal : 'https://shikimori.me$rawOriginal')
-                : '';
+                ? (rawOriginal.startsWith('http') ? rawOriginal : 'https://shikimori.io$rawOriginal')
+                : 'https://shikimori.io/system/animes/original/$id.jpg';
 
             final russian = (first['russian'] as String?)?.trim();
             final name = (first['name'] as String?)?.trim() ?? '';

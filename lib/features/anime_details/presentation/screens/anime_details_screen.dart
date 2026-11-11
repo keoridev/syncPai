@@ -436,8 +436,34 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       orElse: () => PlayerQuality.fhd,
     );
 
-    // Если начальная позиция передана напрямую (из карточки продолжения просмотра),
-    // стартуем плеер сразу с сохраненным качеством
+    Duration? effectiveInitialPosition = initialPosition;
+    if (effectiveInitialPosition == null) {
+      if (getIt.isRegistered<WatchHistoryCubit>()) {
+        final histState = getIt<WatchHistoryCubit>().state;
+        var history = histState.getForTitle(_currentTitle.id);
+        if (history == null &&
+            _currentTitle.shikimoriId != null &&
+            _currentTitle.shikimoriId! > 0) {
+          history = histState.getForTitle(_currentTitle.shikimoriId!);
+        }
+        if (history != null && history.episode == episode.episode && history.positionMs > 2000) {
+          effectiveInitialPosition = Duration(milliseconds: history.positionMs);
+        }
+      }
+      if (effectiveInitialPosition == null && getIt.isRegistered<AnimeListCubit>()) {
+        final listState = getIt<AnimeListCubit>().state;
+        var entry = listState.getEntryFor(_currentTitle.id);
+        if (entry == null &&
+            _currentTitle.shikimoriId != null &&
+            _currentTitle.shikimoriId! > 0) {
+          entry = listState.getEntryFor(_currentTitle.shikimoriId!);
+        }
+        if (entry != null && entry.lastEpisode == episode.episode && entry.positionMs > 2000) {
+          effectiveInitialPosition = Duration(milliseconds: entry.positionMs);
+        }
+      }
+    }
+
     if (getIt.isRegistered<AnimeListCubit>()) {
       try {
         final listCubit = getIt<AnimeListCubit>();
@@ -451,7 +477,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 : _currentTitle.posterSmall,
             status: existing.status,
             lastEpisode: episode.episode,
-            positionMs: initialPosition?.inMilliseconds ?? 0,
+            positionMs: effectiveInitialPosition?.inMilliseconds ?? existing.positionMs,
             episodesTotal: _currentTitle.episodesTotal,
           );
         }
@@ -531,13 +557,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       return;
     }
 
-    if (initialPosition != null) {
+    if (effectiveInitialPosition != null && effectiveInitialPosition > Duration.zero) {
       if (widget.onResumeEpisode != null) {
-        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, defaultQuality, initialPosition);
-      } else {
-        widget.onPlayEpisode?.call(_currentTitle, targetEpisode, defaultQuality);
+        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, defaultQuality, effectiveInitialPosition);
+        return;
       }
-      return;
     }
 
     if (!mounted) return;
@@ -551,7 +575,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
     if (chosenQuality != null && mounted) {
       prefs?.setString('preferred_player_quality', chosenQuality.name);
-      widget.onPlayEpisode?.call(_currentTitle, targetEpisode, chosenQuality);
+      if (effectiveInitialPosition != null && effectiveInitialPosition > Duration.zero && widget.onResumeEpisode != null) {
+        widget.onResumeEpisode!.call(_currentTitle, targetEpisode, chosenQuality, effectiveInitialPosition);
+      } else {
+        widget.onPlayEpisode?.call(_currentTitle, targetEpisode, chosenQuality);
+      }
     }
     } finally {
       _isOpeningEpisode = false;
@@ -1465,16 +1493,25 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                             children: [
                                               if (epPreview.isNotEmpty)
                                                 CachedNetworkImage(
-                                                  imageUrl: epPreview,
+                                                  imageUrl: wrapCorsSafeUrl(epPreview),
                                                   fit: BoxFit.cover,
                                                   memCacheWidth: 250,
                                                   placeholder: (context, url) =>
                                                       const ColoredBox(color: Colors.black26),
-                                                  errorWidget: (context, url, error) =>
-                                                      const ColoredBox(color: Colors.black26),
+                                                  errorWidget: (context, url, error) {
+                                                    if (backdropUrl.isNotEmpty && backdropUrl != epPreview) {
+                                                      return CachedNetworkImage(
+                                                        imageUrl: wrapCorsSafeUrl(backdropUrl),
+                                                        fit: BoxFit.cover,
+                                                        memCacheWidth: 250,
+                                                        errorWidget: (_, __, ___) => _buildEpisodePlaceholder(ep.episode),
+                                                      );
+                                                    }
+                                                    return _buildEpisodePlaceholder(ep.episode);
+                                                  },
                                                 )
                                               else
-                                                const ColoredBox(color: Colors.black26),
+                                                _buildEpisodePlaceholder(ep.episode),
 
                                               // Полупрозрачный слой и кнопка Play поверх картинки
                                               Container(
@@ -1903,6 +1940,28 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   ),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodePlaceholder(int episodeNum) {
+    return Container(
+      color: AppColors.surfaceElevated,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.movie_creation_outlined, color: Colors.white38, size: 24),
+          const SizedBox(height: 2),
+          Text(
+            'Серия $episodeNum',
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

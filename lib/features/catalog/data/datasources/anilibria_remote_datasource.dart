@@ -80,10 +80,10 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         if (response == null) {
           // Безопасный fallback DTO для Shikimori тайтлов без релиза в AniLibria
           final poster = (id != null && id > 0)
-              ? 'https://desu.shikimori.one/system/animes/original/$id.jpg'
+              ? 'https://shikimori.io/system/animes/original/$id.jpg'
               : '';
           final fallback = (id != null && id > 0)
-              ? 'https://shikimori.one/system/animes/original/$id.jpg'
+              ? 'https://shikimori.io/system/animes/original/$id.jpg'
               : '';
           return AnimeTitleDto(
             id: id ?? 0,

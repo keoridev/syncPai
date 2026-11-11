@@ -212,7 +212,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     if (pos.inSeconds >= 5 && dur.inSeconds > 0) {
       if (getIt.isRegistered<WatchHistoryCubit>()) {
-        getIt<WatchHistoryCubit>().saveProgress(
+        final hist = getIt<WatchHistoryCubit>();
+        hist.saveProgress(
           titleId: widget.title.id,
           titleName: widget.title.displayTitle,
           posterUrl: widget.title.posterMedium.isNotEmpty
@@ -223,13 +224,33 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           position: pos,
           duration: dur,
         );
+        if (widget.title.shikimoriId != null &&
+            widget.title.shikimoriId! > 0 &&
+            widget.title.shikimoriId != widget.title.id) {
+          hist.saveProgress(
+            titleId: widget.title.shikimoriId!,
+            titleName: widget.title.displayTitle,
+            posterUrl: widget.title.posterMedium.isNotEmpty
+                ? widget.title.posterMedium
+                : widget.title.posterSmall,
+            episode: ep,
+            episodeName: _cubit.state.episode.name,
+            position: pos,
+            duration: dur,
+          );
+        }
       }
     }
 
     if (getIt.isRegistered<AnimeListCubit>()) {
       try {
         final listCubit = getIt<AnimeListCubit>();
-        final existing = listCubit.state.getEntryFor(widget.title.id);
+        var existing = listCubit.state.getEntryFor(widget.title.id);
+        if (existing == null &&
+            widget.title.shikimoriId != null &&
+            widget.title.shikimoriId! > 0) {
+          existing = listCubit.state.getEntryFor(widget.title.shikimoriId!);
+        }
         if (existing != null) {
           final isEpDone = dur.inSeconds > 0 &&
               (pos.inSeconds >= (dur.inSeconds - 60) ||
@@ -630,54 +651,43 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     syncPeerName: state.peerName,
                   ),
 
-                  // Плавающая кнопка разблокировки экрана при активной блокировке
+                  // Ненавязчивая плавающая иконка замка при активной блокировке
                   if (state.isScreenLocked)
                     Positioned(
                       left: 20,
                       top: MediaQuery.paddingOf(context).top + 16,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            HapticFeedback.heavyImpact();
-                            _cubit.toggleScreenLock();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Экран разблокирован'),
-                                duration: Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0.9, end: 0.4),
+                        duration: const Duration(seconds: 3),
+                        builder: (context, opacity, child) {
+                          return Opacity(
+                            opacity: opacity,
+                            child: child,
+                          );
+                        },
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              _cubit.toggleScreenLock();
+                            },
+                            borderRadius: BorderRadius.circular(24),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  width: 1.2,
+                                ),
                               ),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(28),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated.withValues(alpha: 0.90),
-                              borderRadius: BorderRadius.circular(28),
-                              border: Border.all(color: AppColors.primary, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.35),
-                                  blurRadius: 16,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.lock_rounded, color: AppColors.primaryLight, size: 20),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Разблокировать',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
+                              child: const Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
                             ),
                           ),
                         ),

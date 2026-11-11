@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../features/profile/domain/entities/steam_profile_customization.dart';
+import '../theme/app_colors.dart';
 import 'avatar_frame_painter.dart';
 
 /// Анимированная тематическая рамка аватара в стиле Steam Points Shop / Discord Nitro
@@ -85,8 +86,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
     }
 
     final frameOuterSize = widget.size + 14;
-    final primaryFrameColor = frame.colors.isNotEmpty ? frame.colors.first : Colors.cyanAccent;
-    final secondaryFrameColor = frame.colors.length > 1 ? frame.colors[1] : primaryFrameColor;
+    final primaryFrameColor = frame.colors.isNotEmpty ? frame.colors.first : AppColors.primary;
     final thematicType = _resolveThematicType(frame.id);
 
     return RepaintBoundary(
@@ -95,8 +95,6 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
         builder: (context, _) {
           final t = _animController.value;
           final pulse = (math.sin(t * 2 * math.pi) + 1.0) / 2.0;
-          final glowSpread = 2.0 + (pulse * 3.5);
-          final glowBlur = 10.0 + (pulse * 8.0);
 
           return SizedBox(
             width: frameOuterSize + 20,
@@ -112,14 +110,14 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: primaryFrameColor.withValues(alpha: 0.38 + (pulse * 0.28)),
-                        blurRadius: glowBlur,
-                        spreadRadius: glowSpread,
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                       BoxShadow(
-                        color: secondaryFrameColor.withValues(alpha: 0.28 + (pulse * 0.22)),
-                        blurRadius: glowBlur * 1.4,
-                        spreadRadius: glowSpread * 0.6,
+                        color: primaryFrameColor.withValues(alpha: 0.12),
+                        blurRadius: 6,
+                        spreadRadius: 1,
                       ),
                     ],
                   ),

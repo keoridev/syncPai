@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../profile/domain/entities/steam_profile_customization.dart';
 
 /// Модель профиля пользователя SyncPai
 class UserProfile extends Equatable {
@@ -19,6 +20,7 @@ class UserProfile extends Equatable {
   final String? email;
   final String? provider;
   final bool isAnonymous;
+  final String showcaseType; // 'favorite_anime', 'stats_badges', 'custom_text'
   final DateTime createdAt;
 
   const UserProfile({
@@ -38,8 +40,23 @@ class UserProfile extends Equatable {
     this.email,
     this.provider,
     this.isAnonymous = false,
+    this.showcaseType = 'favorite_anime',
     required this.createdAt,
   });
+
+  /// Модель кастомизации Steam Profile Customization
+  ProfileCustomization get customization => ProfileCustomization(
+        backgroundType: (backgroundId?.endsWith('.mp4') == true ||
+                backgroundId?.endsWith('.webm') == true ||
+                backgroundId?.endsWith('.mov') == true)
+            ? 'video'
+            : (backgroundId?.startsWith('http') == true ? 'image' : 'color'),
+        backgroundUrl: backgroundId ?? 'none',
+        avatarFrameUrl: frameId,
+        themeColorHex: accentColor ?? '#8A2BE2',
+        showcaseType: showcaseType,
+        customBio: bio,
+      );
 
   /// Дефолтный гостевой профиль при первом запуске (Anonymous Auth)
   factory UserProfile.guest([String? id]) {
@@ -56,10 +73,11 @@ class UserProfile extends Equatable {
       badgeId: 'sync_master',
       favoriteAnimeTitle: null,
       favoriteAnimeId: null,
-      accentColor: '#E06C53',
+      accentColor: '#8A2BE2',
       email: null,
       provider: 'anonymous',
       isAnonymous: true,
+      showcaseType: 'favorite_anime',
       createdAt: DateTime.now(),
     );
   }
@@ -81,6 +99,7 @@ class UserProfile extends Equatable {
     String? email,
     String? provider,
     bool? isAnonymous,
+    String? showcaseType,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -100,6 +119,7 @@ class UserProfile extends Equatable {
       email: email ?? this.email,
       provider: provider ?? this.provider,
       isAnonymous: isAnonymous ?? this.isAnonymous,
+      showcaseType: showcaseType ?? this.showcaseType,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -123,27 +143,51 @@ class UserProfile extends Equatable {
         'email': email,
         'provider': provider,
         'is_anonymous': isAnonymous,
+        'showcase_type': showcaseType,
+        'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final customObj = json['customization'] is Map<String, dynamic>
+        ? json['customization'] as Map<String, dynamic>
+        : null;
+
+    final frame = json['frame_id'] as String? ??
+        json['avatar_frame_id'] as String? ??
+        customObj?['avatar_frame_url'] as String? ??
+        'none';
+    final bg = json['background_id'] as String? ??
+        json['background_url'] as String? ??
+        customObj?['background_url'] as String? ??
+        'none';
+    final accent = json['accent_color'] as String? ??
+        customObj?['theme_color_hex'] as String? ??
+        '#8A2BE2';
+    final showcase = json['showcase_type'] as String? ??
+        customObj?['showcase_type'] as String? ??
+        'favorite_anime';
+    final userBio = json['bio'] as String? ??
+        customObj?['custom_bio'] as String?;
+
     return UserProfile(
       id: json['id'] as String? ?? '',
       username: json['username'] as String? ?? 'Анимешник',
       avatarUrl: json['avatar_url'] as String?,
-      frameId: json['frame_id'] as String? ?? json['avatar_frame_id'] as String? ?? 'none',
-      backgroundId: json['background_id'] as String? ?? json['background_url'] as String? ?? 'none',
+      frameId: frame,
+      backgroundId: bg,
       customTitle: json['custom_title'] as String?,
       customStatus: json['custom_status'] as String? ?? 'Смотрю аниме...',
-      bio: json['bio'] as String?,
+      bio: userBio,
       badgeId: json['badge_id'] as String?,
       favoriteAnimeTitle: json['favorite_anime_title'] as String?,
       favoriteAnimeId: json['favorite_anime_id'] as String?,
       favoriteAnimePoster: json['favorite_anime_poster'] as String?,
-      accentColor: json['accent_color'] as String? ?? '#E06C53',
+      accentColor: accent,
       email: json['email'] as String?,
       provider: json['provider'] as String?,
       isAnonymous: json['is_anonymous'] as bool? ?? false,
+      showcaseType: showcase,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -166,6 +210,7 @@ class UserProfile extends Equatable {
         email,
         provider,
         isAnonymous,
+        showcaseType,
         createdAt,
       ];
 }

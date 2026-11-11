@@ -13,13 +13,13 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../player/domain/entities/player_quality.dart';
 import '../../domain/entities/anime_clip.dart';
 import '../../domain/repositories/anime_clips_repository.dart';
-import '../widgets/clip_bottom_overlay.dart';
-import '../widgets/clip_side_actions.dart';
-import '../widgets/short_video_player_item.dart';
+import '../controllers/moments_player_pool.dart';
+import '../widgets/moments_page_view.dart';
 
 /// Экран «Лента Моментов» (Anime Reels / Shorts)
 /// с полноэкранным вертикальным свайпом, удержанием для 2X скорости,
-/// строгим контролем видео-памяти и мгновенным прыжком в серию с точного таймкода.
+/// пулом из 3 плееров (предзагрузка 0 мс), строгим контролем видеопамяти
+/// и мгновенным прыжком в серию с точного таймкода.
 class AnimeShortsScreen extends StatefulWidget {
   final bool showBackButton;
   final ValueChanged<AnimeTitle>? onTitleSelected;
@@ -39,20 +39,33 @@ class AnimeShortsScreen extends StatefulWidget {
 class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
   late final PageController _pageController;
   late final AnimeClipsRepository _repository;
+  late final MomentsPlayerPool _pool;
   List<AnimeClip> _clips = [];
   int _currentIndex = 0;
   bool _isLoading = true;
-  bool _isMuted = false;
   bool _isResolvingPlayback = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    _pool = MomentsPlayerPool();
     _repository = getIt.isRegistered<AnimeClipsRepository>()
         ? getIt<AnimeClipsRepository>()
         : _FallbackAnimeClipsRepository();
     _loadClips();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimeShortsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (!widget.isActive) {
+        _pool.getEntry(_currentIndex)?.player.pause();
+      } else {
+        _pool.getEntry(_currentIndex)?.player.play();
+      }
+    }
   }
 
   Future<void> _loadClips() async {
@@ -64,6 +77,9 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
           _clips = clips;
           _isLoading = false;
         });
+        if (clips.isNotEmpty) {
+          _pool.updateActiveIndex(_currentIndex, clips);
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -137,6 +153,9 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
   /// КИЛЛЕР-ФИЧА: Открытие серии в плеере с точного таймкода
   Future<void> _handleWatchFromMoment(AnimeClip clip) async {
     if (_isResolvingPlayback) return;
+    // Приостанавливаем видео шортса перед переходом в полноэкранный плеер
+    _pool.getEntry(_currentIndex)?.player.pause();
+
     setState(() => _isResolvingPlayback = true);
 
     try {
@@ -217,6 +236,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
 
   /// Открытие страницы сведений об аниме
   Future<void> _handleOpenDetails(AnimeClip clip) async {
+    _pool.getEntry(_currentIndex)?.player.pause();
     AnimeTitle? targetTitle;
 
     if (getIt.isRegistered<CatalogRepository>()) {
@@ -250,18 +270,37 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
     }
   }
 
+  /// Нативный запуск YouTube Shorts через внешний интент без тормозов WebView
   void _handleOpenYouTube(AnimeClip clip) async {
-    if (clip.youtubeUrl == null || clip.youtubeUrl!.isEmpty) return;
-    try {
-      final uri = Uri.parse(clip.youtubeUrl!);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
+    final ytId = clip.youtubeId;
+    if (ytId != null && ytId.isNotEmpty) {
+      final appUri = Uri.parse('vnd.youtube:$ytId');
+      final webUri = Uri.parse('https://www.youtube.com/shorts/$ytId');
+      try {
+        if (await canLaunchUrl(appUri)) {
+          await launchUrl(appUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      } catch (_) {}
+      try {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        return;
+      } catch (_) {}
+    }
+
+    if (clip.youtubeUrl != null && clip.youtubeUrl!.isNotEmpty) {
+      try {
+        final uri = Uri.parse(clip.youtubeUrl!);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } catch (_) {}
+    }
   }
 
   @override
   void dispose() {
+    _pool.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -312,62 +351,24 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // Вертикальный PageView с клипами
-          PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            itemCount: _clips.length,
+          // Вертикальный PageView с 3-Player Pool Buffering
+          MomentsPageView(
+            clips: _clips,
+            pool: _pool,
+            pageController: _pageController,
             onPageChanged: (index) {
               setState(() {
                 _currentIndex = index;
               });
             },
-            itemBuilder: (context, index) {
-              final clip = _clips[index];
-              final isActive = widget.isActive && index == _currentIndex;
-
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Полноэкранный плеер с ускорением 2X при удержании и оверлеем звука/паузы
-                  ShortVideoPlayerItem(
-                    clip: clip,
-                    isActive: isActive,
-                    isMuted: _isMuted,
-                    onDoubleTapLike: () => _handleToggleLike(clip),
-                    onToggleMute: () => setState(() => _isMuted = !_isMuted),
-                  ),
-
-                  // Правая колонка действий: Лайк, Сохраненка, О тайтле, YouTube
-                  Positioned(
-                    right: 12,
-                    bottom: 125,
-                    child: ClipSideActions(
-                      clip: clip,
-                      onToggleLike: () => _handleToggleLike(clip),
-                      onToggleBookmark: () => _handleToggleBookmark(clip),
-                      onOpenDetails: () => _handleOpenDetails(clip),
-                      onOpenYouTube: () => _handleOpenYouTube(clip),
-                    ),
-                  ),
-
-                  // Нижний оверлей: Инфо + кнопка «Смотреть с этого момента»
-                  Positioned(
-                    left: 0,
-                    right: 70,
-                    bottom: 92, // Пространство под парящий LiquidGlassNavBar
-                    child: ClipBottomOverlay(
-                      clip: clip,
-                      onWatchFromMoment: () => _handleWatchFromMoment(clip),
-                      onOpenDetails: () => _handleOpenDetails(clip),
-                    ),
-                  ),
-                ],
-              );
-            },
+            onToggleLike: _handleToggleLike,
+            onToggleBookmark: _handleToggleBookmark,
+            onWatchFromMoment: _handleWatchFromMoment,
+            onOpenDetails: _handleOpenDetails,
+            onOpenYouTube: _handleOpenYouTube,
           ),
 
-          // Лаконичная верхняя плашка (без визуального шума и лишних плашек)
+          // Верхняя плашка
           Positioned(
             top: 0,
             left: 0,
@@ -379,7 +380,8 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
                   children: [
                     if (widget.showBackButton) ...[
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 20),
                         onPressed: () => context.pop(),
                       ),
                       const SizedBox(width: 4),
@@ -400,7 +402,8 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 22),
+                      icon: const Icon(Icons.refresh_rounded,
+                          color: Colors.white70, size: 22),
                       onPressed: _loadClips,
                       tooltip: 'Обновить ленту',
                     ),
@@ -426,7 +429,8 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(AppColors.primary),
                       ),
                       const SizedBox(height: 16),
                       Text(

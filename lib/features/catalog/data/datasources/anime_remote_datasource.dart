@@ -188,7 +188,23 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
                 }
               }
 
-              final previewPath = (e['preview'] ?? e['thumbnail'] ?? (e['poster'] is Map ? (e['poster']['preview'] ?? e['poster']['src']) : null))?.toString();
+              String? previewPath;
+              if (e['preview'] is Map) {
+                final pMap = e['preview'] as Map;
+                previewPath = (pMap['src'] ??
+                        pMap['optimized']?['src'] ??
+                        pMap['preview'] ??
+                        pMap['thumbnail'])
+                    ?.toString();
+              } else if (e['preview'] is String && (e['preview'] as String).isNotEmpty) {
+                previewPath = e['preview'] as String;
+              } else if (e['thumbnail'] is String && (e['thumbnail'] as String).isNotEmpty) {
+                previewPath = e['thumbnail'] as String;
+              } else if (e['poster'] is Map) {
+                final pMap = e['poster'] as Map;
+                previewPath = (pMap['src'] ?? pMap['preview'] ?? pMap['thumbnail'])?.toString();
+              }
+
               final fullPreviewUrl = (previewPath != null && previewPath.isNotEmpty)
                   ? (previewPath.startsWith('http') ? previewPath : 'https://anilibria.top$previewPath')
                   : null;

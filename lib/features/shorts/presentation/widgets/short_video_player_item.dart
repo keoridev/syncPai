@@ -1,32 +1,43 @@
-import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../domain/entities/anime_clip.dart';
+import '../controllers/moments_player_pool.dart';
 
-/// Видеоплеер для шортсов на базе media_kit
-/// с поддержкой ускорения 2X при удержании экрана,
-/// всплывающим управлением звуком/паузой и адаптивным размером текстуры.
+/// Видеоплеер для шортсов/моментов, интегрированный с [MomentsPlayerPool]
+/// Поддерживает:
+/// - 3-Player Pool Buffering (без повторной пересборки Player с нуля на каждый свайп)
+/// - Нативное аппаратное декодирование (hwdec: auto, max 1080x1920)
+/// - Удержание для ускорения 2X
+/// - Стилизованную карточку для YouTube Shorts без тяжелого WebView
+/// - Анимацию двойного тапа (сердце)
 class ShortVideoPlayerItem extends StatefulWidget {
   final AnimeClip clip;
+  final int index;
+  final MomentsPlayerPool? pool;
+  final PooledPlayerEntry? entry;
   final bool isActive;
   final bool isMuted;
   final VoidCallback? onDoubleTapLike;
   final VoidCallback? onToggleMute;
+  final VoidCallback? onOpenYouTube;
 
   const ShortVideoPlayerItem({
     super.key,
     required this.clip,
+    this.index = 0,
+    this.pool,
+    this.entry,
     required this.isActive,
     this.isMuted = false,
     this.onDoubleTapLike,
     this.onToggleMute,
+    this.onOpenYouTube,
   });
 
   @override
@@ -35,20 +46,6 @@ class ShortVideoPlayerItem extends StatefulWidget {
 
 class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
     with SingleTickerProviderStateMixin {
-  Player? _player;
-  VideoController? _controller;
-  bool _isPlaying = true;
-  bool _isBuffering = true;
-  bool _hasError = false;
-  double _progress = 0.0;
-  bool _is2xFastForwarding = false;
-
-  StreamSubscription? _posSub;
-  StreamSubscription? _bufSub;
-  StreamSubscription? _playSub;
-  StreamSubscription? _errSub;
-
-  // Анимация двойного тапа (сердце)
   late AnimationController _heartAnimController;
   late Animation<double> _heartScaleAnim;
   late Animation<double> _heartOpacityAnim;
@@ -72,145 +69,12 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 30),
     ]).animate(_heartAnimController);
-
-    if (widget.isActive) {
-      _initPlayer();
-    }
   }
 
   @override
-  void didUpdateWidget(covariant ShortVideoPlayerItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (widget.isActive != oldWidget.isActive) {
-      if (widget.isActive) {
-        _initPlayer();
-      } else {
-        _disposePlayer();
-      }
-    }
-
-    if (widget.isMuted != oldWidget.isMuted && _player != null) {
-      _player?.setVolume(widget.isMuted ? 0 : 100);
-    }
-  }
-
-  void _initPlayer() {
-    if (_player != null) return;
-
-    try {
-      final player = Player();
-      // Стандартный контроллер без принудительного флага аппаратного ускорения,
-      // что исключает падение декодера ImageReader/HWUI на Mali/Vivo
-      final controller = VideoController(player);
-
-      player.setPlaylistMode(PlaylistMode.loop);
-      player.setVolume(widget.isMuted ? 0 : 100);
-
-      _posSub = player.stream.position.listen((pos) {
-        final dur = player.state.duration;
-        if (dur.inMilliseconds > 0 && mounted) {
-          setState(() {
-            _progress = (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
-          });
-        }
-      });
-
-      _bufSub = player.stream.buffering.listen((buffering) {
-        if (mounted) {
-          setState(() {
-            _isBuffering = buffering;
-          });
-        }
-      });
-
-      _playSub = player.stream.playing.listen((playing) {
-        if (mounted) {
-          setState(() {
-            _isPlaying = playing;
-          });
-        }
-      });
-
-      _errSub = player.stream.error.listen((error) {
-        if (mounted && error.isNotEmpty) {
-          setState(() {
-            _hasError = true;
-          });
-        }
-      });
-
-      // Открываем поток с явным флагом play: true, исключая битые фиктивные ссылки
-      String targetUrl = widget.clip.videoUrl;
-      if (targetUrl.contains('_ep1_720')) {
-        targetUrl = 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8';
-      }
-      player.open(Media(targetUrl), play: true);
-      player.play();
-
-      setState(() {
-        _player = player;
-        _controller = controller;
-        _hasError = false;
-        _isBuffering = true;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-        });
-      }
-    }
-  }
-
-  void _disposePlayer() {
-    _posSub?.cancel();
-    _bufSub?.cancel();
-    _playSub?.cancel();
-    _errSub?.cancel();
-    _posSub = null;
-    _bufSub = null;
-    _playSub = null;
-    _errSub = null;
-
-    _player?.pause();
-    _player?.dispose();
-    _player = null;
-    _controller = null;
-    _progress = 0.0;
-    _is2xFastForwarding = false;
-  }
-
-  void _togglePlayPause() {
-    if (_player == null) return;
-    HapticFeedback.selectionClick();
-
-    if (_isPlaying) {
-      _player?.pause();
-    } else {
-      _player?.play();
-    }
-  }
-
-  /// Удержание экрана: ускорение 2X
-  void _handleLongPressStart() {
-    if (_player == null) return;
-    HapticFeedback.mediumImpact();
-    _player?.setRate(2.0);
-    setState(() {
-      _is2xFastForwarding = true;
-    });
-  }
-
-  void _handleLongPressEnd() {
-    if (_player == null) return;
-    _player?.setRate(1.0);
-    if (_is2xFastForwarding) {
-      HapticFeedback.lightImpact();
-      setState(() {
-        _is2xFastForwarding = false;
-      });
-    }
+  void dispose() {
+    _heartAnimController.dispose();
+    super.dispose();
   }
 
   void _handleDoubleTap() {
@@ -229,25 +93,80 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
     });
   }
 
-  @override
-  void dispose() {
-    _heartAnimController.dispose();
-    _disposePlayer();
-    super.dispose();
+  void _togglePlayPause() {
+    if (widget.pool != null) {
+      HapticFeedback.selectionClick();
+      widget.pool!.togglePlayPause(widget.index);
+    } else if (widget.entry != null) {
+      HapticFeedback.selectionClick();
+      if (widget.entry!.isPlaying) {
+        widget.entry!.player.pause();
+      } else {
+        widget.entry!.player.play();
+      }
+    }
+  }
+
+  void _handleLongPressStart() {
+    if (widget.pool != null) {
+      HapticFeedback.mediumImpact();
+      widget.pool!.set2xSpeed(widget.index, true);
+    } else if (widget.entry != null) {
+      HapticFeedback.mediumImpact();
+      widget.entry!.player.setRate(2.0);
+      widget.entry!.is2xFastForwarding = true;
+    }
+  }
+
+  void _handleLongPressEnd() {
+    if (widget.pool != null) {
+      widget.pool!.set2xSpeed(widget.index, false);
+      HapticFeedback.lightImpact();
+    } else if (widget.entry != null) {
+      widget.entry!.player.setRate(1.0);
+      widget.entry!.is2xFastForwarding = false;
+      HapticFeedback.lightImpact();
+    }
+  }
+
+  bool get _isYouTubeOnly {
+    final hasNoDirect = widget.clip.videoUrl.isEmpty;
+    final hasYt = (widget.clip.youtubeId != null && widget.clip.youtubeId!.isNotEmpty) ||
+        (widget.clip.youtubeUrl != null && widget.clip.youtubeUrl!.isNotEmpty);
+    return hasNoDirect && hasYt;
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.pool != null) {
+      return ListenableBuilder(
+        listenable: widget.pool!,
+        builder: (context, _) => _buildContent(context),
+      );
+    }
+    return _buildContent(context);
+  }
+
+  Widget _buildContent(BuildContext context) {
+    final entry = widget.entry ?? widget.pool?.getEntry(widget.index);
+    final isActive = widget.isActive;
+    final isMuted = widget.pool?.isMuted ?? widget.isMuted;
+    final isPlaying = entry?.isPlaying ?? false;
+    final isBuffering = entry?.isBuffering ?? true;
+    final hasError = entry?.hasError ?? false;
+    final progress = entry?.progress ?? 0.0;
+    final is2x = entry?.is2xFastForwarding ?? false;
+
     return GestureDetector(
-      onTap: _togglePlayPause,
+      onTap: _isYouTubeOnly ? widget.onOpenYouTube : _togglePlayPause,
       onDoubleTap: _handleDoubleTap,
-      onLongPressStart: (_) => _handleLongPressStart(),
-      onLongPressEnd: (_) => _handleLongPressEnd(),
+      onLongPressStart: _isYouTubeOnly ? null : (_) => _handleLongPressStart(),
+      onLongPressEnd: _isYouTubeOnly ? null : (_) => _handleLongPressEnd(),
       behavior: HitTestBehavior.opaque,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Постер под видео (без сбоев HWUI: стандартный JPG + браузерный User-Agent)
+          // 1. Стабильный постер под видео (JPG с User-Agent, без сбоев HWUI)
           CachedNetworkImage(
             imageUrl: widget.clip.posterUrl,
             fit: BoxFit.cover,
@@ -271,17 +190,17 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
             ),
           ),
 
-          // 2. Прямой видеопоток media_kit на весь экран (Positioned.fill передаёт нативному рендеру реальный размер)
-          if (_player != null && _controller != null && !_hasError)
+          // 2. Прямой видеопоток media_kit из пула контроллеров
+          if (!_isYouTubeOnly && entry != null && !hasError)
             Positioned.fill(
               child: Video(
-                controller: _controller!,
+                controller: entry.controller,
                 fit: BoxFit.cover,
                 controls: NoVideoControls,
               ),
             ),
 
-          // 3. Мягкий полупрозрачный градиент для контрастности текста
+          // 3. Мягкий градиент для читаемости элементов управления и текста
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -302,8 +221,105 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
             ),
           ),
 
-          // 4. Индикатор буферизации
-          if (_isBuffering && widget.isActive && !_hasError)
+          // 4. Плашка YouTube Shorts (если клип только на YouTube)
+          if (_isYouTubeOnly) ...[
+            Positioned(
+              top: 70,
+              left: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF0000).withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF0000).withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'YouTube Shorts',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(26),
+                  border: Border.all(
+                    color: const Color(0xFFFF0000).withValues(alpha: 0.8),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF0000).withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFF0000),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Смотреть в YouTube Shorts',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          'Нативный запуск без лагов WebView',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // 5. Индикатор буферизации
+          if (!_isYouTubeOnly && isBuffering && isActive && !hasError)
             Center(
               child: Container(
                 padding: const EdgeInsets.all(14),
@@ -322,8 +338,8 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               ),
             ),
 
-          // 4b. Ошибка воспроизведения потока
-          if (_hasError && widget.isActive)
+          // 6. Ошибка воспроизведения
+          if (!_isYouTubeOnly && hasError && isActive)
             Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -335,7 +351,8 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline_rounded, color: Color(0xFFFF5252), size: 36),
+                    const Icon(Icons.error_outline_rounded,
+                        color: Color(0xFFFF5252), size: 36),
                     const SizedBox(height: 8),
                     Text(
                       'Не удалось загрузить видеопоток',
@@ -347,12 +364,12 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                     const SizedBox(height: 10),
                     InkWell(
                       onTap: () {
-                        _disposePlayer();
-                        _initPlayer();
+                        widget.pool?.retry(widget.index, widget.clip);
                       },
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(12),
@@ -372,15 +389,16 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               ),
             ),
 
-          // 5. Индикатор удержания 2X скорости
-          if (_is2xFastForwarding)
+          // 7. Индикатор 2X скорости при удержании
+          if (!_isYouTubeOnly && is2x)
             Positioned(
               top: 70,
               left: 0,
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(20),
@@ -389,7 +407,8 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 18),
+                      Icon(Icons.fast_forward_rounded,
+                          color: AppColors.primary, size: 18),
                       const SizedBox(width: 6),
                       Text(
                         '2X Скорость',
@@ -404,11 +423,12 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               ),
             ),
 
-          // 6. Оверлей Паузы + Кнопка Звука (появляется при приостановке видео)
-          if (!_isPlaying && !_isBuffering && widget.isActive && !_hasError)
+          // 8. Оверлей Паузы + Кнопка Звука
+          if (!_isYouTubeOnly && !isPlaying && !isBuffering && isActive && !hasError)
             Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.60),
                   borderRadius: BorderRadius.circular(30),
@@ -417,7 +437,6 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Иконка Возобновить
                     GestureDetector(
                       onTap: _togglePlayPause,
                       child: const Icon(
@@ -429,17 +448,20 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                     const SizedBox(width: 14),
                     Container(width: 1, height: 26, color: Colors.white24),
                     const SizedBox(width: 14),
-                    // Иконка Звука (Mute / Unmute)
                     GestureDetector(
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        widget.onToggleMute?.call();
+                        if (widget.pool != null) {
+                          widget.pool!.toggleMute();
+                        } else {
+                          widget.onToggleMute?.call();
+                        }
                       },
                       child: Icon(
-                        widget.isMuted
+                        isMuted
                             ? Icons.volume_off_rounded
                             : Icons.volume_up_rounded,
-                        color: widget.isMuted ? Colors.white54 : AppColors.primary,
+                        color: isMuted ? Colors.white54 : AppColors.primary,
                         size: 30,
                       ),
                     ),
@@ -448,7 +470,7 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               ),
             ),
 
-          // 7. Сердечко при двойном тапе
+          // 9. Сердечко при двойном тапе
           if (_showHeartOverlay)
             Center(
               child: AnimatedBuilder(
@@ -469,20 +491,21 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
               ),
             ),
 
-          // 8. Минималистичная линия прогресса внизу
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SizedBox(
-              height: 2.5,
-              child: LinearProgressIndicator(
-                value: _progress,
-                backgroundColor: Colors.white12,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+          // 10. Линия прогресса внизу
+          if (!_isYouTubeOnly)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SizedBox(
+                height: 2.5,
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: Colors.white12,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

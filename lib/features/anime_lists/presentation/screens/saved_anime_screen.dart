@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -99,7 +100,17 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   void _toggleGridColumns() {
     HapticFeedback.lightImpact();
-    setState(() => _gridColumns = _gridColumns == 3 ? 2 : 3);
+    setState(() {
+      if (_gridColumns == 3) {
+        _gridColumns = 2;
+      } else if (_gridColumns == 2) {
+        _gridColumns = 1;
+      } else if (_gridColumns == 1) {
+        _gridColumns = 4;
+      } else {
+        _gridColumns = 3;
+      }
+    });
     if (getIt.isRegistered<SharedPreferences>()) {
       getIt<SharedPreferences>().setInt('saved_anime_grid_columns', _gridColumns);
     }
@@ -193,6 +204,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         final match = catalogState.titles.firstWhere(
           (t) =>
               t.id == entry.animeId ||
+              (t.shikimoriId != null && t.shikimoriId == entry.animeId) ||
               t.russianTitle.toLowerCase().trim() == clean ||
               (t.englishTitle.isNotEmpty &&
                   t.englishTitle.toLowerCase().trim() == clean),
@@ -202,6 +214,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         if (match.posterSmall.isNotEmpty) return match.posterSmall;
       }
     } catch (_) {}
+    if (entry.animeId > 0) {
+      return 'https://shikimori.io/system/animes/original/${entry.animeId}.jpg';
+    }
     return entry.posterUrl ?? '';
   }
 
@@ -258,10 +273,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     }
 
     return CachedNetworkImage(
-      imageUrl: posterUrl,
+      imageUrl: wrapCorsSafeUrl(posterUrl),
       width: width,
       height: height,
       fit: BoxFit.cover,
+      alignment: Alignment.topCenter,
       filterQuality: FilterQuality.high,
       placeholder: (_, __) => ShimmerPlaceholder(
         width: width ?? double.infinity,
@@ -782,11 +798,15 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         var entries = List<UserAnimeEntry>.from(listState.entriesFor(activeTab));
 
         if (_searchQuery.isNotEmpty) {
-          entries = entries
-              .where((e) =>
-                  e.cleanTitleRu.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                  e.titleRu.toLowerCase().contains(_searchQuery.toLowerCase()))
-              .toList();
+          final query = _searchQuery.trim().toLowerCase();
+          entries = entries.where((e) {
+            final title = e.cleanTitleRu.toLowerCase();
+            if (title.contains(query)) return true;
+            if (e.titleRu != e.cleanTitleRu && e.titleRu.toLowerCase().contains(query)) {
+              return true;
+            }
+            return false;
+          }).toList();
         }
 
         // Упорядочивание списка по выбранному критерию
@@ -1350,13 +1370,117 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                       sliver: SliverGrid(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: _gridColumns,
-                          childAspectRatio: _gridColumns == 2 ? 0.64 : 0.60,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 12,
+                          childAspectRatio: _gridColumns == 1
+                              ? 2.8
+                              : (_gridColumns == 2
+                                  ? 0.65
+                                  : (_gridColumns == 3 ? 0.58 : 0.52)),
+                          crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
+                          mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final entry = entries[index];
+
+                            if (_gridColumns == 1) {
+                              return InkWell(
+                                onTap: () => _handleItemTap(context, entry),
+                                onLongPress: () => _isSelectionMode
+                                    ? _handleItemTap(context, entry)
+                                    : _handleItemLongPress(entry),
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: _isSelectionMode && _selectedAnimeIds.contains(entry.animeId)
+                                          ? AppColors.primary
+                                          : AppColors.stroke,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: SizedBox(
+                                          width: 70,
+                                          height: 100,
+                                          child: _buildPosterImage(
+                                            entry: entry,
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              entry.cleanTitleRu,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                                  decoration: BoxDecoration(
+                                                    color: entry.status.color.withValues(alpha: 0.15),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(
+                                                      color: entry.status.color.withValues(alpha: 0.4),
+                                                      width: 0.8,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(entry.status.icon, size: 10, color: entry.status.color),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        entry.status.labelRu,
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: entry.status.color,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'Серия ${entry.lastEpisode}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: AppColors.textSecondary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (_isSelectionMode)
+                                        _buildSelectionIndicator(entry.animeId)
+                                      else
+                                        const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 20),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
 
                             return InkWell(
                               onTap: () => _handleItemTap(context, entry),
@@ -1712,13 +1836,103 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: _gridColumns,
-            childAspectRatio: _gridColumns == 2 ? 0.64 : 0.60,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 12,
+            childAspectRatio: _gridColumns == 1
+                ? 2.8
+                : (_gridColumns == 2
+                    ? 0.65
+                    : (_gridColumns == 3 ? 0.58 : 0.52)),
+            crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
+            mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
           ),
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final item = historyItems[index];
+
+              if (_gridColumns == 1) {
+                return InkWell(
+                  onTap: () => _openDetailsForHistory(context, item),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.stroke),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 70,
+                            height: 100,
+                            child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
+                                ? CachedNetworkImage(
+                                    imageUrl: item.posterUrl,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
+                                      color: AppColors.background,
+                                      child: const Icon(Icons.movie_outlined, size: 28, color: Colors.white24),
+                                    ),
+                                  )
+                                : Container(
+                                    color: AppColors.background,
+                                    child: const Icon(Icons.movie_outlined, size: 28, color: Colors.white24),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                item.titleName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(Icons.play_circle_outline, size: 13, color: AppColors.primaryLight),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Эпизод ${item.episode}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if (item.formattedPosition.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      item.formattedPosition,
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: AppColors.primaryLight,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 20),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
               return InkWell(
                 onTap: () => _openDetailsForHistory(context, item),
                 borderRadius: BorderRadius.circular(12),

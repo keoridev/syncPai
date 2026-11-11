@@ -173,6 +173,34 @@ class SteamAvatarFrame {
       animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
+      id: 'neon_ring',
+      name: 'Неоновое кольцо',
+      colors: [Color(0xFF00F0FF), Color(0xFF0072FF)],
+      previewIcon: Icons.radio_button_checked_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
+    SteamAvatarFrame(
+      id: 'demon_horns',
+      name: 'Демонические рожки',
+      colors: [Color(0xFFFF1744), Color(0xFFD50000), Color(0xFF880E4F)],
+      previewIcon: Icons.warning_rounded,
+      animation: SteamFrameAnimation.fire,
+    ),
+    SteamAvatarFrame(
+      id: 'cyber_glitch',
+      name: 'Кибер-глитч',
+      colors: [Color(0xFF00FF87), Color(0xFF60EFFF)],
+      previewIcon: Icons.grain_rounded,
+      animation: SteamFrameAnimation.matrix,
+    ),
+    SteamAvatarFrame(
+      id: 'golden_rank',
+      name: 'Золотой ранг',
+      colors: [Color(0xFFFFD700), Color(0xFFFFB300), Color(0xFFFFA000)],
+      previewIcon: Icons.stars_rounded,
+      animation: SteamFrameAnimation.shimmer,
+    ),
+    SteamAvatarFrame(
       id: 'neon_cyber',
       name: 'Неон Киберпанк',
       colors: [Color(0xFF00F0FF), Color(0xFFFF007F), Color(0xFF00F0FF)],
@@ -659,4 +687,68 @@ class SteamCustomTitle {
     'Повелитель Сакуры',
     'Шинигами из Общества Душ',
   ];
+}
+
+/// Настройки кастомизации профиля пользователя (Steam Point Shop Live Customization)
+class ProfileCustomization {
+  final String backgroundType; // 'video', 'image', 'color'
+  final String backgroundUrl; // Ссылка на mp4, webp или id процедурного фона
+  final String? avatarFrameUrl; // Ссылка на прозрачный PNG/WebP или id рамки
+  final String themeColorHex; // Акцентный цвет профиля (#8A2BE2)
+  final String showcaseType; // 'favorite_anime', 'stats_badges', 'custom_text'
+  final String? customBio; // Текст цитаты профиля
+
+  const ProfileCustomization({
+    required this.backgroundType,
+    required this.backgroundUrl,
+    this.avatarFrameUrl,
+    this.themeColorHex = '#8A2BE2',
+    this.showcaseType = 'favorite_anime',
+    this.customBio,
+  });
+
+  factory ProfileCustomization.defaultSettings() => const ProfileCustomization(
+        backgroundType: 'color',
+        backgroundUrl: 'none',
+        themeColorHex: '#8A2BE2',
+        showcaseType: 'favorite_anime',
+      );
+
+  factory ProfileCustomization.fromJson(Map<String, dynamic> json) {
+    return ProfileCustomization(
+      backgroundType: json['background_type'] as String? ?? 'video',
+      backgroundUrl: json['background_url'] as String? ?? json['backgroundId'] as String? ?? 'none',
+      avatarFrameUrl: json['avatar_frame_url'] as String? ?? json['frame_id'] as String?,
+      themeColorHex: json['theme_color_hex'] as String? ?? json['accent_color'] as String? ?? '#8A2BE2',
+      showcaseType: json['showcase_type'] as String? ?? 'favorite_anime',
+      customBio: json['custom_bio'] as String? ?? json['bio'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'background_type': backgroundType,
+        'background_url': backgroundUrl,
+        if (avatarFrameUrl != null) 'avatar_frame_url': avatarFrameUrl,
+        'theme_color_hex': themeColorHex,
+        'showcase_type': showcaseType,
+        if (customBio != null) 'custom_bio': customBio,
+      };
+
+  ProfileCustomization copyWith({
+    String? backgroundType,
+    String? backgroundUrl,
+    String? avatarFrameUrl,
+    String? themeColorHex,
+    String? showcaseType,
+    String? customBio,
+  }) {
+    return ProfileCustomization(
+      backgroundType: backgroundType ?? this.backgroundType,
+      backgroundUrl: backgroundUrl ?? this.backgroundUrl,
+      avatarFrameUrl: avatarFrameUrl ?? this.avatarFrameUrl,
+      themeColorHex: themeColorHex ?? this.themeColorHex,
+      showcaseType: showcaseType ?? this.showcaseType,
+      customBio: customBio ?? this.customBio,
+    );
+  }
 }

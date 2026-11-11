@@ -39,6 +39,7 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   bool isAutoSkipOpening = false;
   final Duration? _initialPosition;
+  Duration? _pendingInitialSeek;
 
   PlayerCubit({
     required AnimeTitle title,
@@ -51,6 +52,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   })  : player = Player(),
         // ignore: prefer_initializing_formals
         _initialPosition = initialPosition,
+        _pendingInitialSeek = initialPosition,
         super(PlayerState(
           title: title,
           episode: episode,
@@ -98,6 +100,18 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.duration.listen((dur) {
         emit(state.copyWith(duration: dur));
         _updateDiscordPresence();
+        if (dur > Duration.zero && _pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero) {
+          final seekTarget = _pendingInitialSeek!;
+          _pendingInitialSeek = null;
+          if (seekTarget < dur) {
+            player.seek(seekTarget);
+            Future.delayed(const Duration(milliseconds: 350), () {
+              if (!isClosed && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
+                player.seek(seekTarget);
+              }
+            });
+          }
+        }
       }),
       player.stream.buffer.listen((buffer) {
         emit(state.copyWith(buffer: buffer));
@@ -614,6 +628,9 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _loadCurrentEpisodeStream({Duration? initialPosition}) async {
+    if (initialPosition != null && initialPosition > Duration.zero) {
+      _pendingInitialSeek = initialPosition;
+    }
     // 1. Проверяем, скачана ли серия локально для офлайн-просмотра без интернета
     String? localFilePath;
     try {
@@ -1212,6 +1229,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _switchEpisodeInternal(EpisodeItem nextEpisode) async {
+    _pendingInitialSeek = null;
     cancelAutoNextCountdown();
 
     final prevEpisode = state.episode.episode;

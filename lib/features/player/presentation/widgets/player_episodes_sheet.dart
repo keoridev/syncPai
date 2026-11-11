@@ -1,6 +1,8 @@
 import 'dart:ui';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../cubit/player_cubit.dart';
@@ -142,24 +144,67 @@ class PlayerEpisodesSheet extends StatelessWidget {
                                 ),
                                 child: Row(
                                   children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: isPlaying ? primary : Colors.white.withValues(alpha: 0.08),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: isPlaying
-                                          ? const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18)
-                                          : Text(
-                                              '${ep.episode}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
+                                    // 16:9 Превью момента серии (скриншот эпизода)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Container(
+                                        width: 88,
+                                        height: 52,
+                                        color: Colors.black38,
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            if (ep.previewUrl != null && ep.previewUrl!.isNotEmpty)
+                                              CachedNetworkImage(
+                                                imageUrl: wrapCorsSafeUrl(ep.previewUrl!),
+                                                fit: BoxFit.cover,
+                                                memCacheWidth: 200,
+                                                placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                                                errorWidget: (_, __, ___) => _buildEpisodePlaceholder(state.title.posterSmall),
+                                              )
+                                            else
+                                              _buildEpisodePlaceholder(state.title.posterSmall),
+                                            if (isPlaying)
+                                              Container(
+                                                color: Colors.black.withValues(alpha: 0.45),
+                                                child: Center(
+                                                  child: Container(
+                                                    padding: const EdgeInsets.all(6),
+                                                    decoration: BoxDecoration(
+                                                      color: primary,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.play_arrow_rounded,
+                                                      color: Colors.white,
+                                                      size: 16,
+                                                    ),
+                                                  ),
+                                                ),
+                                              )
+                                            else
+                                              Positioned(
+                                                left: 5,
+                                                bottom: 5,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black.withValues(alpha: 0.70),
+                                                    borderRadius: BorderRadius.circular(5),
+                                                  ),
+                                                  child: Text(
+                                                    '#${ep.episode}',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
                                               ),
-                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                     const SizedBox(width: 14),
                                     Expanded(
@@ -215,6 +260,25 @@ class PlayerEpisodesSheet extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildEpisodePlaceholder(String posterUrl) {
+    if (posterUrl.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: wrapCorsSafeUrl(posterUrl),
+        fit: BoxFit.cover,
+        memCacheWidth: 200,
+        placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+        errorWidget: (_, __, ___) => Container(
+          color: const Color(0xFF1E1E26),
+          child: const Icon(Icons.movie_creation_outlined, color: Colors.white24, size: 22),
+        ),
+      );
+    }
+    return Container(
+      color: const Color(0xFF1E1E26),
+      child: const Icon(Icons.movie_creation_outlined, color: Colors.white24, size: 22),
     );
   }
 }

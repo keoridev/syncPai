@@ -1,7 +1,9 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../domain/entities/anime_clip.dart';
+import '../models/anime_moment_model.dart';
 
 abstract class AnimeClipsDataSource {
   Future<List<AnimeClip>> getClips();
@@ -26,6 +28,41 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
     final bookmarkedIds = _prefs.getStringList(_bookmarksKey) ?? [];
 
     final rawClips = _getCuratedClips().toList();
+
+    // 1. Загрузка моментов из Supabase таблицы anime_moments
+    final supabaseClips = <AnimeClip>[];
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('anime_moments')
+          .select()
+          .order('created_at', ascending: false);
+      for (final row in response) {
+        final model = AnimeMomentModel.fromJson(row);
+        // Если есть аналогичный тайтл в curated, берем проверенный постер
+        final curatedMatch = rawClips.firstWhere(
+          (c) => c.animeId == int.tryParse(model.animeId),
+          orElse: () => const AnimeClip(
+            id: '',
+            animeId: 0,
+            animeTitle: '',
+            englishTitle: '',
+            posterUrl: '',
+            episodeNumber: 1,
+            targetTimestampSeconds: 0,
+            caption: '',
+            videoUrl: '',
+          ),
+        );
+        final poster = curatedMatch.posterUrl.isNotEmpty
+            ? curatedMatch.posterUrl
+            : 'https://desu.shikimori.one/system/animes/original/${model.animeId}.jpg';
+
+        supabaseClips.add(model.toDomain(posterUrl: poster));
+      }
+    } catch (_) {
+      // Supabase не инициализирован (в тестах) либо оффлайн — прозрачный фолбек
+    }
 
     CatalogRepository? repo = _catalogRepository;
     if (repo == null && getIt.isRegistered<CatalogRepository>()) {
@@ -115,9 +152,13 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
       }
     }
 
+    // Объединяем Supabase-моменты, проверенную золотую коллекцию и динамические обновления без дубликатов
     final allClips = <AnimeClip>[
-      ...rawClips,
-      ...dynamicClips,
+      ...supabaseClips,
+      ...rawClips.where((c) => !supabaseClips.any((sc) => sc.animeId == c.animeId)),
+      ...dynamicClips.where((c) =>
+          !supabaseClips.any((sc) => sc.animeId == c.animeId) &&
+          !rawClips.any((rc) => rc.animeId == c.animeId)),
     ];
 
     return allClips.map((clip) {

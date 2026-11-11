@@ -18,6 +18,8 @@ class AppAvatar extends StatelessWidget {
   final double size;
   final Color? borderColor;
   final double borderWidth;
+  final BorderRadius? borderRadius;
+  final BoxShape shape;
 
   const AppAvatar({
     super.key,
@@ -26,6 +28,8 @@ class AppAvatar extends StatelessWidget {
     this.size = 40,
     this.borderColor,
     this.borderWidth = 1.0,
+    this.borderRadius,
+    this.shape = BoxShape.circle,
   });
 
   static const Map<String, IconData> _presetIconMap = {
@@ -55,6 +59,14 @@ class AppAvatar extends StatelessWidget {
     final effectiveBorderColor = borderColor ?? AppColors.strokeMedium;
     final cleanUrl = avatarUrl?.trim() ?? '';
     final themePrimary = Theme.of(context).colorScheme.primary;
+    final effectiveShape = borderRadius != null ? BoxShape.rectangle : shape;
+
+    Widget wrapClip(Widget child) {
+      if (borderRadius != null) {
+        return ClipRRect(borderRadius: borderRadius!, child: child);
+      }
+      return ClipOval(child: child);
+    }
 
     // 1. Проверяем, выбран ли аниме-силуэтный пресет
     final silhouette = AnimeSilhouettePreset.find(cleanUrl);
@@ -63,7 +75,8 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          shape: effectiveShape,
+          borderRadius: borderRadius,
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -116,7 +129,8 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          shape: effectiveShape,
+          borderRadius: borderRadius,
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -172,12 +186,19 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          shape: effectiveShape,
+          borderRadius: borderRadius,
           border: Border.all(color: effectiveBorderColor, width: borderWidth),
         ),
+<<<<<<< HEAD
         child: ClipOval(
           child: CachedNetworkImage(
             imageUrl: wrapCorsSafeUrl(networkUrl),
+=======
+        child: wrapClip(
+          CachedNetworkImage(
+            imageUrl: wrapCorsSafeUrl(cleanUrl),
+>>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             placeholder: (_, __) => _buildHolographicMonogram(themePrimary),
@@ -219,12 +240,19 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
+          shape: effectiveShape,
+          borderRadius: borderRadius,
           border: Border.all(color: effectiveBorderColor, width: borderWidth),
         ),
+<<<<<<< HEAD
         child: ClipOval(
           child: Image.file(
             resolvedLocalFile,
+=======
+        child: wrapClip(
+          Image.file(
+            file,
+>>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             errorBuilder: (_, error, ___) {

@@ -88,6 +88,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
   late String _selectedAccentHex;
   late String _selectedBadgeId;
   late String _selectedAvatar;
+  late String _selectedShowcaseType;
   String? _selectedFavAnimeId;
   String? _selectedFavAnimePoster;
 
@@ -133,6 +134,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
             : '#E06C53');
     _selectedBadgeId = widget.profile.badgeId ?? 'sync_master';
     _selectedAvatar = widget.profile.avatarUrl ?? 'cat';
+    _selectedShowcaseType = widget.profile.showcaseType;
     _selectedFavAnimeId = widget.profile.favoriteAnimeId;
     _selectedFavAnimePoster = widget.profile.favoriteAnimePoster;
 
@@ -285,6 +287,7 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
           favoriteAnimeId: newFavAnime.isNotEmpty ? effectiveFavId : null,
           favoriteAnimePoster: newFavAnime.isNotEmpty ? effectiveFavPoster : null,
           accentColor: _selectedAccentHex,
+          showcaseType: _selectedShowcaseType,
         );
 
     // 2. СИНХРОНИЗАЦИЯ С ТЕМОЙ ПРИЛОЖЕНИЯ:
@@ -664,10 +667,11 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         ),
         const SizedBox(height: 14),
 
-        // Ввод произвольного URL или GIF
-        Text('Или вставьте прямую ссылку на арт/GIF:',
+        // Ввод произвольного URL или GIF/MP4
+        Text('Или вставьте прямую ссылку на видео (MP4) или арт/GIF:',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 6),
+<<<<<<< HEAD
         TextField(
           controller: _customUrlController,
           style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -692,6 +696,39 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.strokeMedium),
+=======
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _customUrlController,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'https://example.com/video.mp4 или .gif, .jpg',
+                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.strokeMedium),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.strokeMedium),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: accent, width: 1.5),
+                  ),
+                ),
+                onSubmitted: (val) {
+                  if (val.trim().isNotEmpty) {
+                    setState(() => _selectedBgId = val.trim());
+                  }
+                },
+              ),
+>>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -1255,6 +1292,8 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
 
   // --- 5. ВКЛАДКА «ВИТРИНА & О СЕБЕ» ---
   Widget _buildShowcaseTab(Color accent) {
+    final badge = SteamBadge.fromId(_selectedBadgeId);
+
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: AppDimensions.spacingXl,
@@ -1265,6 +1304,36 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Селектор типа витрины (Steam Showcase Mode)
+          Text('Тип витрины Steam:',
+              style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _buildShowcaseTypeOption(
+                type: 'favorite_anime',
+                title: 'Любимый тайтл',
+                icon: Icons.movie_filter_rounded,
+                accent: accent,
+              ),
+              const SizedBox(width: 8),
+              _buildShowcaseTypeOption(
+                type: 'stats_badges',
+                title: 'Значки и статы',
+                icon: Icons.military_tech_rounded,
+                accent: accent,
+              ),
+              const SizedBox(width: 8),
+              _buildShowcaseTypeOption(
+                type: 'custom_text',
+                title: 'Инфо-бокс',
+                icon: Icons.article_rounded,
+                accent: accent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
           // Живой интерактивный предпросмотр Витрины (Live Preview)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1288,42 +1357,119 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                     Icon(Icons.visibility_rounded, color: accent, size: 16),
                     const SizedBox(width: 6),
                     Text(
-                      'ПРЕДПРОСМОТР ВИТРИНЫ',
+                      'ПРЕДПРОСМОТР ВИТРИНЫ (${_selectedShowcaseType == "stats_badges" ? "ЗНАЧКИ И СТАТИСТИКА" : (_selectedShowcaseType == "custom_text" ? "ИНФО-БОКС" : "ЛЮБИМЫЙ ТАЙТЛ")})',
                       style: TextStyle(
                         color: accent,
                         fontWeight: FontWeight.w900,
-                        fontSize: 11,
+                        fontSize: 10.5,
                         letterSpacing: 0.8,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                if (_titleController.text.trim().isNotEmpty) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: accent, width: 0.8),
-                    ),
-                    child: Text(
-                      _titleController.text.trim(),
-                      style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 11),
-                    ),
+                if (_selectedShowcaseType == 'favorite_anime') ...[
+                  Row(
+                    children: [
+                      if (_selectedFavAnimePoster != null && _selectedFavAnimePoster!.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(_selectedFavAnimePoster!),
+                            width: 44,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 24),
+                          ),
+                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _favAnimeController.text.isNotEmpty ? _favAnimeController.text : 'Любимое аниме не выбрано',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _statusController.text.isNotEmpty ? '«${_statusController.text}»' : '«Смотрю аниме...»',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: accent, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                ],
-                Text(
-                  '«${_statusController.text.isNotEmpty ? _statusController.text : 'Смотрю аниме...'}»',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
-                ),
-                if (_bioController.text.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                ] else if (_selectedShowcaseType == 'stats_badges') ...[
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: badge.color.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: badge.color),
+                        ),
+                        child: Icon(badge.icon, color: badge.color, size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(badge.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: badge.color.withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text('LVL ${badge.level}', style: TextStyle(color: badge.color, fontSize: 9.5, fontWeight: FontWeight.w800)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(badge.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  if (_titleController.text.trim().isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: accent, width: 0.8),
+                      ),
+                      child: Text(
+                        _titleController.text.trim(),
+                        style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   Text(
-                    _bioController.text.trim(),
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5, fontStyle: FontStyle.italic),
+                    '«${_statusController.text.isNotEmpty ? _statusController.text : 'Смотрю аниме...'}»',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
                   ),
+                  if (_bioController.text.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _bioController.text.trim(),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.5, fontStyle: FontStyle.italic),
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -1690,7 +1836,6 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
 
               return Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: accent.withValues(alpha: 0.4)),
                   boxShadow: [
@@ -1702,7 +1847,9 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                   ],
                 ),
                 child: Material(
-                  color: Colors.transparent,
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: [
                       if (_isSearchingTitles)
@@ -1932,6 +2079,47 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
     ),
   );
 }
+
+  Widget _buildShowcaseTypeOption({
+    required String type,
+    required String title,
+    required IconData icon,
+    required Color accent,
+  }) {
+    final isSelected = _selectedShowcaseType == type;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _selectedShowcaseType = type),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? accent.withValues(alpha: 0.16) : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? accent : AppColors.strokeMedium,
+              width: isSelected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 20, color: isSelected ? accent : AppColors.textSecondary),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   // --- 6. ВКЛАДКА «ЦВЕТА» ---
   Widget _buildColorsTab(Color accent) {

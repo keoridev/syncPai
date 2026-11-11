@@ -140,54 +140,14 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                       child: Stack(
                         alignment: Alignment.centerLeft,
                         children: [
-                          // SoundCloud-style Тепловая карта эмоций на таймлайне
-                          if (widget.heatmap != null && widget.heatmap!.normalizedHeights.isNotEmpty)
-                            Positioned.fill(
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: SizedBox(
-                                  height: 22,
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: widget.heatmap!.normalizedHeights.asMap().entries.map((entry) {
-                                      final idx = entry.key;
-                                      final heightFactor = entry.value;
-                                      final barProgress = idx / widget.heatmap!.normalizedHeights.length;
-                                      final isPlayed = barProgress <= progressRatio;
-                                      final isPeak = heightFactor > 0.65;
-
-                                      return Expanded(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 0.6),
-                                          child: Container(
-                                            height: (22.0 * heightFactor),
-                                            decoration: BoxDecoration(
-                                              color: isPeak
-                                                  ? (isPlayed
-                                                      ? const Color(0xFFFF5E3A)
-                                                      : const Color(0xFFFF5E3A).withValues(alpha: 0.38))
-                                                  : (isPlayed
-                                                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.65)
-                                                      : Colors.white.withValues(alpha: 0.12)),
-                                              borderRadius: BorderRadius.circular(1.5),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // 1. Фоновая дорожка (с динамическим увеличением толщины при зажатии)
+                          // 1. Фоновая дорожка (чистая сплошная линия без точек)
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
-                            height: _isDragging ? 7.0 : 4.0,
+                            height: _isDragging ? 6.0 : 3.5,
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: AppColors.strokeMedium,
-                              borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(_isDragging ? 3.0 : 1.75),
                             ),
                           ),
 
@@ -196,31 +156,25 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                             widthFactor: bufferRatio,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
-                              height: _isDragging ? 7.0 : 4.0,
+                              height: _isDragging ? 6.0 : 3.5,
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
+                                color: Colors.white.withValues(alpha: 0.32),
+                                borderRadius: BorderRadius.circular(_isDragging ? 3.0 : 1.75),
                               ),
                             ),
                           ),
 
-                          // 3. Цветные отрезки таймкодов (Опенинг - золото/янтарь, Эндинг - циан/неон)
+                          // 3. Цветные отрезки таймкодов (Опенинг - янтарный, Эндинг - фиолетовый/акцентный)
                           if (opStartRatio != null && opStopRatio != null && opStopRatio > opStartRatio)
                             Positioned(
                               left: barWidth * opStartRatio,
                               width: barWidth * (opStopRatio - opStartRatio),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                height: _isDragging ? 7.0 : 4.0,
+                                height: _isDragging ? 6.0 : 3.5,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFFFB300).withValues(alpha: 0.8),
-                                  borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFFFB300).withValues(alpha: 0.5),
-                                      blurRadius: 4,
-                                    ),
-                                  ],
+                                  color: const Color(0xFFFFB300).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(_isDragging ? 3.0 : 1.75),
                                 ),
                               ),
                             ),
@@ -231,60 +185,43 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                               width: barWidth * (edStopRatio - edStartRatio),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                height: _isDragging ? 7.0 : 4.0,
+                                height: _isDragging ? 6.0 : 3.5,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF00E5FF).withValues(alpha: 0.8),
-                                  borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF00E5FF).withValues(alpha: 0.5),
-                                      blurRadius: 4,
-                                    ),
-                                  ],
+                                  color: const Color(0xFFBA68C8).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(_isDragging ? 3.0 : 1.75),
                                 ),
                               ),
                             ),
 
-                          // 4. Линия текущего прогресса воспроизведения (сочная iOS / Netflix анимация)
+                          // 4. Линия текущего прогресса воспроизведения (чистая сплошная линия)
                           FractionallySizedBox(
                             widthFactor: progressRatio,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
-                              height: _isDragging ? 7.0 : 4.0,
+                              height: _isDragging ? 6.0 : 3.5,
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.primary,
-                                borderRadius: BorderRadius.circular(_isDragging ? 3.5 : 2.0),
-                                boxShadow: [
-                                  if (_isDragging)
-                                    BoxShadow(
-                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
-                                      blurRadius: 8,
-                                    ),
-                                ],
+                                borderRadius: BorderRadius.circular(_isDragging ? 3.0 : 1.75),
                               ),
                             ),
                           ),
 
-                          // 6. Ползунок (Thumb) с плавной трансформацией размера
+                          // 5. Ползунок (Thumb) в чистом стиле
                           Positioned(
-                            left: (barWidth * progressRatio - (_isDragging ? 10 : 6))
-                                .clamp(0.0, barWidth - (_isDragging ? 20 : 12)),
+                            left: (barWidth * progressRatio - (_isDragging ? 8 : 5))
+                                .clamp(0.0, barWidth - (_isDragging ? 16 : 10)),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
-                              width: _isDragging ? 20.0 : 12.0,
-                              height: _isDragging ? 20.0 : 12.0,
+                              width: _isDragging ? 16.0 : 10.0,
+                              height: _isDragging ? 16.0 : 10.0,
                               decoration: BoxDecoration(
-                                color: AppColors.textPrimary,
+                                color: Colors.white,
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: _isDragging ? 2.5 : 0.0,
-                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: _isDragging ? 0.85 : 0.4),
-                                    blurRadius: _isDragging ? 14 : 6,
-                                    spreadRadius: _isDragging ? 3 : 0,
+                                    color: Colors.black.withValues(alpha: 0.35),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
                                   ),
                                 ],
                               ),

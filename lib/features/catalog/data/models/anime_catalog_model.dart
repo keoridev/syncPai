@@ -81,7 +81,7 @@ class AnimeCatalogModel {
             ((json['episodes_total'] as num?)?.toInt() ?? 0));
 
     final fallback = shikiId > 0
-        ? 'https://desu.shikimori.one/system/animes/original/$shikiId.jpg'
+        ? 'https://shikimori.io/system/animes/original/$shikiId.jpg'
         : (posterUrl ?? '');
 
     final int? year = (json['aired_on'] != null)
@@ -152,21 +152,21 @@ class AnimeCatalogModel {
       }
     }
 
-    // 3. Сформировать основной постер (Японский):
-    // Если shikiId существует: 'https://desu.shikimori.one/system/animes/original/$shikiId.jpg'
-    // Если shikiId нет: использовать резервный постер AniLibria
+    // 3. Сформировать основной и резервный постеры
     final String primaryPoster;
     if (json['poster_url'] != null && json['poster_url'].toString().isNotEmpty) {
       primaryPoster = json['poster_url'].toString();
-    } else if (shikiId != null && shikiId > 0) {
-      primaryPoster = 'https://desu.shikimori.one/system/animes/original/$shikiId.jpg';
     } else if (aniLibriaPoster.isNotEmpty) {
       primaryPoster = aniLibriaPoster;
+    } else if (shikiId != null && shikiId > 0) {
+      primaryPoster = 'https://shikimori.io/system/animes/original/$shikiId.jpg';
     } else {
       primaryPoster = '';
     }
 
-    final String fallbackPoster = aniLibriaPoster.isNotEmpty ? aniLibriaPoster : primaryPoster;
+    final String fallbackPoster = (shikiId != null && shikiId > 0)
+        ? 'https://shikimori.io/system/animes/original/$shikiId.jpg'
+        : (aniLibriaPoster.isNotEmpty ? aniLibriaPoster : primaryPoster);
 
     // 4. Заполнить названия: titleRu брать из json['name']?['main'], titleEn из json['name']?['english']
     final String titleRu;

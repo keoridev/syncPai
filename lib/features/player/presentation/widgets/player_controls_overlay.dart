@@ -187,13 +187,6 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 onPressed: () {
                                   HapticFeedback.lightImpact();
                                   cubit.toggleScreenLock();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Экран заблокирован. Жесты звука и яркости активны'),
-                                      duration: Duration(seconds: 2),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
                                 },
                               ),
 
@@ -235,18 +228,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   ),
                                   visualDensity: VisualDensity.compact,
                                   onPressed: () {
+                                    HapticFeedback.lightImpact();
                                     cubit.toggleAutoSkipOpening();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          cubit.isAutoSkipOpening
-                                              ? 'Автопропуск опенингов включен'
-                                              : 'Автопропуск опенингов выключен',
-                                        ),
-                                        duration: const Duration(seconds: 1),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
                                   },
                                 ),
 
@@ -258,9 +241,9 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
                                 ),
 
-                                // Кнопка Скорости и Настроек (Liquid Glass шторка)
+                                // Кнопка Скорости воспроизведения (быстрый выбор)
                                 InkWell(
-                                  onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                  onTap: () => _showQuickSpeedSheet(context),
                                   borderRadius: AppDimensions.borderRadiusSmall,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -277,16 +260,16 @@ class PlayerControlsOverlay extends StatelessWidget {
                                           style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
                                         ),
                                         const SizedBox(width: 4),
-                                        const Icon(Icons.tune_rounded, color: AppColors.textSecondary, size: 13),
+                                        const Icon(Icons.speed_rounded, color: AppColors.textSecondary, size: 13),
                                       ],
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 6),
 
-                                // Выбор качества потока (1080p, 720p, 480p)
+                                // Быстрый выбор качества потока (1080p, 720p, 480p)
                                 InkWell(
-                                  onTap: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                  onTap: () => _showQuickQualitySheet(context),
                                   borderRadius: AppDimensions.borderRadiusSmall,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -537,7 +520,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                               icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
-                              label: const Text('Пропустить опенинг', style: TextStyle(color: AppColors.textPrimary)),
+                              label: Text(
+                                'Пропустить опенинг (${(ep.opening!.stop - state.position.inSeconds).clamp(1, 999)}с)',
+                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                              ),
                               onPressed: () => cubit.skipOpening(),
                             ),
                           ),
@@ -565,8 +551,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                         )
                       else if (!isGuestInSync &&
                           ep.ending != null &&
-                          state.position.inSeconds >= ep.ending!.start &&
-                          state.position.inSeconds < ep.ending!.stop)
+                          state.position.inSeconds >= (ep.ending!.start - 10) &&
+                          state.position.inSeconds <= ep.ending!.stop)
                         Align(
                           alignment: Alignment.centerRight,
                           child: Padding(
@@ -579,7 +565,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                               icon: const Icon(Icons.skip_next_rounded, color: AppColors.syncActive, size: 16),
-                              label: const Text('Пропустить эндинг', style: TextStyle(color: AppColors.textPrimary)),
+                              label: Text(
+                                hasNextEpisode ? 'Следующая серия (Эндинг)' : 'Пропустить эндинг',
+                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                              ),
                               onPressed: () {
                                 if (hasNextEpisode) {
                                   cubit.switchEpisode(allEpisodes[currentIndex + 1]);
@@ -973,6 +962,132 @@ class PlayerControlsOverlay extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showQuickSpeedSheet(BuildContext context) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+        final primary = Theme.of(context).colorScheme.primary;
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated.withValues(alpha: 0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Row(
+                  children: const [
+                    Icon(Icons.speed_rounded, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text(
+                      'Скорость воспроизведения',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white12),
+              ...speeds.map((rate) {
+                final isSelected = (state.playbackRate - rate).abs() < 0.05;
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    '${rate}x${rate == 1.0 ? ' (Обычная)' : ''}',
+                    style: TextStyle(
+                      color: isSelected ? primary : Colors.white,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  trailing: isSelected ? Icon(Icons.check_rounded, color: primary, size: 20) : null,
+                  onTap: () {
+                    cubit.setPlaybackRate(rate);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showQuickQualitySheet(BuildContext context) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final primary = Theme.of(context).colorScheme.primary;
+        final qualities = [
+          (PlayerQuality.fhd, '1080p (Full HD)'),
+          (PlayerQuality.hd, '720p (HD)'),
+          (PlayerQuality.sd, '480p (SD)'),
+        ];
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated.withValues(alpha: 0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Row(
+                  children: const [
+                    Icon(Icons.high_quality_rounded, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text(
+                      'Качество видео',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white12),
+              ...qualities.map((item) {
+                final isSelected = state.selectedQuality == item.$1;
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    item.$2,
+                    style: TextStyle(
+                      color: isSelected ? primary : Colors.white,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  trailing: isSelected ? Icon(Icons.check_rounded, color: primary, size: 20) : null,
+                  onTap: () {
+                    cubit.changeQuality(item.$1);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 }

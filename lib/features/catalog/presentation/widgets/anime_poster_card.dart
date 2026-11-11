@@ -41,20 +41,22 @@ class AnimePosterCard extends StatelessWidget {
         scaleFactor: 1.04,
         glowColor: AppColors.accentPrimary,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Чистый постер с большим радиусом (18px)
+            // Строгий аспект 2:3 для постера
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(cardRadius),
-                  border: Border.all(
-                    color: AppColors.stroke,
-                    width: 1.0,
+              child: AspectRatio(
+                aspectRatio: 2 / 3,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(cardRadius),
+                    border: Border.all(
+                      color: AppColors.stroke,
+                      width: 1.0,
+                    ),
                   ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
                   fit: StackFit.expand,
                   children: [
                     if (posterUrl.isNotEmpty)
@@ -69,8 +71,19 @@ class AnimePosterCard extends StatelessWidget {
                             'User-Agent':
                                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                           },
-                          placeholder: (context, url) =>
-                              const ColoredBox(color: Colors.black26),
+                          placeholder: (context, url) => Container(
+                            color: AppColors.surfaceElevated,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                                ),
+                              ),
+                            ),
+                          ),
                           errorWidget: (context, primaryUrl, error) {
                             if (fallbackPoster.isNotEmpty &&
                                 fallbackPoster != posterUrl) {
@@ -83,8 +96,19 @@ class AnimePosterCard extends StatelessWidget {
                                   'User-Agent':
                                       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                                 },
-                                placeholder: (context, url) =>
-                                    const ColoredBox(color: Colors.black26),
+                                placeholder: (context, url) => Container(
+                                  color: AppColors.surfaceElevated,
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                                 errorWidget: (context, fallbackUrl, error) =>
                                     _buildImagePlaceholder(),
                               );
@@ -161,21 +185,25 @@ class AnimePosterCard extends StatelessWidget {
         ),
       ),
     ),
+  ),
 
-    const SizedBox(height: 8),
+    const SizedBox(height: 6),
 
-    // Название тайтла прямо под постером молочно-белым текстом (строго до 2 строк)
-    Text(
-      title.displayTitle,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.start,
-      style: AppTypography.bodySmall.copyWith(
-        fontWeight: FontWeight.w700,
-        fontSize: isNarrow ? 11.5 : 12.5,
-        height: 1.25,
-        color: AppColors.textPrimary,
-        letterSpacing: -0.1,
+    // Название тайтла прямо под постером молочно-белым текстом (строго до 2 строк с фиксированной высотой)
+    SizedBox(
+      height: 38,
+      child: Text(
+        title.displayTitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.start,
+        style: AppTypography.bodySmall.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: isNarrow ? 11.5 : 12.5,
+          height: 1.25,
+          color: AppColors.textPrimary,
+          letterSpacing: -0.1,
+        ),
       ),
     ),
 

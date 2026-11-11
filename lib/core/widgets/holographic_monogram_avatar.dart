@@ -119,7 +119,6 @@ class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
                     fontSize: widget.size * 0.44,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.5,
-                    color: Colors.white,
                     foreground: Paint()
                       ..shader = LinearGradient(
                         begin: Alignment.topLeft,

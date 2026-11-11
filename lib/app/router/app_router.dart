@@ -201,7 +201,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/player',
       name: 'player',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         final title = extra?['title'] as AnimeTitle?;
         final episode = extra?['episode'] as EpisodeItem?;
@@ -211,18 +211,27 @@ final GoRouter appRouter = GoRouter(
         final initialPosition = extra?['initialPosition'] as Duration?;
 
         if (title == null || episode == null) {
-          return const Scaffold(
-            body: Center(child: Text('Видеопоток не найден')),
+          return const MaterialPage(
+            child: Scaffold(
+              body: Center(child: Text('Видеопоток не найден')),
+            ),
           );
         }
 
-        return PlayerScreen(
-          title: title,
-          initialEpisode: episode,
-          initialQuality: quality,
-          roomCode: roomCode,
-          isHost: isHost,
-          initialPosition: initialPosition,
+        return CustomTransitionPage(
+          key: state.pageKey,
+          opaque: false,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: PlayerScreen(
+            title: title,
+            initialEpisode: episode,
+            initialQuality: quality,
+            roomCode: roomCode,
+            isHost: isHost,
+            initialPosition: initialPosition,
+          ),
         );
       },
     ),

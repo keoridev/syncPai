@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit/media_kit.dart' hide PlayerState;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
@@ -41,6 +42,30 @@ class PlayerCubit extends Cubit<PlayerState> {
   final Duration? _initialPosition;
   Duration? _pendingInitialSeek;
 
+  DateTime? _lastPosSavedAt;
+
+  void _savePlaybackPosition(Duration pos, Duration dur) {
+    if (!getIt.isRegistered<SharedPreferences>()) return;
+    final prefs = getIt<SharedPreferences>();
+    final key = '${state.title.id}_${state.episode.episode}';
+    if (dur > Duration.zero && (dur - pos).inSeconds <= 30) {
+      prefs.remove(key);
+    } else if (pos.inSeconds >= 5) {
+      prefs.setInt(key, pos.inMilliseconds);
+    }
+  }
+
+  static Duration? _loadSavedPosition(int animeId, int epNum) {
+    if (!getIt.isRegistered<SharedPreferences>()) return null;
+    final prefs = getIt<SharedPreferences>();
+    final key = '${animeId}_$epNum';
+    final ms = prefs.getInt(key);
+    if (ms != null && ms > 10000) {
+      return Duration(milliseconds: ms);
+    }
+    return null;
+  }
+
   PlayerCubit({
     required AnimeTitle title,
     required EpisodeItem episode,
@@ -52,7 +77,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   })  : player = Player(),
         // ignore: prefer_initializing_formals
         _initialPosition = initialPosition,
-        _pendingInitialSeek = initialPosition,
+        _pendingInitialSeek = initialPosition ?? _loadSavedPosition(title.id, episode.episode),
         super(PlayerState(
           title: title,
           episode: episode,
@@ -96,6 +121,11 @@ class PlayerCubit extends Cubit<PlayerState> {
         emit(state.copyWith(position: pos));
         _checkAutoNextEpisode(pos);
         _checkAutoSkipOpening(pos);
+        final now = DateTime.now();
+        if (_lastPosSavedAt == null || now.difference(_lastPosSavedAt!).inSeconds >= 3) {
+          _lastPosSavedAt = now;
+          _savePlaybackPosition(pos, state.duration);
+        }
       }),
       player.stream.duration.listen((dur) {
         emit(state.copyWith(duration: dur));
@@ -103,7 +133,8 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (dur > Duration.zero && _pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero) {
           final seekTarget = _pendingInitialSeek!;
           _pendingInitialSeek = null;
-          if (seekTarget < dur) {
+          // восстанавливать сохраненную позицию (если savedPosition > 10 сек и осталось более 30 сек)
+          if (seekTarget.inSeconds > 10 && (dur - seekTarget).inSeconds > 30) {
             player.seek(seekTarget);
             Future.delayed(const Duration(milliseconds: 350), () {
               if (!isClosed && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
@@ -1229,7 +1260,8 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _switchEpisodeInternal(EpisodeItem nextEpisode) async {
-    _pendingInitialSeek = null;
+    _savePlaybackPosition(state.position, state.duration);
+    _pendingInitialSeek = _loadSavedPosition(state.title.id, nextEpisode.episode);
     cancelAutoNextCountdown();
 
     final prevEpisode = state.episode.episode;
@@ -1327,6 +1359,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   Future<void> close() async {
     if (_isDisposing) return;
     _isDisposing = true;
+    _savePlaybackPosition(state.position, state.duration);
     _controlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();

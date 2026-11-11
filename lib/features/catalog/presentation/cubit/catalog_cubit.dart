@@ -67,7 +67,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   }
 
   CatalogGridDensity _loadSavedGridDensity() {
-    final val = prefs?.getInt('catalog_grid_density');
+    final val = prefs?.getInt('grid_columns_count') ?? prefs?.getInt('catalog_grid_density');
     return val == 3 ? CatalogGridDensity.compact : CatalogGridDensity.standard;
   }
 
@@ -298,7 +298,9 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   void setGridDensity(CatalogGridDensity density) {
     _currentGridDensity = density;
+    prefs?.setInt('grid_columns_count', density.mobileColumns);
     prefs?.setInt('catalog_grid_density', density.mobileColumns);
+    prefs?.setInt('saved_anime_grid_columns', density.mobileColumns);
     if (state is CatalogLoaded) {
       emit((state as CatalogLoaded).copyWith(gridDensity: density));
     }

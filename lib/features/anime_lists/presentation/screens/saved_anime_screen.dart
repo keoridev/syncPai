@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,7 @@ import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../../catalog/domain/entities/catalog_settings.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
@@ -69,11 +71,21 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   // Кэш запросов фоновой подгрузки постеров
   final Set<int> _posterFetchAttempts = {};
+  StreamSubscription<CatalogState>? _catalogSub;
 
   @override
   void initState() {
     super.initState();
     _loadSavedPreferences();
+    if (getIt.isRegistered<CatalogCubit>()) {
+      _catalogSub = getIt<CatalogCubit>().stream.listen((catState) {
+        if (mounted && catState is CatalogLoaded && catState.gridDensity.mobileColumns != _gridColumns) {
+          setState(() {
+            _gridColumns = catState.gridDensity.mobileColumns;
+          });
+        }
+      });
+    }
   }
 
   void _loadSavedPreferences() {
@@ -86,7 +98,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
           orElse: () => SavedAnimeViewMode.list,
         );
       }
-      _gridColumns = prefs.getInt('saved_anime_grid_columns') ?? 3;
+      _gridColumns = prefs.getInt('grid_columns_count') ??
+          prefs.getInt('catalog_grid_density') ??
+          prefs.getInt('saved_anime_grid_columns') ??
+          3;
     }
   }
 
@@ -100,19 +115,20 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   void _toggleGridColumns() {
     HapticFeedback.lightImpact();
+    final newCols = _gridColumns == 2 ? 3 : 2;
     setState(() {
-      if (_gridColumns == 3) {
-        _gridColumns = 2;
-      } else if (_gridColumns == 2) {
-        _gridColumns = 1;
-      } else if (_gridColumns == 1) {
-        _gridColumns = 4;
-      } else {
-        _gridColumns = 3;
-      }
+      _gridColumns = newCols;
     });
     if (getIt.isRegistered<SharedPreferences>()) {
-      getIt<SharedPreferences>().setInt('saved_anime_grid_columns', _gridColumns);
+      final prefs = getIt<SharedPreferences>();
+      prefs.setInt('grid_columns_count', newCols);
+      prefs.setInt('catalog_grid_density', newCols);
+      prefs.setInt('saved_anime_grid_columns', newCols);
+    }
+    if (getIt.isRegistered<CatalogCubit>()) {
+      getIt<CatalogCubit>().setGridDensity(
+        newCols == 3 ? CatalogGridDensity.compact : CatalogGridDensity.standard,
+      );
     }
   }
 
@@ -297,6 +313,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   @override
   void dispose() {
+    _catalogSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -1170,30 +1187,61 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: GlassContainer(
-                              borderRadius: BorderRadius.circular(14),
-                              blurSigma: 12,
-                              backgroundOpacity: 0.05,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: TextField(
-                                controller: _searchController,
-                                style: const TextStyle(color: AppColors.textPrimary),
-                                decoration: InputDecoration(
-                                  hintText: 'Поиск по сохраненным тайтлам...',
-                                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13.5),
-                                  icon: const Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 20),
-                                  border: InputBorder.none,
-                                  suffixIcon: _searchQuery.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear_rounded, color: AppColors.textMuted, size: 18),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            setState(() => _searchQuery = '');
-                                          },
-                                        )
-                                      : null,
+                            child: Container(
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1A1A24),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  width: 1.0,
                                 ),
-                                onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.search_rounded,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _searchController,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 13.5,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Поиск по сохраненным тайтлам...',
+                                        hintStyle: TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 13,
+                                        ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                                    ),
+                                  ),
+                                  if (_searchQuery.isNotEmpty)
+                                    GestureDetector(
+                                      onTap: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(4),
+                                        child: Icon(
+                                          Icons.clear_rounded,
+                                          color: AppColors.textMuted,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ),
@@ -1373,8 +1421,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                           childAspectRatio: _gridColumns == 1
                               ? 2.8
                               : (_gridColumns == 2
-                                  ? 0.65
-                                  : (_gridColumns == 3 ? 0.58 : 0.52)),
+                                  ? 0.55
+                                  : (_gridColumns == 3 ? 0.50 : 0.48)),
                           crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
                           mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
                         ),
@@ -1839,8 +1887,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
             childAspectRatio: _gridColumns == 1
                 ? 2.8
                 : (_gridColumns == 2
-                    ? 0.65
-                    : (_gridColumns == 3 ? 0.58 : 0.52)),
+                    ? 0.55
+                    : (_gridColumns == 3 ? 0.50 : 0.48)),
             crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
             mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
           ),

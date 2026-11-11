@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -57,6 +58,33 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   late final VideoController _videoController;
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
+  bool _isMiniPlayer = false;
+
+  void _minimizePlayer() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    setState(() {
+      _isMiniPlayer = true;
+    });
+  }
+
+  void _restorePlayer() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    setState(() {
+      _isMiniPlayer = false;
+    });
+  }
+
+  String _formatMmSs(int totalSeconds) {
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
 
   @override
   void initState() {
@@ -211,6 +239,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final ep = _cubit.state.episode.episode;
 
     if (pos.inSeconds >= 5 && dur.inSeconds > 0) {
+      if (getIt.isRegistered<SharedPreferences>()) {
+        final prefs = getIt<SharedPreferences>();
+        final key = '${widget.title.id}_$ep';
+        if ((dur - pos).inSeconds <= 30) {
+          prefs.remove(key);
+        } else {
+          prefs.setInt(key, pos.inMilliseconds);
+        }
+      }
       if (getIt.isRegistered<WatchHistoryCubit>()) {
         final hist = getIt<WatchHistoryCubit>();
         hist.saveProgress(
@@ -359,13 +396,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
 
     return PopScope(
-      canPop: true,
+      canPop: _isMiniPlayer,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           _saveWatchProgress();
           SystemChrome.setEnabledSystemUIMode(
             SystemUiMode.edgeToEdge,
           );
+          return;
+        }
+        if (!_isMiniPlayer) {
+          _minimizePlayer();
         }
       },
       child: Focus(
@@ -374,7 +415,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         child: BlocProvider.value(
           value: _cubit,
           child: Scaffold(
-            backgroundColor: Colors.black,
+            backgroundColor: _isMiniPlayer ? Colors.transparent : Colors.black,
             resizeToAvoidBottomInset: false,
             body: BlocConsumer<PlayerCubit, PlayerState>(
               listenWhen: (previous, current) =>
@@ -396,10 +437,153 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 );
               },
             builder: (context, state) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Видео полотно libmpv без стандартных нативных контролов
+              if (_isMiniPlayer) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Фоновый жест клика вне мини-плеера закрывает плеер
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _handleExit,
+                      ),
+                    ),
+                    // Плавающий мини-плеер в правом нижнем углу (~180x100 dp)
+                    Positioned(
+                      right: 16,
+                      bottom: MediaQuery.paddingOf(context).bottom + 70,
+                      child: GestureDetector(
+                        onTap: _restorePlayer,
+                        child: Container(
+                          width: 196,
+                          height: 112,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14141E),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.75),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Video(
+                                controller: _videoController,
+                                controls: NoVideoControls,
+                              ),
+                              Positioned.fill(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.black.withValues(alpha: 0.7),
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.85),
+                                      ],
+                                      stops: const [0.0, 0.45, 1.0],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 5,
+                                left: 8,
+                                right: 6,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        state.title.displayTitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: _handleExit,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.6),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close_rounded,
+                                          size: 13,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Center(
+                                child: GestureDetector(
+                                  onTap: () => _cubit.togglePlayPause(),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.65),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.4),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 5,
+                                left: 8,
+                                child: Text(
+                                  'Серия ${state.episode.episode}',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return GestureDetector(
+                onVerticalDragEnd: (details) {
+                  if (!_isMiniPlayer && details.primaryVelocity != null && details.primaryVelocity! > 350) {
+                    _minimizePlayer();
+                  }
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Видео полотно libmpv без стандартных нативных контролов
                   Center(
                     child: Video(
                       controller: _videoController,
@@ -641,6 +825,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       ),
                     ),
 
+                  // Яркая плавающая кнопка / баннер пропуска опенинга (не требует оверлея управления)
+                  _buildOpeningSkipOverlay(state),
+
                   // Кастомный оверлей управления в стиле Cinema Dark
                   PlayerControlsOverlay(
                     cubit: _cubit,
@@ -767,12 +954,134 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       ),
                     ),
                 ],
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     ),
-  );
+  ),
+);
 }
+
+  Widget _buildOpeningSkipOverlay(PlayerState state) {
+    if (state.isScreenLocked) return const SizedBox.shrink();
+    final op = state.episode.opening;
+    if (op == null) return const SizedBox.shrink();
+
+    final curSec = state.position.inSeconds;
+    final start = op.start;
+    final stop = op.stop;
+
+    final isBeforeOpening = curSec >= (start - 5) && curSec < start && start >= 5;
+    final isInsideOpening = curSec >= start && curSec < stop;
+
+    if (!isBeforeOpening && !isInsideOpening) {
+      return const SizedBox.shrink();
+    }
+
+    final remainingSec = (start - curSec).clamp(1, 5);
+    final stopMmSs = _formatMmSs(stop);
+
+    return Positioned(
+      bottom: MediaQuery.paddingOf(context).bottom + 75,
+      right: 20,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        child: isBeforeOpening
+            ? Container(
+                key: const ValueKey('before_opening_banner'),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                      blurRadius: 14,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Опенинг через $remainingSec сек...',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        _cubit.seek(op.stopDuration);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'Пропустить >>',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : GestureDetector(
+                key: const ValueKey('during_opening_btn'),
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  _cubit.seek(op.stopDuration);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF00E676), Color(0xFF00B0FF)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.5),
+                        blurRadius: 16,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.fast_forward_rounded, color: Colors.black, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Пропустить опенинг (до $stopMmSs)',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
 }

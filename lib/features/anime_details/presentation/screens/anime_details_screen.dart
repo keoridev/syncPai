@@ -1383,21 +1383,22 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         else if (episodes.isNotEmpty)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${episodes.length} эп.',
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
+                          Flexible(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${episodes.length} эп.',
+                                  style: AppTypography.bodySmall.copyWith(
+                                    color: AppColors.textMuted,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                              ),
-                              if (getIt.isRegistered<KodikCubit>()) ...[
-                                const SizedBox(width: 8),
-                                BlocBuilder<KodikCubit, KodikState>(
-                                  bloc: getIt<KodikCubit>(),
-                                  builder: (context, kodikState) {
+                                if (getIt.isRegistered<KodikCubit>()) ...[
+                                  const SizedBox(width: 8),
+                                  BlocBuilder<KodikCubit, KodikState>(
+                                    bloc: getIt<KodikCubit>(),
+                                    builder: (context, kodikState) {
                                     return GestureDetector(
                                       onTap: () {
                                         final epNum = episodes[_selectedEpisodeIndex.clamp(0, episodes.length - 1)].episode;
@@ -1422,14 +1423,21 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                           children: [
                                             Text(kodikState.selectedTranslation.displayIcon, style: const TextStyle(fontSize: 11)),
                                             const SizedBox(width: 4),
-                                            Text(
-                                              kodikState.activeVoiceoverTitle,
-                                              style: AppTypography.caption.copyWith(
-                                                color: kodikState.isAniLibriaActive
-                                                    ? AppColors.textSecondary
-                                                    : AppColors.primaryLight,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 11,
+                                            ConstrainedBox(
+                                              constraints: BoxConstraints(
+                                                maxWidth: (MediaQuery.sizeOf(context).width * 0.35).clamp(80.0, 160.0),
+                                              ),
+                                              child: Text(
+                                                kodikState.activeVoiceoverTitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTypography.caption.copyWith(
+                                                  color: kodikState.isAniLibriaActive
+                                                      ? AppColors.textSecondary
+                                                      : AppColors.primaryLight,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 11,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -1441,6 +1449,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                               ],
                             ],
                           ),
+                        ),
                       ],
                     ),
                   ),

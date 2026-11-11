@@ -23,6 +23,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
 
       // Авто-синхронизация: если тайтл просмотрен в истории просмотров,
       // но ещё не добавлен в списки — автоматически заносим его в «Смотрю»
+      // ТОЛЬКО если непрерывно смотрел серию более 15 минут (positionMs >= 900000)
       if (getIt.isRegistered<WatchHistoryRepository>()) {
         try {
           final historyRepo = getIt<WatchHistoryRepository>();
@@ -30,7 +31,8 @@ class AnimeListCubit extends Cubit<AnimeListState> {
           bool hasNewEntries = false;
           for (final item in historyList) {
             final exists = entries.any((e) => e.animeId == item.titleId);
-            if (!exists) {
+            // Если смотрел меньше 15 минут, остается ТОЛЬКО в Истории, не загрязняя «Смотрю»
+            if (!exists && item.positionMs >= 900000) {
               final newEntry = UserAnimeEntry(
                 id: 'history_${item.titleId}_${item.updatedAt.millisecondsSinceEpoch}',
                 userId: '',

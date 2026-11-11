@@ -580,7 +580,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
               const SizedBox(height: 16),
               Text(
                 entry.cleanTitleRu,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
               ),
@@ -932,10 +932,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                           14,
                         ),
                         child: GlassContainer(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(16),
                           blurSigma: 16,
                           backgroundOpacity: 0.08,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           onTap: () {
                             final recent = historyState.lastWatched!;
                             final entry = listState.getEntryFor(recent.titleId);
@@ -964,14 +964,14 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                           child: Row(
                             children: [
                               Container(
-                                width: 44,
-                                height: 44,
+                                width: 36,
+                                height: 36,
                                 decoration: BoxDecoration(
                                   color: AppColors.primary.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 alignment: Alignment.center,
-                                child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 28),
+                                child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 22),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -1808,7 +1808,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     const SizedBox(height: 6),
                     Text(
                       item.titleName,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppColors.textPrimary,

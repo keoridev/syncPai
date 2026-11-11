@@ -123,8 +123,20 @@ class _AuthModalSheetState extends State<AuthModalSheet>
     if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
       return 'Неверный email или пароль. Проверьте правильность ввода.';
     }
-    if (raw.contains('Password should be at least')) {
+    if (raw.contains('Password should be at least') || raw.contains('Signup requires a valid password')) {
       return 'Пароль должен содержать минимум 6 символов.';
+    }
+    if (raw.contains('Email not confirmed')) {
+      return 'Email не подтвержден. Пожалуйста, перейдите по ссылке в отправленном письме.';
+    }
+    if (raw.contains('over_email_send_rate_limit') || raw.contains('rate limit')) {
+      return 'Слишком много попыток. Пожалуйста, подождите немного.';
+    }
+    if (raw.contains('SocketException') || raw.contains('Network error') || raw.contains('Failed host lookup')) {
+      return 'Ошибка сети. Проверьте интернет-соединение.';
+    }
+    if (raw.contains('Invalid email') || raw.contains('invalid_email')) {
+      return 'Пожалуйста, введите корректный адрес электронной почты.';
     }
     return raw.replaceFirst('Exception: ', '').replaceFirst('AuthException: ', '');
   }

@@ -124,9 +124,9 @@ class AnimePosterCard extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    title.latestEpisode != null
-                        ? title.episodesBadgeText
-                        : (title.year != null ? '${title.year}' : ''),
+                    title.status == 'Онгоинг'
+                        ? (title.latestEpisode != null ? 'Онгоинг • ${title.episodesBadgeText}' : 'Онгоинг')
+                        : (title.year != null ? '${title.year}' : title.episodesBadgeText),
                     style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,

@@ -350,7 +350,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
-                        padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                        padding: EdgeInsets.only(
+                          left: horizontalPad,
+                          right: horizontalPad + 18,
+                        ),
                         children: [
                           // Компактная кнопка расширенных фильтров
                           InkWell(
@@ -482,7 +485,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
                     if (state.viewMode == CatalogViewMode.list) {
                       return SliverPadding(
-                        padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                        padding: EdgeInsets.only(
+                          left: horizontalPad,
+                          right: horizontalPad + 18,
+                        ),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {

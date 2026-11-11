@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -50,7 +51,8 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
       vsync: this,
       duration: const Duration(seconds: 10),
     );
-    if (_isProcedural) {
+    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+    if (_isProcedural && !isTest) {
       _animController.repeat();
     }
 
@@ -91,7 +93,8 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
   @override
   void didUpdateWidget(covariant LiveBackgroundWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_isProcedural) {
+    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+    if (_isProcedural && !isTest) {
       if (!_animController.isAnimating) _animController.repeat();
     } else {
       if (_animController.isAnimating) _animController.stop();

@@ -19,6 +19,7 @@ import '../../../anime_lists/presentation/widgets/import_status_selector_dialog.
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
+import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -806,15 +807,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Icon(Icons.login_rounded, color: themePrimary, size: 20),
                       ),
                       title: const Text(
-                        'Войти через Google',
+                        'Войти или зарегистрироваться',
                         style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                       ),
                       subtitle: const Text(
-                        'Синхронизировать историю, списки и витрину профиля',
+                        'Вход по Email, Google, сохранение списков и кастомизации',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
-                      onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+                      onTap: () => AuthModalSheet.show(context, profile),
                     ),
                   ],
                 ]),

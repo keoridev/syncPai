@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -135,9 +136,38 @@ class AppAvatar extends StatelessWidget {
       );
     }
 
-    // 2. Проверяем, является ли ссылка сетевым URL
-    final isNetwork = cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://');
+    // 3. Проверяем Base64 data URL
+    if (cleanUrl.startsWith('data:image/')) {
+      try {
+        final commaIdx = cleanUrl.indexOf(',');
+        if (commaIdx != -1) {
+          final bytes = base64Decode(cleanUrl.substring(commaIdx + 1));
+          return Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: effectiveBorderColor, width: borderWidth),
+            ),
+            child: ClipOval(
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) => _buildHolographicMonogram(themePrimary),
+              ),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    // 4. Проверяем, является ли ссылка сетевым URL
+    final isNetwork = cleanUrl.startsWith('http://') ||
+        cleanUrl.startsWith('https://') ||
+        cleanUrl.startsWith('//');
     if (isNetwork) {
+      final networkUrl = cleanUrl.startsWith('//') ? 'https:$cleanUrl' : cleanUrl;
       return Container(
         width: size,
         height: size,
@@ -147,7 +177,7 @@ class AppAvatar extends StatelessWidget {
         ),
         child: ClipOval(
           child: CachedNetworkImage(
-            imageUrl: wrapCorsSafeUrl(cleanUrl),
+            imageUrl: wrapCorsSafeUrl(networkUrl),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             placeholder: (_, __) => _buildHolographicMonogram(themePrimary),
@@ -157,18 +187,34 @@ class AppAvatar extends StatelessWidget {
       );
     }
 
-    // 3. Проверяем, является ли путь локальным файлом из галереи
-    final isLocalFile = !isNetwork &&
-        cleanUrl.isNotEmpty &&
-        (cleanUrl.startsWith('/') ||
-            cleanUrl.contains(':\\') ||
-            cleanUrl.startsWith('file:') ||
+    // 5. Проверяем, является ли путь локальным файлом из галереи или диска
+    File? resolvedLocalFile;
+    if (!isNetwork && cleanUrl.isNotEmpty) {
+      var filePath = cleanUrl;
+      if (filePath.startsWith('file:///')) {
+        filePath = filePath.substring(8);
+      } else if (filePath.startsWith('file://')) {
+        filePath = filePath.substring(7);
+      }
+      if (Platform.isWindows && RegExp(r'^/[a-zA-Z]:').hasMatch(filePath)) {
+        filePath = filePath.substring(1);
+      }
+      try {
+        final candidate = File(filePath);
+        if (candidate.existsSync() ||
+            filePath.startsWith('/') ||
+            filePath.contains(':\\') ||
+            filePath.contains(':/') ||
+            cleanUrl.contains('custom_avatar') ||
             cleanUrl.contains('cache') ||
-            cleanUrl.contains('storage'));
+            cleanUrl.contains('storage') ||
+            cleanUrl.contains('Documents')) {
+          resolvedLocalFile = candidate;
+        }
+      } catch (_) {}
+    }
 
-    if (isLocalFile) {
-      final filePath = cleanUrl.replaceFirst('file://', '');
-      final file = File(filePath);
+    if (resolvedLocalFile != null) {
       return Container(
         width: size,
         height: size,
@@ -178,16 +224,19 @@ class AppAvatar extends StatelessWidget {
         ),
         child: ClipOval(
           child: Image.file(
-            file,
+            resolvedLocalFile,
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            errorBuilder: (_, __, ___) => _buildHolographicMonogram(themePrimary),
+            errorBuilder: (_, error, ___) {
+              debugPrint('AppAvatar Image.file error: $error for path $cleanUrl');
+              return _buildHolographicMonogram(themePrimary);
+            },
           ),
         ),
       );
     }
 
-    // 4. Если фото нет — генеративная голографическая монограмма из матового стекла
+    // 6. Если фото нет — генеративная голографическая монограмма из матового стекла
     return _buildHolographicMonogram(themePrimary);
   }
 

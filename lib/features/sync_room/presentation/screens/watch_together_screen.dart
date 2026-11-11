@@ -1021,98 +1021,102 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                         style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                       ),
                       const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _pinController,
-                              focusNode: _pinFocusNode,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                letterSpacing: 1.5,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'Код комнаты',
-                                hintStyle: TextStyle(
-                                  color: AppColors.textMuted.withValues(alpha: 0.6),
-                                  letterSpacing: 0,
-                                  fontSize: 12,
-                                ),
-                                filled: true,
-                                fillColor: AppColors.surface.withValues(alpha: 0.7),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(color: AppColors.strokeMedium),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: AppColors.primary),
-                                ),
-                              ),
-                              onSubmitted: (_) => _handleJoinRoom(),
-                            ),
+                      TextField(
+                        controller: _pinController,
+                        focusNode: _pinFocusNode,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          letterSpacing: 2.0,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'PIN-код комнаты (напр. SP-4821)',
+                          hintStyle: TextStyle(
+                            color: AppColors.textMuted.withValues(alpha: 0.6),
+                            letterSpacing: 0,
+                            fontSize: 13,
+                            fontWeight: FontWeight.normal,
                           ),
-                          const SizedBox(width: 6),
-                          GlassIconButton(
-                            icon: Icons.qr_code_scanner_rounded,
-                            tooltip: 'Сканировать QR камерой',
-                            size: 42,
-                            iconColor: AppColors.syncActive,
-                            onTap: () {
-                              QrScannerSheet.show(
-                                context,
-                                onCodeScanned: (code) {
-                                  _pinController.text = code;
-                                  _handleJoinRoom();
+                          filled: true,
+                          fillColor: AppColors.surface.withValues(alpha: 0.7),
+                          prefixIcon: const Icon(Icons.key_rounded, color: AppColors.textSecondary, size: 20),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                                tooltip: 'Сканировать QR камерой',
+                                color: AppColors.syncActive,
+                                onPressed: () {
+                                  QrScannerSheet.show(
+                                    context,
+                                    onCodeScanned: (code) {
+                                      _pinController.text = code;
+                                      _handleJoinRoom();
+                                    },
+                                  );
                                 },
-                              );
-                            },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.content_paste_rounded, size: 20),
+                                tooltip: 'Вставить из буфера',
+                                color: AppColors.primaryLight,
+                                onPressed: () async {
+                                  final data = await Clipboard.getData('text/plain');
+                                  if (data?.text != null && data!.text!.isNotEmpty) {
+                                    _pinController.text = data.text!.trim();
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 4),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                          GlassIconButton(
-                            icon: Icons.content_paste_rounded,
-                            tooltip: 'Вставить из буфера',
-                            size: 42,
-                            iconColor: AppColors.primaryLight,
-                            onTap: () async {
-                              final data = await Clipboard.getData('text/plain');
-                              if (data?.text != null && data!.text!.isNotEmpty) {
-                                _pinController.text = data.text!.trim();
-                              }
-                            },
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(color: AppColors.strokeMedium),
                           ),
-                          const SizedBox(width: 6),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
-                              foregroundColor: AppColors.textPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 0,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: _isJoiningRoom ? null : _handleJoinRoom,
-                            child: _isJoiningRoom
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    ),
-                                  )
-                                : const FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      'Войти',
-                                      style: TextStyle(fontWeight: FontWeight.w700),
-                                    ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                          ),
+                        ),
+                        onSubmitted: (_) => _handleJoinRoom(),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: AppColors.textPrimary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                          onPressed: _isJoiningRoom ? null : _handleJoinRoom,
+                          child: _isJoiningRoom
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                   ),
-                          ),
-                        ],
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.login_rounded, size: 20),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Войти',
+                                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                        ),
                       ),
                       if (_pinError != null) ...[
                         const SizedBox(height: 8),
@@ -1381,22 +1385,21 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                                     color: AppColors.primary.withValues(alpha: 0.5),
                                     width: 1.0,
                                   ),
-                                  backgroundColor: AppColors.primary.withValues(alpha: 0.08),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  visualDensity: VisualDensity.compact,
                                 ),
                                 onPressed: () => context.push('/room/$roomCode'),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.play_arrow_rounded, size: 16, color: AppColors.primaryLight),
-                                    const SizedBox(width: 3),
+                                    Icon(Icons.play_arrow_rounded, size: 18, color: AppColors.primaryLight),
+                                    const SizedBox(width: 4),
                                     Text(
                                       'Войти',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 12,
+                                        fontSize: 12.5,
                                         color: AppColors.primaryLight,
                                       ),
                                     ),

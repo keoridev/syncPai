@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -20,6 +22,7 @@ import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
+import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
@@ -98,6 +101,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   void _showEditProfileSheet(BuildContext context, UserProfile profile) {
     final controller = TextEditingController(text: profile.username);
+    final avatarUrlController = TextEditingController(
+      text: (profile.avatarUrl?.startsWith('http') == true) ? profile.avatarUrl : '',
+    );
     String selectedAvatar = profile.avatarUrl ?? 'cat';
 
     showModalBottomSheet(
@@ -131,13 +137,143 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'Редактировать профиль',
-                  style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
+                Row(
+                  children: [
+                    Text(
+                      'Редактировать профиль',
+                      style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.palette_outlined, color: AppColors.textSecondary, size: 20),
+                      tooltip: 'Полная кастомизация Steam',
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        SteamProfileCustomizerSheet.show(context, profile);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Превью текущего выбранного аватара
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: AppAvatar(
+                      avatarUrl: selectedAvatar,
+                      username: controller.text.isNotEmpty ? controller.text : profile.username,
+                      size: 72,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
+
+                // Кнопка загрузки из галереи
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add_photo_alternate_rounded, size: 20),
+                    label: const Text('Загрузить фото из галереи'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6), width: 1.2),
+                      backgroundColor: AppColors.surface,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final result = await FilePicker.platform.pickFiles(
+                          type: FileType.image,
+                          withData: true,
+                        );
+                        if (result != null && result.files.isNotEmpty) {
+                          final file = result.files.first;
+                          final appDir = await getApplicationDocumentsDirectory();
+                          final ext = file.extension ?? 'jpg';
+                          final targetPath = '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                          final targetFile = File(targetPath);
+
+                          String effectiveChosen = '';
+                          if (file.bytes != null && file.bytes!.isNotEmpty) {
+                            await targetFile.writeAsBytes(file.bytes!, flush: true);
+                            if (await targetFile.exists()) {
+                              effectiveChosen = targetFile.path;
+                            }
+                          } else if (file.path != null && file.path!.isNotEmpty) {
+                            final srcFile = File(file.path!);
+                            if (await srcFile.exists()) {
+                              await srcFile.copy(targetPath);
+                              effectiveChosen = targetFile.existsSync() ? targetFile.path : file.path!;
+                            } else {
+                              effectiveChosen = file.path!;
+                            }
+                          }
+
+                          if (effectiveChosen.isNotEmpty) {
+                            setSheetState(() {
+                              selectedAvatar = effectiveChosen;
+                              avatarUrlController.text = effectiveChosen;
+                            });
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Pick profile photo error: $e');
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Поле ввода прямой ссылки
+                TextField(
+                  controller: avatarUrlController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Или прямая ссылка на фото/GIF...',
+                    hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    prefixIcon: const Icon(Icons.link_rounded, color: AppColors.textSecondary, size: 18),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.strokeMedium),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.strokeMedium),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
+                    ),
+                  ),
+                  onChanged: (val) {
+                    if (val.trim().isNotEmpty) {
+                      setSheetState(() => selectedAvatar = val.trim());
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+
                 Text(
-                  'Выберите аватар профиля',
+                  'Быстрые пресеты',
                   style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 10),
@@ -151,7 +287,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       final preset = _avatarPresets[index];
                       final isSelected = selectedAvatar == preset;
                       return GestureDetector(
-                        onTap: () => setSheetState(() => selectedAvatar = preset),
+                        onTap: () {
+                          setSheetState(() {
+                            selectedAvatar = preset;
+                            avatarUrlController.clear();
+                          });
+                        },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.all(3),
@@ -201,9 +342,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     onPressed: () {
                       final newName = controller.text.trim();
                       if (newName.isNotEmpty) {
+                        final effectiveAvatar = avatarUrlController.text.trim().isNotEmpty
+                            ? avatarUrlController.text.trim()
+                            : selectedAvatar;
                         context.read<AuthCubit>().updateProfile(
                           username: newName,
-                          avatarUrl: selectedAvatar,
+                          avatarUrl: effectiveAvatar,
                         );
                         _profileCubit.loadProfile(targetUserId: widget.userId);
                         Navigator.pop(sheetContext);
@@ -365,14 +509,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     EdgeInsetsGeometry? padding,
     VoidCallback? onTap,
   }) {
-    Widget content = Container(
-      padding: padding ?? const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
+    Widget content = ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: padding ?? const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF12141A).withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
+          ),
+          child: child,
+        ),
       ),
-      child: child,
     );
 
     if (onTap != null) {
@@ -702,8 +852,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                     decoration: BoxDecoration(
-                      color: themePrimary.withValues(alpha: 0.15),
+                      color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -711,15 +862,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         Icon(
                           _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
                           size: 13,
-                          color: themePrimaryLight,
+                          color: AppColors.textSecondary,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _showActivityCharts ? 'Скрыть график' : 'Графики',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
-                            color: themePrimaryLight,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -827,34 +978,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Аватар 96x96 в анимированном неоновом кольце с дышащим BoxShadow
-        AnimatedBuilder(
-          animation: _neonPulseAnim,
-          builder: (context, child) {
-            final shadowFactor = _neonPulseAnim.value;
-            return Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: (0.65 * shadowFactor).clamp(0.0, 1.0)),
-                    blurRadius: 20 * shadowFactor,
-                    spreadRadius: 2 * shadowFactor,
-                  ),
-                ],
-              ),
-              child: child,
-            );
-          },
-          child: SteamAvatarFrameWidget(
-            frameId: profile.frameId,
-            size: 96,
-            child: AppAvatar(
-              avatarUrl: profile.avatarUrl,
-              username: profile.username,
+        // Аватар 96x96 в анимированном неоновом кольце с поддержкой клика для быстрой смены фото
+        GestureDetector(
+          onTap: isCurrentUser ? () => _showEditProfileSheet(context, profile) : null,
+          child: AnimatedBuilder(
+            animation: _neonPulseAnim,
+            builder: (context, child) {
+              final shadowFactor = _neonPulseAnim.value;
+              return Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: (0.35 * shadowFactor).clamp(0.0, 1.0)),
+                      blurRadius: 14 * shadowFactor,
+                      spreadRadius: 1 * shadowFactor,
+                    ),
+                  ],
+                ),
+                child: child,
+              );
+            },
+            child: SteamAvatarFrameWidget(
+              frameId: profile.frameId,
               size: 96,
-              borderColor: accent,
-              borderWidth: 2.5,
+              child: AppAvatar(
+                avatarUrl: profile.avatarUrl,
+                username: profile.username,
+                size: 96,
+                borderColor: accent,
+                borderWidth: 2.5,
+              ),
             ),
           ),
         ),
@@ -897,12 +1051,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  badge.color.withValues(alpha: 0.35),
-                                  badge.color.withValues(alpha: 0.15),
+                                  badge.color.withValues(alpha: 0.20),
+                                  badge.color.withValues(alpha: 0.08),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: badge.color.withValues(alpha: 0.8), width: 1.0),
+                              border: Border.all(color: badge.color.withValues(alpha: 0.45), width: 1.0),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1043,10 +1197,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           return Stack(
             children: [
               // 1. Процедурный живой фон и частицы растянуты НА ВСЮ СТРАНИЦУ
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: Opacity(
-                    opacity: 0.40,
+              if (profile.backgroundId != 'none')
+                Positioned.fill(
+                  child: RepaintBoundary(
                     child: LiveBackgroundWidget(
                       backgroundId: profile.backgroundId,
                       assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
@@ -1054,17 +1207,30 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                 ),
-              ),
 
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0E0E12).withValues(alpha: 0.78),
+              // 2. Мягкая виньетка для глубины и читаемости текста
+              if (profile.backgroundId != 'none')
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.20),
+                            Colors.transparent,
+                            const Color(0xFF0E0E12).withValues(alpha: 0.65),
+                            const Color(0xFF0E0E12).withValues(alpha: 0.92),
+                          ],
+                          stops: const [0.0, 0.25, 0.65, 1.0],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
 
-              // 2. Основной CustomScrollView со SliverAppBar в стиле Steam (высота 340.0)
+              // 3. Основной CustomScrollView со SliverAppBar в стиле Steam (высота 340.0)
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 860),
@@ -1130,8 +1296,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           background: Stack(
                             fit: StackFit.expand,
                             children: [
-                              // Фоновый арт профиля во всю ширину и высоту шапки
-                              if (headerBgUrl.isNotEmpty)
+                              // Фоновый арт профиля во всю ширину и высоту шапки:
+                              if (profile.backgroundId != 'none')
+                                LiveBackgroundWidget(
+                                  backgroundId: profile.backgroundId,
+                                  assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
+                                  fallbackGradient: bgTheme.gradient,
+                                )
+                              else if (headerBgUrl.isNotEmpty && (headerBgUrl.startsWith('http') || headerBgUrl.startsWith('file:') || headerBgUrl.contains('/')))
                                 CachedNetworkImage(
                                   imageUrl: wrapCorsSafeUrl(headerBgUrl),
                                   fit: BoxFit.cover,
@@ -1149,11 +1321,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                     end: Alignment.bottomCenter,
                                     colors: [
                                       Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.35),
-                                      const Color(0xFF0E0E12).withValues(alpha: 0.85),
+                                      Colors.black.withValues(alpha: 0.15),
+                                      const Color(0xFF0E0E12).withValues(alpha: 0.65),
                                       const Color(0xFF0E0E12),
                                     ],
-                                    stops: const [0.0, 0.35, 0.75, 1.0],
+                                    stops: const [0.0, 0.40, 0.80, 1.0],
                                   ),
                                 ),
                               ),
@@ -1178,7 +1350,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                             child: _buildGlassCard(
-                              onTap: () => context.read<AuthCubit>().signInWithGoogle(),
+                              onTap: () => AuthModalSheet.show(context, profile),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               child: Row(
                                 children: [
@@ -1189,7 +1361,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Icon(
-                                      Icons.cloud_sync_rounded,
+                                      Icons.account_circle_rounded,
                                       color: themePrimaryLight,
                                       size: 22,
                                     ),
@@ -1200,7 +1372,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: const [
                                         Text(
-                                          'Сохраните свой прогресс',
+                                          'Войти или создать аккаунт',
                                           style: TextStyle(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w700,
@@ -1209,7 +1381,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                         ),
                                         SizedBox(height: 2),
                                         Text(
-                                          'Войти через Google для синхронизации истории и списков',
+                                          'Вход по Email / Google для сохранения истории и списков',
                                           style: TextStyle(
                                             color: AppColors.textSecondary,
                                             fontSize: 12,

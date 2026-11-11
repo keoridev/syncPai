@@ -99,10 +99,17 @@ class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF101216).withValues(alpha: 0.92),
+                  gradient: RadialGradient(
+                    colors: [
+                      primary.withValues(alpha: 0.35),
+                      const Color(0xFF1E212B),
+                      const Color(0xFF13151D),
+                    ],
+                    stops: const [0.0, 0.65, 1.0],
+                  ),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    width: 0.8,
+                    color: primary.withValues(alpha: 0.45),
+                    width: 1.0,
                   ),
                 ),
                 alignment: Alignment.center,
@@ -112,6 +119,7 @@ class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
                     fontSize: widget.size * 0.44,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.5,
+                    color: Colors.white,
                     foreground: Paint()
                       ..shader = LinearGradient(
                         begin: Alignment.topLeft,

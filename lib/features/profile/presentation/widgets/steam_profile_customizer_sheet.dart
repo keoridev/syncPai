@@ -668,56 +668,52 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
         Text('Или вставьте прямую ссылку на арт/GIF:',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _customUrlController,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'https://example.com/art.jpg или .gif',
-                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.strokeMedium),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.strokeMedium),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: accent, width: 1.5),
-                  ),
-                ),
-                onSubmitted: (val) {
-                  if (val.trim().isNotEmpty) {
-                    setState(() => _selectedBgId = val.trim());
-                  }
-                },
-              ),
+        TextField(
+          controller: _customUrlController,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'https://example.com/art.jpg, .gif или .mp4',
+            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            filled: true,
+            fillColor: AppColors.surface,
+            prefixIcon: Icon(Icons.link_rounded, size: 18, color: accent),
+            suffixIcon: _customUrlController.text.trim().isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.check_circle_rounded, color: accent, size: 20),
+                    onPressed: () {
+                      final url = _customUrlController.text.trim();
+                      if (url.isNotEmpty) {
+                        setState(() => _selectedBgId = url);
+                      }
+                    },
+                  )
+                : null,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
             ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: accent.withValues(alpha: 0.2),
-                foregroundColor: accent,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                final url = _customUrlController.text.trim();
-                if (url.isNotEmpty) {
-                  setState(() => _selectedBgId = url);
-                }
-              },
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
             ),
-          ],
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: accent, width: 1.5),
+            ),
+          ),
+          onChanged: (val) {
+            setState(() {
+              if (val.trim().isNotEmpty) {
+                _selectedBgId = val.trim();
+              }
+            });
+          },
+          onSubmitted: (val) {
+            if (val.trim().isNotEmpty) {
+              setState(() => _selectedBgId = val.trim());
+            }
+          },
         ),
 
         const SizedBox(height: 18),
@@ -761,22 +757,11 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (bg.assetOrUrl != null)
-                        CachedNetworkImage(
-                          imageUrl: bg.assetOrUrl!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: bg.gradient),
-                            ),
-                          ),
-                        )
-                      else
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: bg.gradient),
-                          ),
-                        ),
+                      LiveBackgroundWidget(
+                        backgroundId: bg.id,
+                        assetOrUrl: bg.assetOrUrl,
+                        fallbackGradient: bg.gradient,
+                      ),
                       Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -951,23 +936,33 @@ class _SteamProfileCustomizerSheetState extends State<SteamProfileCustomizerShee
                 final targetPath = '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
                 final targetFile = File(targetPath);
 
-                if (file.bytes != null) {
-                  await targetFile.writeAsBytes(file.bytes!);
-                } else if (file.path != null) {
-                  await File(file.path!).copy(targetPath);
+                String effectiveChosenPath = '';
+                if (file.bytes != null && file.bytes!.isNotEmpty) {
+                  await targetFile.writeAsBytes(file.bytes!, flush: true);
+                  if (await targetFile.exists()) {
+                    effectiveChosenPath = targetFile.path;
+                  }
+                } else if (file.path != null && file.path!.isNotEmpty) {
+                  final srcFile = File(file.path!);
+                  if (await srcFile.exists()) {
+                    await srcFile.copy(targetPath);
+                    effectiveChosenPath = targetFile.existsSync() ? targetFile.path : file.path!;
+                  } else {
+                    effectiveChosenPath = file.path!;
+                  }
                 }
 
-                if (mounted && targetFile.existsSync()) {
+                if (effectiveChosenPath.isNotEmpty && mounted) {
                   if (context.mounted) {
                     await MediaCropEditorModal.show(
                       context,
-                      imagePathOrUrl: targetFile.path,
+                      imagePathOrUrl: effectiveChosenPath,
                       shape: CropShape.circle,
                     );
                   }
                   setState(() {
-                    _selectedAvatar = targetFile.path;
-                    _customAvatarUrlController.text = targetFile.path;
+                    _selectedAvatar = effectiveChosenPath;
+                    _customAvatarUrlController.text = effectiveChosenPath;
                   });
                 }
               }

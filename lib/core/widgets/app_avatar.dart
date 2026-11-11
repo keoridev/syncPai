@@ -160,11 +160,12 @@ class AppAvatar extends StatelessWidget {
             width: size,
             height: size,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
+              shape: effectiveShape,
+              borderRadius: borderRadius,
               border: Border.all(color: effectiveBorderColor, width: borderWidth),
             ),
-            child: ClipOval(
-              child: Image.memory(
+            child: wrapClip(
+              Image.memory(
                 bytes,
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.high,
@@ -190,15 +191,9 @@ class AppAvatar extends StatelessWidget {
           borderRadius: borderRadius,
           border: Border.all(color: effectiveBorderColor, width: borderWidth),
         ),
-<<<<<<< HEAD
-        child: ClipOval(
-          child: CachedNetworkImage(
-            imageUrl: wrapCorsSafeUrl(networkUrl),
-=======
         child: wrapClip(
           CachedNetworkImage(
-            imageUrl: wrapCorsSafeUrl(cleanUrl),
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
+            imageUrl: wrapCorsSafeUrl(networkUrl),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             placeholder: (_, __) => _buildHolographicMonogram(themePrimary),
@@ -244,15 +239,9 @@ class AppAvatar extends StatelessWidget {
           borderRadius: borderRadius,
           border: Border.all(color: effectiveBorderColor, width: borderWidth),
         ),
-<<<<<<< HEAD
-        child: ClipOval(
-          child: Image.file(
-            resolvedLocalFile,
-=======
         child: wrapClip(
           Image.file(
-            file,
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
+            resolvedLocalFile,
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             errorBuilder: (_, error, ___) {

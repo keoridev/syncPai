@@ -97,24 +97,24 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
   @override
   void didUpdateWidget(covariant LiveBackgroundWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-<<<<<<< HEAD
     final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
-    if (_isProcedural && !isTest) {
-      if (!_animController.isAnimating) _animController.repeat();
-=======
+
     if (widget.isPaused != oldWidget.isPaused) {
       if (widget.isPaused) {
         _videoPlayer?.pause();
         if (_animController.isAnimating) _animController.stop();
       } else {
         _videoPlayer?.play();
-        if (_isProcedural && !_animController.isAnimating) _animController.repeat();
+        if (_isProcedural && !isTest && !_animController.isAnimating) {
+          _animController.repeat();
+        }
       }
     }
 
-    if (_isProcedural) {
-      if (!widget.isPaused && !_animController.isAnimating) _animController.repeat();
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
+    if (_isProcedural && !isTest) {
+      if (!widget.isPaused && !_animController.isAnimating) {
+        _animController.repeat();
+      }
     } else {
       if (_animController.isAnimating) _animController.stop();
     }

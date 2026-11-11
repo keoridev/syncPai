@@ -1,21 +1,14 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
-<<<<<<< HEAD
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
-=======
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-<<<<<<< HEAD
 import 'package:path_provider/path_provider.dart';
-=======
 import 'package:shared_preferences/shared_preferences.dart';
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -1362,46 +1355,25 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                     decoration: BoxDecoration(
-<<<<<<< HEAD
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
-=======
-                      color: themePrimary.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: themePrimary.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           _showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.bar_chart_rounded,
-<<<<<<< HEAD
                           size: 13,
                           color: AppColors.textSecondary,
-=======
-                          size: 14,
-                          color: themePrimaryLight,
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _showActivityCharts ? 'Скрыть график' : 'Графики',
-<<<<<<< HEAD
                           style: const TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             color: AppColors.textSecondary,
-=======
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: themePrimaryLight,
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
                           ),
                         ),
                       ],
@@ -1510,48 +1482,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     Color accent,
     bool isCurrentUser,
   ) {
-<<<<<<< HEAD
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Аватар 96x96 в анимированном неоновом кольце с поддержкой клика для быстрой смены фото
-        GestureDetector(
-          onTap: isCurrentUser ? () => _showEditProfileSheet(context, profile) : null,
-          child: AnimatedBuilder(
-            animation: _neonPulseAnim,
-            builder: (context, child) {
-              final shadowFactor = _neonPulseAnim.value;
-              return Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(alpha: (0.35 * shadowFactor).clamp(0.0, 1.0)),
-                      blurRadius: 14 * shadowFactor,
-                      spreadRadius: 1 * shadowFactor,
-                    ),
-                  ],
-                ),
-                child: child,
-              );
-            },
-            child: SteamAvatarFrameWidget(
-              frameId: profile.frameId,
-              size: 96,
-              child: AppAvatar(
-                avatarUrl: profile.avatarUrl,
-                username: profile.username,
-                size: 96,
-                borderColor: accent,
-                borderWidth: 2.5,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-=======
     final badge = SteamBadge.fromId(profile.badgeId);
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -1577,118 +1508,65 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-<<<<<<< HEAD
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      profile.username,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.3,
-                        shadows: [
-                          Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (profile.badgeId != null) ...[
-                    const SizedBox(width: 8),
-                    Builder(
-                      builder: (context) {
-                        final badge = SteamBadge.fromId(profile.badgeId);
-                        return InkWell(
-                          onTap: () => BadgeDetailsSheet.show(context, badge: badge),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              // 1. Левая часть — Аватар в стиле Steam (80x80, радиус 14 dp, Pulse Glow, рамка)
+              GestureDetector(
+                onTap: isCurrentUser ? () => _showEditProfileSheet(context, profile) : null,
+                child: SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      // Фоновая анимация дыхания (Pulse Glow) мягкого акцентного цвета за аватаром
+                      AnimatedBuilder(
+                        animation: _pulseAnimation,
+                        builder: (context, _) {
+                          final pulse = _pulseAnimation.value;
+                          return Container(
+                            width: 80,
+                            height: 80,
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  badge.color.withValues(alpha: 0.20),
-                                  badge.color.withValues(alpha: 0.08),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: badge.color.withValues(alpha: 0.45), width: 1.0),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(badge.icon, size: 12, color: badge.color),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${badge.level}',
-                                  style: TextStyle(
-                                    color: badge.color,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accent.withValues(alpha: 0.25 + 0.25 * pulse),
+                                  blurRadius: 14 + 8 * pulse,
+                                  spreadRadius: 1 + 2 * pulse,
                                 ),
                               ],
                             ),
-=======
-              // 1. Левая часть — Аватар в стиле Steam (80x80, радиус 14 dp, Pulse Glow, рамка)
-              SizedBox(
-                width: 80,
-                height: 80,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    // Фоновая анимация дыхания (Pulse Glow) мягкого акцентного цвета за аватаром
-                    AnimatedBuilder(
-                      animation: _pulseAnimation,
-                      builder: (context, _) {
-                        final pulse = _pulseAnimation.value;
-                        return Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.withValues(alpha: 0.25 + 0.25 * pulse),
-                                blurRadius: 14 + 8 * pulse,
-                                spreadRadius: 1 + 2 * pulse,
-                              ),
-                            ],
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
 
-                    // Квадратный аватар со скруглением 14 dp
-                    AppAvatar(
-                      avatarUrl: profile.avatarUrl,
-                      username: profile.username,
-                      size: 80,
-                      borderRadius: BorderRadius.circular(14),
-                      borderColor: Colors.white.withValues(alpha: 0.25),
-                      borderWidth: 1.5,
-                    ),
+                      // Квадратный аватар со скруглением 14 dp
+                      AppAvatar(
+                        avatarUrl: profile.avatarUrl,
+                        username: profile.username,
+                        size: 80,
+                        borderRadius: BorderRadius.circular(14),
+                        borderColor: Colors.white.withValues(alpha: 0.25),
+                        borderWidth: 1.5,
+                      ),
 
-                    // Рамка поверх аватара
-                    if (profile.frameId != null && profile.frameId != 'none')
-                      Positioned(
-                        left: -12,
-                        top: -12,
-                        right: -12,
-                        bottom: -12,
-                        child: IgnorePointer(
-                          child: SteamAvatarFrameWidget(
-                            frameId: profile.frameId,
-                            size: 80,
-                            child: const SizedBox(width: 80, height: 80),
+                      // Рамка поверх аватара
+                      if (profile.frameId != null && profile.frameId != 'none')
+                        Positioned(
+                          left: -12,
+                          top: -12,
+                          right: -12,
+                          bottom: -12,
+                          child: IgnorePointer(
+                            child: SteamAvatarFrameWidget(
+                              frameId: profile.frameId,
+                              size: 80,
+                              child: const SizedBox(width: 80, height: 80),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1912,51 +1790,46 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildGuestSyncBanner(BuildContext context, Color themePrimary, Color themePrimaryLight) {
+  Widget _buildGuestSyncBanner(BuildContext context, UserProfile profile, Color themePrimary, Color themePrimaryLight) {
     return _buildGlassCard(
+      onTap: () => AuthModalSheet.show(context, profile),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => context.read<AuthCubit>().signInWithGoogle(),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: themePrimary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.cloud_sync_rounded,
-                color: themePrimaryLight,
-                size: 22,
-              ),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: themePrimary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.account_circle_rounded,
+              color: themePrimaryLight,
+              size: 22,
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: GestureDetector(
-              onTap: () => context.read<AuthCubit>().signInWithGoogle(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'Сохраните свой прогресс',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Войти или создать аккаунт',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Войти через Google для синхронизации истории и списков',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Вход по Email / Google для сохранения истории и списков',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           IconButton(
@@ -2048,26 +1921,21 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Stack(
             children: [
               // 1. Процедурный живой фон и частицы растянуты НА ВСЮ СТРАНИЦУ
-<<<<<<< HEAD
               if (profile.backgroundId != 'none')
                 Positioned.fill(
                   child: RepaintBoundary(
-=======
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: Opacity(
-                    opacity: 0.70,
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
-                    child: LiveBackgroundWidget(
-                      backgroundId: profile.backgroundId,
-                      assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
-                      fallbackGradient: bgTheme.gradient,
-                      isPaused: _isBgPaused,
+                    child: Opacity(
+                      opacity: 0.70,
+                      child: LiveBackgroundWidget(
+                        backgroundId: profile.backgroundId,
+                        assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
+                        fallbackGradient: bgTheme.gradient,
+                        isPaused: _isBgPaused,
+                      ),
                     ),
                   ),
                 ),
 
-<<<<<<< HEAD
               // 2. Мягкая виньетка для глубины и читаемости текста
               if (profile.backgroundId != 'none')
                 Positioned.fill(
@@ -2087,12 +1955,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ),
                       ),
                     ),
-=======
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0E0E12).withValues(alpha: 0.45),
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
                   ),
                 ),
 
@@ -2163,13 +2025,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                           background: Stack(
                             fit: StackFit.expand,
                             children: [
-<<<<<<< HEAD
                               // Фоновый арт профиля во всю ширину и высоту шапки:
                               if (profile.backgroundId != 'none')
                                 LiveBackgroundWidget(
                                   backgroundId: profile.backgroundId,
                                   assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
                                   fallbackGradient: bgTheme.gradient,
+                                  isPaused: _isBgPaused,
                                 )
                               else if (headerBgUrl.isNotEmpty && (headerBgUrl.startsWith('http') || headerBgUrl.startsWith('file:') || headerBgUrl.contains('/')))
                                 CachedNetworkImage(
@@ -2180,17 +2042,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 )
                               else
                                 _buildFallbackShowcaseBackground(accent),
-=======
-                              // Фоновый арт профиля / живое видео / процедурный шейдер
-                              LiveBackgroundWidget(
-                                backgroundId: profile.backgroundId,
-                                assetOrUrl: headerBgUrl.isNotEmpty
-                                    ? headerBgUrl
-                                    : (bgTheme.assetOrUrl ?? profile.backgroundId),
-                                fallbackGradient: bgTheme.gradient,
-                                isPaused: _isBgPaused,
-                              ),
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
 
                               // Вертикальный градиент: Colors.transparent сверху -> 0xFF0E0E12 снизу
                               DecoratedBox(
@@ -2228,62 +2079,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                         const SliverToBoxAdapter(child: SizedBox(height: 12)),
                         SliverToBoxAdapter(
                           child: Padding(
-<<<<<<< HEAD
-                            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                            child: _buildGlassCard(
-                              onTap: () => AuthModalSheet.show(context, profile),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: themePrimary.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(
-                                      Icons.account_circle_rounded,
-                                      color: themePrimaryLight,
-                                      size: 22,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: const [
-                                        Text(
-                                          'Войти или создать аккаунт',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Вход по Email / Google для сохранения истории и списков',
-                                          style: TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.arrow_forward_ios_rounded,
-                                    color: AppColors.textSecondary,
-                                    size: 14,
-                                  ),
-                                ],
-                              ),
-                            ),
-=======
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _buildGuestSyncBanner(context, themePrimary, themePrimaryLight),
->>>>>>> e69ddc5ee1b619314d2b2c55c23edf4131f0d963
+                            child: _buildGuestSyncBanner(context, profile, themePrimary, themePrimaryLight),
                           ),
                         ),
                       ],

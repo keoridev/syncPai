@@ -57,6 +57,19 @@ class PlayerControlsOverlay extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => cubit.toggleControls(),
+          onVerticalDragUpdate: (details) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            final isLeft = details.globalPosition.dx < (screenWidth / 2);
+            final screenHeight = MediaQuery.of(context).size.height;
+            final delta = -details.primaryDelta! / (screenHeight * 0.65);
+            if (isLeft) {
+              final newB = (state.brightness + delta).clamp(0.05, 1.0);
+              cubit.setBrightness(newB);
+            } else {
+              final newV = (state.volume + (delta * 100.0)).clamp(0.0, 100.0);
+              cubit.setVolume(newV);
+            }
+          },
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -502,82 +515,6 @@ class PlayerControlsOverlay extends StatelessWidget {
                               onPressed: () => cubit.voteCoopSkip(),
                             ),
                           ),
-                        )
-                      // Кнопка быстрого пропуска опенинга / эндинга по таймкодам (только для хоста / соло)
-                      else if (!isGuestInSync &&
-                          ep.opening != null &&
-                          state.position.inSeconds >= ep.opening!.start &&
-                          state.position.inSeconds < ep.opening!.stop)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                                side: BorderSide(color: AppColors.primary, width: 1.2),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
-                              label: Text(
-                                'Пропустить опенинг (${(ep.opening!.stop - state.position.inSeconds).clamp(1, 999)}с)',
-                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-                              ),
-                              onPressed: () => cubit.skipOpening(),
-                            ),
-                          ),
-                        )
-                      else if (!isGuestInSync &&
-                          ep.opening == null &&
-                          state.position.inSeconds >= 5 &&
-                          state.position.inSeconds < 180)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                                side: BorderSide(color: AppColors.primary, width: 1.2),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 16),
-                              label: const Text('+90с (Опенинг)', style: TextStyle(color: AppColors.textPrimary)),
-                              onPressed: () => cubit.skipOpening(),
-                            ),
-                          ),
-                        )
-                      else if (!isGuestInSync &&
-                          ep.ending != null &&
-                          state.position.inSeconds >= (ep.ending!.start - 10) &&
-                          state.position.inSeconds <= ep.ending!.stop)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                                side: const BorderSide(color: AppColors.syncActive, width: 1.2),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              icon: const Icon(Icons.skip_next_rounded, color: AppColors.syncActive, size: 16),
-                              label: Text(
-                                hasNextEpisode ? 'Следующая серия (Эндинг)' : 'Пропустить эндинг',
-                                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-                              ),
-                              onPressed: () {
-                                if (hasNextEpisode) {
-                                  cubit.switchEpisode(allEpisodes[currentIndex + 1]);
-                                } else {
-                                  cubit.seek(ep.ending!.stopDuration);
-                                }
-                              },
-                            ),
-                          ),
                         ),
 
                       // Выдвижная горизонтальная панель быстрых шорткат-фраз (без вызова клавиатуры)
@@ -710,6 +647,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                         heatmap: state.heatmap,
                         opening: ep.opening,
                         ending: ep.ending,
+                        isBuffering: state.isBuffering,
                         onSeek: (pos) => cubit.seek(pos),
                         isLocked: isGuestInSync,
                         onLockedTap: () {
@@ -809,6 +747,7 @@ class PlayerControlsOverlay extends StatelessWidget {
             heatmap: state.heatmap,
             opening: ep.opening,
             ending: ep.ending,
+            isBuffering: state.isBuffering,
             onSeek: (pos) => cubit.seek(pos),
             isLocked: isGuestInSync,
             onLockedTap: () {

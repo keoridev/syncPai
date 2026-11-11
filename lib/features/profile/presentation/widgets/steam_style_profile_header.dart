@@ -202,60 +202,63 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF14161F),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          border: Border.all(color: accent.withValues(alpha: 0.3)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF14161F),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: accent.withValues(alpha: 0.3)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _resolveArtworkTitle(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 16),
+              Text(
+                _resolveArtworkTitle(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
-              title: const Text('Открыть страницу аниме', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              tileColor: Colors.white.withValues(alpha: 0.05),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                context.pushNamed('anime-details', pathParameters: {'id': favId});
-              },
-            ),
-            if (widget.isCurrentUser) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 20),
               ListTile(
-                leading: const Icon(Icons.palette_rounded, color: Colors.white70, size: 26),
-                title: const Text('Сменить иллюстрацию витрины', style: TextStyle(color: Colors.white70)),
+                leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
+                title: const Text('Открыть страницу аниме', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 tileColor: Colors.white.withValues(alpha: 0.05),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  _openArtworkSelectorSheet(context);
+                  context.pushNamed('anime-details', pathParameters: {'id': favId});
                 },
               ),
+              if (widget.isCurrentUser) ...[
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: const Icon(Icons.palette_rounded, color: Colors.white70, size: 26),
+                  title: const Text('Сменить иллюстрацию витрины', style: TextStyle(color: Colors.white70)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  tileColor: Colors.white.withValues(alpha: 0.05),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _openArtworkSelectorSheet(context);
+                  },
+                ),
+              ],
+              const SizedBox(height: 10),
             ],
-            const SizedBox(height: 10),
-          ],
+          ),
         ),
       ),
     );
@@ -1201,14 +1204,16 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
-      decoration: const BoxDecoration(
-        color: Color(0xFF12141C),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(
+          color: Color(0xFF12141C),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
           const SizedBox(height: 12),
           Container(
             width: 44,
@@ -1261,6 +1266,7 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -1403,8 +1409,13 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
   }
 
   Widget _buildCustomUrlTab() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

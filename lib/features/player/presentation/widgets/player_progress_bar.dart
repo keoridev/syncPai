@@ -18,6 +18,7 @@ class PlayerProgressBar extends StatefulWidget {
   final ReactionHeatmap? heatmap;
   final TimecodeRange? opening;
   final TimecodeRange? ending;
+  final bool isBuffering;
 
   const PlayerProgressBar({
     super.key,
@@ -30,6 +31,7 @@ class PlayerProgressBar extends StatefulWidget {
     this.heatmap,
     this.opening,
     this.ending,
+    this.isBuffering = false,
   });
 
   @override
@@ -107,33 +109,42 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                   behavior: HitTestBehavior.opaque,
                   onHorizontalDragStart: widget.isLocked
                       ? (_) => widget.onLockedTap?.call()
-                      : (details) {
-                          setState(() {
-                            _isDragging = true;
-                            _dragRatio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
-                          });
-                          widget.onSeek(Duration(milliseconds: (_dragRatio * maxMs).round()));
-                        },
+                      : (widget.isBuffering
+                          ? null
+                          : (details) {
+                              setState(() {
+                                _isDragging = true;
+                                _dragRatio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+                              });
+                            }),
                   onHorizontalDragUpdate: widget.isLocked
                       ? (_) => widget.onLockedTap?.call()
-                      : (details) {
-                          setState(() {
-                            _dragRatio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
-                          });
-                          widget.onSeek(Duration(milliseconds: (_dragRatio * maxMs).round()));
+                      : (widget.isBuffering
+                          ? null
+                          : (details) {
+                              setState(() {
+                                _dragRatio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+                              });
+                            }),
+                  onHorizontalDragEnd: (widget.isBuffering || widget.isLocked)
+                      ? null
+                      : (_) {
+                          if (_isDragging) {
+                            widget.onSeek(Duration(milliseconds: (_dragRatio * maxMs).round()));
+                          }
+                          setState(() => _isDragging = false);
                         },
-                  onHorizontalDragEnd: (_) {
-                    setState(() => _isDragging = false);
-                  },
                   onHorizontalDragCancel: () {
                     setState(() => _isDragging = false);
                   },
                   onTapDown: widget.isLocked
                       ? (_) => widget.onLockedTap?.call()
-                      : (details) {
-                          final ratio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
-                          widget.onSeek(Duration(milliseconds: (ratio * maxMs).round()));
-                        },
+                      : (widget.isBuffering
+                          ? null
+                          : (details) {
+                              final ratio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+                              widget.onSeek(Duration(milliseconds: (ratio * maxMs).round()));
+                            }),
                   child: SizedBox(
                     height: 34,
                     child: Center(

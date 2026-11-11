@@ -59,6 +59,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
   bool _isMiniPlayer = false;
+  Offset? _miniPlayerOffset;
+  double _miniPlayerScale = 1.0;
+  double _baseScale = 1.0;
 
   void _minimizePlayer() {
     SystemChrome.setPreferredOrientations([
@@ -78,12 +81,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     setState(() {
       _isMiniPlayer = false;
     });
-  }
-
-  String _formatMmSs(int totalSeconds) {
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
   }
 
   @override
@@ -438,6 +435,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               },
             builder: (context, state) {
               if (_isMiniPlayer) {
+                final screenSize = MediaQuery.sizeOf(context);
+                final padding = MediaQuery.paddingOf(context);
+                final baseW = 210.0 * _miniPlayerScale;
+                final baseH = 118.0 * _miniPlayerScale;
+                final defaultLeft = screenSize.width - baseW - 16;
+                final defaultTop = screenSize.height - baseH - padding.bottom - 70;
+
+                final currentLeft = (_miniPlayerOffset?.dx ?? defaultLeft)
+                    .clamp(8.0, screenSize.width - baseW - 8.0);
+                final currentTop = (_miniPlayerOffset?.dy ?? defaultTop)
+                    .clamp(padding.top + 8.0, screenSize.height - baseH - padding.bottom - 8.0);
+
                 return Stack(
                   fit: StackFit.expand,
                   children: [
@@ -448,26 +457,37 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         onTap: _handleExit,
                       ),
                     ),
-                    // Плавающий мини-плеер в правом нижнем углу (~180x100 dp)
+                    // Плавающее и масштабируемое мини-окно плеера (перемещение + ресайз + пауза)
                     Positioned(
-                      right: 16,
-                      bottom: MediaQuery.paddingOf(context).bottom + 70,
+                      left: currentLeft,
+                      top: currentTop,
                       child: GestureDetector(
-                        onTap: _restorePlayer,
+                        onScaleStart: (_) {
+                          _baseScale = _miniPlayerScale;
+                        },
+                        onScaleUpdate: (details) {
+                          setState(() {
+                            _miniPlayerScale = (_baseScale * details.scale).clamp(0.85, 1.6);
+                            _miniPlayerOffset = Offset(
+                              currentLeft + details.focalPointDelta.dx,
+                              currentTop + details.focalPointDelta.dy,
+                            );
+                          });
+                        },
                         child: Container(
-                          width: 196,
-                          height: 112,
+                          width: baseW,
+                          height: baseH,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF14141E),
+                            color: const Color(0xFF10121A),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                              color: Colors.white.withValues(alpha: 0.18),
                               width: 1.2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.75),
-                                blurRadius: 20,
+                                color: Colors.black.withValues(alpha: 0.65),
+                                blurRadius: 22,
                                 offset: const Offset(0, 8),
                               ),
                             ],
@@ -487,21 +507,38 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
                                       colors: [
-                                        Colors.black.withValues(alpha: 0.7),
+                                        Colors.black.withValues(alpha: 0.65),
                                         Colors.transparent,
-                                        Colors.black.withValues(alpha: 0.85),
+                                        Colors.black.withValues(alpha: 0.82),
                                       ],
-                                      stops: const [0.0, 0.45, 1.0],
+                                      stops: const [0.0, 0.40, 1.0],
                                     ),
                                   ),
                                 ),
                               ),
+                              // Верхняя строка: кнопка развернуть, название тайтла, закрыть
                               Positioned(
-                                top: 5,
-                                left: 8,
+                                top: 4,
+                                left: 6,
                                 right: 6,
                                 child: Row(
                                   children: [
+                                    GestureDetector(
+                                      onTap: _restorePlayer,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.55),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.fullscreen_rounded,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
                                         state.title.displayTitle,
@@ -514,12 +551,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: 6),
                                     GestureDetector(
                                       onTap: _handleExit,
                                       child: Container(
-                                        padding: const EdgeInsets.all(3),
+                                        padding: const EdgeInsets.all(4),
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
+                                          color: Colors.black.withValues(alpha: 0.55),
                                           shape: BoxShape.circle,
                                         ),
                                         child: const Icon(
@@ -532,37 +570,56 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   ],
                                 ),
                               ),
+                              // Центр: Кнопка Play/Pause
                               Center(
                                 child: GestureDetector(
                                   onTap: () => _cubit.togglePlayPause(),
                                   child: Container(
-                                    padding: const EdgeInsets.all(7),
+                                    padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.65),
+                                      color: Colors.black.withValues(alpha: 0.70),
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.4),
+                                        color: Colors.white.withValues(alpha: 0.35),
                                         width: 1,
                                       ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.5),
+                                          blurRadius: 10,
+                                        ),
+                                      ],
                                     ),
                                     child: Icon(
                                       state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                                       color: Colors.white,
-                                      size: 18,
+                                      size: 20,
                                     ),
                                   ),
                                 ),
                               ),
+                              // Нижняя строка: Номер серии и индикатор ресайза
                               Positioned(
-                                bottom: 5,
+                                bottom: 4,
                                 left: 8,
-                                child: Text(
-                                  'Серия ${state.episode.episode}',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                right: 6,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Серия ${state.episode.episode}',
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.pinch_rounded,
+                                      size: 11,
+                                      color: Colors.white.withValues(alpha: 0.45),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -626,9 +683,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     },
                     onLongPressStart: () => _cubit.start2xFastForward(),
                     onLongPressEnd: () => _cubit.stop2xFastForward(),
+                    onFastForwardRateChanged: (rate) => _cubit.setFastForwardRate(rate),
                   ),
 
-                  // Неоновый индикатор 2X при зажатии экрана
+                  // Индикатор быстрой перемотки при зажатии экрана (без неона, с поддержкой свайпов скорости)
                   if (state.is2xFastForwarding)
                     Positioned(
                       top: MediaQuery.paddingOf(context).top + 16,
@@ -638,35 +696,52 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.8),
+                            color: const Color(0xFF14161F).withValues(alpha: 0.90),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 1.5,
+                              color: Colors.white.withValues(alpha: 0.20),
+                              width: 1.2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-                                blurRadius: 16,
+                                color: Colors.black.withValues(alpha: 0.65),
+                                blurRadius: 18,
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.fast_forward_rounded,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 20,
+                                color: Colors.white,
+                                size: 18,
                               ),
                               const SizedBox(width: 8),
-                              const Text(
-                                '2X  Быстрая перемотка',
-                                style: TextStyle(
+                              Text(
+                                '${state.playbackRate.toStringAsFixed(state.playbackRate.truncateToDouble() == state.playbackRate ? 0 : 2)}X  Быстрая перемотка',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 13,
-                                  letterSpacing: 0.5,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '↑↓ Свайп скорости',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.65),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ],
@@ -825,8 +900,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                  // Яркая плавающая кнопка / баннер пропуска опенинга (не требует оверлея управления)
-                  _buildOpeningSkipOverlay(state),
+                  // Премиальная плавающая кнопка пропуска опенинга и эндинга (5-7 сек таймер, без неона)
+                  _buildSkipOverlay(state),
 
                   // Кастомный оверлей управления в стиле Cinema Dark
                   PlayerControlsOverlay(
@@ -964,123 +1039,70 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 );
 }
 
-  Widget _buildOpeningSkipOverlay(PlayerState state) {
+  Widget _buildSkipOverlay(PlayerState state) {
     if (state.isScreenLocked) return const SizedBox.shrink();
+
     final op = state.episode.opening;
-    if (op == null) return const SizedBox.shrink();
-
+    final ed = state.episode.ending;
     final curSec = state.position.inSeconds;
-    final start = op.start;
-    final stop = op.stop;
 
-    final isBeforeOpening = curSec >= (start - 5) && curSec < start && start >= 5;
-    final isInsideOpening = curSec >= start && curSec < stop;
+    final isOpening = op != null && curSec >= op.start && curSec < op.stop;
+    final isEnding = ed != null && curSec >= ed.start && curSec < ed.stop;
 
-    if (!isBeforeOpening && !isInsideOpening) {
+    if (!isOpening && !isEnding) return const SizedBox.shrink();
+
+    // Показываем кнопку в первые 7 секунд после начала опенинга/эндинга, либо если меню открыто
+    final startSec = isOpening ? op.start : ed!.start;
+    final elapsedSec = curSec - startSec;
+    if (elapsedSec > 7 && !state.areControlsVisible) {
       return const SizedBox.shrink();
     }
 
-    final remainingSec = (start - curSec).clamp(1, 5);
-    final stopMmSs = _formatMmSs(stop);
+    final label = isOpening ? 'Пропустить опенинг' : 'Пропустить эндинг';
+    final targetDuration = isOpening ? op.stopDuration : ed!.stopDuration;
 
     return Positioned(
-      bottom: MediaQuery.paddingOf(context).bottom + 75,
+      bottom: MediaQuery.paddingOf(context).bottom + 76,
       right: 20,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: isBeforeOpening
-            ? Container(
-                key: const ValueKey('before_opening_banner'),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                      blurRadius: 14,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Опенинг через $remainingSec сек...',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.mediumImpact();
-                        _cubit.seek(op.stopDuration);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          'Пропустить >>',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            : GestureDetector(
-                key: const ValueKey('during_opening_btn'),
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  _cubit.seek(op.stopDuration);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF00E676), Color(0xFF00B0FF)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00E676).withValues(alpha: 0.5),
-                        blurRadius: 16,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.fast_forward_rounded, color: Colors.black, size: 18),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Пропустить опенинг (до $stopMmSs)',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ],
-                  ),
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          _cubit.seek(targetDuration);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: const Color(0xFF14161F).withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.20),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.60),
+                blurRadius: 18,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 17),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                  letterSpacing: 0.2,
                 ),
               ),
+            ],
+          ),
+        ),
       ),
     );
   }

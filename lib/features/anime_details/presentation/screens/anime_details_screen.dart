@@ -177,27 +177,28 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           final targetSeason = _extractSeasonNumber(release.title) ??
               (release.originalTitle != null ? _extractSeasonNumber(release.originalTitle!) : null);
 
-          // Исключаем текущий тайтл (первый сезон), если в выдаче есть другие релизы франшизы
+          // Исключаем текущий тайтл, чтобы старый сезон не открывался при клике на новый
           final candidates = searchResults.where((s) => s.id != _currentTitle.id).toList();
-          final effectiveList = candidates.isNotEmpty ? candidates : searchResults;
 
           AnimeTitle? matched;
-          if (targetSeason != null) {
-            try {
-              matched = effectiveList.where(
-                (s) =>
-                    _extractSeasonNumber(s.russianTitle) == targetSeason ||
-                    _extractSeasonNumber(s.englishTitle) == targetSeason,
-              ).firstOrNull;
-            } catch (_) {}
-          }
+          if (candidates.isNotEmpty) {
+            if (targetSeason != null) {
+              try {
+                matched = candidates.where(
+                  (s) =>
+                      _extractSeasonNumber(s.russianTitle) == targetSeason ||
+                      _extractSeasonNumber(s.englishTitle) == targetSeason,
+                ).firstOrNull;
+              } catch (_) {}
+            }
 
-          matched ??= effectiveList.where(
-            (s) =>
-                s.russianTitle.toLowerCase().trim() == release.title.toLowerCase().trim() ||
-                (release.originalTitle != null &&
-                    s.englishTitle.toLowerCase().trim() == release.originalTitle!.toLowerCase().trim()),
-          ).firstOrNull;
+            matched ??= candidates.where(
+              (s) =>
+                  s.russianTitle.toLowerCase().trim() == release.title.toLowerCase().trim() ||
+                  (release.originalTitle != null &&
+                      s.englishTitle.toLowerCase().trim() == release.originalTitle!.toLowerCase().trim()),
+            ).firstOrNull;
+          }
 
           if (matched != null && mounted) {
             context.pushNamed('details', extra: matched);
@@ -207,7 +208,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       }
     } catch (_) {}
 
-    // Fallback: переход с синтезированным объектом тайтла
+    // Fallback: тайтл еще не вышел или отсутствует в базе — статус «Скоро» без ложных старых серий
     final yearNum = int.tryParse(release.year?.replaceAll(RegExp(r'\D'), '') ?? '');
     final fallbackTitle = AnimeTitle(
       id: int.tryParse(release.id) ?? (DateTime.now().millisecondsSinceEpoch % 100000),
@@ -218,9 +219,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       posterMedium: release.posterUrl,
       posterOriginal: release.posterUrl,
       genres: _currentTitle.genres,
-      description: 'Продолжение франшизы ${_currentTitle.displayTitle}. Загрузка данных...',
-      status: 'Выпуск завершен',
+      description: 'Продолжение франшизы ${_currentTitle.displayTitle}. Релиз ожидается.',
+      status: 'Скоро',
       year: yearNum ?? _currentTitle.year,
+      episodes: const [],
+      episodesTotal: 0,
     );
     if (mounted) {
       context.pushNamed('details', extra: fallbackTitle);
@@ -1582,6 +1585,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                             if (ep.opening != null) ...[
                                               const SizedBox(height: 3),
                                               Row(
+                                                mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Icon(
                                                     Icons.fast_forward_rounded,
@@ -1589,11 +1593,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                                     color: AppColors.primaryLight,
                                                   ),
                                                   const SizedBox(width: 4),
-                                                  FittedBox(
-                                                    fit: BoxFit.scaleDown,
-                                                    alignment: Alignment.centerLeft,
+                                                  Flexible(
                                                     child: Text(
                                                       'Опенинг: ${ep.opening!.formattedRange}',
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
                                                       style: AppTypography.caption.copyWith(
                                                         color: AppColors.textMuted,
                                                         fontSize: 11,
@@ -1786,29 +1790,106 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                 ),
                               ),
                             ] else ...[
-                              Icon(
-                                Icons.video_library_outlined,
-                                size: 36,
-                                color: AppColors.textMuted.withValues(alpha: 0.6),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Серии для этого тайтла пока не найдены',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: AppColors.textMuted,
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceElevated.withValues(alpha: 0.7),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.4),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: BorderSide(color: AppColors.primary),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(alpha: 0.12),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.hourglass_top_rounded,
+                                        size: 32,
+                                        color: AppColors.primaryLight,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _currentTitle.status.toLowerCase().contains('скоро') ||
+                                              _currentTitle.status.toLowerCase().contains('анонс')
+                                          ? 'Статус: Скоро / Анонс'
+                                          : 'Серии пока не вышли в озвучке',
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.titleMedium.copyWith(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Этот сезон еще не начался или серии только готовятся к публикации. Вы можете добавить его в избранное или в планы.',
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodySmall.copyWith(
+                                        color: AppColors.textSecondary,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      alignment: WrapAlignment.center,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppColors.primary,
+                                            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.6)),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                          ),
+                                          icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                                          label: const Text('В планах'),
+                                          onPressed: () {
+                                            context.read<AnimeListCubit>().setAnimeStatus(
+                                                  animeId: _currentTitle.id,
+                                                  titleRu: _currentTitle.displayTitle,
+                                                  posterUrl: _currentTitle.posterMedium.isNotEmpty
+                                                      ? _currentTitle.posterMedium
+                                                      : _currentTitle.posterSmall,
+                                                  status: AnimeListStatus.planned,
+                                                  episodesTotal: _currentTitle.episodesTotal,
+                                                );
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text('«${_currentTitle.displayTitle}» добавлено в «В планах»'),
+                                                duration: const Duration(seconds: 2),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppColors.textSecondary,
+                                            side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                          ),
+                                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                                          label: const Text('Проверить серии'),
+                                          onPressed: () => _loadFullDetails(),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                                icon: const Icon(Icons.refresh_rounded, size: 18),
-                                label: const Text('Обновить серии'),
-                                onPressed: () => _loadFullDetails(),
                               ),
                             ],
                           ],

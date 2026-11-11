@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
@@ -24,6 +25,7 @@ class DoubleTapSeekOverlay extends StatefulWidget {
   final ValueChanged<int> onSeekRelative;
   final VoidCallback? onLongPressStart;
   final VoidCallback? onLongPressEnd;
+  final ValueChanged<double>? onFastForwardRateChanged;
   final VoidCallback? onCenterDoubleTap;
   final ValueChanged<double>? onBrightnessChanged;
   final ValueChanged<double>? onVolumeChanged;
@@ -46,6 +48,7 @@ class DoubleTapSeekOverlay extends StatefulWidget {
     required this.onSeekRelative,
     this.onLongPressStart,
     this.onLongPressEnd,
+    this.onFastForwardRateChanged,
     this.onCenterDoubleTap,
     this.onBrightnessChanged,
     this.onVolumeChanged,
@@ -85,6 +88,39 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
   // Пульсация центрального тапа (Play/Pause)
   bool _showCenterPulse = false;
   Timer? _centerPulseTimer;
+
+  // Динамическая скорость при удержании (Long Press + Swipe)
+  double _activeFastForwardRate = 2.0;
+  Offset _longPressStartOffset = Offset.zero;
+
+  void _handleLongPressStart(LongPressStartDetails details) {
+    if (widget.isScreenLocked) return;
+    if (widget.isLocked) {
+      widget.onLockedTap?.call();
+      return;
+    }
+    _activeFastForwardRate = 2.0;
+    _longPressStartOffset = details.globalPosition;
+    widget.onLongPressStart?.call();
+  }
+
+  void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (widget.isScreenLocked || widget.isLocked) return;
+    final dy = _longPressStartOffset.dy - details.globalPosition.dy;
+    final deltaRate = (dy / 55.0) * 0.25;
+    final target = (2.0 + deltaRate).clamp(1.25, 4.0);
+    final rounded = (target * 4).round() / 4.0;
+    if ((_activeFastForwardRate - rounded).abs() > 0.01) {
+      _activeFastForwardRate = rounded;
+      HapticFeedback.selectionClick();
+      widget.onFastForwardRateChanged?.call(rounded);
+    }
+  }
+
+  void _handleLongPressEnd() {
+    _activeFastForwardRate = 2.0;
+    widget.onLongPressEnd?.call();
+  }
 
   @override
   void initState() {
@@ -260,16 +296,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                     }
                   },
                   onDoubleTap: () => _triggerSeek(-10, true),
-                  onLongPressStart: (_) {
-                    if (widget.isScreenLocked) return;
-                    if (widget.isLocked) {
-                      widget.onLockedTap?.call();
-                      return;
-                    }
-                    widget.onLongPressStart?.call();
-                  },
-                  onLongPressEnd: (_) => widget.onLongPressEnd?.call(),
-                  onLongPressCancel: () => widget.onLongPressEnd?.call(),
+                  onLongPressStart: _handleLongPressStart,
+                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                  onLongPressEnd: (_) => _handleLongPressEnd(),
+                  onLongPressCancel: _handleLongPressEnd,
                   onVerticalDragStart: (_) {
                     _hudDismissTimer?.cancel();
                     setState(() => _activeGesture = _GestureType.brightness);
@@ -302,16 +332,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                     }
                   },
                   onDoubleTap: _triggerCenterDoubleTap,
-                  onLongPressStart: (_) {
-                    if (widget.isScreenLocked) return;
-                    if (widget.isLocked) {
-                      widget.onLockedTap?.call();
-                      return;
-                    }
-                    widget.onLongPressStart?.call();
-                  },
-                  onLongPressEnd: (_) => widget.onLongPressEnd?.call(),
-                  onLongPressCancel: () => widget.onLongPressEnd?.call(),
+                  onLongPressStart: _handleLongPressStart,
+                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                  onLongPressEnd: (_) => _handleLongPressEnd(),
+                  onLongPressCancel: _handleLongPressEnd,
                   onHorizontalDragStart: (_) => _onHorizontalStart(),
                   onHorizontalDragUpdate: _onHorizontalUpdate,
                   onHorizontalDragEnd: (_) => _onHorizontalEnd(),
@@ -331,16 +355,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                     }
                   },
                   onDoubleTap: () => _triggerSeek(10, false),
-                  onLongPressStart: (_) {
-                    if (widget.isScreenLocked) return;
-                    if (widget.isLocked) {
-                      widget.onLockedTap?.call();
-                      return;
-                    }
-                    widget.onLongPressStart?.call();
-                  },
-                  onLongPressEnd: (_) => widget.onLongPressEnd?.call(),
-                  onLongPressCancel: () => widget.onLongPressEnd?.call(),
+                  onLongPressStart: _handleLongPressStart,
+                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                  onLongPressEnd: (_) => _handleLongPressEnd(),
+                  onLongPressCancel: _handleLongPressEnd,
                   onVerticalDragStart: (_) {
                     _hudDismissTimer?.cancel();
                     setState(() => _activeGesture = _GestureType.volume);

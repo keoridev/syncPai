@@ -918,19 +918,30 @@ class PlayerCubit extends Cubit<PlayerState> {
     _resetControlsTimer();
   }
 
-  /// Ускорение 2X при удержании экрана (Long Press)
+  /// Ускорение при удержании экрана (Long Press) с поддержкой свайпов скорости
   void start2xFastForward() {
     if (state.is2xFastForwarding) return;
     _preFastForwardRate = state.playbackRate;
     player.setRate(2.0);
-    emit(state.copyWith(is2xFastForwarding: true));
+    emit(state.copyWith(is2xFastForwarding: true, playbackRate: 2.0));
+  }
+
+  /// Плавное изменение скорости при свайпе во время зажатия (от 1.25x до 4.0x)
+  void setFastForwardRate(double rate) {
+    if (!state.is2xFastForwarding) return;
+    final clamped = (rate * 4).round() / 4.0;
+    final target = clamped.clamp(1.25, 4.0);
+    if ((state.playbackRate - target).abs() > 0.01) {
+      player.setRate(target);
+      emit(state.copyWith(playbackRate: target));
+    }
   }
 
   /// Возврат к обычной скорости при отпускании
   void stop2xFastForward() {
     if (!state.is2xFastForwarding) return;
     player.setRate(_preFastForwardRate);
-    emit(state.copyWith(is2xFastForwarding: false));
+    emit(state.copyWith(is2xFastForwarding: false, playbackRate: _preFastForwardRate));
   }
 
   /// Отправить реакцию (🔥, 😂, 😱, 😭, ❤️)

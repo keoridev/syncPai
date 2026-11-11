@@ -1,9 +1,8 @@
-import 'dart:io' show Platform, File;
+import 'dart:io' show File;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -15,7 +14,6 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
-import '../../../../core/widgets/steam_avatar_frame.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
@@ -33,6 +31,7 @@ import '../cubit/profile_state.dart';
 import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
 import '../widgets/steam_profile_customizer_sheet.dart';
+import '../widgets/steam_style_profile_header.dart';
 
 /// Экран профиля пользователя (UserProfileScreen) SyncPai:
 /// Концепция: Гибрид Steam Showcase и Discord Nitro.
@@ -61,36 +60,17 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _isBgPaused = false;
   late final ScrollController _scrollController;
   late final ProfileCubit _profileCubit;
-  late final AnimationController _pulseController;
-  late final Animation<double> _pulseAnimation;
   List<WatchHistoryItem> _watchHistory = [];
 
   static const List<String> _avatarPresets = [
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
   ];
 
-  bool get _isTestEnv {
-    try {
-      return Platform.environment.containsKey('FLUTTER_TEST');
-    } catch (_) {
-      return false;
-    }
-  }
-
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    );
-    if (!_isTestEnv) {
-      _pulseController.repeat(reverse: true);
-    }
-    _pulseAnimation = CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut);
 
     _loadBannerDismissed();
     _loadWatchHistory();
@@ -148,7 +128,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
-    _pulseController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _profileCubit.close();
@@ -175,14 +154,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     // По умолчанию: Discord Blurple
     return const Color(0xFF5865F2);
-  }
-
-  String _extractDiscordTag(String id) {
-    final digits = id.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length >= 4) {
-      return digits.substring(digits.length - 4);
-    }
-    return '5627';
   }
 
   void _openDetailsForHistory(BuildContext context, WatchHistoryItem item) {
@@ -219,135 +190,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       status: '',
     );
     context.pushNamed('details', extra: fallback);
-  }
-
-  void _showSteamBadgeModal(BuildContext context, SteamBadge badge, Color accent) {
-    HapticFeedback.lightImpact();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141721),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.70),
-                blurRadius: 30,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      accent.withValues(alpha: 0.25),
-                      accent.withValues(alpha: 0.05),
-                    ],
-                  ),
-                  border: Border.all(color: accent, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.40),
-                      blurRadius: 20,
-                    ),
-                  ],
-                ),
-                child: Icon(badge.icon, size: 44, color: accent),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                '★ Уровень профиля: ${badge.level}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Значок: ${badge.title}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: accent,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Прогресс до ${badge.level + 1} уровня',
-                          style: const TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                        Text(
-                          '450 / 500 XP (80%)',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: accent),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: 0.8,
-                        minHeight: 6,
-                        backgroundColor: Colors.white10,
-                        valueColor: AlwaysStoppedAnimation<Color>(accent),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Понятно', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   void _showEditProfileSheet(BuildContext context, UserProfile profile) {
@@ -680,10 +522,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           final bgTheme = SteamBackgroundTheme.fromId(profile.backgroundId);
           final currentAccentColor = _resolveDynamicAccent(profile, themePrimary);
 
-          final headerBgUrl = (bgTheme.assetOrUrl != null && bgTheme.assetOrUrl!.isNotEmpty)
-              ? bgTheme.assetOrUrl!
-              : (profile.favoriteAnimePoster ?? '');
-
           return Stack(
             children: [
               // СЛОЙ 1: Анимированный / Живой / Видео фон на весь экран
@@ -731,30 +569,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                     controller: _scrollController,
                     physics: const BouncingScrollPhysics(),
                     slivers: [
-                      // 1. HEADER (Баннер 150dp + Наплыв круглого аватара 84dp на стык)
+                      // 1. STEAM STYLE PROFILE HEADER (Квадратный аватар 84×84 + Инфо-блок + Гигантская витрина Artwork Showcase с 3D Gyroscope)
                       SliverToBoxAdapter(
-                        child: _ProfileHeader(
+                        child: SteamStyleProfileHeader(
                           profile: profile,
-                          headerBgUrl: headerBgUrl,
-                          bgTheme: bgTheme,
-                          currentAccentColor: currentAccentColor,
-                          pulseAnimation: _pulseAnimation,
                           isCurrentUser: isCurrentUser,
                           showBackButton: widget.showBackButton,
-                          onBack: widget.onBack,
-                          onEditAvatar: () => _showEditProfileSheet(context, profile),
-                          onOpenCustomizer: () => SteamProfileCustomizerSheet.show(context, profile),
-                          onOpenSettings: () => context.push('/settings'),
-                        ),
-                      ),
-
-                      // 2. БЛОК ЛИЧНОСТИ (User Info Card)
-                      SliverToBoxAdapter(
-                        child: _UserInfoCard(
-                          profile: profile,
-                          discordTag: _extractDiscordTag(profile.id),
-                          currentAccentColor: currentAccentColor,
-                          onBadgeTap: (badge) => _showSteamBadgeModal(context, badge, currentAccentColor),
+                          onBackTap: widget.onBack,
+                          onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                          onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                          onSettingsTap: () => context.push('/settings'),
                         ),
                       ),
 
@@ -763,16 +587,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                         SliverToBoxAdapter(
                           child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
                         ),
-
-                      // 3. ВИТРИНА STEAM: «ЛЮБИМЫЙ ТАЙТЛ» (Favorite Anime Showcase)
-                      SliverToBoxAdapter(
-                        child: _FavoriteAnimeShowcase(
-                          profile: profile,
-                          currentAccentColor: currentAccentColor,
-                          isCurrentUser: isCurrentUser,
-                          onSelectAnime: () => SteamProfileCustomizerSheet.show(context, profile, initialTabIndex: 4),
-                        ),
-                      ),
 
                       // 4. БЛОК «СТАТИСТИКА ПРОСМОТРА» (Watch Stats Card)
                       SliverToBoxAdapter(
@@ -806,635 +620,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// ============================================================================
-// 1. HEADER (Баннер 150dp + Кнопки управления + Круглый аватар 84dp на стыке)
-// ============================================================================
-class _ProfileHeader extends StatelessWidget {
-  final UserProfile profile;
-  final String headerBgUrl;
-  final SteamBackgroundTheme bgTheme;
-  final Color currentAccentColor;
-  final Animation<double> pulseAnimation;
-  final bool isCurrentUser;
-  final bool showBackButton;
-  final VoidCallback? onBack;
-  final VoidCallback onEditAvatar;
-  final VoidCallback onOpenCustomizer;
-  final VoidCallback onOpenSettings;
 
-  const _ProfileHeader({
-    required this.profile,
-    required this.headerBgUrl,
-    required this.bgTheme,
-    required this.currentAccentColor,
-    required this.pulseAnimation,
-    required this.isCurrentUser,
-    required this.showBackButton,
-    this.onBack,
-    required this.onEditAvatar,
-    required this.onOpenCustomizer,
-    required this.onOpenSettings,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const bannerHeight = 150.0;
-    const avatarRadius = 42.0; // Диаметр 84 dp
-
-    return SizedBox(
-      height: bannerHeight + avatarRadius, // 192 dp
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 1.1 Баннер (Steam Cover) высотой 150dp
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: bannerHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Фоновое изображение или арт баннера
-                if (headerBgUrl.isNotEmpty && (headerBgUrl.startsWith('http') || headerBgUrl.startsWith('file:') || headerBgUrl.contains('/')))
-                  CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(headerBgUrl),
-                    fit: BoxFit.cover,
-                    memCacheWidth: 800,
-                    errorWidget: (_, __, ___) => _buildFallbackBanner(),
-                  )
-                else
-                  _buildFallbackBanner(),
-
-                // Полупрозрачный градиент снизу вверх (от прозрачного к Colors.black.withOpacity(0.8))
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.15),
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.80),
-                      ],
-                      stops: const [0.0, 0.35, 1.0],
-                    ),
-                  ),
-                ),
-
-                // Верхняя панель: Кнопка "Назад", Плашка "Мой профиль", Кнопки действий
-                SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    child: Row(
-                      children: [
-                        if (showBackButton)
-                          _buildGlassIconButton(
-                            icon: Icons.arrow_back_ios_new_rounded,
-                            tooltip: 'Назад',
-                            onTap: onBack ?? () => Navigator.of(context).maybePop(),
-                          ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                          ),
-                          child: Text(
-                            isCurrentUser ? 'Мой профиль' : 'Профиль друга',
-                            style: AppTypography.caption.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        if (isCurrentUser) ...[
-                          _buildGlassIconButton(
-                            icon: Icons.palette_outlined,
-                            tooltip: 'Оформление профиля',
-                            iconColor: currentAccentColor,
-                            onTap: onOpenCustomizer,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildGlassIconButton(
-                            icon: Icons.settings,
-                            tooltip: 'Настройки',
-                            onTap: onOpenSettings,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 1.2 Круглый аватар 84dp на стыке баннера (bottom: 0 от SizedBox = bottom: -42 от баннера)
-          Positioned(
-            left: 20,
-            bottom: 0,
-            child: GestureDetector(
-              onTap: isCurrentUser ? onEditAvatar : null,
-              child: SizedBox(
-                width: 84,
-                height: 84,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    // Неоновое свечение вокруг аватара с мягким дыханием pulse glow
-                    AnimatedBuilder(
-                      animation: pulseAnimation,
-                      builder: (context, _) {
-                        final pulse = pulseAnimation.value;
-                        return Container(
-                          width: 84,
-                          height: 84,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: currentAccentColor.withValues(alpha: 0.28 + 0.22 * pulse),
-                                blurRadius: 18 + 8 * pulse,
-                                spreadRadius: 2 + 2 * pulse,
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-
-                    // Аватар диаметром 84dp
-                    AppAvatar(
-                      avatarUrl: profile.avatarUrl,
-                      username: profile.username,
-                      size: 84,
-                      borderColor: currentAccentColor,
-                      borderWidth: 2.2,
-                    ),
-
-                    // Рамка поверх аватара
-                    if (profile.frameId != null && profile.frameId != 'none')
-                      Positioned(
-                        left: -12,
-                        top: -12,
-                        right: -12,
-                        bottom: -12,
-                        child: IgnorePointer(
-                          child: SteamAvatarFrameWidget(
-                            frameId: profile.frameId,
-                            size: 84,
-                            child: const SizedBox(width: 84, height: 84),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGlassIconButton({
-    required IconData icon,
-    required String tooltip,
-    Color? iconColor,
-    required VoidCallback onTap,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Material(
-          color: Colors.black.withValues(alpha: 0.40),
-          child: InkWell(
-            onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: Icon(icon, size: 18, color: iconColor ?? Colors.white),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFallbackBanner() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            currentAccentColor.withValues(alpha: 0.35),
-            const Color(0xFF141721),
-            Colors.black,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 2. БЛОК ЛИЧНОСТИ (User Info Card)
-// ============================================================================
-class _UserInfoCard extends StatelessWidget {
-  final UserProfile profile;
-  final String discordTag;
-  final Color currentAccentColor;
-  final void Function(SteamBadge) onBadgeTap;
-
-  const _UserInfoCard({
-    required this.profile,
-    required this.discordTag,
-    required this.currentAccentColor,
-    required this.onBadgeTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final badge = SteamBadge.fromId(profile.badgeId);
-
-    return _GlassCard(
-      accentColor: currentAccentColor,
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Верхняя строка: Имя пользователя + Дискорд-тег + Steam Level Badge
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  profile.username.isNotEmpty ? profile.username : 'Сенпай',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
-              Text(
-                ' #$discordTag',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white54,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // Steam Level Badge: Компактный капсульный бейдж
-              InkWell(
-                onTap: () => onBadgeTap(badge),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: currentAccentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: currentAccentColor, width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: currentAccentColor.withValues(alpha: 0.20),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '★ ${badge.level} LVL',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: currentAccentColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // Кастомный статус курсивом
-          Text(
-            '«${profile.customStatus ?? 'Смотрю аниме...'}»',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontStyle: FontStyle.italic,
-              color: Colors.white70,
-            ),
-          ),
-
-          if (profile.customTitle != null && profile.customTitle!.trim().isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              profile.customTitle!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: currentAccentColor.withValues(alpha: 0.90),
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-
-          // XP Progress Bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 5,
-              child: LinearProgressIndicator(
-                value: 0.80,
-                backgroundColor: Colors.white.withValues(alpha: 0.10),
-                valueColor: AlwaysStoppedAnimation<Color>(currentAccentColor),
-              ),
-            ),
-          ),
-          const SizedBox(height: 5),
-
-          // Подпись под прогресс-баром
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Уровень ${badge.level}',
-                style: const TextStyle(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.w500),
-              ),
-              Text(
-                '450 / 500 XP (80%)',
-                style: TextStyle(fontSize: 11, color: currentAccentColor, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 3. ВИТРИНА STEAM: «ЛЮБИМЫЙ ТАЙТЛ» (Favorite Anime Showcase)
-// ============================================================================
-class _FavoriteAnimeShowcase extends StatelessWidget {
-  final UserProfile profile;
-  final Color currentAccentColor;
-  final bool isCurrentUser;
-  final VoidCallback onSelectAnime;
-
-  const _FavoriteAnimeShowcase({
-    required this.profile,
-    required this.currentAccentColor,
-    required this.isCurrentUser,
-    required this.onSelectAnime,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasFavorite = profile.favoriteAnimeTitle != null && profile.favoriteAnimeTitle!.trim().isNotEmpty;
-
-    return _GlassCard(
-      accentColor: currentAccentColor,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Заголовок витрины: Иконка + Текст + Кнопка Изменить
-          Row(
-            children: [
-              Icon(Icons.emoji_events_rounded, size: 14, color: currentAccentColor),
-              const SizedBox(width: 6),
-              Text(
-                'ВИТРИНА: ЛЮБИМОЕ АНИМЕ',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  color: currentAccentColor,
-                ),
-              ),
-              const Spacer(),
-              if (isCurrentUser)
-                InkWell(
-                  onTap: onSelectAnime,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.edit_rounded, size: 12, color: currentAccentColor),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Изменить',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: currentAccentColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Содержимое карточки витрины
-          if (hasFavorite) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Постер 2:3 (75x110) со скруглением 12dp и тенью
-                Container(
-                  width: 75,
-                  height: 110,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: currentAccentColor.withValues(alpha: 0.25),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: (profile.favoriteAnimePoster != null && profile.favoriteAnimePoster!.isNotEmpty)
-                        ? CachedNetworkImage(
-                            imageUrl: wrapCorsSafeUrl(profile.favoriteAnimePoster!),
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => _buildFallbackPoster(),
-                          )
-                        : _buildFallbackPoster(),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // Справа: Название, Метаданные, Цитата, Статус
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Название тайтла: жирный шрифт, 2 строки max, ellipsis
-                      Text(
-                        profile.favoriteAnimeTitle!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-
-                      // Метаданные: Рейтинг + Жанры
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFB800).withValues(alpha: 0.20),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFFFB800), width: 0.8),
-                            ),
-                            child: const Text(
-                              '★ 9.4',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFFFFB800),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Flexible(
-                            child: Text(
-                              'Экшен • Киберпанк',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: Colors.white60),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Любимая цитата пользователя о тайтле в кавычках
-                      Text(
-                        '«${(profile.bio != null && profile.bio!.isNotEmpty) ? profile.bio : 'Шедевр анимации, изменивший всё.'}»',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                          color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Индикатор: Просмотрено целиком
-                      Row(
-                        children: [
-                          Icon(Icons.check_circle_rounded, size: 13, color: currentAccentColor),
-                          const SizedBox(width: 5),
-                          Text(
-                            'Просмотрено целиком (24/24 эп.)',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: currentAccentColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            // Empty State: Пунктирный полупрозрачный контейнер с кнопкой
-            CustomPaint(
-              painter: _DashedBorderPainter(
-                color: currentAccentColor.withValues(alpha: 0.35),
-                strokeWidth: 1.2,
-                dashWidth: 6,
-                dashSpace: 4,
-                radius: 14,
-              ),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                child: Center(
-                  child: InkWell(
-                    onTap: onSelectAnime,
-                    borderRadius: BorderRadius.circular(10),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add_circle_outline_rounded, size: 18, color: currentAccentColor),
-                          const SizedBox(width: 8),
-                          Text(
-                            '+ Выбрать любимый тайтл из каталога',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: currentAccentColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFallbackPoster() {
-    return Container(
-      color: Colors.white10,
-      child: Center(
-        child: Icon(Icons.movie_rounded, size: 30, color: currentAccentColor.withValues(alpha: 0.5)),
-      ),
-    );
-  }
-}
 
 // ============================================================================
 // 4. БЛОК «СТАТИСТИКА ПРОСМОТРА» (Watch Stats Card)
@@ -1949,53 +1135,4 @@ class _GlassCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// ХУДОЖНИК ПУНКТИРНОЙ РАМКИ STEAM (Dashed Border)
-// ============================================================================
-class _DashedBorderPainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashWidth;
-  final double dashSpace;
-  final double radius;
 
-  _DashedBorderPainter({
-    required this.color,
-    this.strokeWidth = 1.2,
-    this.dashWidth = 6.0,
-    this.dashSpace = 4.0,
-    this.radius = 14.0,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
-    final path = Path()..addRRect(rrect);
-    final metrics = path.computeMetrics();
-
-    for (final metric in metrics) {
-      double distance = 0.0;
-      while (distance < metric.length) {
-        final len = (distance + dashWidth < metric.length) ? dashWidth : metric.length - distance;
-        canvas.drawPath(metric.extractPath(distance, distance + len), paint);
-        distance += dashWidth + dashSpace;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.strokeWidth != strokeWidth ||
-      oldDelegate.dashWidth != dashWidth ||
-      oldDelegate.dashSpace != dashSpace ||
-      oldDelegate.radius != radius;
-}

@@ -1,8 +1,11 @@
-import 'dart:io' show File;
+import 'dart:convert';
+import 'dart:io' show File, Platform;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,10 +31,13 @@ import '../../../watch_history/domain/repositories/watch_history_repository.dart
 import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
+import '../widgets/badge_details_sheet.dart';
+import '../widgets/friends_management_sheet.dart';
 import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
 import '../widgets/steam_profile_customizer_sheet.dart';
 import '../widgets/steam_style_profile_header.dart';
+import '../../services/friends_service.dart';
 
 /// Экран профиля пользователя (UserProfileScreen) SyncPai:
 /// Концепция: Гибрид Steam Showcase и Discord Nitro.
@@ -55,12 +61,35 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  bool _showActivityCharts = false;
+  bool _showActivityCharts = true;
   bool _guestBannerDismissed = false;
   bool _isBgPaused = false;
+  int _selectedMobileTab = 0; // 0: Обзор, 1: Статистика, 2: Стена
   late final ScrollController _scrollController;
   late final ProfileCubit _profileCubit;
+  final TextEditingController _commentController = TextEditingController();
   List<WatchHistoryItem> _watchHistory = [];
+  List<Map<String, dynamic>> _onlineFriends = [];
+  List<Map<String, String>> _wallComments = [
+    {
+      'author': 'Senpai_Kun',
+      'text': '+rep за витрину и киберпанк тему 🔥',
+      'time': '2 ч. назад',
+      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Senpai',
+    },
+    {
+      'author': 'NekoChan',
+      'text': 'Когда совместный просмотр второго сезона? Жду в лобби!',
+      'time': 'Вчера',
+      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Neko',
+    },
+    {
+      'author': 'OtakuMaster',
+      'text': 'Топ 1 по времени за эту неделю 👏',
+      'time': '3 дн. назад',
+      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Otaku',
+    },
+  ];
 
   static const List<String> _avatarPresets = [
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
@@ -74,6 +103,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     _loadBannerDismissed();
     _loadWatchHistory();
+    _loadRealFriends();
+    _loadWallComments();
 
     _profileCubit = getIt.isRegistered<ProfileCubit>()
         ? getIt<ProfileCubit>()
@@ -103,6 +134,55 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  Future<void> _loadRealFriends() async {
+    final loaded = await FriendsService.getFriends();
+    if (mounted) {
+      setState(() => _onlineFriends = loaded);
+    }
+  }
+
+  void _loadWallComments() {
+    if (getIt.isRegistered<SharedPreferences>()) {
+      try {
+        final key = 'profile_wall_comments_${widget.userId ?? "me"}';
+        final raw = getIt<SharedPreferences>().getString(key);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as List<dynamic>;
+          final parsed = decoded
+              .whereType<Map>()
+              .map((m) => m.map((k, v) => MapEntry(k.toString(), v.toString())))
+              .toList();
+          if (parsed.isNotEmpty) {
+            _wallComments = parsed;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  void _submitWallComment(UserProfile currentProfile) {
+    final text = _commentController.text.trim();
+    if (text.isEmpty) return;
+    HapticFeedback.lightImpact();
+
+    setState(() {
+      _wallComments.insert(0, {
+        'author': currentProfile.username,
+        'text': text,
+        'time': 'Только что',
+        'avatar': currentProfile.avatarUrl ?? 'cat',
+      });
+      _commentController.clear();
+    });
+
+    if (getIt.isRegistered<SharedPreferences>()) {
+      try {
+        final key = 'profile_wall_comments_${widget.userId ?? "me"}';
+        getIt<SharedPreferences>().setString(key, jsonEncode(_wallComments));
+      } catch (_) {}
+    }
+  }
+
   void _loadBannerDismissed() {
     if (getIt.isRegistered<SharedPreferences>()) {
       final prefs = getIt<SharedPreferences>();
@@ -123,6 +203,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (oldWidget.userId != widget.userId) {
       _profileCubit.loadProfile(targetUserId: widget.userId);
       _loadWatchHistory();
+      _loadRealFriends();
+      _loadWallComments();
     }
   }
 
@@ -130,6 +212,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _commentController.dispose();
     _profileCubit.close();
     super.dispose();
   }
@@ -519,8 +602,38 @@ class _ProfileScreenState extends State<ProfileScreen>
             } catch (_) {}
           }
 
+          // Вычисляем суммарное реальное время просмотра из истории
+          int historyMinutes = 0;
+          for (final item in _watchHistory) {
+            if (item.positionMs > 0) {
+              historyMinutes += (item.positionMs / 60000).round();
+            }
+          }
+
+          final effectiveMinutes = stats.totalMinutesWatched > 0
+              ? stats.totalMinutesWatched
+              : (historyMinutes > 0 ? historyMinutes : 276); // 276 мин = 4.6 ч., точно как на графике активности
+
+          final effectiveTitles = stats.totalTitles > 0
+              ? stats.totalTitles
+              : (_watchHistory.isNotEmpty ? _watchHistory.map((e) => e.titleId).toSet().length : 4);
+          final effectiveEpisodes = stats.totalEpisodesCompleted > 0
+              ? stats.totalEpisodesCompleted
+              : (_watchHistory.isNotEmpty ? _watchHistory.length : 13);
+
+          stats = UserAnimeStats(
+            totalTitles: effectiveTitles,
+            completedTitles: stats.completedTitles > 0 ? stats.completedTitles : 2,
+            watchingTitles: stats.watchingTitles > 0 ? stats.watchingTitles : 1,
+            plannedTitles: stats.plannedTitles > 0 ? stats.plannedTitles : 1,
+            droppedTitles: stats.droppedTitles,
+            totalEpisodesCompleted: effectiveEpisodes,
+            totalMinutesWatched: effectiveMinutes,
+          );
+
           final bgTheme = SteamBackgroundTheme.fromId(profile.backgroundId);
           final currentAccentColor = _resolveDynamicAccent(profile, themePrimary);
+          final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
           return Stack(
             children: [
@@ -561,60 +674,855 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
 
-              // СЛОЙ 3: CustomScrollView со всеми глассморфными карточками
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 860),
-                  child: CustomScrollView(
-                    controller: _scrollController,
-                    physics: const BouncingScrollPhysics(),
-                    slivers: [
-                      // 1. STEAM STYLE PROFILE HEADER (Квадратный аватар 84×84 + Инфо-блок + Гигантская витрина Artwork Showcase с 3D Gyroscope)
-                      SliverToBoxAdapter(
-                        child: SteamStyleProfileHeader(
-                          profile: profile,
-                          isCurrentUser: isCurrentUser,
-                          showBackButton: widget.showBackButton,
-                          onBackTap: widget.onBack,
-                          onEditProfileTap: () => _showEditProfileSheet(context, profile),
-                          onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                          onSettingsTap: () => context.push('/settings'),
-                        ),
-                      ),
-
-                      // ПЛАШКА СИНХРОНИЗАЦИИ (Только для гостя в своем профиле)
-                      if (isCurrentUser && isGuest && !_guestBannerDismissed)
-                        SliverToBoxAdapter(
-                          child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
-                        ),
-
-                      // 4. БЛОК «СТАТИСТИКА ПРОСМОТРА» (Watch Stats Card)
-                      SliverToBoxAdapter(
-                        child: _StatsCard(
-                          stats: stats,
-                          currentAccentColor: currentAccentColor,
-                          showActivityCharts: _showActivityCharts,
-                          onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
-                        ),
-                      ),
-
-                      // 5. ВИТРИНА «НЕДАВНО ПРОСМОТРЕННЫЕ СЕРИИ» (Recent Watch History)
-                      SliverToBoxAdapter(
-                        child: _RecentHistoryCarousel(
-                          items: _watchHistory,
-                          currentAccentColor: currentAccentColor,
-                          onItemTap: (item) => _openDetailsForHistory(context, item),
-                        ),
-                      ),
-
-                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                    ],
+              // СЛОЙ 3: Безопасный верхний отступ + Двухколоночный десктопный или облегченный мобильный Layout
+              SafeArea(
+                bottom: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isDesktopOS ? 1280 : 860),
+                    child: isDesktopOS
+                        ? CustomScrollView(
+                            controller: _scrollController,
+                            physics: const BouncingScrollPhysics(),
+                            slivers: [
+                              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // ЛЕВАЯ КОЛОНКА (flex: 60)
+                                      Expanded(
+                                        flex: 60,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(bottom: 48),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              SteamStyleProfileHeader(
+                                                profile: profile,
+                                                isCurrentUser: isCurrentUser,
+                                                showBackButton: widget.showBackButton,
+                                                onBackTap: widget.onBack,
+                                                onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                                                onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                                                onSettingsTap: () => context.push('/settings'),
+                                              ),
+                                              if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
+                                                const SizedBox(height: 8),
+                                                _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                              ],
+                                              const SizedBox(height: 8),
+                                              _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                              const SizedBox(height: 8),
+                                              _RecentHistoryCarousel(
+                                                items: _watchHistory,
+                                                currentAccentColor: currentAccentColor,
+                                                onItemTap: (item) => _openDetailsForHistory(context, item),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 24),
+                                      // ПРАВАЯ КОЛОНКА (flex: 40)
+                                      Expanded(
+                                        flex: 40,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(bottom: 48),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              _StatsCard(
+                                                stats: stats,
+                                                currentAccentColor: currentAccentColor,
+                                                showActivityCharts: _showActivityCharts,
+                                                onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                                              ),
+                                              const SizedBox(height: 14),
+                                              _buildBadgesShowcaseCard(context, currentAccentColor),
+                                              const SizedBox(height: 14),
+                                              _buildOnlineFriendsCard(context, currentAccentColor),
+                                              const SizedBox(height: 14),
+                                              _buildCommentsWallCard(context, profile, currentAccentColor),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                            ],
+                          )
+                        : CustomScrollView(
+                            controller: _scrollController,
+                            physics: const BouncingScrollPhysics(),
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: SteamStyleProfileHeader(
+                                  profile: profile,
+                                  isCurrentUser: isCurrentUser,
+                                  showBackButton: widget.showBackButton,
+                                  onBackTap: widget.onBack,
+                                  onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                                  onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                                  onSettingsTap: () => context.push('/settings'),
+                                ),
+                              ),
+                              if (isCurrentUser && isGuest && !_guestBannerDismissed)
+                                SliverToBoxAdapter(
+                                  child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                ),
+                              // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
+                              SliverToBoxAdapter(
+                                child: _buildMobileSegmentedTabs(currentAccentColor),
+                              ),
+                              if (_selectedMobileTab == 0) ...[
+                                SliverToBoxAdapter(
+                                  child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                ),
+                                SliverToBoxAdapter(
+                                  child: _RecentHistoryCarousel(
+                                    items: _watchHistory,
+                                    currentAccentColor: currentAccentColor,
+                                    onItemTap: (item) => _openDetailsForHistory(context, item),
+                                  ),
+                                ),
+                                SliverToBoxAdapter(
+                                  child: _buildMobileFriendsBanner(context, currentAccentColor),
+                                ),
+                              ] else if (_selectedMobileTab == 1) ...[
+                                SliverToBoxAdapter(
+                                  child: _StatsCard(
+                                    stats: stats,
+                                    currentAccentColor: currentAccentColor,
+                                    showActivityCharts: _showActivityCharts,
+                                    onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                                  ),
+                                ),
+                                SliverToBoxAdapter(
+                                  child: _buildBadgesShowcaseCard(context, currentAccentColor),
+                                ),
+                              ] else ...[
+                                SliverToBoxAdapter(
+                                  child: _buildCommentsWallCard(context, profile, currentAccentColor),
+                                ),
+                              ],
+                              const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                            ],
+                          ),
                   ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildMobileSegmentedTabs(Color accent) {
+    final tabs = [
+      (0, 'Обзор', Icons.auto_awesome_mosaic_rounded),
+      (1, 'Статистика', Icons.bar_chart_rounded),
+      (2, 'Стена', Icons.comment_rounded),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.25),
+                width: 1.1,
+              ),
+            ),
+            child: Row(
+              children: tabs.map((tab) {
+                final index = tab.$1;
+                final label = tab.$2;
+                final icon = tab.$3;
+                final isSelected = _selectedMobileTab == index;
+
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _selectedMobileTab = index);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? accent.withValues(alpha: 0.22)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? accent.withValues(alpha: 0.55)
+                              : Colors.transparent,
+                          width: 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 14,
+                            color: isSelected ? accent : Colors.white60,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                              color: isSelected ? Colors.white : Colors.white60,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileFriendsBanner(BuildContext context, Color accent) {
+    final onlineCount = _onlineFriends.where((f) => f['isOnline'] == true).length;
+    final subtitle = _onlineFriends.isEmpty
+        ? 'Нажмите, чтобы перейти во вкладку «Вместе» и добавить друзей'
+        : '$onlineCount в сети • Нажмите для совместного просмотра';
+
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      onTap: () => showFriendsManagementSheet(
+        context,
+        accentColor: accent,
+        onFriendsChanged: _loadRealFriends,
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.people_alt_rounded, color: accent, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Друзья в сети →',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: accent, size: 22),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFavoriteAnimeShowcase(BuildContext context, UserProfile profile, Color accent) {
+    final title = (profile.favoriteAnimeTitle != null && profile.favoriteAnimeTitle!.isNotEmpty)
+        ? profile.favoriteAnimeTitle!
+        : 'Клинок, рассекающий демонов';
+    final poster = (profile.favoriteAnimePoster != null && profile.favoriteAnimePoster!.isNotEmpty)
+        ? profile.favoriteAnimePoster!
+        : 'https://desu.shikimori.one/system/animes/original/38000.jpg';
+
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.star_rounded, size: 16, color: accent),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'ЛЮБИМЫЙ ТАЙТЛ // ИЗБРАННОЕ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: accent.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  '★ 10/10',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 56,
+                  height: 80,
+                  child: CachedNetworkImage(
+                    imageUrl: wrapCorsSafeUrl(poster),
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                    errorWidget: (_, __, ___) => Container(
+                      color: AppColors.surface,
+                      child: const Icon(Icons.movie_rounded, color: Colors.white38),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Все сезоны просмотрены в SyncPai',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.favorite_rounded, size: 13, color: accent),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Главная рекомендация профиля',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBadgesShowcaseCard(BuildContext context, Color accent) {
+    final badges = SteamBadge.all.take(8).toList();
+
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.military_tech_rounded, size: 16, color: accent),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'РЕДКИЕ ЗНАЧКИ И ДОСТИЖЕНИЯ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${badges.length} шт.',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.white60,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: badges.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.88,
+            ),
+            itemBuilder: (context, index) {
+              final b = badges[index];
+              return Tooltip(
+                message: '${b.title} (Ур. ${b.level})\n${b.description}',
+                child: InkWell(
+                  onTap: () => BadgeDetailsSheet.show(context, badge: b),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: b.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: b.color.withValues(alpha: 0.4), width: 1.0),
+                      boxShadow: [
+                        BoxShadow(
+                          color: b.color.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(b.icon, color: b.color, size: 24),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Ур. ${b.level}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: b.color,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          SizedBox(
+                            width: 64,
+                            child: Text(
+                              b.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOnlineFriendsCard(BuildContext context, Color accent) {
+    final friends = _onlineFriends;
+    final onlineCount = friends.where((f) => f['isOnline'] == true).length;
+
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.people_alt_rounded, size: 16, color: accent),
+              const SizedBox(width: 6),
+              const Flexible(
+                child: Text(
+                  'ДРУЗЬЯ ОНЛАЙН',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.person_add_rounded, size: 16, color: accent),
+                tooltip: 'Управление друзьями',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                onPressed: () => showFriendsManagementSheet(
+                  context,
+                  accentColor: accent,
+                  onFriendsChanged: _loadRealFriends,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00FF66).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF00FF66).withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  '$onlineCount в сети',
+                  style: const TextStyle(
+                    color: Color(0xFF00FF66),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (friends.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.people_outline_rounded, size: 28, color: accent.withValues(alpha: 0.65)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Пока нет друзей онлайн',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Добавьте друзей, чтобы видеть их статус и смотреть аниме синхронно',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => showFriendsManagementSheet(
+                      context,
+                      accentColor: accent,
+                      onFriendsChanged: _loadRealFriends,
+                    ),
+                    icon: Icon(Icons.person_add_alt_1_rounded, size: 15, color: accent),
+                    label: const Text('Найти друзей', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: accent.withValues(alpha: 0.5)),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...friends.map((f) {
+              final room = f['room'] as String?;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                  ),
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          AppAvatar(
+                            avatarUrl: f['avatar'] as String?,
+                            username: f['name'] as String?,
+                            size: 34,
+                          ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: f['isOnline'] == true ? const Color(0xFF57CBDE) : Colors.white38,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: const Color(0xFF14161F), width: 1.5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              f['name'] as String,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              f['status'] as String,
+                              style: TextStyle(
+                                color: room != null ? accent : Colors.white60,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (room != null && room.isNotEmpty)
+                        ElevatedButton(
+                          onPressed: () => context.push('/room/$room'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: AppColors.onColor(accent),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          child: const Text('Войти', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentsWallCard(BuildContext context, UserProfile profile, Color accent) {
+    final comments = _wallComments;
+
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.comment_rounded, size: 16, color: accent),
+              const SizedBox(width: 6),
+              const Flexible(
+                child: Text(
+                  'СТЕНА КОММЕНТАРИЕВ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${comments.length} записи',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.white60,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Поле ввода комментария
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    onSubmitted: (_) => _submitWallComment(profile),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Оставить комментарий в профиле...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 11.5,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => _submitWallComment(profile),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(Icons.send_rounded, size: 17, color: accent),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...comments.map((c) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppAvatar(
+                    avatarUrl: c['avatar'],
+                    username: c['author'],
+                    size: 28,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                c['author'] ?? 'Отаку',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              c['time'] ?? '',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.4),
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          c['text'] ?? '',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -640,9 +1548,9 @@ class _StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final watchTimeStr = stats.formattedTime.isNotEmpty
+    final watchTimeStr = (stats.formattedTime.isNotEmpty && stats.formattedTime != '0 мин.')
         ? stats.formattedTime
-        : '5 ч. 14 мин.';
+        : '4 ч. 36 мин.';
     final totalTitles = stats.totalTitles > 0 ? stats.totalTitles : 4;
     final totalEpisodes = stats.totalEpisodesCompleted > 0 ? stats.totalEpisodesCompleted : 13;
 
@@ -658,16 +1566,20 @@ class _StatsCard extends StatelessWidget {
             children: [
               Icon(Icons.bar_chart_rounded, size: 15, color: currentAccentColor),
               const SizedBox(width: 6),
-              const Text(
-                'СТАТИСТИКА ПРОСМОТРА',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  color: Colors.white,
+              const Expanded(
+                child: Text(
+                  'СТАТИСТИКА ПРОСМОТРА',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 6),
               GestureDetector(
                 onTap: onToggleCharts,
                 child: Container(
@@ -868,7 +1780,10 @@ class _RecentHistoryCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayItems = items.isNotEmpty ? items : _fallbackSampleItems;
+    final rawItems = items.isNotEmpty ? items : _fallbackSampleItems;
+    // Дедупликация по titleId, чтобы серии одного аниме не дублировались карточками
+    final seenIds = <int>{};
+    final displayItems = rawItems.where((i) => seenIds.add(i.titleId)).toList();
 
     return _GlassCard(
       accentColor: currentAccentColor,
@@ -882,13 +1797,17 @@ class _RecentHistoryCarousel extends StatelessWidget {
             children: [
               Icon(Icons.history_rounded, size: 15, color: currentAccentColor),
               const SizedBox(width: 6),
-              Text(
-                'НЕДАВНО ПРОСМОТРЕНО',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  color: currentAccentColor,
+              Flexible(
+                child: Text(
+                  'НЕДАВНО ПРОСМОТРЕНО',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: currentAccentColor,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -1116,19 +2035,21 @@ class _GlassCard extends StatelessWidget {
       child: child,
     );
 
-    return Padding(
-      padding: margin,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: onTap != null
-              ? InkWell(
-                  onTap: onTap,
-                  borderRadius: BorderRadius.circular(20),
-                  child: cardContent,
-                )
-              : cardContent,
+    return RepaintBoundary(
+      child: Padding(
+        padding: margin,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+            child: onTap != null
+                ? InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(20),
+                    child: cardContent,
+                  )
+                : cardContent,
+          ),
         ),
       ),
     );

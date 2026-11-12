@@ -167,7 +167,7 @@ class _MainScreenState extends State<MainScreen> {
   /// Боковой сайдбар на широких экранах (планшеты, десктоп)
   Widget _buildLeftSidebar(BuildContext context, Color themePrimary) {
     return Container(
-      width: 220,
+      width: 230,
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(
@@ -181,24 +181,28 @@ class _MainScreenState extends State<MainScreen> {
         child: Column(
           children: [
             const SizedBox(height: 20),
-            // Логотип приложения
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SyncPaiLogo(
-                  size: 32,
-                  accentColor: themePrimary,
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'SyncPai',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
+            // Логотип приложения с правильными отступами
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SyncPaiLogo(
+                    size: 32,
+                    accentColor: themePrimary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  const Text(
+                    'SyncPai',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 30),
             _buildSidebarItem(0, Icons.movie_outlined, Icons.movie_rounded, 'Каталог', themePrimary),

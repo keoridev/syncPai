@@ -289,6 +289,45 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     );
   }
 
+  Widget _buildDesktopActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    Color iconColor = AppColors.textPrimary,
+  }) {
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: iconColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openTorrentsSheet(BuildContext context) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     scaffoldMessenger.showSnackBar(
@@ -684,6 +723,835 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     );
   }
 
+  Widget _buildWatchButton(BuildContext context, EpisodeItem? currentEpisode, {double? width, double height = 48.0}) {
+    final isAnons = _currentTitle.status.toLowerCase().contains('анонс') ||
+        _currentTitle.status.toLowerCase().contains('скоро');
+
+    if (isAnons) {
+      return SizedBox(
+        width: width,
+        height: height,
+        child: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF261D15),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: Color(0xFFFF9800), width: 1.2),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+          icon: const Icon(Icons.campaign_rounded, color: Color(0xFFFFB74D), size: 22),
+          label: const Text(
+            'Анонс • Добавить в «В планах»',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          onPressed: () {
+            if (getIt.isRegistered<AnimeListCubit>()) {
+              context.read<AnimeListCubit>().setAnimeStatus(
+                animeId: _currentTitle.id,
+                titleRu: _currentTitle.displayTitle,
+                posterUrl: _currentTitle.posterMedium.isNotEmpty
+                    ? _currentTitle.posterMedium
+                    : _currentTitle.posterSmall,
+                status: AnimeListStatus.planned,
+              );
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✨ Анонс добавлен в список «В планах»! Оповестим вас о премьере!'),
+                duration: Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: Color(0xFFE06C53),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    final themePrimary = Theme.of(context).colorScheme.primary;
+    final onThemePrimary = AppColors.onColor(themePrimary);
+
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ElevatedButton(
+        onPressed: _isLoadingDetails
+            ? null
+            : (currentEpisode != null
+                ? () => _requestPlayEpisode(currentEpisode)
+                : () => _loadFullDetails()),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: currentEpisode != null
+              ? themePrimary
+              : AppColors.surfaceElevated,
+          foregroundColor: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
+          elevation: currentEpisode != null ? 3 : 0,
+          shadowColor: themePrimary.withValues(alpha: 0.35),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: currentEpisode != null
+                  ? themePrimary
+                  : AppColors.strokeMedium,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
+        child: _isLoadingDetails
+            ? SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: onThemePrimary,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
+                    size: 24,
+                    color: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        currentEpisode != null && currentEpisode.episode > 1
+                            ? 'Серия ${currentEpisode.episode} • Смотреть'
+                            : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
+                        maxLines: 1,
+                        style: AppTypography.labelLarge.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSecondaryActionsRow(
+    BuildContext context,
+    AnimeTitle title,
+    EpisodeItem? currentEpisode,
+    String backdropUrl, {
+    bool isDesktop = false,
+  }) {
+    if (isDesktop) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDesktopActionButton(
+            icon: Icons.group_outlined,
+            label: 'Вместе',
+            onTap: currentEpisode != null
+                ? () {
+                    widget.onStartSyncRoom?.call(title, currentEpisode);
+                    SyncRoomConfigSheet.show(
+                      context,
+                      title: title,
+                      episode: currentEpisode,
+                      onConfirm: ({
+                        required int maxPeers,
+                        required bool isHostControlOnly,
+                        required PlayerQuality quality,
+                        required String roomCode,
+                      }) {},
+                    );
+                  }
+                : null,
+          ),
+          const SizedBox(width: 10),
+          _buildDesktopActionButton(
+            icon: Icons.movie_outlined,
+            label: 'Трейлеры',
+            onTap: () {
+              context.pushNamed('anime-videos', extra: {
+                'title': _currentTitle.displayTitle,
+                'backdrop': backdropUrl,
+                'videos': _videos,
+              });
+            },
+          ),
+          const SizedBox(width: 10),
+          if (getIt.isRegistered<AnimeListCubit>())
+            BlocBuilder<AnimeListCubit, AnimeListState>(
+              bloc: getIt<AnimeListCubit>(),
+              builder: (context, listState) {
+                final entry = listState.getEntryFor(title.id);
+                final isInList = entry != null;
+                return _buildDesktopActionButton(
+                  icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                  iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
+                  label: isInList ? entry.status.labelRu : 'В закладки',
+                  onTap: () => _showAnimeStatusSheet(context, title, entry),
+                );
+              },
+            ),
+          const SizedBox(width: 10),
+          _buildDesktopActionButton(
+            icon: Icons.cloud_download_outlined,
+            label: 'Скачать',
+            onTap: () => _openTorrentsSheet(context),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildSecondaryActionButton(
+          icon: Icons.group_outlined,
+          label: 'Вместе',
+          onTap: currentEpisode != null
+              ? () {
+                  widget.onStartSyncRoom?.call(title, currentEpisode);
+                  SyncRoomConfigSheet.show(
+                    context,
+                    title: title,
+                    episode: currentEpisode,
+                    onConfirm: ({
+                      required int maxPeers,
+                      required bool isHostControlOnly,
+                      required PlayerQuality quality,
+                      required String roomCode,
+                    }) {},
+                  );
+                }
+              : null,
+        ),
+        _buildSecondaryActionButton(
+          icon: Icons.movie_outlined,
+          label: 'Трейлеры',
+          onTap: () {
+            context.pushNamed('anime-videos', extra: {
+              'title': _currentTitle.displayTitle,
+              'backdrop': backdropUrl,
+              'videos': _videos,
+            });
+          },
+        ),
+        if (getIt.isRegistered<AnimeListCubit>())
+          BlocBuilder<AnimeListCubit, AnimeListState>(
+            bloc: getIt<AnimeListCubit>(),
+            builder: (context, listState) {
+              final entry = listState.getEntryFor(title.id);
+              final isInList = entry != null;
+              return _buildSecondaryActionButton(
+                icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
+                label: isInList ? entry.status.labelRu : 'В закладки',
+                onTap: () => _showAnimeStatusSheet(context, title, entry),
+              );
+            },
+          ),
+        _buildSecondaryActionButton(
+          icon: Icons.cloud_download_outlined,
+          label: 'Скачать',
+          onTap: () => _openTorrentsSheet(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoiceoverSelector(BuildContext context, List<EpisodeItem> episodes) {
+    if (!getIt.isRegistered<KodikCubit>()) return const SizedBox.shrink();
+
+    return BlocBuilder<KodikCubit, KodikState>(
+      bloc: getIt<KodikCubit>(),
+      builder: (context, kodikState) {
+        final isAniLibria = kodikState.isAniLibriaActive;
+        final activeTitle = kodikState.activeVoiceoverTitle;
+        final icon = kodikState.selectedTranslation.displayIcon;
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: TvFocusable(
+            borderRadius: BorderRadius.circular(12),
+            onPressed: () {
+              final epNum = episodes.isNotEmpty
+                  ? episodes[_selectedEpisodeIndex.clamp(0, episodes.length - 1)].episode
+                  : 1;
+              VoiceoverSelectorSheet.show(
+                context,
+                episodeNumber: epNum,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isAniLibria
+                      ? AppColors.strokeMedium
+                      : AppColors.primary.withValues(alpha: 0.5),
+                  width: 1.0,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(icon, style: const TextStyle(fontSize: 14)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Озвучка: ',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  Text(
+                    activeTitle,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: isAniLibria ? AppColors.textPrimary : AppColors.primaryLight,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopHero({
+    required BuildContext context,
+    required AnimeTitle title,
+    required String backdropUrl,
+    required String initialPoster,
+    required EpisodeItem? currentEpisode,
+    required List<EpisodeItem> episodes,
+  }) {
+    final posterImage = initialPoster.isNotEmpty ? initialPoster : backdropUrl;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.spacingXl,
+        AppDimensions.spacingMd,
+        AppDimensions.spacingXl,
+        AppDimensions.spacingLg,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Слева: четкий постер 2:3 (240x360) со скругленными углами и тенью
+          Container(
+            width: 240,
+            height: 360,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.12),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: Hero(
+                tag: 'anime-poster-${title.id}',
+                child: CachedNetworkImage(
+                  imageUrl: wrapCorsSafeUrl(posterImage),
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                  errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
+                    imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                    errorWidget: (context, fallbackUrl, error) => Container(
+                      color: AppColors.surface,
+                      child: const Center(
+                        child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 28),
+
+          // Справа: колонка с метаданными, описанием, озвучкой и действиями
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Метаданные: Статус • Год • Серии
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (title.status.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.4),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Text(
+                          title.status,
+                          style: AppTypography.badge.copyWith(
+                            color: AppColors.primaryLight,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (title.year != null) ...[
+                      Text(
+                        '${title.year}',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Text('•', style: TextStyle(color: AppColors.textMuted)),
+                    ],
+                    Text(
+                      title.episodesBadgeText,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                // Крупное название тайтла
+                Text(
+                  title.displayTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.displayMedium.copyWith(
+                    fontSize: 28,
+                    height: 1.2,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+
+                // Английское название
+                if (title.englishTitle.isNotEmpty && title.englishTitle != title.displayTitle) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    title.englishTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ],
+
+                // Жанры
+                if (title.genres.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    title.genres.join(' • '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Описание
+                if (title.description.isNotEmpty) ...[
+                  GestureDetector(
+                    onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+                    child: Text(
+                      title.description,
+                      maxLines: _isDescriptionExpanded ? null : 3,
+                      overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        height: 1.5,
+                        fontSize: 13.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  if (title.description.length > 120) ...[
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+                      child: Text(
+                        _isDescriptionExpanded ? 'Свернуть' : 'Подробнее',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                ],
+
+                // Выбор озвучки
+                _buildVoiceoverSelector(context, episodes),
+
+                const SizedBox(height: 16),
+
+                // Ряд кнопок действий: компактная «Смотреть» (width: 220) + вторичные кнопки
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _buildWatchButton(context, currentEpisode, width: 220, height: 46),
+                    _buildSecondaryActionsRow(context, title, currentEpisode, backdropUrl, isDesktop: true),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeCard(
+    BuildContext context,
+    AnimeTitle title,
+    EpisodeItem ep,
+    int index,
+    String backdropUrl,
+  ) {
+    final isSelected = index == _selectedEpisodeIndex;
+    final epPreview = ep.previewUrl ?? backdropUrl;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
+      child: TvFocusable(
+        borderRadius: BorderRadius.circular(14),
+        scaleFactor: 1.02,
+        onPressed: () {
+          setState(() => _selectedEpisodeIndex = index);
+          _requestPlayEpisode(ep);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.02),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.6)
+                  : Colors.white.withValues(alpha: 0.06),
+              width: 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Превью серии с наложенной кнопкой Play
+              SizedBox(
+                width: 120,
+                height: 70,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (epPreview.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(epPreview),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 250,
+                          placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                          errorWidget: (context, url, error) {
+                            if (backdropUrl.isNotEmpty && backdropUrl != epPreview) {
+                              return CachedNetworkImage(
+                                imageUrl: wrapCorsSafeUrl(backdropUrl),
+                                fit: BoxFit.cover,
+                                memCacheWidth: 250,
+                                errorWidget: (_, __, ___) => _buildEpisodePlaceholder(ep.episode),
+                              );
+                            }
+                            return _buildEpisodePlaceholder(ep.episode);
+                          },
+                        )
+                      else
+                        _buildEpisodePlaceholder(ep.episode),
+
+                      // Полупрозрачный слой и кнопка Play поверх картинки
+                      Container(
+                        color: isSelected
+                            ? Colors.black.withValues(alpha: 0.35)
+                            : Colors.black45,
+                      ),
+                      Center(
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isSelected
+                                ? AppColors.primary
+                                : Colors.black.withValues(alpha: 0.45),
+                          ),
+                          child: Icon(
+                            Icons.play_arrow,
+                            color: isSelected ? AppColors.onColor(AppColors.primary) : Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: AppDimensions.spacingMd),
+
+              // Текстовая информация о серии
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Серия ${ep.episode}',
+                      style: AppTypography.titleSmall.copyWith(
+                        color: isSelected ? AppColors.primaryLight : AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (ep.name != null && ep.name!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        ep.name!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    if (ep.opening != null) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.fast_forward_rounded,
+                            size: 12,
+                            color: AppColors.primaryLight,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'Опенинг: ${ep.opening!.formattedRange}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              if (ep.fhdUrl != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Text(
+                    '1080p',
+                    style: AppTypography.badge.copyWith(
+                      fontSize: 9.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+
+              // Кнопка фоновой загрузки серии (Download Manager)
+              if (getIt.isRegistered<DownloadCubit>()) ...[
+                const SizedBox(width: 4),
+                BlocBuilder<DownloadCubit, DownloadState>(
+                  bloc: getIt<DownloadCubit>(),
+                  builder: (context, dlState) {
+                    final isDownloaded = dlState.isDownloaded(title.id, ep.episode);
+                    final task = dlState.getTask(title.id, ep.episode);
+                    final isDownloading = task?.status == DownloadStatus.downloading;
+
+                    if (isDownloading) {
+                      final pct = ((task?.progress ?? 0) * 100).toInt();
+                      return SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: task?.progress,
+                                  strokeWidth: 2.2,
+                                  color: AppColors.accentSecondary,
+                                  backgroundColor: Colors.white12,
+                                ),
+                                Text(
+                                  '$pct%',
+                                  style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (isDownloaded) {
+                      return SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: IconButton(
+                          padding: const EdgeInsets.all(10),
+                          icon: const Icon(
+                            Icons.check_circle_rounded,
+                            color: AppColors.syncActive,
+                            size: 22,
+                          ),
+                          tooltip: 'Серия скачана офлайн (нажмите для удаления)',
+                          onPressed: () => _showDeleteDownloadDialog(context, title, ep),
+                        ),
+                      );
+                    }
+
+                    return SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: IconButton(
+                        padding: const EdgeInsets.all(10),
+                        icon: const Icon(
+                          Icons.download_for_offline_outlined,
+                          color: AppColors.textSecondary,
+                          size: 22,
+                        ),
+                        tooltip: 'Скачать для офлайн-просмотра',
+                        onPressed: () async {
+                          String? streamUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
+                          EpisodeItem downloadEp = ep;
+                          if (getIt.isRegistered<KodikCubit>()) {
+                            final kodikCubit = getIt<KodikCubit>();
+                            if (!kodikCubit.state.isAniLibriaActive) {
+                              final resolved = await kodikCubit.getStreamForEpisode(ep.episode);
+                              if (resolved != null && resolved.isNotEmpty) {
+                                streamUrl = resolved;
+                                downloadEp = EpisodeItem(
+                                  episode: ep.episode,
+                                  name: '${ep.name ?? "Серия ${ep.episode}"} (${kodikCubit.state.activeVoiceoverTitle})',
+                                  fhdUrl: resolved,
+                                  hdUrl: resolved,
+                                  sdUrl: resolved,
+                                  previewUrl: ep.previewUrl,
+                                );
+                              }
+                            }
+                          }
+                          if (streamUrl != null && streamUrl.isNotEmpty) {
+                            final quality = downloadEp.fhdUrl != null ? '1080p FHD' : (downloadEp.hdUrl != null ? '720p HD' : '480p SD');
+                            getIt<DownloadCubit>().startSmartDownload(
+                              title: title,
+                              episode: downloadEp,
+                              quality: quality,
+                            );
+                            final hasNext = title.episodes.any((e) => e.episode == ep.episode + 1);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  hasNext
+                                      ? 'Умная загрузка: качаем ${ep.episode} серию и готовим ${ep.episode + 1}...'
+                                      : 'Загрузка ${ep.episode} серии началась...',
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
 
 
   @override
@@ -717,510 +1585,358 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         : (episodes.isNotEmpty ? episodes.first : null);
 
     final screenHeight = MediaQuery.sizeOf(context).height;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 900;
     final backdropHeight = (screenHeight * 0.44).clamp(340.0, 480.0);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          CustomScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // 1. Cinematic Backdrop Header в SliverAppBar с эффектом параллакса и динамического размытия
-              SliverAppBar(
-                expandedHeight: backdropHeight,
-                pinned: true,
-                stretch: true,
-                backgroundColor: AppColors.background,
-                automaticallyImplyLeading: false,
-                flexibleSpace: FlexibleSpaceBar(
-                  collapseMode: CollapseMode.parallax,
-                  stretchModes: const [
-                    StretchMode.zoomBackground,
-                    StretchMode.blurBackground,
-                  ],
-                  background: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final double maxH = backdropHeight;
-                      final double minH = kToolbarHeight + MediaQuery.paddingOf(context).top;
-                      final double currentH = constraints.maxHeight;
-                      final double collapseRatio = ((maxH - currentH) / (maxH - minH)).clamp(0.0, 1.0);
-
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          // Четкий оригинальный HD-арт без размытия и потери детализации
-                          if (backdropUrl.isNotEmpty)
-                            Hero(
-                              tag: 'anime-poster-${title.id}',
-                              child: CachedNetworkImage(
-                                imageUrl: wrapCorsSafeUrl(backdropUrl),
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter,
-                                memCacheWidth: 1080,
-                                filterQuality: FilterQuality.medium,
-                                httpHeaders: const {
-                                  'User-Agent': 'SyncPai-App/1.0',
-                                  'Referer': 'https://shikimori.io/',
-                                },
-                                placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                                errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
-                                  imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
-                                  memCacheWidth: 1080,
-                                  fit: BoxFit.cover,
-                                  alignment: Alignment.topCenter,
-                                  placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                                  errorWidget: (context, fallbackUrl, error) => Container(
-                                    color: AppColors.surface,
-                                    child: const Center(
-                                      child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // Затемнение при сжатии
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: collapseRatio * 0.70),
-                            ),
-                          ),
-
-                          // Верхний затемняющий градиент под статус-бар и кнопку «Назад»
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: 140,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.85),
-                                    Colors.black.withValues(alpha: 0.40),
-                                    Colors.transparent,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Нижний кинематографичный градиент: бесшовное глубокое растворение в фон экрана
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  stops: const [0.0, 0.25, 0.55, 0.80, 1.0],
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.30),
-                                    AppColors.background.withValues(alpha: 0.75),
-                                    AppColors.background.withValues(alpha: 0.95),
-                                    AppColors.background,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Текстовый блок поверх нижнего растворения (плавно растворяется при скролле вверх)
-                          Positioned(
-                            left: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
-                            right: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
-                            bottom: 0,
-                            child: Opacity(
-                              opacity: (1.0 - collapseRatio * 1.8).clamp(0.0, 1.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Метаданные: Статус • Год • Серии
-                                  Wrap(
-                                    crossAxisAlignment: WrapCrossAlignment.center,
-                                    spacing: 8,
-                                    runSpacing: 4,
-                                    children: [
-                                      if (title.status.isNotEmpty) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary.withValues(alpha: 0.18),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: AppColors.primary.withValues(alpha: 0.4),
-                                              width: 0.8,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            title.status,
-                                            style: AppTypography.badge.copyWith(
-                                              color: AppColors.primaryLight,
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (title.year != null) ...[
-                                        Text(
-                                          '${title.year}',
-                                          style: AppTypography.labelMedium.copyWith(
-                                            color: AppColors.textSecondary,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const Text('•', style: TextStyle(color: AppColors.textMuted)),
-                                      ],
-                                      Text(
-                                        title.episodesBadgeText,
-                                        style: AppTypography.labelMedium.copyWith(
-                                          color: AppColors.textSecondary,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const SizedBox(height: 8),
-
-                                  // Крупное название тайтла с четкими тенями для безупречной читаемости на светлых постерах
-                                  Text(
-                                    title.displayTitle,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTypography.displayMedium.copyWith(
-                                      fontSize: MediaQuery.sizeOf(context).width <= 360 ? 19.0 : 24.0,
-                                      height: 1.2,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
-                                      color: AppColors.textPrimary,
-                                      shadows: const [
-                                        Shadow(color: Colors.black, blurRadius: 16, offset: Offset(0, 2)),
-                                        Shadow(color: Colors.black87, blurRadius: 30),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Английское название (если отличается)
-                                  if (title.englishTitle.isNotEmpty &&
-                                      title.englishTitle != title.displayTitle) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      title.englishTitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTypography.bodySmall.copyWith(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 12.5,
-                                        shadows: const [
-                                          Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-
-                                  // Жанры через точку без серых плашек с глубокой тенью
-                                  if (title.genres.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      title.genres.join(' • '),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTypography.bodySmall.copyWith(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w400,
-                                        shadows: const [
-                                          Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Stack(
+            children: [
+              CustomScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  if (isDesktop) ...[
+                    const SliverToBoxAdapter(child: SizedBox(height: 56)),
+                    SliverToBoxAdapter(
+                      child: _buildDesktopHero(
+                        context: context,
+                        title: title,
+                        backdropUrl: backdropUrl,
+                        initialPoster: initialPoster,
+                        currentEpisode: currentEpisode,
+                        episodes: episodes,
+                      ),
+                    ),
+                  ] else ...[
+                    // 1. Cinematic Backdrop Header в SliverAppBar с эффектом параллакса и динамического размытия
+                    SliverAppBar(
+                      expandedHeight: backdropHeight,
+                      pinned: true,
+                      stretch: true,
+                      backgroundColor: AppColors.background,
+                      automaticallyImplyLeading: false,
+                      flexibleSpace: FlexibleSpaceBar(
+                        collapseMode: CollapseMode.parallax,
+                        stretchModes: const [
+                          StretchMode.zoomBackground,
+                          StretchMode.blurBackground,
                         ],
-                      );
-                    },
-                  ),
-                ),
-              ),
+                        background: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final double maxH = backdropHeight;
+                            final double minH = kToolbarHeight + MediaQuery.paddingOf(context).top;
+                            final double currentH = constraints.maxHeight;
+                            final double collapseRatio = ((maxH - currentH) / (maxH - minH)).clamp(0.0, 1.0);
 
-              // 2. Блок действий: Главная кнопка «Смотреть» во всю ширину + аккуратный ряд действий с подписями
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
-                    AppDimensions.spacingLg,
-                    MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
-                    AppDimensions.spacingMd,
-                  ),
-                  child: Column(
-                    children: [
-                      // Главная кнопка «Смотреть»: крупная, акцентная моно-пилюля во всю ширину
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: Builder(
-                          builder: (context) {
-                            final isAnons = _currentTitle.status.toLowerCase().contains('анонс') ||
-                                _currentTitle.status.toLowerCase().contains('скоро');
-
-                            if (isAnons) {
-                              return ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF261D15),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: const BorderSide(color: Color(0xFFFF9800), width: 1.2),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                ),
-                                icon: const Icon(Icons.campaign_rounded, color: Color(0xFFFFB74D), size: 22),
-                                label: const Text(
-                                  'Анонс • Добавить в «В планах»',
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                                ),
-                                onPressed: () {
-                                  if (getIt.isRegistered<AnimeListCubit>()) {
-                                    context.read<AnimeListCubit>().setAnimeStatus(
-                                      animeId: _currentTitle.id,
-                                      titleRu: _currentTitle.displayTitle,
-                                      posterUrl: _currentTitle.posterMedium.isNotEmpty
-                                          ? _currentTitle.posterMedium
-                                          : _currentTitle.posterSmall,
-                                      status: AnimeListStatus.planned,
-                                    );
-                                  }
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('✨ Анонс добавлен в список «В планах»! Оповестим вас о премьере!'),
-                                      duration: Duration(seconds: 2),
-                                      behavior: SnackBarBehavior.floating,
-                                      backgroundColor: Color(0xFFE06C53),
-                                    ),
-                                  );
-                                },
-                              );
-                            }
-
-                            return ElevatedButton(
-                              onPressed: _isLoadingDetails
-                                  ? null
-                                  : (currentEpisode != null
-                                      ? () => _requestPlayEpisode(currentEpisode)
-                                      : () => _loadFullDetails()),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: currentEpisode != null
-                                    ? Theme.of(context).colorScheme.primary
-                                    : AppColors.surfaceElevated,
-                                foregroundColor: AppColors.textPrimary,
-                                elevation: currentEpisode != null ? 3 : 0,
-                                shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  side: BorderSide(
-                                    color: currentEpisode != null
-                                        ? Theme.of(context).colorScheme.primary
-                                        : AppColors.strokeMedium,
-                                  ),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                              ),
-                              child: _isLoadingDetails
-                                  ? const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // Четкий оригинальный HD-арт без размытия и потери детализации
+                                if (backdropUrl.isNotEmpty)
+                                  Hero(
+                                    tag: 'anime-poster-${title.id}',
+                                    child: CachedNetworkImage(
+                                      imageUrl: wrapCorsSafeUrl(backdropUrl),
+                                      fit: BoxFit.cover,
+                                      alignment: Alignment.topCenter,
+                                      memCacheWidth: 1080,
+                                      filterQuality: FilterQuality.medium,
+                                      httpHeaders: const {
+                                        'User-Agent': 'SyncPai-App/1.0',
+                                        'Referer': 'https://shikimori.io/',
+                                      },
+                                      placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                                      errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
+                                        imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
+                                        memCacheWidth: 1080,
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.topCenter,
+                                        placeholder: (context, url) => const ColoredBox(color: Colors.black26),
+                                        errorWidget: (context, fallbackUrl, error) => Container(
+                                          color: AppColors.surface,
+                                          child: const Center(
+                                            child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                                          ),
+                                        ),
                                       ),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                    ),
+                                  ),
+
+                                // Затемнение при сжатии
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: collapseRatio * 0.70),
+                                  ),
+                                ),
+
+                                // Верхний затемняющий градиент под статус-бар и кнопку «Назад»
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: 140,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.85),
+                                          Colors.black.withValues(alpha: 0.40),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                // Нижний кинематографичный градиент: бесшовное глубокое растворение в фон экрана
+                                Positioned.fill(
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        stops: const [0.0, 0.25, 0.55, 0.80, 1.0],
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black.withValues(alpha: 0.30),
+                                          AppColors.background.withValues(alpha: 0.75),
+                                          AppColors.background.withValues(alpha: 0.95),
+                                          AppColors.background,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                // Текстовый блок поверх нижнего растворения (плавно растворяется при скролле вверх)
+                                Positioned(
+                                  left: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                                  right: MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                                  bottom: 0,
+                                  child: Opacity(
+                                    opacity: (1.0 - collapseRatio * 1.8).clamp(0.0, 1.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(
-                                          currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
-                                          size: 24,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Flexible(
-                                          child: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Text(
-                                              currentEpisode != null && currentEpisode.episode > 1
-                                                  ? 'Серия ${currentEpisode.episode} • Смотреть'
-                                                  : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
-                                              maxLines: 1,
-                                              style: AppTypography.labelLarge.copyWith(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700,
-                                                letterSpacing: -0.2,
+                                        // Метаданные: Статус • Год • Серии
+                                        Wrap(
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          spacing: 8,
+                                          runSpacing: 4,
+                                          children: [
+                                            if (title.status.isNotEmpty) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 3,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.primary.withValues(alpha: 0.18),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: AppColors.primary.withValues(alpha: 0.4),
+                                                    width: 0.8,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  title.status,
+                                                  style: AppTypography.badge.copyWith(
+                                                    color: AppColors.primaryLight,
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                            if (title.year != null) ...[
+                                              Text(
+                                                '${title.year}',
+                                                style: AppTypography.labelMedium.copyWith(
+                                                  color: AppColors.textSecondary,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              const Text('•', style: TextStyle(color: AppColors.textMuted)),
+                                            ],
+                                            Text(
+                                              title.episodesBadgeText,
+                                              style: AppTypography.labelMedium.copyWith(
+                                                color: AppColors.textSecondary,
+                                                fontWeight: FontWeight.w500,
                                               ),
                                             ),
+                                          ],
+                                        ),
+
+                                        const SizedBox(height: 8),
+
+                                        // Крупное название тайтла
+                                        Text(
+                                          title.displayTitle,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.displayMedium.copyWith(
+                                            fontSize: MediaQuery.sizeOf(context).width <= 360 ? 19.0 : 24.0,
+                                            height: 1.2,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.3,
+                                            color: AppColors.textPrimary,
+                                            shadows: const [
+                                              Shadow(color: Colors.black, blurRadius: 16, offset: Offset(0, 2)),
+                                              Shadow(color: Colors.black87, blurRadius: 30),
+                                            ],
                                           ),
                                         ),
+
+                                        // Английское название (если отличается)
+                                        if (title.englishTitle.isNotEmpty &&
+                                            title.englishTitle != title.displayTitle) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            title.englishTitle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTypography.bodySmall.copyWith(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12.5,
+                                              shadows: const [
+                                                Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+
+                                        // Жанры через точку без серых плашек с глубокой тенью
+                                        if (title.genres.isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            title.genres.join(' • '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTypography.bodySmall.copyWith(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w400,
+                                              shadows: const [
+                                                Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
                       ),
-
-                      const SizedBox(height: 14),
-
-                      // Второстепенные действия в равномерный ряд с подписями
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildSecondaryActionButton(
-                            icon: Icons.group_outlined,
-                            label: 'Вместе',
-                            onTap: currentEpisode != null
-                                ? () {
-                                    widget.onStartSyncRoom?.call(title, currentEpisode);
-                                    SyncRoomConfigSheet.show(
-                                      context,
-                                      title: title,
-                                      episode: currentEpisode,
-                                      onConfirm: ({
-                                        required int maxPeers,
-                                        required bool isHostControlOnly,
-                                        required PlayerQuality quality,
-                                        required String roomCode,
-                                      }) {},
-                                    );
-                                  }
-                                : null,
-                          ),
-                          _buildSecondaryActionButton(
-                            icon: Icons.movie_outlined,
-                            label: 'Трейлеры',
-                            onTap: () {
-                              context.pushNamed('anime-videos', extra: {
-                                'title': _currentTitle.displayTitle,
-                                'backdrop': backdropUrl,
-                                'videos': _videos,
-                              });
-                            },
-                          ),
-                          if (getIt.isRegistered<AnimeListCubit>())
-                            BlocBuilder<AnimeListCubit, AnimeListState>(
-                              bloc: getIt<AnimeListCubit>(),
-                              builder: (context, listState) {
-                                final entry = listState.getEntryFor(title.id);
-                                final isInList = entry != null;
-                                return _buildSecondaryActionButton(
-                                  icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                                  iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
-                                  label: isInList ? entry.status.labelRu : 'В закладки',
-                                  onTap: () => _showAnimeStatusSheet(context, title, entry),
-                                );
-                              },
-                            ),
-                          _buildSecondaryActionButton(
-                            icon: Icons.cloud_download_outlined,
-                            label: 'Скачать',
-                            onTap: () => _openTorrentsSheet(context),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Чип выбора студии озвучки и перевода (AniLibria / Kodik)
-              if (getIt.isRegistered<KodikCubit>())
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimensions.spacingXl,
-                      0,
-                      AppDimensions.spacingXl,
-                      AppDimensions.spacingMd,
                     ),
-                    child: BlocBuilder<KodikCubit, KodikState>(
-                      bloc: getIt<KodikCubit>(),
-                      builder: (context, kodikState) {
-                        final isAniLibria = kodikState.isAniLibriaActive;
-                        final activeTitle = kodikState.activeVoiceoverTitle;
-                        final icon = kodikState.selectedTranslation.displayIcon;
 
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: TvFocusable(
-                            borderRadius: BorderRadius.circular(12),
-                            onPressed: () {
-                              final epNum = episodes.isNotEmpty
-                                  ? episodes[_selectedEpisodeIndex.clamp(0, episodes.length - 1)].episode
-                                  : 1;
-                              VoiceoverSelectorSheet.show(
-                                context,
-                                episodeNumber: epNum,
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isAniLibria
-                                      ? AppColors.strokeMedium
-                                      : AppColors.primary.withValues(alpha: 0.5),
-                                  width: 1.0,
+                    // 2. Блок действий: Главная кнопка «Смотреть» во всю ширину + аккуратный ряд действий с подписями
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                          AppDimensions.spacingLg,
+                          MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                          AppDimensions.spacingMd,
+                        ),
+                        child: Column(
+                          children: [
+                            _buildWatchButton(context, currentEpisode),
+                            const SizedBox(height: 14),
+                            _buildSecondaryActionsRow(context, title, currentEpisode, backdropUrl),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Чип выбора студии озвучки и перевода (AniLibria / Kodik)
+                    if (getIt.isRegistered<KodikCubit>())
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppDimensions.spacingXl,
+                            0,
+                            AppDimensions.spacingXl,
+                            AppDimensions.spacingMd,
+                          ),
+                          child: _buildVoiceoverSelector(context, episodes),
+                        ),
+                      ),
+
+                    // Описание тайтла (мобильное раскрывающееся)
+                    if (title.description.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppDimensions.spacingXl,
+                            vertical: AppDimensions.spacingSm,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Сюжет',
+                                style: AppTypography.titleMedium.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(icon, style: const TextStyle(fontSize: 14)),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Озвучка: ',
-                                    style: AppTypography.labelMedium.copyWith(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                  Text(
-                                    activeTitle,
-                                    style: AppTypography.labelMedium.copyWith(
-                                      color: isAniLibria ? AppColors.textPrimary : AppColors.primaryLight,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    size: 18,
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _isDescriptionExpanded = !_isDescriptionExpanded;
+                                  });
+                                },
+                                child: Text(
+                                  title.description,
+                                  maxLines: _isDescriptionExpanded ? null : 3,
+                                  overflow: _isDescriptionExpanded
+                                      ? TextOverflow.visible
+                                      : TextOverflow.ellipsis,
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    height: 1.55,
+                                    fontSize: 13.5,
                                     color: AppColors.textSecondary,
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                              if (title.description.length > 120) ...[
+                                const SizedBox(height: 4),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _isDescriptionExpanded = !_isDescriptionExpanded;
+                                    });
+                                  },
+                                  child: Text(
+                                    _isDescriptionExpanded ? 'Свернуть' : 'Подробнее',
+                                    style: AppTypography.labelMedium.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
+                        ),
+                      ),
+                  ],
 
               // Блок напоминания о недосмотренной серии (ResumeProgressCard)
               if (getIt.isRegistered<WatchHistoryCubit>())
@@ -1261,68 +1977,6 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   },
                 ),
 
-              // Описание тайтла (раскрывающееся, аккуратная типографика)
-              if (title.description.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppDimensions.spacingXl,
-                      vertical: AppDimensions.spacingSm,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Сюжет',
-                          style: AppTypography.titleMedium.copyWith(
-                            color: AppColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _isDescriptionExpanded = !_isDescriptionExpanded;
-                            });
-                          },
-                          child: Text(
-                            title.description,
-                            maxLines: _isDescriptionExpanded ? null : 3,
-                            overflow: _isDescriptionExpanded
-                                ? TextOverflow.visible
-                                : TextOverflow.ellipsis,
-                            style: AppTypography.bodyMedium.copyWith(
-                              height: 1.55,
-                              fontSize: 13.5,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                        if (title.description.length > 120) ...[
-                          const SizedBox(height: 4),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _isDescriptionExpanded = !_isDescriptionExpanded;
-                              });
-                            },
-                            child: Text(
-                              _isDescriptionExpanded ? 'Свернуть' : 'Подробнее',
-                              style: AppTypography.labelMedium.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-
               // Сегментированный переключатель вкладок через TabBar с кастомным индикатором (анимация скольжения)
               SliverToBoxAdapter(
                 child: Padding(
@@ -1357,7 +2011,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       ),
                       indicatorSize: TabBarIndicatorSize.tab,
                       dividerColor: Colors.transparent,
-                      labelColor: AppColors.textPrimary,
+                      labelColor: AppColors.onColor(AppColors.primary),
                       unselectedLabelColor: AppColors.textSecondary,
                       labelStyle: const TextStyle(
                         fontSize: 12.5,
@@ -1509,305 +2163,25 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 if (episodes.isNotEmpty)
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final ep = episodes[index];
-                          final isSelected = index == _selectedEpisodeIndex;
-                          final epPreview = ep.previewUrl ?? backdropUrl;
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
-                            child: TvFocusable(
-                              borderRadius: BorderRadius.circular(14),
-                              scaleFactor: 1.02,
-                              onPressed: () {
-                                setState(() => _selectedEpisodeIndex = index);
-                                _requestPlayEpisode(ep);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? Colors.white.withValues(alpha: 0.06)
-                                      : Colors.white.withValues(alpha: 0.02),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? AppColors.primary.withValues(alpha: 0.6)
-                                        : Colors.white.withValues(alpha: 0.06),
-                                    width: 1.0,
-                                  ),
-                                ),
-                                child: Row(
-                                    children: [
-                                      // Превью серии с наложенной кнопкой Play
-                                      SizedBox(
-                                        width: 120,
-                                        height: 70,
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              if (epPreview.isNotEmpty)
-                                                CachedNetworkImage(
-                                                  imageUrl: wrapCorsSafeUrl(epPreview),
-                                                  fit: BoxFit.cover,
-                                                  memCacheWidth: 250,
-                                                  placeholder: (context, url) =>
-                                                      const ColoredBox(color: Colors.black26),
-                                                  errorWidget: (context, url, error) {
-                                                    if (backdropUrl.isNotEmpty && backdropUrl != epPreview) {
-                                                      return CachedNetworkImage(
-                                                        imageUrl: wrapCorsSafeUrl(backdropUrl),
-                                                        fit: BoxFit.cover,
-                                                        memCacheWidth: 250,
-                                                        errorWidget: (_, __, ___) => _buildEpisodePlaceholder(ep.episode),
-                                                      );
-                                                    }
-                                                    return _buildEpisodePlaceholder(ep.episode);
-                                                  },
-                                                )
-                                              else
-                                                _buildEpisodePlaceholder(ep.episode),
-
-                                              // Полупрозрачный слой и кнопка Play поверх картинки
-                                              Container(
-                                                color: isSelected
-                                                    ? Colors.black.withValues(alpha: 0.35)
-                                                    : Colors.black45,
-                                              ),
-                                              Center(
-                                                child: Container(
-                                                  width: 32,
-                                                  height: 32,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: isSelected
-                                                        ? AppColors.primary
-                                                        : Colors.black.withValues(alpha: 0.45),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.play_arrow,
-                                                    color: Colors.white,
-                                                    size: 22,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-
-                                      const SizedBox(width: AppDimensions.spacingMd),
-
-                                      // Текстовая информация о серии
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Серия ${ep.episode}',
-                                              style: AppTypography.titleSmall.copyWith(
-                                                color: isSelected
-                                                    ? AppColors.primaryLight
-                                                    : AppColors.textPrimary,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            if (ep.name != null && ep.name!.isNotEmpty) ...[
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                ep.name!,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: AppTypography.bodySmall.copyWith(
-                                                  color: AppColors.textSecondary,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                            if (ep.opening != null) ...[
-                                              const SizedBox(height: 3),
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.fast_forward_rounded,
-                                                    size: 12,
-                                                    color: AppColors.primaryLight,
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Flexible(
-                                                    child: Text(
-                                                      'Опенинг: ${ep.opening!.formattedRange}',
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: AppTypography.caption.copyWith(
-                                                        color: AppColors.textMuted,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-
-                                      if (ep.fhdUrl != null)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.06),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: Colors.white.withValues(alpha: 0.08),
-                                              width: 0.8,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '1080p',
-                                            style: AppTypography.badge.copyWith(
-                                              fontSize: 9.5,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ),
-
-                                      // Кнопка фоновой загрузки серии (Download Manager)
-                                      if (getIt.isRegistered<DownloadCubit>()) ...[
-                                        const SizedBox(width: 4),
-                                        BlocBuilder<DownloadCubit, DownloadState>(
-                                          bloc: getIt<DownloadCubit>(),
-                                          builder: (context, dlState) {
-                                            final isDownloaded = dlState.isDownloaded(title.id, ep.episode);
-                                            final task = dlState.getTask(title.id, ep.episode);
-                                            final isDownloading = task?.status == DownloadStatus.downloading;
-
-                                            if (isDownloading) {
-                                              final pct = ((task?.progress ?? 0) * 100).toInt();
-                                              return SizedBox(
-                                                width: 44,
-                                                height: 44,
-                                                child: Center(
-                                                  child: SizedBox(
-                                                    width: 28,
-                                                    height: 28,
-                                                    child: Stack(
-                                                      alignment: Alignment.center,
-                                                      children: [
-                                                        CircularProgressIndicator(
-                                                          value: task?.progress,
-                                                          strokeWidth: 2.2,
-                                                          color: AppColors.accentSecondary,
-                                                          backgroundColor: Colors.white12,
-                                                        ),
-                                                        Text(
-                                                          '$pct%',
-                                                          style: const TextStyle(
-                                                            fontSize: 8,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Colors.white,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              );
-                                            }
-
-                                            if (isDownloaded) {
-                                              return SizedBox(
-                                                width: 44,
-                                                height: 44,
-                                                child: IconButton(
-                                                  padding: const EdgeInsets.all(10),
-                                                  icon: const Icon(
-                                                    Icons.check_circle_rounded,
-                                                    color: AppColors.syncActive,
-                                                    size: 22,
-                                                  ),
-                                                  tooltip: 'Серия скачана офлайн (нажмите для удаления)',
-                                                  onPressed: () => _showDeleteDownloadDialog(context, title, ep),
-                                                ),
-                                              );
-                                            }
-
-                                            return SizedBox(
-                                              width: 44,
-                                              height: 44,
-                                              child: IconButton(
-                                                padding: const EdgeInsets.all(10),
-                                                icon: const Icon(
-                                                  Icons.download_for_offline_outlined,
-                                                  color: AppColors.textSecondary,
-                                                  size: 22,
-                                                ),
-                                                tooltip: 'Скачать для офлайн-просмотра',
-                                                onPressed: () async {
-                                                  String? streamUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
-                                                  EpisodeItem downloadEp = ep;
-                                                  if (getIt.isRegistered<KodikCubit>()) {
-                                                    final kodikCubit = getIt<KodikCubit>();
-                                                    if (!kodikCubit.state.isAniLibriaActive) {
-                                                      final resolved = await kodikCubit.getStreamForEpisode(ep.episode);
-                                                      if (resolved != null && resolved.isNotEmpty) {
-                                                        streamUrl = resolved;
-                                                        downloadEp = EpisodeItem(
-                                                          episode: ep.episode,
-                                                          name: '${ep.name ?? "Серия ${ep.episode}"} (${kodikCubit.state.activeVoiceoverTitle})',
-                                                          fhdUrl: resolved,
-                                                          hdUrl: resolved,
-                                                          sdUrl: resolved,
-                                                          previewUrl: ep.previewUrl,
-                                                        );
-                                                      }
-                                                    }
-                                                  }
-                                                  if (streamUrl != null && streamUrl.isNotEmpty) {
-                                                    final quality = downloadEp.fhdUrl != null ? '1080p FHD' : (downloadEp.hdUrl != null ? '720p HD' : '480p SD');
-                                                    getIt<DownloadCubit>().startSmartDownload(
-                                                      title: title,
-                                                      episode: downloadEp,
-                                                      quality: quality,
-                                                    );
-                                                    final hasNext = title.episodes.any((e) => e.episode == ep.episode + 1);
-                                                    if (!context.mounted) return;
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          hasNext
-                                                              ? 'Умная загрузка: качаем ${ep.episode} серию и готовим ${ep.episode + 1}...'
-                                                              : 'Загрузка ${ep.episode} серии началась...',
-                                                        ),
-                                                        behavior: SnackBarBehavior.floating,
-                                                        duration: const Duration(seconds: 2),
-                                                      ),
-                                                    );
-                                                  }
-                                                },
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        childCount: episodes.length,
-                      ),
-                    ),
+                    sliver: isDesktop
+                        ? SliverGrid(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 4.2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 10,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildEpisodeCard(context, title, episodes[index], index, backdropUrl),
+                              childCount: episodes.length,
+                            ),
+                          )
+                        : SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildEpisodeCard(context, title, episodes[index], index, backdropUrl),
+                              childCount: episodes.length,
+                            ),
+                          ),
                   )
                 else
                   SliverToBoxAdapter(
@@ -2081,7 +2455,9 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildEpisodePlaceholder(int episodeNum) {

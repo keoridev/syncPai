@@ -28,6 +28,7 @@ abstract final class AppTheme {
     Color? surfaceElevatedColor,
   }) {
     final primary = primaryColor ?? AppColors.primary;
+    final onPrimary = AppColors.onColor(primary);
     final bg = backgroundColor ?? AppColors.background;
     final surf = surfaceColor ?? AppColors.surface;
     final surfElevated = surfaceElevatedColor ?? AppColors.surfaceElevated;
@@ -42,8 +43,9 @@ abstract final class AppTheme {
       // ColorScheme
       colorScheme: ColorScheme.dark(
         primary: primary,
-        onPrimary: AppColors.textPrimary,
+        onPrimary: onPrimary,
         primaryContainer: primary.withValues(alpha: 0.8),
+        onPrimaryContainer: onPrimary,
         surface: surf,
         onSurface: AppColors.textPrimary,
         surfaceContainerHighest: surfElevated,

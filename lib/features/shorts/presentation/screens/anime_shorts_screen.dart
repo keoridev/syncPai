@@ -115,15 +115,17 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
             ? getIt<AnimeListCubit>()
             : null;
         if (listCubit != null) {
-          await listCubit.setAnimeStatus(
-            animeId: clip.animeId,
-            titleRu: clip.animeTitle,
-            posterUrl: clip.posterUrl,
-            status: newStatus
-                ? AnimeListStatus.watching
-                : AnimeListStatus.planned,
-            lastEpisode: clip.episodeNumber,
-          );
+          if (newStatus) {
+            await listCubit.setAnimeStatus(
+              animeId: clip.animeId,
+              titleRu: clip.animeTitle,
+              posterUrl: clip.posterUrl,
+              status: AnimeListStatus.planned,
+              lastEpisode: clip.episodeNumber,
+            );
+          } else {
+            await listCubit.removeAnime(clip.animeId);
+          }
         }
       } catch (_) {}
 
@@ -140,7 +142,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
         SnackBar(
           content: Text(
             newStatus
-                ? '«${clip.animeTitle}» добавлено в список «Смотрю»'
+                ? '«${clip.animeTitle}» добавлено в список «В планах»'
                 : 'Тайтл удален из закладок',
           ),
           behavior: SnackBarBehavior.floating,

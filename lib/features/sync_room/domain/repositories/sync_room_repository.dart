@@ -59,6 +59,22 @@ abstract class SyncRoomRepository {
     required bool isPlaying,
   });
 
+  /// Отправка события синхронизации плеера (playback_sync) по PIN-коду комнаты
+  Future<void> broadcastPlayback({
+    required String roomCode,
+    required double time,
+    required bool isPlaying,
+    required int episode,
+  }) async {
+    await sendSyncEvent(roomCode: roomCode, time: time, isPlaying: isPlaying);
+  }
+
+  /// Подписка на Realtime-канал синхронизации плеера (playback_sync) по PIN-коду
+  void subscribeToPlaybackSync(
+    String pinCode, {
+    required void Function(double time, bool isPlaying, int episode) onSyncReceived,
+  }) {}
+
   /// BUFFER_WAIT / BUFFER_READY: состояние буферизации
   Future<void> sendBufferState({
     required String roomCode,

@@ -24,6 +24,13 @@ abstract final class AppColors {
   static Color get primaryLight => _primaryLight;
   static Color get accentPrimary => _primary;
 
+  /// Автоматический контрастный цвет (черный или белый) в зависимости от яркости цвета
+  static Color onColor(Color color) =>
+      color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+
+  /// Контрастный цвет для текущего акцентного цвета (onPrimary)
+  static Color get onPrimary => onColor(_primary);
+
   /// Динамическое обновление активного акцентного цвета для всего приложения
   static void updatePrimaryColor(Color color) {
     _primary = color;

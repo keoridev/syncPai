@@ -17,12 +17,15 @@ import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
+import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../domain/entities/sync_room.dart';
 import '../../domain/repositories/sync_room_repository.dart';
+import '../../services/room_audio_devices_service.dart';
 import '../cubit/sync_room_cubit.dart';
 import '../cubit/sync_room_state.dart';
 import '../screens/coop_match_screen.dart';
 import 'qr_scanner_sheet.dart';
+import 'room_audio_settings_section.dart';
 
 enum SyncLobbyTab { host, join }
 
@@ -375,7 +378,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
         }
 
         final room = state is SyncRoomHostWaiting ? state.room : null;
-        final roomCode = room?.code ?? 'SP-4821';
+        final roomCode = SyncRoomRepositoryImpl.extractPinCode(room?.code ?? '482100');
         final isCodeCopied = state is SyncRoomHostWaiting && state.codeCopied;
         final isLinkCopied = state is SyncRoomHostWaiting && state.linkCopied;
 
@@ -896,24 +899,17 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
 
             const SizedBox(height: AppDimensions.spacingLg),
 
-            // Поле ввода пин-кода со стильным оформлением
+            // Поле ввода пин-кода со стильным нейтральным оформлением
             Container(
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: Colors.white.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: errorMsg != null
                       ? AppColors.syncError
-                      : _themeAccent.withValues(alpha: 0.65),
+                      : Colors.white.withValues(alpha: 0.15),
                   width: 1.4,
                 ),
-                boxShadow: [
-                  if (errorMsg == null)
-                    BoxShadow(
-                      color: _themeAccent.withValues(alpha: 0.15),
-                      blurRadius: 14,
-                    ),
-                ],
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: TextField(
@@ -930,7 +926,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                   letterSpacing: 4,
                   color: AppColors.textPrimary,
                 ),
-                cursorColor: _themeAccent,
+                cursorColor: Theme.of(context).colorScheme.primary,
                 decoration: InputDecoration(
                   counterText: '',
                   hintText: 'SP-XXXX',
@@ -1332,77 +1328,141 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
   }
 
   Widget _buildRoomCommunicationBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0xFF00E676).withValues(alpha: 0.25),
-          width: 1.0,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF00E676).withValues(alpha: 0.15),
-            ),
-            child: const Icon(Icons.record_voice_over_rounded, color: Color(0xFF00E676), size: 18),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Связь в комнате активна',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
-                  ),
-                ),
-                SizedBox(height: 1),
-                Text(
-                  'Вы можете разговаривать и переписываться в комнате',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 10.5,
-                  ),
-                ),
-              ],
+    final audioService = RoomAudioDevicesService.instance;
+    return ListenableBuilder(
+      listenable: audioService,
+      builder: (context, _) {
+        final isMuted = audioService.isMicMuted;
+        final micName = audioService.selectedInputDevice.label;
+        final outName = audioService.selectedOutputDevice.label;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: (isMuted ? AppColors.syncError : const Color(0xFF00E676))
+                  .withValues(alpha: 0.28),
+              width: 1.0,
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00E676).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.mic_rounded, color: Color(0xFF00E676), size: 12),
-                SizedBox(width: 3),
-                Text(
-                  'Голос ON',
-                  style: TextStyle(
-                    color: Color(0xFF00E676),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 10,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => audioService.toggleMicMute(),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: (isMuted ? AppColors.syncError : const Color(0xFF00E676))
+                            .withValues(alpha: 0.15),
+                      ),
+                      child: Icon(
+                        isMuted ? Icons.mic_off_rounded : Icons.record_voice_over_rounded,
+                        color: isMuted ? AppColors.syncError : const Color(0xFF00E676),
+                        size: 18,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Связь в комнате активна',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '🎙 $micName\n🎧 $outName',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 10.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => RoomAudioSettingsSection.showModal(context),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.tune_rounded, color: Colors.white, size: 13),
+                          SizedBox(width: 4),
+                          Text(
+                            'Устройства',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => audioService.toggleMicMute(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (isMuted ? AppColors.syncError : const Color(0xFF00E676))
+                            .withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                            color: isMuted ? AppColors.syncError : const Color(0xFF00E676),
+                            size: 12,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            isMuted ? 'MUTE' : 'Голос ON',
+                            style: TextStyle(
+                              color: isMuted ? AppColors.syncError : const Color(0xFF00E676),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -56,11 +56,13 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
       duration: const Duration(seconds: 10),
     );
     final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
-    if (_isProcedural && !isTest) {
+    if (_isProcedural && !isTest && !widget.isPaused) {
       _animController.repeat();
     }
 
-    _setupVideoIfApplicable();
+    if (!widget.isPaused) {
+      _setupVideoIfApplicable();
+    }
   }
 
   bool get _isProcedural {
@@ -167,8 +169,8 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       _animController.stop();
       _videoPlayer?.pause();
-    } else if (state == AppLifecycleState.resumed) {
-      if (!_animController.isAnimating) {
+    } else if (state == AppLifecycleState.resumed && !widget.isPaused) {
+      if (_isProcedural && !_animController.isAnimating) {
         _animController.repeat();
       }
       _videoPlayer?.play();

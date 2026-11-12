@@ -15,10 +15,13 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../widgets/qr_scanner_sheet.dart';
+import '../widgets/room_audio_settings_section.dart';
 import '../widgets/sync_room_lobby_sheet.dart';
 import '../../domain/repositories/sync_room_repository.dart';
 import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../../player/domain/entities/player_quality.dart';
+import '../../../profile/presentation/widgets/friends_management_sheet.dart';
+import '../../../profile/services/friends_service.dart';
 
 class WatchTogetherScreen extends StatefulWidget {
   final VoidCallback? onCreateRoomTap;
@@ -40,45 +43,20 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   String? _pinError;
   bool _isJoiningRoom = false;
 
-  static const Set<String> _validUsernames = {
-    'nekochan', 'nekochan_99', 'senpai', 'senpai_kun', 'otakumaster',
-    'akari', 'ren', 'kirito', 'asuka', 'shinji', 'levi', 'eren',
-    'gojo', 'tanjiro', 'luffy', 'zoro', 'makima', 'denji', 'anya',
-    'alex', 'sakura', 'kaito', 'yuki', 'zero_two', 'megumin'
-  };
+  List<Map<String, dynamic>> _friends = [];
 
-  final List<Map<String, dynamic>> _friends = [
-    {
-      'id': 'fr_1',
-      'name': 'NekoChan_99',
-      'avatar': 'cat',
-      'isOnline': true,
-      'statusText': 'Смотрит «Магическая битва: Серия 4»',
-      'canJoin': true,
-      'roomCode': 'SP-4821',
-      'streakDays': 14,
-    },
-    {
-      'id': 'fr_2',
-      'name': 'Senpai_Kun',
-      'avatar': 'fox',
-      'isOnline': true,
-      'statusText': 'В главном меню • Свободен',
-      'canJoin': false,
-      'roomCode': null,
-      'streakDays': 5,
-    },
-    {
-      'id': 'fr_3',
-      'name': 'OtakuMaster',
-      'avatar': 'wolf',
-      'isOnline': false,
-      'statusText': 'Был в сети 45 мин. назад',
-      'canJoin': false,
-      'roomCode': null,
-      'streakDays': 2,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadFriends();
+  }
+
+  Future<void> _loadFriends() async {
+    final list = await FriendsService.getFriends();
+    if (mounted) {
+      setState(() => _friends = list);
+    }
+  }
 
   @override
   void dispose() {
@@ -153,7 +131,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
       }
     }
 
-    final normalized = SyncRoomRepositoryImpl.normalizeCode(raw);
+    final cleanPin = SyncRoomRepositoryImpl.extractPinCode(raw);
     setState(() {
       _pinError = null;
       _isJoiningRoom = true;
@@ -161,7 +139,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
     try {
       final repo = getIt<SyncRoomRepository>();
-      final exists = await repo.validateRoomExists(normalized);
+      final exists = await repo.validateRoomExists(cleanPin);
       if (!exists) {
         if (!mounted) return;
         setState(() {
@@ -174,7 +152,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
       if (!mounted) return;
       setState(() => _isJoiningRoom = false);
-      context.push('/room/$normalized');
+      context.push('/room/$cleanPin');
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -223,17 +201,17 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
         builder: (ctx, setSheetState) {
           return Material(
             color: Colors.transparent,
-            child: Padding(
-            padding: EdgeInsets.only(
-              left: AppDimensions.spacingXl,
-              right: AppDimensions.spacingXl,
-              top: 16,
-              bottom: MediaQuery.of(ctx).padding.bottom + 16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: AppDimensions.spacingXl,
+                right: AppDimensions.spacingXl,
+                top: 16,
+                bottom: MediaQuery.of(ctx).padding.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 Center(
                   child: Container(
                     width: 36,
@@ -392,6 +370,11 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                   onChanged: (v) => setSheetState(() => enableReactions = v),
                 ),
 
+                const SizedBox(height: 12),
+
+                // 4. Выбор микрофона (устройства ввода) и наушников (устройства вывода)
+                const RoomAudioSettingsSection(compact: true),
+
                 const SizedBox(height: 14),
 
                 // Кнопка подтверждения создания (Всегда активна!)
@@ -405,58 +388,38 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     onPressed: () async {
-                      if (selectedTitle.id == 0) {
-                        Navigator.of(sheetCtx).pop();
-                        // Свободная комната: переходим в каталог для выбора тайтла
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Выберите аниме в каталоге и нажмите «Смотреть с другом» для создания синхронной комнаты!',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            backgroundColor: AppColors.primary,
-                            duration: const Duration(seconds: 4),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                        if (widget.onCreateRoomTap != null) {
-                          widget.onCreateRoomTap!();
-                        } else {
-                          context.go('/');
-                        }
-                        return;
+                      AnimeTitle fullTitle = selectedTitle;
+
+                      // Если выбрана свободная комната (id == 0), пробуем подхватить первый актуальный релиз из каталога,
+                      // но в любом случае создаём комнату в БД rooms и открываем лобби!
+                      if (fullTitle.id == 0 && getIt.isRegistered<CatalogRepository>()) {
+                        try {
+                          final updates = await getIt<CatalogRepository>().getUpdates();
+                          if (updates.isNotEmpty) {
+                            fullTitle = updates.first;
+                          }
+                        } catch (_) {}
                       }
 
                       // Если у тайтла еще не загружены полные серии — подгружаем их через репозиторий
-                      AnimeTitle fullTitle = selectedTitle;
-                      if (fullTitle.episodes.isEmpty && getIt.isRegistered<CatalogRepository>()) {
+                      if (fullTitle.id != 0 &&
+                          fullTitle.episodes.isEmpty &&
+                          getIt.isRegistered<CatalogRepository>()) {
                         try {
                           fullTitle = await getIt<CatalogRepository>().getTitleDetails(
-                            id: selectedTitle.id,
-                            code: selectedTitle.code,
+                            id: fullTitle.id,
+                            code: fullTitle.code,
                           );
                         } catch (_) {}
                       }
 
-                      if (fullTitle.episodes.isEmpty) {
-                        if (context.mounted) {
-                          Navigator.of(sheetCtx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'У тайтла «${selectedTitle.displayTitle}» пока нет готовых серий в каталоге.',
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              backgroundColor: AppColors.primary,
-                              duration: const Duration(seconds: 4),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                        return;
-                      }
+                      final ep = fullTitle.episodes.isNotEmpty
+                          ? fullTitle.episodes.first
+                          : const EpisodeItem(
+                              episode: 1,
+                              name: 'Серия 1',
+                            );
 
-                      final ep = fullTitle.episodes.first;
                       if (context.mounted) {
                         Navigator.of(sheetCtx).pop();
                         SyncRoomLobbySheet.show(
@@ -610,146 +573,10 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   }
 
   void _showAddFriendDialog() {
-    final friendController = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: AppDimensions.spacingXl,
-          right: AppDimensions.spacingXl,
-          top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.strokeMedium,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.person_add_alt_1_rounded, color: AppColors.primary, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Добавить друга',
-                  style: AppTypography.titleMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Введите никнейм друга или его персональный код (например @NekoChan или SP-USER-1029)',
-              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: friendController,
-              autofocus: true,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Никнейм или ID друга',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                filled: true,
-                fillColor: AppColors.surface,
-                prefixIcon: const Icon(Icons.alternate_email_rounded, color: AppColors.textSecondary),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.strokeMedium),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: AppColors.textPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () {
-                  final text = friendController.text.trim();
-                  if (text.isEmpty) {
-                    _showNotification(context, 'Введите никнейм друга');
-                    return;
-                  }
-                  if (text.length < 3) {
-                    _showNotification(context, 'Никнейм должен быть не короче 3 символов');
-                    return;
-                  }
-                  final lower = text.toLowerCase();
-                  if (lower == 'я' || lower == 'me' || lower == 'admin') {
-                    Navigator.pop(ctx);
-                    _showNotification(context, 'Нельзя добавить самого себя');
-                    return;
-                  }
-                  final cleanName = text.replaceAll('@', '').toLowerCase();
-                  final isRealUser = _validUsernames.contains(cleanName);
-                  if (!isRealUser) {
-                    Navigator.pop(ctx);
-                    _showNotification(context, 'Такого друга не существует');
-                    return;
-                  }
-
-                  final alreadyExists = _friends.any(
-                    (f) => (f['name'] as String).toLowerCase() == lower,
-                  );
-                  if (alreadyExists) {
-                    Navigator.pop(ctx);
-                    _showNotification(context, 'Пользователь $text уже в вашем списке', backgroundColor: AppColors.warning);
-                    return;
-                  }
-
-                  setState(() {
-                    _friends.insert(0, {
-                      'id': 'fr_${DateTime.now().millisecondsSinceEpoch}',
-                      'name': text,
-                      'avatar': 'star',
-                      'isOnline': false,
-                      'isPending': true,
-                      'statusText': 'Запрос отправлен • Ожидает подтверждения',
-                      'canJoin': false,
-                      'roomCode': null,
-                    });
-                  });
-                  Navigator.pop(ctx);
-                  _showNotification(context, 'Запрос на дружбу отправлен пользователю $text!', backgroundColor: AppColors.syncActive);
-                },
-                child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ],
-        ),
-      ),
+    showFriendsManagementSheet(
+      context,
+      accentColor: Theme.of(context).colorScheme.primary,
+      onFriendsChanged: _loadFriends,
     );
   }
 
@@ -1007,140 +834,145 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
             // КАРТОЧКА 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Подключиться по PIN»
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                child: GlassContainer(
-                  borderRadius: BorderRadius.circular(22),
-                  blurSigma: 16,
-                  backgroundOpacity: 0.08,
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+                    child: GlassContainer(
+                      borderRadius: BorderRadius.circular(22),
+                      blurSigma: 16,
+                      backgroundOpacity: 0.08,
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Присоединиться к комнате',
-                            style: AppTypography.titleMedium.copyWith(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Введите 6-значный пин-код, полученный от друга',
-                        style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _pinController,
-                        focusNode: _pinFocusNode,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          letterSpacing: 2.0,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'PIN-код комнаты (напр. SP-4821)',
-                          hintStyle: TextStyle(
-                            color: AppColors.textMuted.withValues(alpha: 0.6),
-                            letterSpacing: 0,
-                            fontSize: 13,
-                            fontWeight: FontWeight.normal,
-                          ),
-                          filled: true,
-                          fillColor: AppColors.surface.withValues(alpha: 0.7),
-                          prefixIcon: const Icon(Icons.key_rounded, color: AppColors.textSecondary, size: 20),
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          Row(
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                                tooltip: 'Сканировать QR камерой',
-                                color: AppColors.syncActive,
-                                onPressed: () {
-                                  QrScannerSheet.show(
-                                    context,
-                                    onCodeScanned: (code) {
-                                      _pinController.text = code;
-                                      _handleJoinRoom();
-                                    },
-                                  );
-                                },
+                              Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Присоединиться к комнате',
+                                style: AppTypography.titleMedium.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.content_paste_rounded, size: 20),
-                                tooltip: 'Вставить из буфера',
-                                color: AppColors.primaryLight,
-                                onPressed: () async {
-                                  final data = await Clipboard.getData('text/plain');
-                                  if (data?.text != null && data!.text!.isNotEmpty) {
-                                    _pinController.text = data.text!.trim();
-                                  }
-                                },
-                              ),
-                              const SizedBox(width: 4),
                             ],
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: AppColors.strokeMedium),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Введите 6-значный пин-код, полученный от друга',
+                            style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
-                          ),
-                        ),
-                        onSubmitted: (_) => _handleJoinRoom(),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
-                            foregroundColor: AppColors.textPrimary,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
-                          ),
-                          onPressed: _isJoiningRoom ? null : _handleJoinRoom,
-                          child: _isJoiningRoom
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _pinController,
+                            focusNode: _pinFocusNode,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                              letterSpacing: 2.0,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'PIN-код комнаты (напр. SP-4821)',
+                              hintStyle: TextStyle(
+                                color: AppColors.textMuted.withValues(alpha: 0.6),
+                                letterSpacing: 0,
+                                fontSize: 13,
+                                fontWeight: FontWeight.normal,
+                              ),
+                              filled: true,
+                              fillColor: AppColors.surface.withValues(alpha: 0.7),
+                              prefixIcon: const Icon(Icons.key_rounded, color: AppColors.textSecondary, size: 20),
+                              suffixIcon: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                                    tooltip: 'Сканировать QR камерой',
+                                    color: AppColors.syncActive,
+                                    onPressed: () {
+                                      QrScannerSheet.show(
+                                        context,
+                                        onCodeScanned: (code) {
+                                          _pinController.text = code;
+                                          _handleJoinRoom();
+                                        },
+                                      );
+                                    },
                                   ),
-                                )
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.login_rounded, size: 20),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Войти',
-                                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                  IconButton(
+                                    icon: const Icon(Icons.content_paste_rounded, size: 20),
+                                    tooltip: 'Вставить из буфера',
+                                    color: AppColors.primaryLight,
+                                    onPressed: () async {
+                                      final data = await Clipboard.getData('text/plain');
+                                      if (data?.text != null && data!.text!.isNotEmpty) {
+                                        _pinController.text = data.text!.trim();
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: AppColors.strokeMedium),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
+                              ),
+                            ),
+                            onSubmitted: (_) => _handleJoinRoom(),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 46,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.primary,
+                                foregroundColor: AppColors.textPrimary,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                elevation: 0,
+                              ),
+                              onPressed: _isJoiningRoom ? null : _handleJoinRoom,
+                              child: _isJoiningRoom
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.login_rounded, size: 20),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Войти',
+                                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                        ),
+                            ),
+                          ),
+                          if (_pinError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _pinError!,
+                              style: const TextStyle(color: AppColors.syncError, fontSize: 12),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (_pinError != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _pinError!,
-                          style: const TextStyle(color: AppColors.syncError, fontSize: 12),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),

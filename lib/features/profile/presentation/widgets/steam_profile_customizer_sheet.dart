@@ -29,6 +29,7 @@ import '../../../../core/widgets/holographic_monogram_avatar.dart';
 import 'badge_details_sheet.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
+import 'steam_style_profile_header.dart';
 
 /// Интерактивное меню кастомизации профиля в стиле Steam Community & Points Shop
 /// Вкладки:
@@ -790,32 +791,34 @@ class _SteamProfileCustomizerSheetState
             final bg = SteamBackgroundTheme.all[index];
             final isSelected = _selectedBgId == bg.id;
 
-            return InkWell(
-              onTap: () {
-                setState(() {
-                  _selectedBgId = bg.id;
-                  _customUrlController.clear();
-                });
-              },
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isSelected ? accent : AppColors.strokeMedium,
-                    width: isSelected ? 2.5 : 1.0,
+            return RepaintBoundary(
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedBgId = bg.id;
+                    _customUrlController.clear();
+                  });
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected ? accent : AppColors.strokeMedium,
+                      width: isSelected ? 2.5 : 1.0,
+                    ),
                   ),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12.5),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      LiveBackgroundWidget(
-                        backgroundId: bg.id,
-                        assetOrUrl: bg.assetOrUrl,
-                        fallbackGradient: bg.gradient,
-                      ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12.5),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        LiveBackgroundWidget(
+                          backgroundId: bg.id,
+                          assetOrUrl: bg.assetOrUrl,
+                          fallbackGradient: bg.gradient,
+                          isPaused: !isSelected,
+                        ),
                       Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -846,21 +849,22 @@ class _SteamProfileCustomizerSheetState
                           ),
                         ),
                       ),
-                      if (isSelected)
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: accent,
-                              shape: BoxShape.circle,
+                        if (isSelected)
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                color: accent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.check,
+                                  size: 12, color: Colors.white),
                             ),
-                            child: const Icon(Icons.check,
-                                size: 12, color: Colors.white),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1185,6 +1189,57 @@ class _SteamProfileCustomizerSheetState
         ),
 
         const SizedBox(height: 18),
+        Text('Персонажи аниме (Anime Character Avatars):',
+            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+        const SizedBox(height: 10),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 3,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 0.92,
+          children: [
+            _buildCharacterAvatarTile(
+              name: 'Gojo Satoru',
+              anime: 'Jujutsu Kaisen',
+              url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+            _buildCharacterAvatarTile(
+              name: 'Sung Jinwoo',
+              anime: 'Solo Leveling',
+              url: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+            _buildCharacterAvatarTile(
+              name: 'Lucy',
+              anime: 'Edgerunners',
+              url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+            _buildCharacterAvatarTile(
+              name: 'Itachi Uchiha',
+              anime: 'Naruto',
+              url: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+            _buildCharacterAvatarTile(
+              name: 'Frieren',
+              anime: 'Beyond Journey',
+              url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+            _buildCharacterAvatarTile(
+              name: 'Mitsuha',
+              anime: 'Your Name',
+              url: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=400&auto=format&fit=crop&q=80',
+              accent: accent,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
         Text('Премиальные арт-пресеты (Anime Silhouettes & Hologram):',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 10),
@@ -1325,6 +1380,74 @@ class _SteamProfileCustomizerSheetState
     );
   }
 
+  Widget _buildCharacterAvatarTile({
+    required String name,
+    required String anime,
+    required String url,
+    required Color accent,
+  }) {
+    final isSelected = _selectedAvatar == url ||
+        _customAvatarUrlController.text.trim() == url;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedAvatar = url;
+          _customAvatarUrlController.text = url;
+        });
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isSelected ? accent.withValues(alpha: 0.16) : AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? accent : AppColors.strokeMedium,
+            width: isSelected ? 2.0 : 1.0,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Center(
+                child: AppAvatar(
+                  avatarUrl: url,
+                  size: 52,
+                  shape: _selectedAvatarShape == 'square'
+                      ? BoxShape.rectangle
+                      : BoxShape.circle,
+                  borderColor: isSelected ? accent : AppColors.strokeMedium,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected ? Colors.white : AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+            Text(
+              anime,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: accent.withValues(alpha: 0.85),
+                fontSize: 9.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // --- 4. ВКЛАДКА «ЗНАЧКИ STEAM» ---
   Widget _buildBadgesTab(Color accent) {
     return ListView.separated(
@@ -1451,8 +1574,189 @@ class _SteamProfileCustomizerSheetState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Селектор типа витрины (Steam Showcase Mode)
-          Text('Тип витрины Steam:',
+          // 1. Готовые иллюстрации главной витрины Steam (Steam Artwork Showcase)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '1. Главная витрина иллюстраций (Steam Artwork):',
+                style: AppTypography.caption.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: accent,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.add_photo_alternate_rounded, size: 15),
+                label: const Text('Свой арт', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                onPressed: () async {
+                  try {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.image,
+                      withData: true,
+                    );
+                    if (result != null && result.files.isNotEmpty) {
+                      final file = result.files.first;
+                      final appDir = await getApplicationDocumentsDirectory();
+                      final ext = file.extension ?? 'jpg';
+                      final targetPath =
+                          '${appDir.path}/custom_artwork_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                      final targetFile = File(targetPath);
+                      String chosenPath = '';
+                      if (file.bytes != null && file.bytes!.isNotEmpty) {
+                        await targetFile.writeAsBytes(file.bytes!, flush: true);
+                        chosenPath = targetFile.path;
+                      } else if (file.path != null && file.path!.isNotEmpty) {
+                        chosenPath = file.path!;
+                      }
+                      if (chosenPath.isNotEmpty && mounted) {
+                        setState(() {
+                          _selectedFavAnimePoster = chosenPath;
+                          if (_favAnimeController.text.trim().isEmpty) {
+                            _favAnimeController.text = 'CUSTOM STEAM ARTWORK';
+                          }
+                        });
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Custom artwork pick error: $e');
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 108,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: SteamStyleProfileHeader.curatedPresets.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final preset = SteamStyleProfileHeader.curatedPresets[index];
+                final isSelected = _selectedFavAnimePoster == preset.imageUrl;
+                final isLive = preset.imageUrl.startsWith('live:');
+                return RepaintBoundary(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedFavAnimePoster = preset.imageUrl;
+                        _favAnimeController.text = preset.title;
+                        _selectedShowcaseType = 'favorite_anime';
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: 155,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected ? accent : AppColors.strokeMedium,
+                          width: isSelected ? 2.2 : 1.0,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (isLive)
+                            LiveBackgroundWidget(
+                              backgroundId: preset.imageUrl.substring(5),
+                              fallbackGradient: const [Color(0xFF14161F), Color(0xFF23133A)],
+                              isPaused: !isSelected,
+                            )
+                          else
+                            CachedNetworkImage(
+                              imageUrl: wrapCorsSafeUrl(preset.imageUrl),
+                              fit: BoxFit.cover,
+                            ),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.2),
+                                  Colors.black.withValues(alpha: 0.85),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (isLive)
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.85),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'LIVE АНИМЕ',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (isSelected)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Icon(Icons.check_circle_rounded, color: accent, size: 18),
+                            ),
+                          Positioned(
+                            left: 8,
+                            right: 8,
+                            bottom: 8,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  preset.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  preset.tagline,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 2. Селектор типа дополнительной карточки витрины (Steam Showcase Mode)
+          Text('2. Дополнительный блок под витриной Steam:',
               style:
                   AppTypography.caption.copyWith(color: AppColors.textMuted)),
           const SizedBox(height: 8),
@@ -1804,64 +2108,61 @@ class _SteamProfileCustomizerSheetState
 
           const SizedBox(height: 18),
 
-          // Выбор страны профиля (Steam Country & Flag)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Страна профиля (Steam Flag & Country):',
-                  style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-              Text('$_selectedCountryFlag $_selectedCountryName',
-                  style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 12)),
-            ],
-          ),
+          // Выбор страны профиля через компактный выпадающий селектор (Option Dropdown)
+          Text('Страна профиля (Steam Flag & Country):',
+              style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 38,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: SteamCountry.popular.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final country = SteamCountry.popular[index];
-                final isSelected = _selectedCountryName == country.name;
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedCountryFlag = country.flag;
-                      _selectedCountryName = country.name;
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(10),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? accent.withValues(alpha: 0.18) : AppColors.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected ? accent : AppColors.strokeMedium,
-                        width: isSelected ? 1.5 : 1.0,
-                      ),
-                    ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: SteamCountry.popular.any((c) => c.name == _selectedCountryName)
+                    ? _selectedCountryName
+                    : SteamCountry.popular.first.name,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF161822),
+                icon: Icon(Icons.keyboard_arrow_down_rounded, color: accent),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: SteamCountry.popular.map((country) {
+                  return DropdownMenuItem<String>(
+                    value: country.name,
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(country.flag, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 6),
+                        Text(country.flag, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 10),
                         Text(
                           country.name,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : AppColors.textSecondary,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            fontSize: 12,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
+                  );
+                }).toList(),
+                onChanged: (selectedName) {
+                  if (selectedName == null) return;
+                  final found = SteamCountry.popular.firstWhere(
+                    (c) => c.name == selectedName,
+                    orElse: () => SteamCountry.popular.first,
+                  );
+                  setState(() {
+                    _selectedCountryFlag = found.flag;
+                    _selectedCountryName = found.name;
+                  });
+                },
+              ),
             ),
           ),
 

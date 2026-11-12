@@ -1,10 +1,26 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../domain/entities/episode_item.dart';
 import '../models/anime_catalog_model.dart';
 import '../models/anime_player_data_model.dart';
 import '../models/episode_model.dart';
 import '../models/translation_model.dart';
+
+/// Top-level функция для парсинга больших списков релизов в отдельном изоляте через compute()
+List<AnimeCatalogModel> parseAnimeCatalogReleasesInIsolate(dynamic data) {
+  List<dynamic> items = [];
+  if (data is Map && data['data'] is List) {
+    items = data['data'] as List;
+  } else if (data is List) {
+    items = data;
+  }
+  return items
+      .whereType<Map<String, dynamic>>()
+      .map((json) => AnimeCatalogModel.fromJson(json))
+      .toList();
+}
 
 abstract class AnimeRemoteDataSource {
   /// Получение каталога напрямую через AniLiberty (AniLibria v1) API
@@ -72,14 +88,14 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
         _catalogUrl,
         queryParameters: queryParams,
       );
-      return _parseReleases(response.data);
+      return await _parseReleasesAsync(response.data);
     } catch (_) {
       try {
         final fallbackRes = await _dio.get(
           _fallbackCatalogUrl,
           queryParameters: queryParams,
         );
-        return _parseReleases(fallbackRes.data);
+        return await _parseReleasesAsync(fallbackRes.data);
       } catch (e) {
         throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
       }
@@ -100,7 +116,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
           'query': clean,
         },
       );
-      return _parseReleases(response.data);
+      return await _parseReleasesAsync(response.data);
     } catch (_) {
       try {
         final fallbackRes = await _dio.get(
@@ -109,7 +125,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
             'query': clean,
           },
         );
-        return _parseReleases(fallbackRes.data);
+        return await _parseReleasesAsync(fallbackRes.data);
       } catch (e) {
         throw ServerException('Ошибка поиска AniLiberty: $e');
       }
@@ -258,17 +274,22 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     }
   }
 
-  List<AnimeCatalogModel> _parseReleases(dynamic data) {
-    List<dynamic> items = [];
-    if (data is Map && data['data'] is List) {
-      items = data['data'] as List;
-    } else if (data is List) {
-      items = data;
+  bool get _isTestEnv {
+    try {
+      if (Platform.environment.containsKey('FLUTTER_TEST')) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<List<AnimeCatalogModel>> _parseReleasesAsync(dynamic data) async {
+    if (_isTestEnv) {
+      return parseAnimeCatalogReleasesInIsolate(data);
     }
-    return items
-        .whereType<Map<String, dynamic>>()
-        .map((json) => AnimeCatalogModel.fromJson(json))
-        .toList();
+    return compute(parseAnimeCatalogReleasesInIsolate, data);
+  }
+
+  List<AnimeCatalogModel> _parseReleases(dynamic data) {
+    return parseAnimeCatalogReleasesInIsolate(data);
   }
 }
 

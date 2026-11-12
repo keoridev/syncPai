@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +17,11 @@ class AuthRepositoryImpl implements AuthRepository {
   final StreamController<UserProfile?> _authController = StreamController<UserProfile?>.broadcast();
 
   static const String _profileKey = 'sync_pai_user_profile';
+  static const String _localGuestUuidKey = 'sync_pai_local_guest_uuid';
+
+  /// Флаг: если в Supabase отключён Anonymous Sign-In (422 anonymous_provider_disabled),
+  /// не повторяем сетевые запросы signInAnonymously и работаем в режиме LocalGuestUser.
+  static bool _anonymousProviderDisabled = false;
 
   AuthRepositoryImpl(this._prefs) {
     _initSupabaseListener();
@@ -45,15 +52,32 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
+  String _getOrCreateLocalGuestUuid() {
+    final existing = _prefs.getString(_localGuestUuidKey);
+    if (existing != null && existing.trim().isNotEmpty) {
+      return existing;
+    }
+    final rnd = Random();
+    String hex(int len) => List.generate(len, (_) => rnd.nextInt(16).toRadixString(16)).join();
+    final uuid = '${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}';
+    _prefs.setString(_localGuestUuidKey, uuid);
+    return uuid;
+  }
+
   UserProfile _loadLocalProfile() {
     final raw = _prefs.getString(_profileKey);
     if (raw != null) {
       try {
         final map = jsonDecode(raw) as Map<String, dynamic>;
-        return UserProfile.fromJson(map);
+        final parsed = UserProfile.fromJson(map);
+        if (parsed.id.isNotEmpty) {
+          _prefs.setString(_localGuestUuidKey, parsed.id);
+          return parsed;
+        }
       } catch (_) {}
     }
-    final guest = UserProfile.guest();
+    final localUuid = _getOrCreateLocalGuestUuid();
+    final guest = UserProfile.guest(localUuid);
     _saveLocalProfile(guest);
     return guest;
   }
@@ -176,6 +200,10 @@ class AuthRepositoryImpl implements AuthRepository {
         cloudRow?['favorite_anime_id'] as String? ?? local.favoriteAnimeId;
     String? effectiveFavAnimePoster =
         cloudRow?['favorite_anime_poster'] as String? ?? local.favoriteAnimePoster;
+    String? effectiveArtworkUrl =
+        cloudRow?['artwork_url'] as String? ?? local.artworkUrl;
+    String? effectiveArtworkTitle =
+        cloudRow?['artwork_title'] as String? ?? local.artworkTitle;
 
     // 10. Акцентный цвет
     String effectiveAccent =
@@ -194,6 +222,8 @@ class AuthRepositoryImpl implements AuthRepository {
       favoriteAnimeTitle: effectiveFavAnimeTitle,
       favoriteAnimeId: effectiveFavAnimeId,
       favoriteAnimePoster: effectiveFavAnimePoster,
+      artworkUrl: effectiveArtworkUrl,
+      artworkTitle: effectiveArtworkTitle,
       accentColor: effectiveAccent,
       isAnonymous: isAnon,
       createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ?? DateTime.now(),
@@ -232,6 +262,8 @@ class AuthRepositoryImpl implements AuthRepository {
           'favorite_anime_title': profile.favoriteAnimeTitle,
           'favorite_anime_id': profile.favoriteAnimeId,
           'favorite_anime_poster': profile.favoriteAnimePoster,
+          'artwork_url': profile.artworkUrl,
+          'artwork_title': profile.artworkTitle,
           'accent_color': profile.accentColor,
           'showcase_type': profile.showcaseType,
           'customization': profile.customization.toJson(),
@@ -239,6 +271,18 @@ class AuthRepositoryImpl implements AuthRepository {
         });
       } catch (e) {
         debugPrint('Error upserting cloud profile: $e');
+        // Fallback: запись со стандартным набором полей profiles (id, username, avatar_url, created_at)
+        try {
+          await client.from('profiles').upsert({
+            'id': profile.id,
+            'username': profile.username,
+            'avatar_url': profile.avatarUrl ?? '🐱',
+            'created_at': profile.createdAt.toIso8601String(),
+          });
+          debugPrint('[Auth] Успешная запись базового профиля в Supabase profiles: ${profile.id}');
+        } catch (e2) {
+          debugPrint('Error upserting minimal cloud profile: $e2');
+        }
       }
     }
   }
@@ -253,8 +297,8 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     final local = _loadLocalProfile();
-    // Если есть подключение к Supabase, но сессии нет — выполняем анонимный вход
-    if (client != null && client.auth.currentUser == null) {
+    // Если есть подключение к Supabase, сессии нет и анонимный провайдер не отключён — пробуем анонимный вход
+    if (client != null && client.auth.currentUser == null && !_anonymousProviderDisabled) {
       try {
         return await signInAnonymously();
       } catch (_) {}
@@ -264,6 +308,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserProfile> signInAnonymously() async {
+    final local = _loadLocalProfile();
+    if (_anonymousProviderDisabled) {
+      _authController.add(local);
+      return local;
+    }
+
     final client = _supabase;
     if (client != null) {
       try {
@@ -274,12 +324,26 @@ class AuthRepositoryImpl implements AuthRepository {
           _authController.add(profile);
           return profile;
         }
+      } on AuthException catch (authErr) {
+        final isAnonDisabled = authErr.statusCode == '422' ||
+            (authErr.code?.toLowerCase().contains('anonymous_provider_disabled') ?? false) ||
+            authErr.message.toLowerCase().contains('anonymous');
+        if (isAnonDisabled) {
+          _anonymousProviderDisabled = true;
+          debugPrint(
+            '⚠️ [SyncPai Auth] Анонимная авторизация отключена на сервере Supabase (422: anonymous_provider_disabled).\n'
+            '👉 Чтобы включить облачные сессии гостей, откройте Supabase Dashboard -> Authentication -> Providers -> Anonymous и включите тумблер "Allow anonymous sign-ins".\n'
+            '✅ Приложение переключено в локальный гостевой режим (LocalGuestUser UUID: ${local.id}). Комнаты, списки и профиль работают штатно.',
+          );
+        } else {
+          debugPrint('⚠️ [SyncPai Auth] Supabase AuthException (${authErr.statusCode}): ${authErr.message}. Используется LocalGuestUser (${local.id}).');
+        }
       } catch (e) {
-        debugPrint('Supabase anonymous sign in error: $e');
+        debugPrint('⚠️ [SyncPai Auth] Сеть недоступна при анонимном входе ($e). Используется LocalGuestUser (${local.id}).');
       }
     }
 
-    final local = _loadLocalProfile();
+    await _saveLocalProfile(local);
     _authController.add(local);
     return local;
   }
@@ -287,6 +351,27 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<UserProfile?> signInWithGoogle() async {
     try {
+      final client = _supabase;
+      final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+
+      if (isDesktopOS && client != null) {
+        try {
+          await client.auth.signInWithOAuth(
+            OAuthProvider.google,
+            redirectTo: 'syncpai://login-callback',
+          );
+          final user = client.auth.currentUser;
+          if (user != null) {
+            final profile = await _fetchAndMigrateCloudProfile(user);
+            await _saveLocalProfile(profile);
+            _authController.add(profile);
+            return profile;
+          }
+        } catch (oauthErr) {
+          debugPrint('[Auth] Desktop signInWithOAuth warning: $oauthErr');
+        }
+      }
+
       final googleSignIn = GoogleSignIn(
         serverClientId: ApiConstants.googleServerClientId.isNotEmpty
             ? ApiConstants.googleServerClientId
@@ -303,7 +388,6 @@ class AuthRepositoryImpl implements AuthRepository {
       final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
 
-      final client = _supabase;
       if (client != null && idToken != null) {
         try {
           await client.auth.signInWithIdToken(
@@ -324,7 +408,7 @@ class AuthRepositoryImpl implements AuthRepository {
         }
       }
 
-      // Бесшовный fallback: связываем полученный профиль Google локально
+      // Бесшовный fallback: связываем полученный профиль Google локально и в облаке
       final local = await linkGoogleAccount(
         email: googleUser.email,
         displayName: googleUser.displayName,
@@ -374,7 +458,16 @@ class AuthRepositoryImpl implements AuthRepository {
 
     await _saveLocalProfile(updated);
     if (client != null) {
-      await _upsertCloudProfile(updated);
+      if (client.auth.currentSession == null) {
+        try {
+          await client.auth.signInAnonymously();
+        } catch (_) {}
+      }
+      final currentUid = client.auth.currentUser?.id;
+      final profileToSync = currentUid != null && currentUid.isNotEmpty
+          ? updated.copyWith(id: currentUid)
+          : updated;
+      await _upsertCloudProfile(profileToSync);
     }
     _authController.add(updated);
 
@@ -479,6 +572,8 @@ class AuthRepositoryImpl implements AuthRepository {
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
+    String? artworkUrl,
+    String? artworkTitle,
     String? accentColor,
     String? showcaseType,
     String? countryFlag,
@@ -504,6 +599,12 @@ class AuthRepositoryImpl implements AuthRepository {
       favoriteAnimePoster: favoriteAnimePoster != null
           ? (favoriteAnimePoster.isEmpty ? null : favoriteAnimePoster)
           : current.favoriteAnimePoster,
+      artworkUrl: artworkUrl != null
+          ? (artworkUrl.isEmpty ? null : artworkUrl)
+          : current.artworkUrl,
+      artworkTitle: artworkTitle != null
+          ? (artworkTitle.isEmpty ? null : artworkTitle)
+          : current.artworkTitle,
       accentColor: accentColor ?? current.accentColor,
       showcaseType: showcaseType ?? current.showcaseType,
       countryFlag: countryFlag ?? current.countryFlag,

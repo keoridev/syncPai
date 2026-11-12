@@ -462,10 +462,31 @@ class SteamBackgroundTheme {
     ),
     SteamBackgroundTheme(
       id: 'demon_slayer',
-      name: 'Клинок Рассекающий (Хиноками)',
+      name: 'Клинок Рассекающий (Хиноками Live)',
       gradient: [Color(0xFF3E120A), Color(0xFF2A0F1E), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80',
+      assetOrUrl: 'bleach_bankai',
       icon: Icons.whatshot_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'uchiha_sharingan_live',
+      name: 'Итачи: Багровое Пламя (Live)',
+      gradient: [Color(0xFF2B0509), Color(0xFF140307), Color(0xFF0A050A)],
+      assetOrUrl: 'black_flash',
+      icon: Icons.remove_red_eye_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'chainsaw_blood_live',
+      name: 'Человек-Бензопила (Неон Live)',
+      gradient: [Color(0xFF360816), Color(0xFF1A0726), Color(0xFF0F0914)],
+      assetOrUrl: 'titan_lightning',
+      icon: Icons.bolt_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'frieren_magic_live',
+      name: 'Фрирен: Звездная Магия (Live)',
+      gradient: [Color(0xFF0D1B3E), Color(0xFF1B1038), Color(0xFF090B14)],
+      assetOrUrl: 'solo_leveling',
+      icon: Icons.auto_fix_high_rounded,
     ),
     SteamBackgroundTheme(
       id: 'bleach',

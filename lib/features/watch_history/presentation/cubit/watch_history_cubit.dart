@@ -34,8 +34,7 @@ class WatchHistoryCubit extends Cubit<WatchHistoryState> {
     required Duration position,
     required Duration duration,
   }) async {
-    // Сохраняем, если просмотр длился дольше 5 секунд
-    if (position.inSeconds < 5) return;
+    if (titleId <= 0) return;
 
     final item = WatchHistoryItem(
       titleId: titleId,
@@ -44,15 +43,18 @@ class WatchHistoryCubit extends Cubit<WatchHistoryState> {
       episode: episode,
       episodeName: episodeName,
       positionMs: position.inMilliseconds,
-      durationMs: duration.inMilliseconds,
+      durationMs: duration.inMilliseconds > 0 ? duration.inMilliseconds : 1440000,
       updatedAt: DateTime.now(),
     );
 
     await repository.saveProgress(item);
 
+    final normName = titleName.trim().toLowerCase();
     final updatedMap = Map<int, WatchHistoryItem>.from(state.historyMap)..[titleId] = item;
     final updatedList = List<WatchHistoryItem>.from(state.history)
-      ..removeWhere((e) => e.titleId == titleId)
+      ..removeWhere((e) =>
+          e.titleId == titleId ||
+          (normName.isNotEmpty && e.titleName.trim().toLowerCase() == normName))
       ..insert(0, item);
 
     emit(state.copyWith(

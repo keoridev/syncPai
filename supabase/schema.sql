@@ -129,5 +129,53 @@ create policy "Service role can manage anime moments"
 
 alter publication supabase_realtime add table public.anime_moments;
 
+-- ==============================================================================
+-- 7. Таблица комнат совместного просмотра (rooms)
+-- Обеспечивает создание, поиск и подключение друзей через Supabase Realtime
+-- ==============================================================================
+create table if not exists public.rooms (
+  id text primary key,                    -- Код комнаты: 'SP-123456'
+  host_name text not null default 'Хост',
+  peer_name text,                         -- Имя подключенного гостя
+  guest_name text,                        -- Alias для peer_name (совместимость)
+  status text not null default 'waiting'  -- 'waiting', 'connected', 'playing', 'closed'
+    check (status in ('waiting', 'connected', 'playing', 'closed')),
+  title_id int,                           -- ID тайтла AniLibria (опционально)
+  title_name text,                        -- Название тайтла (кэш для быстрого показа)
+  episode int default 1,                  -- Номер серии
+  quality text default 'HD',              -- Качество воспроизведения
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create index if not exists idx_rooms_status on public.rooms (status);
+create index if not exists idx_rooms_created_at on public.rooms (created_at desc);
+
+alter table public.rooms enable row level security;
+
+-- Безопасное переопределение политик RLS для публичного и гостевого доступа (anon, authenticated)
+drop policy if exists "Anyone can view rooms" on public.rooms;
+drop policy if exists "Allow public read rooms" on public.rooms;
+create policy "Allow public read rooms"
+  on public.rooms for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Anyone can create rooms" on public.rooms;
+drop policy if exists "Allow public insert rooms" on public.rooms;
+create policy "Allow public insert rooms"
+  on public.rooms for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "Anyone can update rooms" on public.rooms;
+drop policy if exists "Allow public update rooms" on public.rooms;
+create policy "Allow public update rooms"
+  on public.rooms for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+alter publication supabase_realtime add table public.rooms;
 
 

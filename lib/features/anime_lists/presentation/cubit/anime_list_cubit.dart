@@ -1,6 +1,4 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../app/di/injection.dart';
-import '../../../watch_history/domain/repositories/watch_history_repository.dart';
 import '../../data/datasources/anixart_backup_parser.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
@@ -19,40 +17,20 @@ class AnimeListCubit extends Cubit<AnimeListState> {
   Future<void> loadLists() async {
     emit(state.copyWith(isLoading: true));
     try {
-      final entries = await repository.getAllEntries();
+      final rawEntries = await repository.getAllEntries();
 
-      // Авто-синхронизация: если тайтл просмотрен в истории просмотров,
-      // но ещё не добавлен в списки — автоматически заносим его в «Смотрю»
-      // ТОЛЬКО если непрерывно смотрел серию более 15 минут (positionMs >= 900000)
-      if (getIt.isRegistered<WatchHistoryRepository>()) {
-        try {
-          final historyRepo = getIt<WatchHistoryRepository>();
-          final historyList = await historyRepo.getAllHistory();
-          bool hasNewEntries = false;
-          for (final item in historyList) {
-            final exists = entries.any((e) => e.animeId == item.titleId);
-            // Если смотрел меньше 15 минут, остается ТОЛЬКО в Истории, не загрязняя «Смотрю»
-            if (!exists && item.positionMs >= 900000) {
-              final newEntry = UserAnimeEntry(
-                id: 'history_${item.titleId}_${item.updatedAt.millisecondsSinceEpoch}',
-                userId: '',
-                animeId: item.titleId,
-                titleRu: item.titleName,
-                posterUrl: item.posterUrl,
-                status: AnimeListStatus.watching,
-                lastEpisode: item.episode,
-                positionMs: item.positionMs,
-                updatedAt: item.updatedAt,
-              );
-              await repository.upsertEntry(newEntry);
-              entries.add(newEntry);
-              hasNewEntries = true;
-            }
-          }
-          if (hasNewEntries) {
-            entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          }
-        } catch (_) {}
+      // Очищаем старые авто-добавленные записи из истории (с префиксом history_),
+      // так как вкладка «Смотрю» заполняется ТОЛЬКО вручную пользователем,
+      // а просмотренные тайтлы сохраняются исключительно во вкладке «История».
+      final entries = <UserAnimeEntry>[];
+      for (final entry in rawEntries) {
+        if (entry.id.startsWith('history_')) {
+          try {
+            await repository.removeEntry(entry.animeId);
+          } catch (_) {}
+        } else {
+          entries.add(entry);
+        }
       }
 
       final stats = UserAnimeStats.compute(entries);

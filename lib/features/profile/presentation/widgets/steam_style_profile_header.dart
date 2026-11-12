@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -20,6 +21,7 @@ import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import 'badge_details_sheet.dart';
+import 'live_backgrounds/live_background_widget.dart';
 
 /// Кастомный Steam Artwork Profile Header в стиле премиальных профилей Steam Community:
 /// 1. Внешний стеклянный контейнер Steam Profile Backing с тонким контуром `Border.all(color: Colors.white10)`.
@@ -60,6 +62,58 @@ class SteamStyleProfileHeader extends StatefulWidget {
     this.countryName,
   });
 
+  // Курированные готовые пресеты артворков в стиле Steam Artwork Showcase (статичные + живые аниме-сцены)
+  static const List<SteamArtworkPreset> curatedPresets = [
+    SteamArtworkPreset(
+      title: 'CYBERPUNK // 侍 SAMURAI',
+      kanji: '侍',
+      tagline: 'NEO KYOTO 2077 // EDITION',
+      imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
+    ),
+    SteamArtworkPreset(
+      title: 'EDGERUNNERS // LUCY & DAVID',
+      kanji: '電脳',
+      tagline: 'NIGHT CITY LEGENDS',
+      imageUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200&auto=format&fit=crop&q=80',
+    ),
+    SteamArtworkPreset(
+      title: 'SHADOW MONARCH // 影の君主',
+      kanji: '影',
+      tagline: 'ARISE // SOLO LEVELING',
+      imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1200&auto=format&fit=crop&q=80',
+    ),
+    SteamArtworkPreset(
+      title: 'UCHIHA ITACHI // 万華鏡写輪眼 (LIVE)',
+      kanji: '写輪',
+      tagline: 'TSUKUYOMI // ANIMATED SHOWCASE',
+      imageUrl: 'live:uchiha_sharingan_live',
+    ),
+    SteamArtworkPreset(
+      title: 'DOMAIN EXPANSION // 領域展開 (LIVE)',
+      kanji: '無量',
+      tagline: 'INFINITE VOID // ANIMATED',
+      imageUrl: 'live:gojo_hollow_purple',
+    ),
+    SteamArtworkPreset(
+      title: 'FRIEREN // 葬送のフリーレン (LIVE)',
+      kanji: '魔法',
+      tagline: 'ASTRAL MANA BUTTERFLIES // LIVE',
+      imageUrl: 'live:frieren_magic_live',
+    ),
+    SteamArtworkPreset(
+      title: 'NEON SHINOBI // 忍者',
+      kanji: '忍者',
+      tagline: 'STEALTH CLAN // ZERO',
+      imageUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=1200&auto=format&fit=crop&q=80',
+    ),
+    SteamArtworkPreset(
+      title: 'SAKURA BLADE // 桜刀',
+      kanji: '桜',
+      tagline: 'CHERRY BLOSSOM RONIN',
+      imageUrl: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=1200&auto=format&fit=crop&q=80',
+    ),
+  ];
+
   @override
   State<SteamStyleProfileHeader> createState() => _SteamStyleProfileHeaderState();
 }
@@ -73,39 +127,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   int _likesCount = 1337;
   bool _isLiked = false;
 
-  // Курированные пресеты артворков в стиле Steam Artwork Showcase
-  static const List<_ArtworkPreset> curatedPresets = [
-    _ArtworkPreset(
-      title: 'CYBERPUNK // 侍 SAMURAI',
-      kanji: '侍',
-      tagline: 'NEO KYOTO 2077 // EDITION',
-      imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
-    ),
-    _ArtworkPreset(
-      title: 'EDGERUNNERS // LUCY & DAVID',
-      kanji: '電脳',
-      tagline: 'NIGHT CITY LEGENDS',
-      imageUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200&auto=format&fit=crop&q=80',
-    ),
-    _ArtworkPreset(
-      title: 'SHADOW MONARCH // 影の君主',
-      kanji: '影',
-      tagline: 'ARISE // SOLO LEVELING',
-      imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1200&auto=format&fit=crop&q=80',
-    ),
-    _ArtworkPreset(
-      title: 'NEON SHINOBI // 忍者',
-      kanji: '忍者',
-      tagline: 'STEALTH CLAN // ZERO',
-      imageUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=1200&auto=format&fit=crop&q=80',
-    ),
-    _ArtworkPreset(
-      title: 'SAKURA BLADE // 桜刀',
-      kanji: '桜',
-      tagline: 'CHERRY BLOSSOM RONIN',
-      imageUrl: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=1200&auto=format&fit=crop&q=80',
-    ),
-  ];
+  static List<SteamArtworkPreset> get curatedPresets =>
+      SteamStyleProfileHeader.curatedPresets;
 
   bool get _isTestEnv {
     try {
@@ -159,24 +182,19 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   String _resolveArtworkUrl() {
-    // 1. Постер любимого тайтла (если выбран пользователем)
-    final favPoster = widget.profile.favoriteAnimePoster;
-    if (favPoster != null && favPoster.trim().isNotEmpty && favPoster.startsWith('http')) {
-      return favPoster.trim();
+    // 1. Независимый арт витрины иллюстраций (Steam Artwork Showcase)
+    final art = widget.profile.artworkUrl;
+    if (art != null && art.trim().isNotEmpty) {
+      return art.trim();
     }
-    // 2. Кастомный URL из био
-    final bio = widget.profile.bio;
-    if (bio != null && bio.trim().startsWith('http')) {
-      return bio.trim();
-    }
-    // 3. Дефолтный премиальный киберпанк-самурай арт
+    // 2. Дефолтный премиальный киберпанк-самурай арт
     return curatedPresets.first.imageUrl;
   }
 
   String _resolveArtworkTitle() {
-    if (widget.profile.favoriteAnimeTitle != null &&
-        widget.profile.favoriteAnimeTitle!.isNotEmpty) {
-      return widget.profile.favoriteAnimeTitle!.toUpperCase();
+    final title = widget.profile.artworkTitle;
+    if (title != null && title.trim().isNotEmpty) {
+      return title.trim().toUpperCase();
     }
     return curatedPresets.first.title;
   }
@@ -292,31 +310,32 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final bgShiftX = -effectiveTiltX * 10.0;
     final bgShiftY = -effectiveTiltY * 6.0;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF101218).withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-          width: 1.2,
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101218).withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.10),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.7),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: accent.withValues(alpha: 0.08),
+              blurRadius: 20,
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.7),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
-          ),
-          BoxShadow(
-            color: accent.withValues(alpha: 0.08),
-            blurRadius: 20,
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Padding(
+        clipBehavior: Clip.antiAlias,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+          child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -352,6 +371,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -369,39 +389,48 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         ],
 
         // Плашка "Мой профиль" / "Профиль друга"
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF57CBDE), // Steam Cyan
-                  shape: BoxShape.circle,
-                ),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
-              const SizedBox(width: 6),
-              Text(
-                widget.isCurrentUser ? 'Мой профиль' : 'Профиль друга',
-                style: AppTypography.caption.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  fontSize: 11,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF57CBDE), // Steam Cyan
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      widget.isCurrentUser ? 'Мой профиль' : 'Профиль друга',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
 
-        const Spacer(),
+        const SizedBox(width: 6),
 
         // Уровень Steam / Значок профиля
         if (widget.profile.badgeId != null) ...[
@@ -800,7 +829,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required double tiltX,
     required double tiltY,
   }) {
-    const showcaseHeight = 390.0;
+    final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    final double showcaseHeight = isDesktopOS ? 360.0 : 200.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -810,13 +840,17 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           children: [
             const Icon(Icons.auto_awesome_mosaic_rounded, color: Colors.white70, size: 15),
             const SizedBox(width: 8),
-            const Text(
-              'ВИТРИНА ИЛЛЮСТРАЦИЙ',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
+            const Flexible(
+              child: Text(
+                'ВИТРИНА ИЛЛЮСТРАЦИЙ',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.3,
+                ),
               ),
             ),
             const Spacer(),
@@ -885,39 +919,61 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // РАЗРЕЗАННАЯ ВИТРИНА STEAM: Основная часть (74%) + Правая полоска (26%)
-                  Row(
-                    children: [
-                      // 1. ОСНОВНАЯ ЧАСТЬ (MAIN SLICE)
-                      Expanded(
-                        flex: 74,
-                        child: _buildArtworkSlice(
-                          imageUrl: artworkUrl,
-                          alignment: Alignment(-0.35 + (bgShiftX * 0.012), bgShiftY * 0.012),
-                          isMain: true,
-                          accent: accent,
-                          artworkTitle: artworkTitle,
-                        ),
-                      ),
+                  // РАЗРЕЗАННАЯ ВИТРИНА STEAM: Единый бесшовный арт на две части (Основная 74% + Боковая 26%)
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final totalWidth = constraints.maxWidth;
+                      const gap = 4.0;
+                      final leftWidth = (totalWidth - gap) * 0.74;
+                      final rightWidth = totalWidth - gap - leftWidth;
 
-                      // Тонкий зазор между разрезами витрины Steam (4dp)
-                      Container(
-                        width: 4,
-                        color: const Color(0xFF0C0D12),
-                      ),
+                      return Row(
+                        children: [
+                          // 1. ОСНОВНАЯ ЧАСТЬ (MAIN SLICE 74%)
+                          SizedBox(
+                            width: leftWidth,
+                            height: showcaseHeight,
+                            child: ClipRect(
+                              child: _buildArtworkSlice(
+                                imageUrl: artworkUrl,
+                                totalWidth: totalWidth,
+                                showcaseHeight: showcaseHeight,
+                                bgShiftX: bgShiftX * 0.012 * totalWidth,
+                                bgShiftY: bgShiftY * 0.012 * showcaseHeight,
+                                isMain: true,
+                                accent: accent,
+                                artworkTitle: artworkTitle,
+                              ),
+                            ),
+                          ),
 
-                      // 2. БОКОВАЯ ПОЛОСКА (SIDE SLICE)
-                      Expanded(
-                        flex: 26,
-                        child: _buildArtworkSlice(
-                          imageUrl: artworkUrl,
-                          alignment: Alignment(1.0 + (bgShiftX * 0.012), bgShiftY * 0.012),
-                          isMain: false,
-                          accent: accent,
-                          artworkTitle: artworkTitle,
-                        ),
-                      ),
-                    ],
+                          // Тонкий зазор между разрезами витрины Steam (4dp)
+                          Container(
+                            width: gap,
+                            height: showcaseHeight,
+                            color: const Color(0xFF0C0D12),
+                          ),
+
+                          // 2. БОКОВАЯ ПОЛОСКА (SIDE SLICE 26%)
+                          SizedBox(
+                            width: rightWidth,
+                            height: showcaseHeight,
+                            child: ClipRect(
+                              child: _buildArtworkSlice(
+                                imageUrl: artworkUrl,
+                                totalWidth: totalWidth,
+                                showcaseHeight: showcaseHeight,
+                                bgShiftX: bgShiftX * 0.012 * totalWidth,
+                                bgShiftY: bgShiftY * 0.012 * showcaseHeight,
+                                isMain: false,
+                                accent: accent,
+                                artworkTitle: artworkTitle,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
 
                   // Нижняя панель действий (Лайки, комментарии, название)
@@ -936,9 +992,80 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     );
   }
 
+  Widget _buildArtworkMediaLayer(
+    String imageUrl, {
+    required double width,
+    required double height,
+  }) {
+    final trimmed = imageUrl.trim();
+    if (trimmed.startsWith('live:')) {
+      final liveId = trimmed.substring(5);
+      final bgTheme = SteamBackgroundTheme.fromId(liveId);
+      return SizedBox(
+        width: width,
+        height: height,
+        child: LiveBackgroundWidget(
+          backgroundId: liveId,
+          assetOrUrl: bgTheme.assetOrUrl,
+          fallbackGradient: bgTheme.gradient,
+          isPaused: _isTestEnv,
+        ),
+      );
+    }
+
+    final isLocalPath = !trimmed.startsWith('http://') &&
+        !trimmed.startsWith('https://') &&
+        (trimmed.startsWith('/') ||
+            trimmed.startsWith('file://') ||
+            RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(trimmed));
+
+    if (isLocalPath) {
+      final cleanPath = trimmed.startsWith('file://')
+          ? Uri.parse(trimmed).toFilePath()
+          : trimmed;
+      final file = File(cleanPath);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) => LiveBackgroundWidget(
+            backgroundId: widget.profile.backgroundId ?? 'cyberpunk_city',
+            fallbackGradient: const [Color(0xFF14161F), Color(0xFF1E1338)],
+            isPaused: true,
+          ),
+        );
+      }
+    }
+
+    return CachedNetworkImage(
+      imageUrl: wrapCorsSafeUrl(trimmed),
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+      placeholder: (_, __) => Container(
+        color: const Color(0xFF14161F),
+        child: const Center(
+          child: Icon(Icons.image_outlined, color: Colors.white10, size: 28),
+        ),
+      ),
+      errorWidget: (_, __, ___) => LiveBackgroundWidget(
+        backgroundId: widget.profile.backgroundId ?? 'cyberpunk_city',
+        fallbackGradient: const [Color(0xFF14161F), Color(0xFF1E1338)],
+        isPaused: true,
+      ),
+    );
+  }
+
   Widget _buildArtworkSlice({
     required String imageUrl,
-    required Alignment alignment,
+    required double totalWidth,
+    required double showcaseHeight,
+    required double bgShiftX,
+    required double bgShiftY,
     required bool isMain,
     required Color accent,
     required String artworkTitle,
@@ -946,20 +1073,25 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Фоновое изображение со сдвигом параллакса
-        CachedNetworkImage(
-          imageUrl: wrapCorsSafeUrl(imageUrl),
-          fit: BoxFit.cover,
-          alignment: alignment,
-          placeholder: (_, __) => Container(
-            color: const Color(0xFF14161F),
-            child: const Center(
-              child: Icon(Icons.image_outlined, color: Colors.white10, size: 28),
+        // Единое бесшовное изображение: левая часть (74%) с Alignment.centerLeft,
+        // правая узкая полоска (26%) с Alignment.centerRight как продолжение без дублирования
+        OverflowBox(
+          minWidth: totalWidth,
+          maxWidth: totalWidth,
+          minHeight: showcaseHeight,
+          maxHeight: showcaseHeight,
+          alignment: isMain ? Alignment.centerLeft : Alignment.centerRight,
+          child: Transform.translate(
+            offset: Offset(bgShiftX, bgShiftY),
+            child: SizedBox(
+              width: totalWidth,
+              height: showcaseHeight,
+              child: _buildArtworkMediaLayer(
+                imageUrl,
+                width: totalWidth,
+                height: showcaseHeight,
+              ),
             ),
-          ),
-          errorWidget: (_, __, ___) => Container(
-            color: const Color(0xFF14161F),
-            child: const Icon(Icons.movie_creation_outlined, color: Colors.white24, size: 36),
           ),
         ),
 
@@ -1179,13 +1311,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 }
 
-class _ArtworkPreset {
+class SteamArtworkPreset {
   final String title;
   final String kanji;
   final String tagline;
   final String imageUrl;
 
-  const _ArtworkPreset({
+  const SteamArtworkPreset({
     required this.title,
     required this.kanji,
     required this.tagline,
@@ -1238,10 +1370,8 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
       if (getIt.isRegistered<AuthCubit>()) {
         await getIt<AuthCubit>().updateProfile(
           username: widget.profile.username,
-          favoriteAnimePoster: posterUrl,
-          favoriteAnimeTitle: title,
-          favoriteAnimeId: animeId,
-          showcaseType: 'favorite_anime',
+          artworkUrl: posterUrl,
+          artworkTitle: title,
         );
       }
       if (mounted) {
@@ -1343,7 +1473,7 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
       itemCount: _SteamStyleProfileHeaderState.curatedPresets.length,
       itemBuilder: (context, index) {
         final preset = _SteamStyleProfileHeaderState.curatedPresets[index];
-        final isSelected = widget.profile.favoriteAnimePoster == preset.imageUrl;
+        final isSelected = widget.profile.artworkUrl == preset.imageUrl;
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -1366,10 +1496,17 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(preset.imageUrl),
-                    fit: BoxFit.cover,
-                  ),
+                  if (preset.imageUrl.startsWith('live:'))
+                    LiveBackgroundWidget(
+                      backgroundId: preset.imageUrl.substring(5),
+                      fallbackGradient: const [Color(0xFF14161F), Color(0xFF22143B)],
+                      isPaused: true,
+                    )
+                  else
+                    CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(preset.imageUrl),
+                      fit: BoxFit.cover,
+                    ),
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(

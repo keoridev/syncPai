@@ -45,22 +45,28 @@ class AppButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveHeight = AppDimensions.buttonHeight;
 
+    final effectiveColor = backgroundColor ?? Theme.of(context).colorScheme.primary;
+    final onEffectiveColor = AppColors.onColor(effectiveColor);
+    final effectiveTextColor = variant == AppButtonVariant.primary
+        ? onEffectiveColor
+        : AppColors.textPrimary;
+
     final child = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (isLoading) ...[
-          const SizedBox(
+          SizedBox(
             width: 18,
             height: 18,
             child: CircularProgressIndicator(
               strokeWidth: 2.0,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.textPrimary),
+              valueColor: AlwaysStoppedAnimation<Color>(effectiveTextColor),
             ),
           ),
           const SizedBox(width: AppDimensions.spacingSm),
         ] else if (icon != null) ...[
-          Icon(icon, size: AppDimensions.iconSizeMedium, color: AppColors.textPrimary),
+          Icon(icon, size: AppDimensions.iconSizeMedium, color: effectiveTextColor),
           const SizedBox(width: AppDimensions.spacingSm),
         ],
         Flexible(
@@ -68,7 +74,7 @@ class AppButton extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(color: AppColors.textPrimary),
+            style: AppTypography.labelLarge.copyWith(color: effectiveTextColor),
           ),
         ),
       ],
@@ -78,12 +84,11 @@ class AppButton extends StatelessWidget {
 
     switch (variant) {
       case AppButtonVariant.primary:
-        final effectiveColor = backgroundColor ?? Theme.of(context).colorScheme.primary;
         button = ElevatedButton(
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: effectiveColor,
-            foregroundColor: AppColors.textPrimary,
+            foregroundColor: onEffectiveColor,
             elevation: 0,
             minimumSize: Size(width ?? 0, effectiveHeight),
             shape: const RoundedRectangleBorder(

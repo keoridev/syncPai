@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,8 +21,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import 'package:sync_pai/features/player/services/global_mini_player_service.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
 import '../widgets/auto_next_episode_banner.dart';
+import '../widgets/desktop_player_layout.dart';
 import '../widgets/double_tap_seek_overlay.dart';
 import '../widgets/floating_reactions_layer.dart';
 import '../widgets/player_controls_overlay.dart';
@@ -58,29 +61,50 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   late final VideoController _videoController;
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
-  bool _isMiniPlayer = false;
-  Offset? _miniPlayerOffset;
-  double _miniPlayerScale = 1.0;
-  double _baseScale = 1.0;
+  bool _handedOffToMiniPlayer = false;
 
   void _minimizePlayer() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    setState(() {
-      _isMiniPlayer = true;
-    });
-  }
+    if (_handedOffToMiniPlayer) return;
+    _saveWatchProgress();
 
-  void _restorePlayer() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    setState(() {
-      _isMiniPlayer = false;
-    });
+    final bool isDesktopOS =
+        !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    if (!isDesktopOS) {
+      // На телефоне возвращаем портретную ориентацию при сворачивании в мини-окно
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      Future.delayed(const Duration(milliseconds: 500), () {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      });
+    }
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    // Если поток упал с фатальной ошибкой, не сворачиваем в мини-плеер, а просто выходим
+    if (_cubit.state.errorMessage != null && !_cubit.state.isPlaying) {
+      _handleExit();
+      return;
+    }
+
+    _handedOffToMiniPlayer = true;
+    GlobalMiniPlayerService.instance.minimize(
+      cubit: _cubit,
+      videoController: _videoController,
+      onSaveProgress: _saveWatchProgress,
+    );
+
+    if (context.canPop()) {
+      context.pop();
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      context.go('/');
+    }
   }
 
   @override
@@ -107,29 +131,39 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
     });
 
-    final syncRepo = getIt.isRegistered<SyncRoomRepository>()
-        ? getIt<SyncRoomRepository>()
-        : null;
+    final miniService = GlobalMiniPlayerService.instance;
+    if (miniService.hasSessionFor(widget.title.id, widget.initialEpisode.episode)) {
+      final claimed = miniService.claimSession()!;
+      _cubit = claimed.$1;
+      _videoController = claimed.$2;
+    } else {
+      miniService.close();
 
-    _cubit = PlayerCubit(
-      title: widget.title,
-      episode: widget.initialEpisode,
-      initialQuality: widget.initialQuality,
-      roomCode: widget.roomCode,
-      isHost: widget.isHost,
-      syncRepository: syncRepo,
-      initialPosition: widget.initialPosition,
-    );
+      final syncRepo = getIt.isRegistered<SyncRoomRepository>()
+          ? getIt<SyncRoomRepository>()
+          : null;
 
-    _videoController = VideoController(
-      _cubit.player,
-      configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: true,
-        androidAttachSurfaceAfterVideoParameters: true,
-      ),
-    );
+      _cubit = PlayerCubit(
+        title: widget.title,
+        episode: widget.initialEpisode,
+        initialQuality: widget.initialQuality,
+        roomCode: widget.roomCode,
+        isHost: widget.isHost,
+        syncRepository: syncRepo,
+        initialPosition: widget.initialPosition,
+      );
 
-    // Фиксируем воспроизведение в списках и статистике профиля
+      _videoController = VideoController(
+        _cubit.player,
+        configuration: const VideoControllerConfiguration(
+          enableHardwareAcceleration: true,
+          androidAttachSurfaceAfterVideoParameters: true,
+        ),
+      );
+    }
+
+    // Фиксируем открытие серии в истории просмотров (не затрагивая вкладку «Смотрю»)
+    _recordInitialWatchHistory();
     _recordPlaybackInAnimeList();
 
     if (widget.initialPosition != null && widget.initialPosition! > Duration.zero) {
@@ -161,6 +195,35 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (isAway) {
       _saveWatchProgress();
     }
+  }
+
+  void _recordInitialWatchHistory() {
+    if (widget.title.id <= 0 || widget.title.code == 'free_sync_room') return;
+    if (!getIt.isRegistered<WatchHistoryCubit>()) return;
+    try {
+      final hist = getIt<WatchHistoryCubit>();
+      final existing = hist.state.historyMap[widget.title.id];
+      final initialPos = widget.initialPosition ??
+          (existing != null && existing.episode == widget.initialEpisode.episode
+              ? Duration(milliseconds: existing.positionMs)
+              : const Duration(seconds: 5));
+      final initialDur = existing != null && existing.durationMs > 0
+          ? Duration(milliseconds: existing.durationMs)
+          : const Duration(minutes: 24);
+      final poster = widget.title.posterMedium.isNotEmpty
+          ? widget.title.posterMedium
+          : widget.title.posterSmall;
+
+      hist.saveProgress(
+        titleId: widget.title.id,
+        titleName: widget.title.displayTitle,
+        posterUrl: poster,
+        episode: widget.initialEpisode.episode,
+        episodeName: widget.initialEpisode.name,
+        position: initialPos,
+        duration: initialDur,
+      );
+    } catch (_) {}
   }
 
   void _recordPlaybackInAnimeList({int? episodeNum, Duration? position}) {
@@ -258,21 +321,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           position: pos,
           duration: dur,
         );
-        if (widget.title.shikimoriId != null &&
-            widget.title.shikimoriId! > 0 &&
-            widget.title.shikimoriId != widget.title.id) {
-          hist.saveProgress(
-            titleId: widget.title.shikimoriId!,
-            titleName: widget.title.displayTitle,
-            posterUrl: widget.title.posterMedium.isNotEmpty
-                ? widget.title.posterMedium
-                : widget.title.posterSmall,
-            episode: ep,
-            episodeName: _cubit.state.episode.name,
-            position: pos,
-            duration: dur,
-          );
-        }
       }
     }
 
@@ -339,11 +387,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       SystemUiMode.edgeToEdge,
     );
 
-    _cubit.close();
+    if (!_handedOffToMiniPlayer) {
+      _cubit.close();
+    }
     super.dispose();
   }
 
   KeyEventResult _handleTvKeyEvent(FocusNode node, KeyEvent event) {
+    final bool isDesktopOS =
+        !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    if (isDesktopOS) {
+      // На десктопе горячие клавиши обрабатывает DesktopPlayerLayout
+      return KeyEventResult.ignored;
+    }
     if (event is KeyDownEvent) {
       switch (event.logicalKey) {
         case LogicalKeyboardKey.arrowLeft:
@@ -393,7 +449,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
 
     return PopScope(
-      canPop: _isMiniPlayer,
+      canPop: _handedOffToMiniPlayer,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           _saveWatchProgress();
@@ -402,7 +458,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           );
           return;
         }
-        if (!_isMiniPlayer) {
+        if (!_handedOffToMiniPlayer) {
           _minimizePlayer();
         }
       },
@@ -412,7 +468,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         child: BlocProvider.value(
           value: _cubit,
           child: Scaffold(
-            backgroundColor: _isMiniPlayer ? Colors.transparent : Colors.black,
+            backgroundColor: Colors.black,
             resizeToAvoidBottomInset: false,
             body: BlocConsumer<PlayerCubit, PlayerState>(
               listenWhen: (previous, current) =>
@@ -433,260 +489,62 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   position: state.position,
                 );
               },
-            builder: (context, state) {
-              if (_isMiniPlayer) {
-                final screenSize = MediaQuery.sizeOf(context);
-                final padding = MediaQuery.paddingOf(context);
-                final baseW = 210.0 * _miniPlayerScale;
-                final baseH = 118.0 * _miniPlayerScale;
-                final defaultLeft = screenSize.width - baseW - 16;
-                final defaultTop = screenSize.height - baseH - padding.bottom - 70;
+              builder: (context, state) {
+                final bool isDesktopOS = !kIsWeb &&
+                    (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
-                final currentLeft = (_miniPlayerOffset?.dx ?? defaultLeft)
-                    .clamp(8.0, screenSize.width - baseW - 8.0);
-                final currentTop = (_miniPlayerOffset?.dy ?? defaultTop)
-                    .clamp(padding.top + 8.0, screenSize.height - baseH - padding.bottom - 8.0);
+                if (isDesktopOS) {
+                  return DesktopPlayerLayout(
+                    cubit: _cubit,
+                    state: state,
+                    videoController: _videoController,
+                    onBack: _handleExit,
+                    onSaveProgress: _saveWatchProgress,
+                    skipOverlay: _buildSkipOverlay(state),
+                  );
+                }
 
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Фоновый жест клика вне мини-плеера закрывает плеер
-                    Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: _handleExit,
-                      ),
-                    ),
-                    // Плавающее и масштабируемое мини-окно плеера (перемещение + ресайз + пауза)
-                    Positioned(
-                      left: currentLeft,
-                      top: currentTop,
-                      child: GestureDetector(
-                        onScaleStart: (_) {
-                          _baseScale = _miniPlayerScale;
-                        },
-                        onScaleUpdate: (details) {
-                          setState(() {
-                            _miniPlayerScale = (_baseScale * details.scale).clamp(0.85, 1.6);
-                            _miniPlayerOffset = Offset(
-                              currentLeft + details.focalPointDelta.dx,
-                              currentTop + details.focalPointDelta.dy,
-                            );
-                          });
-                        },
-                        child: Container(
-                          width: baseW,
-                          height: baseH,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10121A),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                blurRadius: 22,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Video(
-                                controller: _videoController,
-                                controls: NoVideoControls,
-                              ),
-                              Positioned.fill(
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.black.withValues(alpha: 0.65),
-                                        Colors.transparent,
-                                        Colors.black.withValues(alpha: 0.82),
-                                      ],
-                                      stops: const [0.0, 0.40, 1.0],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              // Верхняя строка: кнопка развернуть, название тайтла, закрыть
-                              Positioned(
-                                top: 4,
-                                left: 6,
-                                right: 6,
-                                child: Row(
-                                  children: [
-                                    GestureDetector(
-                                      onTap: _restorePlayer,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.55),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.fullscreen_rounded,
-                                          size: 14,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        state.title.displayTitle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    GestureDetector(
-                                      onTap: _handleExit,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.55),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.close_rounded,
-                                          size: 13,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Центр: Кнопка Play/Pause или индикатор загрузки
-                              Center(
-                                child: state.isBuffering
-                                    ? Container(
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.70),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                          ),
-                                        ),
-                                      )
-                                    : GestureDetector(
-                                        onTap: () => _cubit.togglePlayPause(),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 0.70),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white.withValues(alpha: 0.35),
-                                              width: 1,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withValues(alpha: 0.5),
-                                                blurRadius: 10,
-                                              ),
-                                            ],
-                                          ),
-                                          child: Icon(
-                                            state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                        ),
-                                      ),
-                              ),
-                              // Нижняя строка: Номер серии и индикатор ресайза
-                              Positioned(
-                                bottom: 4,
-                                left: 8,
-                                right: 6,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Серия ${state.episode.episode}',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.pinch_rounded,
-                                      size: 11,
-                                      color: Colors.white.withValues(alpha: 0.45),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                return GestureDetector(
+                  onVerticalDragEnd: (details) {
+                    // Свайп вниз в портретном режиме сворачивает плеер в глобальное мини-окно
+                    if (!state.isBuffering &&
+                        MediaQuery.of(context).orientation == Orientation.portrait &&
+                        details.primaryVelocity != null &&
+                        details.primaryVelocity! > 750) {
+                      _minimizePlayer();
+                    }
+                  },
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Видео полотно libmpv без стандартных нативных контролов
+                      Center(
+                        child: Video(
+                          controller: _videoController,
+                          controls: NoVideoControls,
+                          fit: state.videoFit,
+                          fill: Colors.black,
                         ),
                       ),
-                    ),
-                  ],
-                );
-              }
 
-              return GestureDetector(
-                onVerticalDragEnd: (details) {
-                  // Минимизируем плеер только при намеренном свайпе вниз в портретном режиме, когда видео не буферизируется
-                  if (!_isMiniPlayer &&
-                      !state.isBuffering &&
-                      MediaQuery.of(context).orientation == Orientation.portrait &&
-                      details.primaryVelocity != null &&
-                      details.primaryVelocity! > 850) {
-                    _minimizePlayer();
-                  }
-                },
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Видео полотно libmpv без стандартных нативных контролов
-                  Center(
-                    child: Video(
-                      controller: _videoController,
-                      controls: NoVideoControls,
-                    ),
-                  ),
-
-                  // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
-                  DoubleTapSeekOverlay(
-                    onTap: () => _cubit.toggleControls(),
-                    onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
-                    onCenterDoubleTap: () => _cubit.togglePlayPause(),
-                    onBrightnessChanged: (b) => _cubit.setBrightness(b),
-                    onVolumeChanged: (v) => _cubit.setVolume(v),
-                    onScrubSeek: (pos) => _cubit.seek(pos),
-                    currentPosition: state.position,
-                    totalDuration: state.duration,
-                    currentVolume: state.volume,
-                    currentBrightness: state.brightness,
-                    isScreenLocked: state.isScreenLocked,
-                    onScreenLockedTap: () {
-                      HapticFeedback.selectionClick();
-                    },
-                    opening: state.episode.opening,
-                    ending: state.episode.ending,
+                      // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
+                      DoubleTapSeekOverlay(
+                        onTap: () => _cubit.toggleControls(),
+                        onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
+                        onCenterDoubleTap: () => _cubit.togglePlayPause(),
+                        onBrightnessChanged: (b) => _cubit.setBrightness(b),
+                        onVolumeChanged: (v) => _cubit.setVolume(v),
+                        onScrubSeek: (pos) => _cubit.seek(pos),
+                        currentPosition: state.position,
+                        totalDuration: state.duration,
+                        currentVolume: state.volume,
+                        currentBrightness: state.brightness,
+                        isScreenLocked: state.isScreenLocked,
+                        onScreenLockedTap: () {
+                          HapticFeedback.selectionClick();
+                        },
+                        opening: state.effectiveOpening,
+                        ending: state.effectiveEnding,
                     previewUrl: state.episode.previewUrl ??
                         (state.title.posterMedium.isNotEmpty
                             ? state.title.posterMedium
@@ -900,8 +758,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       onCancel: () => _cubit.cancelAutoNextCountdown(),
                     ),
 
-                  // Индикатор локальной буферизации
-                  if (state.isBuffering && state.bufferNotice == null)
+                  // Индикатор локальной буферизации (показывается только когда скрыты контролы,
+                  // так как при видимых контролах спиннер встроен прямо в центральную кнопку Play/Pause)
+                  if (state.isBuffering &&
+                      state.bufferNotice == null &&
+                      !state.areControlsVisible &&
+                      state.errorMessage == null)
                     Center(
                       child: Container(
                         padding: const EdgeInsets.all(16),
@@ -921,18 +783,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                  // Премиальная плавающая кнопка пропуска опенинга и эндинга (5-7 сек таймер, без неона)
-                  _buildSkipOverlay(state),
-
                   // Кастомный оверлей управления в стиле Cinema Dark
                   PlayerControlsOverlay(
                     cubit: _cubit,
                     state: state,
-                    onBack: _handleExit,
+                    onBack: _minimizePlayer,
+                    onMinimize: _minimizePlayer,
                     onToggleOrientation: _toggleScreenOrientation,
                     syncStatus: state.isSyncRoom ? state.syncStatus : null,
                     syncPeerName: state.peerName,
                   ),
+
+                  // Плавающая кнопка пропуска опенинга и эндинга + таймер обратного отсчета до эндинга (рендерится поверх контролов)
+                  _buildSkipOverlay(state),
 
                   // Ненавязчивая плавающая иконка замка при активной блокировке
                   if (state.isScreenLocked)
@@ -1061,67 +924,137 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
   Widget _buildSkipOverlay(PlayerState state) {
-    if (state.isScreenLocked) return const SizedBox.shrink();
-
-    final op = state.episode.opening;
-    final ed = state.episode.ending;
-    final curSec = state.position.inSeconds;
-
-    final isOpening = op != null && curSec >= op.start && curSec < op.stop;
-    final isEnding = ed != null && curSec >= ed.start && curSec < ed.stop;
-
-    if (!isOpening && !isEnding) return const SizedBox.shrink();
-
-    // Показываем кнопку в первые 7 секунд после начала опенинга/эндинга, либо если меню открыто
-    final startSec = isOpening ? op.start : ed!.start;
-    final elapsedSec = curSec - startSec;
-    if (elapsedSec > 7 && !state.areControlsVisible) {
+    if (state.isScreenLocked || state.errorMessage != null) {
       return const SizedBox.shrink();
     }
 
+    final op = state.effectiveOpening;
+    final ed = state.effectiveEnding;
+    final curSec = state.position.inSeconds;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final bottomOffset = MediaQuery.paddingOf(context).bottom +
+        (state.areControlsVisible ? (isLandscape ? 82.0 : 142.0) : 28.0);
+
+    // 1. Обратный отсчет за 15 секунд до начала эндинга («До эндинга: X сек»)
+    if (ed != null && ed.start > 30 && curSec >= ed.start - 15 && curSec < ed.start) {
+      final remainingToEnding = ed.start - curSec;
+      return Positioned(
+        bottom: bottomOffset,
+        right: 20,
+        child: GestureDetector(
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            _cubit.seek(ed.stopDuration);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xFF14161F).withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFBA68C8).withValues(alpha: 0.55),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  blurRadius: 18,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.timer_outlined, color: Color(0xFFCE93D8), size: 16),
+                const SizedBox(width: 7),
+                Text(
+                  'До эндинга: $remainingToEnding сек • Скип ▶',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.0,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 2. Активная фаза опенинга или эндинга (кнопка видна на протяжении всего интервала!)
+    final isOpening = op != null && curSec >= op.start && curSec <= op.stop;
+    final isEnding = ed != null && curSec >= ed.start && curSec <= ed.stop;
+
+    if (!isOpening && !isEnding) return const SizedBox.shrink();
+
     final label = isOpening ? 'Пропустить опенинг' : 'Пропустить эндинг';
     final targetDuration = isOpening ? op.stopDuration : ed!.stopDuration;
+    final accentBorder = isOpening
+        ? const Color(0xFFFFB300).withValues(alpha: 0.65)
+        : const Color(0xFFBA68C8).withValues(alpha: 0.65);
 
     return Positioned(
-      bottom: MediaQuery.paddingOf(context).bottom + 76,
+      bottom: bottomOffset,
       right: 20,
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          _cubit.seek(targetDuration);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            color: const Color(0xFF14161F).withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.20),
-              width: 1.0,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.60),
-                blurRadius: 18,
-                offset: const Offset(0, 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            if (isEnding) {
+              final all = state.title.episodes;
+              final curIdx = all.indexWhere((e) => e.episode == state.episode.episode);
+              final hasNext = curIdx >= 0 && curIdx < all.length - 1;
+              // Если эндинг в самом конце серии и есть следующая серия — переходим к концу или запускаем отсчет следующей
+              _cubit.seek(targetDuration);
+              if (hasNext && (state.duration.inSeconds - ed.stop) <= 15) {
+                _cubit.startAutoNextCountdown(all[curIdx + 1]);
+              }
+            } else {
+              _cubit.seek(targetDuration);
+            }
+          },
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF14161F).withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: accentBorder,
+                width: 1.3,
               ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 17),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
-                  letterSpacing: 0.2,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  blurRadius: 18,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-            ],
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.fast_forward_rounded,
+                  color: isOpening ? const Color(0xFFFFCA28) : const Color(0xFFCE93D8),
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.0,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

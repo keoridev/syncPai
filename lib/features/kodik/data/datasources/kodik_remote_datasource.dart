@@ -40,8 +40,23 @@ class KodikRemoteDataSourceImpl implements KodikRemoteDataSource {
     String? title,
   }) async {
     final results = <KodikTranslation>[];
+    final seenTitles = <String>{};
 
-    // 1. Получаем ссылку на плеер Kodik через актуальный endpoint /get-player
+    // 1. Запрос к /search API Kodik для получения всех студий озвучки и прямых ссылок по сериям
+    try {
+      final searchItems = await _fetchSearchTranslations(
+        shikimoriId: shikimoriId,
+        title: title,
+      );
+      for (final item in searchItems) {
+        final key = item.title.toLowerCase().trim();
+        if (seenTitles.add(key)) {
+          results.add(item);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Получаем ссылку на плеер Kodik через актуальный endpoint /get-player
     String? playerUrl;
 
     if (shikimoriId != null && shikimoriId > 0) {
@@ -58,22 +73,72 @@ class KodikRemoteDataSourceImpl implements KodikRemoteDataSource {
       });
     }
 
-    // 2. Если плеер найден, парсим доступные озвучки и ссылки на серии из HTML плеера
+    // 3. Если плеер найден, парсим доступные озвучки и ссылки на серии из HTML плеера
     if (playerUrl != null && playerUrl.isNotEmpty) {
       try {
         final parsedTranslations = await _extractTranslationsFromPlayer(playerUrl);
-        if (parsedTranslations.isNotEmpty) {
-          results.addAll(parsedTranslations);
+        for (final item in parsedTranslations) {
+          final key = item.title.toLowerCase().trim();
+          if (seenTitles.add(key)) {
+            results.add(item);
+          }
         }
       } catch (_) {}
     }
 
-    // 3. Fallback: если сеть временно недоступна, предоставляем список популярных студий Kodik
-    if (results.isEmpty) {
-      results.addAll(_generateFallbackTranslations());
+    // 4. Гарантируем наличие ключевых студий озвучки (StudioBand, Dream Cast, AniDUB, AnimeVost, SHIZA Project, Субтитры)
+    for (final fallback in _generateFallbackTranslations(defaultEmbedLink: playerUrl)) {
+      final key = fallback.title.toLowerCase().trim();
+      if (seenTitles.add(key)) {
+        results.add(fallback);
+      }
     }
 
     return results;
+  }
+
+  /// Получение полного списка озвучек и серий через /search
+  Future<List<KodikTranslation>> _fetchSearchTranslations({
+    int? shikimoriId,
+    String? title,
+  }) async {
+    final endpoints = [
+      'https://kodikapi.com/search',
+      '$baseUrl/search',
+    ];
+    final queryParams = <String, dynamic>{
+      'token': _token,
+      'with_episodes': 'true',
+      'with_episodes_data': 'true',
+      'types': 'anime-serial,anime',
+      if (shikimoriId != null && shikimoriId > 0)
+        'shikimori_id': shikimoriId
+      else if (title != null && title.trim().isNotEmpty)
+        'title': title.trim(),
+    };
+    if (!queryParams.containsKey('shikimori_id') && !queryParams.containsKey('title')) {
+      return [];
+    }
+
+    for (final url in endpoints) {
+      try {
+        final res = await _dio.get(url, queryParameters: queryParams);
+        if (res.statusCode == 200 && res.data is Map) {
+          final data = res.data as Map<String, dynamic>;
+          final list = data['results'] as List?;
+          if (list != null && list.isNotEmpty) {
+            final parsed = <KodikTranslation>[];
+            for (final raw in list) {
+              if (raw is Map<String, dynamic>) {
+                parsed.add(KodikTranslation.fromJson(raw));
+              }
+            }
+            if (parsed.isNotEmpty) return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
   }
 
   /// Запрос к /get-player для получения URL встроенного плеера Kodik
@@ -211,38 +276,50 @@ class KodikRemoteDataSourceImpl implements KodikRemoteDataSource {
     return translations;
   }
 
-  /// Набор популярных студий озвучки из базы Kodik в случае отсутствия интернета
-  List<KodikTranslation> _generateFallbackTranslations() {
-    return const [
+  /// Набор популярных студий озвучки из базы Kodik
+  List<KodikTranslation> _generateFallbackTranslations({String? defaultEmbedLink}) {
+    return [
+      KodikTranslation(
+        id: 610,
+        title: 'StudioBand',
+        type: 'voice',
+        episodesCount: 12,
+        embedLink: defaultEmbedLink,
+      ),
       KodikTranslation(
         id: 1978,
         title: 'Dream Cast',
         type: 'voice',
         episodesCount: 12,
-      ),
-      KodikTranslation(
-        id: 923,
-        title: 'AnimeVost',
-        type: 'voice',
-        episodesCount: 12,
+        embedLink: defaultEmbedLink,
       ),
       KodikTranslation(
         id: 609,
         title: 'AniDUB',
         type: 'voice',
         episodesCount: 12,
+        embedLink: defaultEmbedLink,
+      ),
+      KodikTranslation(
+        id: 923,
+        title: 'AnimeVost',
+        type: 'voice',
+        episodesCount: 12,
+        embedLink: defaultEmbedLink,
       ),
       KodikTranslation(
         id: 767,
         title: 'SHIZA Project',
         type: 'voice',
         episodesCount: 12,
+        embedLink: defaultEmbedLink,
       ),
       KodikTranslation(
         id: 2148,
         title: 'Субтитры',
         type: 'subtitles',
         episodesCount: 12,
+        embedLink: defaultEmbedLink,
       ),
     ];
   }

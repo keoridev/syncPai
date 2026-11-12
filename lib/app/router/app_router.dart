@@ -166,6 +166,11 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const WatchTogetherScreen(),
     ),
     GoRoute(
+      path: '/watch-together',
+      name: 'watch-together',
+      builder: (context, state) => const WatchTogetherScreen(),
+    ),
+    GoRoute(
       path: '/shorts',
       name: 'shorts',
       builder: (context, state) => AnimeShortsScreen(

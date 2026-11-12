@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/painting.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -77,6 +78,7 @@ class PlayerState extends Equatable {
   final bool showWatchPartyStats;
   final int pauseCount;
   final int emojisSent;
+  final BoxFit videoFit;
 
   const PlayerState({
     required this.title,
@@ -125,9 +127,29 @@ class PlayerState extends Equatable {
     this.showWatchPartyStats = false,
     this.pauseCount = 0,
     this.emojisSent = 0,
+    this.videoFit = BoxFit.contain,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
+
+  /// Эффективный диапазон опенинга (из метаданных серии или стандартный для 20+ мин эпизода)
+  TimecodeRange? get effectiveOpening {
+    if (episode.opening != null) return episode.opening;
+    if (duration.inSeconds >= 1080) {
+      return const TimecodeRange(start: 85, stop: 175);
+    }
+    return null;
+  }
+
+  /// Эффективный диапазон эндинга (из метаданных серии или последние 90 сек для 20+ мин эпизода)
+  TimecodeRange? get effectiveEnding {
+    if (episode.ending != null) return episode.ending;
+    final totalSec = duration.inSeconds;
+    if (totalSec >= 1080) {
+      return TimecodeRange(start: totalSec - 95, stop: totalSec - 5);
+    }
+    return null;
+  }
 
   PlayerState copyWith({
     AnimeTitle? title,
@@ -176,6 +198,7 @@ class PlayerState extends Equatable {
     bool? showWatchPartyStats,
     int? pauseCount,
     int? emojisSent,
+    BoxFit? videoFit,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -224,6 +247,7 @@ class PlayerState extends Equatable {
       showWatchPartyStats: showWatchPartyStats ?? this.showWatchPartyStats,
       pauseCount: pauseCount ?? this.pauseCount,
       emojisSent: emojisSent ?? this.emojisSent,
+      videoFit: videoFit ?? this.videoFit,
     );
   }
 
@@ -275,5 +299,6 @@ class PlayerState extends Equatable {
         showWatchPartyStats,
         pauseCount,
         emojisSent,
+        videoFit,
       ];
 }

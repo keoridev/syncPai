@@ -19,6 +19,7 @@ class PlayerProgressBar extends StatefulWidget {
   final TimecodeRange? opening;
   final TimecodeRange? ending;
   final bool isBuffering;
+  final bool showTimestamps;
 
   const PlayerProgressBar({
     super.key,
@@ -32,6 +33,7 @@ class PlayerProgressBar extends StatefulWidget {
     this.opening,
     this.ending,
     this.isBuffering = false,
+    this.showTimestamps = true,
   });
 
   @override
@@ -352,46 +354,47 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
             );
           },
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _formatDuration(widget.position),
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (widget.isLocked) ...[
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.lock_outline_rounded,
-                    size: 13,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 4),
+        if (widget.showTimestamps)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    'Хост управляет',
+                    _formatDuration(widget.position),
                     style: AppTypography.caption.copyWith(
-                      color: AppColors.textMuted,
-                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
+                  if (widget.isLocked) ...[
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 13,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Хост управляет',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
-            Text(
-              _formatDuration(widget.duration),
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textMuted,
-                fontWeight: FontWeight.w500,
               ),
-            ),
-          ],
-        ),
+              Text(
+                _formatDuration(widget.duration),
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

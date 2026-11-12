@@ -31,7 +31,7 @@ class GlassContainer extends StatelessWidget {
     this.margin,
     this.borderRadius,
     this.shape = BoxShape.rectangle,
-    this.blurSigma = 12.0,
+    this.blurSigma = 8.0,
     this.backgroundOpacity = 0.08,
     this.borderOpacity = 0.12,
     this.tintColor = Colors.white,
@@ -46,7 +46,7 @@ class GlassContainer extends StatelessWidget {
     this.height,
     this.padding,
     this.margin,
-    this.blurSigma = 12.0,
+    this.blurSigma = 8.0,
     this.backgroundOpacity = 0.08,
     this.borderOpacity = 0.12,
     this.tintColor = Colors.white,
@@ -98,19 +98,25 @@ class GlassContainer extends StatelessWidget {
       );
     }
 
-    Widget glass = ClipRRect(
-      borderRadius: effectiveRadius ?? BorderRadius.zero,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: content,
+    final effectiveSigma = blurSigma.clamp(0.0, 8.0);
+
+    Widget glass = RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: effectiveRadius ?? BorderRadius.zero,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: effectiveSigma, sigmaY: effectiveSigma),
+          child: content,
+        ),
       ),
     );
 
     if (shape == BoxShape.circle) {
-      glass = ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: content,
+      glass = RepaintBoundary(
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: effectiveSigma, sigmaY: effectiveSigma),
+            child: content,
+          ),
         ),
       );
     }
@@ -145,7 +151,7 @@ class GlassIconButton extends StatelessWidget {
     this.iconSize = 20.0,
     this.iconColor = AppColors.textPrimary,
     this.tooltip,
-    this.blurSigma = 12.0,
+    this.blurSigma = 8.0,
     this.backgroundOpacity = 0.10,
   });
 

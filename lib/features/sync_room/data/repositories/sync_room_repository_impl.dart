@@ -20,6 +20,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   final Map<String, StreamController<List<PeerPresence>>> _presenceControllers = {};
   final Map<String, Map<String, PeerPresence>> _presences = {};
   final Map<String, RealtimeChannel> _supabaseChannels = {};
+  final Map<String, List<void Function(double timeSec, bool isPlaying, int episodeIndex)>>
+      _playbackSyncCallbacks = {};
   final Random _random = Random();
 
   SupabaseClient? get _supabase {
@@ -28,6 +30,15 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Извлекает чистый 6-значный PIN-код для таблицы `public.rooms` и канала `room_$pinCode`
+  static String extractPinCode(String rawCode) {
+    final digits = rawCode.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isNotEmpty) {
+      return digits;
+    }
+    return rawCode.trim().toUpperCase();
   }
 
   static String normalizeCode(String rawCode) {
@@ -46,7 +57,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   }
 
   StreamController<SyncEvent> _getOrCreateRoomController(String roomCode) {
-    final key = normalizeCode(roomCode);
+    final key = extractPinCode(roomCode);
     return _roomControllers.putIfAbsent(
       key,
       () => StreamController<SyncEvent>.broadcast(),
@@ -54,7 +65,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   }
 
   StreamController<SyncPacket> _getOrCreatePacketController(String roomCode) {
-    final key = normalizeCode(roomCode);
+    final key = extractPinCode(roomCode);
     return _packetControllers.putIfAbsent(
       key,
       () => StreamController<SyncPacket>.broadcast(),
@@ -62,7 +73,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   }
 
   StreamController<List<PeerPresence>> _getOrCreatePresenceController(String roomCode) {
-    final key = normalizeCode(roomCode);
+    final key = extractPinCode(roomCode);
     return _presenceControllers.putIfAbsent(
       key,
       () => StreamController<List<PeerPresence>>.broadcast(),
@@ -144,16 +155,16 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     final sb = _supabase;
     if (sb == null) return null;
 
-    final key = normalizeCode(roomCode);
-    if (_supabaseChannels.containsKey(key)) {
-      return _supabaseChannels[key];
+    final pinKey = extractPinCode(roomCode);
+    if (_supabaseChannels.containsKey(pinKey)) {
+      return _supabaseChannels[pinKey];
     }
 
-    // Топик канала Supabase Realtime: room_$roomId
-    final topic = 'room_$key';
+    // Топик канала Supabase Realtime: room_$pinCode
+    final topic = 'room_$pinKey';
     final channel = sb.channel(topic);
 
-    // 1. Postgres Changes: для отслеживания новых участников в таблице rooms
+    // 1. Postgres Changes: для отслеживания обновлений состояния в таблице public.rooms
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
@@ -161,77 +172,201 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'id',
-        value: key,
+        value: pinKey,
       ),
       callback: (payload) {
         final newRecord = payload.newRecord;
         if (newRecord.isNotEmpty) {
-          final peerName = newRecord['peer_name'] as String? ?? newRecord['guest_name'] as String?;
-          if (peerName != null && peerName.isNotEmpty) {
-            final room = _rooms[key];
-            if (room != null) {
-              _rooms[key] = room.copyWith(
-                peerName: peerName,
-                status: SyncRoomStatus.connected,
-              );
+          final isPlaying = newRecord['is_playing'] as bool?;
+          final currentTimeSec = (newRecord['current_time_sec'] as num?)?.toDouble();
+          final episodeIndex = (newRecord['episode_index'] as num?)?.toInt();
+
+          if (isPlaying != null || currentTimeSec != null || episodeIndex != null) {
+            final time = currentTimeSec ?? 0.0;
+            final playingBool = isPlaying ?? false;
+            final ep = episodeIndex ?? 0;
+
+            final callbacks = _playbackSyncCallbacks[pinKey];
+            if (callbacks != null) {
+              for (final cb in List.of(callbacks)) {
+                cb(time, playingBool, ep);
+              }
             }
-            _getOrCreateRoomController(key).add(SyncEvent(
-              type: SyncEventType.peerJoined,
-              roomCode: key,
-              senderName: peerName,
-              timestamp: DateTime.now(),
-            ));
           }
         }
       },
     );
 
-    // 2. Broadcast: для быстрой передачи таймкода и состояния плеера (play/pause) по WebSockets
+    // 2. Broadcast: основной канал синхронизации плеера (playback_sync) по ТЗ
     channel.onBroadcast(
-      event: 'sync_player',
+      event: 'playback_sync',
       callback: (payload) {
-        final time = payload['time'];
-        final isPlaying = payload['is_playing'];
-        final timeMs = time is num ? (time * 1000).toInt() : (time as int? ?? 0);
-        final playingBool = isPlaying is bool ? isPlaying : false;
+        final time = (payload['time'] as num?)?.toDouble() ?? 0.0;
+        final isPlaying = payload['is_playing'] as bool? ?? false;
+        final episode = (payload['episode'] as num?)?.toInt() ?? 0;
+        final timeMs = (time * 1000).toInt();
+
+        final callbacks = _playbackSyncCallbacks[pinKey];
+        if (callbacks != null) {
+          for (final cb in List.of(callbacks)) {
+            cb(time, isPlaying, episode);
+          }
+        }
 
         final packet = SyncPacket(
-          roomCode: key,
+          roomCode: pinKey,
           action: SyncActionTypes.controlAction,
           sender: payload['sender'] as String? ?? 'Peer',
           timestampMs: DateTime.now().millisecondsSinceEpoch,
           payload: {
-            'action': playingBool ? 'play' : 'pause',
+            'action': isPlaying ? 'play' : 'pause',
+            'control_action': isPlaying ? 'play' : 'pause',
             'position_ms': timeMs,
-            'is_playing': playingBool,
+            'is_playing': isPlaying,
             'time': time,
+            'episode': episode,
           },
         );
-        _handleIncomingPacketInternal(key, packet);
-        _getOrCreatePacketController(key).add(packet);
+        _handleIncomingPacketInternal(pinKey, packet);
+        _getOrCreatePacketController(pinKey).add(packet);
+      },
+    );
+
+    // 3. Обратная совместимость для sync_player
+    channel.onBroadcast(
+      event: 'sync_player',
+      callback: (payload) {
+        final time = (payload['time'] as num?)?.toDouble() ?? 0.0;
+        final isPlaying = payload['is_playing'] as bool? ?? false;
+        final episode = (payload['episode'] as num?)?.toInt() ?? 0;
+        final timeMs = (time * 1000).toInt();
+
+        final callbacks = _playbackSyncCallbacks[pinKey];
+        if (callbacks != null) {
+          for (final cb in List.of(callbacks)) {
+            cb(time, isPlaying, episode);
+          }
+        }
+
+        final packet = SyncPacket(
+          roomCode: pinKey,
+          action: SyncActionTypes.controlAction,
+          sender: payload['sender'] as String? ?? 'Peer',
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          payload: {
+            'action': isPlaying ? 'play' : 'pause',
+            'control_action': isPlaying ? 'play' : 'pause',
+            'position_ms': timeMs,
+            'is_playing': isPlaying,
+            'time': time,
+            'episode': episode,
+          },
+        );
+        _handleIncomingPacketInternal(pinKey, packet);
+        _getOrCreatePacketController(pinKey).add(packet);
       },
     );
 
     channel.onBroadcast(event: 'action', callback: (payload) {
       final packet = SyncPacket.fromJson(payload);
-      _handleIncomingPacketInternal(key, packet);
-      _getOrCreatePacketController(key).add(packet);
+      _handleIncomingPacketInternal(pinKey, packet);
+      _getOrCreatePacketController(pinKey).add(packet);
     });
 
     // Supabase Realtime Presence listeners
     channel.onPresenceSync((_) {
-      _syncSupabasePresence(key, channel);
+      _syncSupabasePresence(pinKey, channel);
     });
     channel.onPresenceJoin((_) {
-      _syncSupabasePresence(key, channel);
+      _syncSupabasePresence(pinKey, channel);
     });
     channel.onPresenceLeave((_) {
-      _syncSupabasePresence(key, channel);
+      _syncSupabasePresence(pinKey, channel);
     });
 
     channel.subscribe();
-    _supabaseChannels[key] = channel;
+    _supabaseChannels[pinKey] = channel;
     return channel;
+  }
+
+  /// Прямое создание комнаты в таблице `public.rooms` по схеме БД
+  Future<String?> createRoomRecord({
+    required String animeId,
+    required String animeTitle,
+    required String posterUrl,
+    int episodeIndex = 0,
+    String? customPinCode,
+  }) async {
+    try {
+      final client = Supabase.instance.client;
+      var currentUser = client.auth.currentUser;
+      if (currentUser == null) {
+        try {
+          final authRes = await client.auth.signInAnonymously();
+          currentUser = authRes.user;
+        } catch (authErr) {
+          debugPrint('[WatchTogether] Анонимная авторизация пропущена: $authErr');
+        }
+      }
+
+      final pinCode = customPinCode ?? (100000 + _random.nextInt(900000)).toString();
+
+      final payload = <String, dynamic>{
+        'id': pinCode,
+        'anime_id': animeId,
+        'anime_title': animeTitle,
+        'poster_url': posterUrl,
+        'episode_index': episodeIndex,
+        'current_time_sec': 0.0,
+        'is_playing': false,
+        if (currentUser != null && !currentUser.isAnonymous) 'host_id': currentUser.id,
+      };
+
+      try {
+        await client.from('rooms').upsert(payload);
+      } catch (upsertErr) {
+        // Fallback без foreign key host_id (для анонимных пользователей)
+        final fallbackPayload = Map<String, dynamic>.from(payload)..remove('host_id');
+        await client.from('rooms').upsert(fallbackPayload);
+      }
+
+      // ignore: avoid_print
+      print('[WatchTogether] Комната успешно создана в Supabase: $pinCode');
+      return pinCode;
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('[WatchTogether] Ошибка создания комнаты: $e');
+      // ignore: avoid_print
+      print(stackTrace);
+      return null;
+    }
+  }
+
+  /// Прямое чтение комнаты по PIN-коду из `public.rooms`
+  Future<Map<String, dynamic>?> joinRoomByPin(String pinCode) async {
+    try {
+      final cleanPin = extractPinCode(pinCode);
+      final spCode = 'SP-$cleanPin';
+      final queryOr = 'id.eq.$cleanPin,id.eq.$spCode,id.eq.$pinCode';
+
+      final roomData = await Supabase.instance.client
+          .from('rooms')
+          .select()
+          .or(queryOr)
+          .maybeSingle();
+
+      if (roomData == null) {
+        throw Exception('Комната с кодом $pinCode не найдена');
+      }
+
+      // ignore: avoid_print
+      print('[WatchTogether] Успешное подключение к комнате: $pinCode');
+      return roomData;
+    } catch (e) {
+      // ignore: avoid_print
+      print('[WatchTogether] Ошибка входа в комнату: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -242,11 +377,11 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     String hostName = 'Хост (Вы)',
   }) async {
     String code;
-    String rawPin;
+    String pinCode;
     do {
-      rawPin = (100000 + _random.nextInt(900000)).toString();
-      code = 'SP-$rawPin';
-    } while (_rooms.containsKey(code));
+      pinCode = (100000 + _random.nextInt(900000)).toString();
+      code = 'SP-$pinCode';
+    } while (_rooms.containsKey(pinCode) || _rooms.containsKey(code));
 
     final room = SyncRoom(
       code: code,
@@ -258,41 +393,50 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       createdAt: DateTime.now(),
     );
 
+    _rooms[pinCode] = room;
     _rooms[code] = room;
     final normCode = normalizeCode(code);
     _rooms[normCode] = room;
-    // Регистрируем локально под всеми вариантами ввода: чистый 6-значный PIN и дефис
-    _rooms[rawPin] = room;
-    final splitPin = '${rawPin.substring(0, 3)}-${rawPin.substring(3)}';
+    final splitPin = '${pinCode.substring(0, 3)}-${pinCode.substring(3)}';
     _rooms[splitPin] = room;
-    _rooms['SP$rawPin'] = room;
+    _rooms['SP$pinCode'] = room;
 
-    _getOrCreateRoomController(code);
-    _getOrCreatePacketController(code);
-    _getOrCreatePresenceController(code);
-    _initSupabaseChannel(code);
+    _getOrCreateRoomController(pinCode);
+    _getOrCreatePacketController(pinCode);
+    _getOrCreatePresenceController(pinCode);
+    _initSupabaseChannel(pinCode);
 
-    // Запись в Supabase таблицу rooms
+    // Запись в таблицу public.rooms строго по схеме БД:
+    // id (text PK), anime_id (text NOT NULL), anime_title (text), poster_url (text),
+    // episode_index (int4), current_time_sec (float8), is_playing (bool), host_id (uuid nullable)
     final client = _supabase;
     if (client != null) {
+      final posterUrl = title.posterOriginal.isNotEmpty
+          ? title.posterOriginal
+          : (title.posterMedium.isNotEmpty ? title.posterMedium : title.posterSmall);
+
+      await createRoomRecord(
+        animeId: title.id.toString(),
+        animeTitle: title.displayTitle,
+        posterUrl: posterUrl,
+        episodeIndex: episode.episode,
+        customPinCode: pinCode,
+      );
+    }
+
+    // Инициализация Supabase Presence для хоста
+    final channel = _supabaseChannels[pinCode];
+    if (channel != null) {
       try {
-        await client.from('rooms').upsert({
-          'id': code,
-          'host_name': hostName,
-          'status': 'waiting',
-          'created_at': DateTime.now().toIso8601String(),
+        await channel.track({
+          'user_id': 'host_$pinCode',
+          'name': hostName,
+          'avatar': '👑',
+          'status': 'online',
+          'is_host': true,
+          'last_seen': DateTime.now().millisecondsSinceEpoch,
         });
-      } catch (e) {
-        debugPrint('Supabase create room error: $e');
-        try {
-          await client.from('rooms').upsert({
-            'id': code,
-            'status': 'waiting',
-          });
-        } catch (e2) {
-          debugPrint('Supabase create room fallback error: $e2');
-        }
-      }
+      } catch (_) {}
     }
 
     return room;
@@ -300,53 +444,47 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
   @override
   Future<SyncRoom?> getRoom(String code) async {
-    final key = normalizeCode(code);
-    _initSupabaseChannel(key);
-    final cleanedDigits = code.replaceAll(RegExp(r'[^0-9]'), '');
-    return _rooms[key] ?? _rooms[code] ?? (_rooms[cleanedDigits]);
+    final pinKey = extractPinCode(code);
+    final normKey = normalizeCode(code);
+    _initSupabaseChannel(pinKey);
+    return _rooms[pinKey] ?? _rooms[normKey] ?? _rooms[code];
   }
 
   @override
   Future<bool> validateRoomExists(String code) async {
-    final key = normalizeCode(code);
-    if (key.isEmpty) return false;
-
-    final cleanedDigits = code.replaceAll(RegExp(r'[^0-9]'), '');
+    final cleanPin = extractPinCode(code);
+    final normKey = normalizeCode(code);
+    if (cleanPin.isEmpty && normKey.isEmpty) return false;
 
     // 1. Проверяем в локальной памяти (активная сессия)
-    final localRoom = _rooms[key] ?? _rooms[code] ?? (_rooms[cleanedDigits]);
+    final localRoom = _rooms[cleanPin] ?? _rooms[normKey] ?? _rooms[code];
     if (localRoom != null) {
       return localRoom.status != SyncRoomStatus.closed;
     }
 
-    // 2. Проверяем в таблице Supabase rooms
+    // 2. Проверяем в таблице Supabase public.rooms по PIN-коду
     final client = _supabase;
     if (client != null) {
       try {
-        final queryOr = [
-          'id.eq.$key',
-          if (code != key) 'id.eq.$code',
-          if (cleanedDigits.isNotEmpty) 'id.eq.SP-$cleanedDigits',
-          if (cleanedDigits.isNotEmpty) 'id.eq.$cleanedDigits',
-        ].join(',');
+        final spCode = 'SP-$cleanPin';
+        final queryOr = 'id.eq.$cleanPin,id.eq.$spCode,id.eq.$code,id.eq.$normKey';
 
-        final res = await client
+        final roomData = await client
             .from('rooms')
-            .select('id, status')
+            .select()
             .or(queryOr)
             .maybeSingle();
 
-        if (res == null) return false;
-        final status = res['status'] as String?;
-        if (status == 'closed') return false;
-        return true;
+        if (roomData != null) {
+          return true;
+        }
       } catch (e) {
-        debugPrint('Supabase room validation check: $e');
+        debugPrint('[WatchTogether] Supabase room validation error: $e');
       }
     }
 
-    // Тестовая комната для тестирования и демо
-    if (key == 'SP4821' || key == 'SP-4821') {
+    // Тестовая демо-комната
+    if (cleanPin == '4821' || normKey == 'SP-4821' || normKey == 'SP4821') {
       return true;
     }
 
@@ -358,70 +496,105 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     required String code,
     String peerName = 'Друг',
   }) async {
-    final key = normalizeCode(code);
-    final exists = await validateRoomExists(key);
-    if (!exists) {
-      throw Exception('Комната с кодом $key не найдена или уже закрыта');
+    final cleanPin = extractPinCode(code);
+    final normKey = normalizeCode(code);
+
+    // 1. Пробуем прочитать комнату из таблицы public.rooms по PIN-коду
+    Map<String, dynamic>? roomData;
+    final client = _supabase;
+    if (client != null) {
+      try {
+        roomData = await joinRoomByPin(cleanPin);
+      } catch (_) {
+        roomData = null;
+      }
     }
 
-    _initSupabaseChannel(key);
+    var room = _rooms[cleanPin] ?? _rooms[normKey] ?? _rooms[code];
+    final isDemoRoom = cleanPin == '4821' || normKey == 'SP-4821' || normKey == 'SP4821';
 
-    final cleanedDigits = code.replaceAll(RegExp(r'[^0-9]'), '');
-    var room = _rooms[key] ?? _rooms[code] ?? (_rooms[cleanedDigits]);
+    if (roomData == null && room == null && !isDemoRoom) {
+      throw Exception('Комната с кодом $cleanPin не найдена');
+    }
+
+    _initSupabaseChannel(cleanPin);
+
     if (room == null) {
+      final int? remoteTitleId = int.tryParse(roomData?['anime_id']?.toString() ?? '');
+      final String? remoteTitleName = roomData?['anime_title'] as String?;
+      final String? remotePosterUrl = roomData?['poster_url'] as String?;
+      final int? remoteEpisode = (roomData?['episode_index'] as num?)?.toInt();
+
       AnimeTitle? resolvedTitle;
       EpisodeItem? resolvedEpisode;
 
+      // Попытка подгрузить полные детали тайтла из каталога
       if (getIt.isRegistered<CatalogRepository>()) {
         try {
           final catalog = getIt<CatalogRepository>();
           List<AnimeTitle> candidates = [];
-          if (key == 'SP4821' || key.contains('4821')) {
+
+          if (remoteTitleId != null && remoteTitleId > 0) {
+            try {
+              resolvedTitle = await catalog.getTitleDetails(id: remoteTitleId, code: '');
+            } catch (_) {}
+          }
+
+          if (resolvedTitle == null && remoteTitleName != null && remoteTitleName.isNotEmpty) {
+            candidates = await catalog.searchTitles(remoteTitleName, limit: 1);
+          }
+
+          if (resolvedTitle == null && candidates.isEmpty && isDemoRoom) {
             candidates = await catalog.searchTitles('Магическая битва', limit: 1);
           }
-          if (candidates.isEmpty) {
+          if (resolvedTitle == null && candidates.isEmpty) {
             candidates = await catalog.getUpdates();
           }
-          if (candidates.isNotEmpty) {
+          if (resolvedTitle == null && candidates.isNotEmpty) {
             final cand = candidates.first;
             resolvedTitle = await catalog.getTitleDetails(id: cand.id, code: cand.code);
-            if (resolvedTitle.episodes.isNotEmpty) {
-              resolvedEpisode = resolvedTitle.episodes.firstWhere(
-                (e) => (key == 'SP4821' || key.contains('4821')) ? e.episode == 4 : true,
-                orElse: () => resolvedTitle!.episodes.first,
-              );
-            }
+          }
+          if (resolvedTitle != null && resolvedTitle.episodes.isNotEmpty) {
+            final targetEp = (remoteEpisode != null && remoteEpisode > 0)
+                ? remoteEpisode
+                : (isDemoRoom ? 4 : 1);
+            resolvedEpisode = resolvedTitle.episodes.firstWhere(
+              (e) => e.episode == targetEp,
+              orElse: () => resolvedTitle!.episodes.first,
+            );
           }
         } catch (_) {}
       }
 
-      final safeTitle = resolvedTitle ?? const AnimeTitle(
-        id: 0,
+      final safePoster = remotePosterUrl ?? '';
+      final safeTitle = resolvedTitle ?? AnimeTitle(
+        id: remoteTitleId ?? 0,
         code: 'sync_title',
-        russianTitle: 'Тайтл совместного просмотра',
+        russianTitle: remoteTitleName ?? 'Тайтл совместного просмотра',
         englishTitle: 'Watch Party',
-        posterSmall: '',
-        posterMedium: '',
-        posterOriginal: '',
+        posterSmall: safePoster,
+        posterMedium: safePoster,
+        posterOriginal: safePoster,
         episodesTotal: 12,
-        latestEpisode: 1,
+        latestEpisode: (remoteEpisode != null && remoteEpisode > 0) ? remoteEpisode : 1,
         season: '',
         year: 2024,
-        genres: ['Аниме'],
+        genres: const ['Аниме'],
         description: '',
         status: 'Онгоинг',
         playerHost: null,
       );
 
+      final targetEpNum = (remoteEpisode != null && remoteEpisode > 0) ? remoteEpisode : 1;
       final safeEpisode = resolvedEpisode ?? (safeTitle.episodes.isNotEmpty
           ? safeTitle.episodes.first
-          : const EpisodeItem(
-              episode: 1,
-              name: 'Эпизод 1',
+          : EpisodeItem(
+              episode: targetEpNum,
+              name: 'Эпизод $targetEpNum',
             ));
 
       room = SyncRoom(
-        code: key,
+        code: 'SP-$cleanPin',
         title: safeTitle,
         episode: safeEpisode,
         quality: PlayerQuality.hd,
@@ -430,17 +603,21 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         status: SyncRoomStatus.connected,
         createdAt: DateTime.now(),
       );
-      _rooms[key] = room;
+      _rooms[cleanPin] = room;
+      _rooms[normKey] = room;
+      _rooms['SP-$cleanPin'] = room;
     } else {
       room = room.copyWith(
         peerName: peerName,
         status: SyncRoomStatus.connected,
       );
-      _rooms[key] = room;
+      _rooms[cleanPin] = room;
+      _rooms[normKey] = room;
+      _rooms[room.code] = room;
     }
 
     emitEvent(SyncEvent(
-      roomCode: key,
+      roomCode: cleanPin,
       type: SyncEventType.peerJoined,
       senderName: peerName,
       timestamp: DateTime.now(),
@@ -449,7 +626,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     await sendPacket(SyncPacket(
       action: SyncActionTypes.roomJoin,
       sender: peerName,
-      roomCode: key,
+      roomCode: cleanPin,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: {
         'user_name': peerName,
@@ -458,7 +635,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     ));
 
     await updatePresence(
-      roomCode: key,
+      roomCode: cleanPin,
       presence: PeerPresence(
         userId: 'guest_${DateTime.now().millisecondsSinceEpoch}',
         name: peerName,
@@ -469,46 +646,29 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       ),
     );
 
-    final client = _supabase;
-    if (client != null) {
-      try {
-        final queryOr = [
-          'id.eq.$key',
-          if (code != key) 'id.eq.$code',
-          if (cleanedDigits.isNotEmpty) 'id.eq.SP-$cleanedDigits',
-          if (cleanedDigits.isNotEmpty) 'id.eq.$cleanedDigits',
-        ].join(',');
-        await client.from('rooms').update({
-          'peer_name': peerName,
-          'guest_name': peerName,
-          'status': 'connected',
-        }).or(queryOr);
-      } catch (e) {
-        debugPrint('Supabase joinRoom update: $e');
-      }
-    }
-
     return room;
   }
 
   @override
   Stream<SyncEvent> subscribeToRoom(String roomCode) {
-    return _getOrCreateRoomController(roomCode).stream;
+    final pinKey = extractPinCode(roomCode);
+    _initSupabaseChannel(pinKey);
+    return _getOrCreateRoomController(pinKey).stream;
   }
 
   @override
   Stream<SyncPacket> subscribeToPackets(String roomCode) {
-    final key = normalizeCode(roomCode);
-    _initSupabaseChannel(key);
-    return _getOrCreatePacketController(key).stream;
+    final pinKey = extractPinCode(roomCode);
+    _initSupabaseChannel(pinKey);
+    return _getOrCreatePacketController(pinKey).stream;
   }
 
   @override
   Stream<List<PeerPresence>> subscribeToPresence(String roomCode) {
-    final key = normalizeCode(roomCode);
-    _initSupabaseChannel(key);
-    final controller = _getOrCreatePresenceController(key);
-    final current = _presences[key]?.values.toList() ?? [];
+    final pinKey = extractPinCode(roomCode);
+    _initSupabaseChannel(pinKey);
+    final controller = _getOrCreatePresenceController(pinKey);
+    final current = _presences[pinKey]?.values.toList() ?? [];
     if (current.isNotEmpty) {
       scheduleMicrotask(() {
         if (!controller.isClosed) controller.add(current);
@@ -522,11 +682,11 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     required String roomCode,
     required PeerPresence presence,
   }) async {
-    final key = normalizeCode(roomCode);
-    final roomPresences = _presences.putIfAbsent(key, () => <String, PeerPresence>{});
+    final pinKey = extractPinCode(roomCode);
+    final roomPresences = _presences.putIfAbsent(pinKey, () => <String, PeerPresence>{});
     roomPresences[presence.userId] = presence;
 
-    final controller = _presenceControllers[key];
+    final controller = _presenceControllers[pinKey];
     if (controller != null && !controller.isClosed) {
       controller.add(roomPresences.values.toList());
     }
@@ -535,13 +695,13 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     await sendPacket(SyncPacket(
       action: SyncActionTypes.presenceUpdate,
       sender: presence.name,
-      roomCode: key,
+      roomCode: pinKey,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: presence.toJson(),
     ));
 
     // Supabase Presence tracking
-    final channel = _supabaseChannels[key];
+    final channel = _supabaseChannels[pinKey];
     if (channel != null) {
       try {
         await channel.track(presence.toJson());
@@ -551,10 +711,10 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
   @override
   Future<void> sendPacket(SyncPacket packet) async {
-    final key = normalizeCode(packet.roomCode);
+    final pinKey = extractPinCode(packet.roomCode);
 
     // 1. Supabase Realtime Broadcast
-    final channel = _supabaseChannels[key];
+    final channel = _supabaseChannels[pinKey];
     if (channel != null) {
       try {
         await channel.sendBroadcastMessage(
@@ -565,8 +725,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     }
 
     // 2. Локальный контроллер для мгновенного отклика
-    _handleIncomingPacketInternal(key, packet);
-    final controller = _packetControllers[key];
+    _handleIncomingPacketInternal(pinKey, packet);
+    final controller = _packetControllers[pinKey];
     if (controller != null && !controller.isClosed) {
       controller.add(packet);
     }
@@ -618,34 +778,77 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     required double time,
     required bool isPlaying,
   }) async {
-    final key = normalizeCode(roomCode);
-    final channel = _supabaseChannels[key] ?? _initSupabaseChannel(key);
+    final pinKey = extractPinCode(roomCode);
+    final currentEp = _rooms[pinKey]?.episode.episode ?? 0;
+    await broadcastPlayback(
+      roomCode: pinKey,
+      time: time,
+      isPlaying: isPlaying,
+      episode: currentEp,
+    );
+  }
+
+  @override
+  Future<void> broadcastPlayback({
+    required String roomCode,
+    required double time,
+    required bool isPlaying,
+    required int episode,
+  }) async {
+    final pinKey = extractPinCode(roomCode);
+    final channel = _supabaseChannels[pinKey] ?? _initSupabaseChannel(pinKey);
     if (channel != null) {
       try {
         await channel.sendBroadcastMessage(
-          event: 'sync_player',
+          event: 'playback_sync',
           payload: {
             'time': time,
             'is_playing': isPlaying,
+            'episode': episode,
           },
         );
       } catch (e) {
-        debugPrint('Supabase sendSyncEvent broadcast error: $e');
+        debugPrint('[WatchTogether] broadcastPlayback error: $e');
       }
     }
 
-    _getOrCreatePacketController(key).add(SyncPacket(
-      roomCode: key,
+    // Синхронно обновляем состояние в таблице public.rooms
+    final client = _supabase;
+    if (client != null) {
+      try {
+        await client.from('rooms').update({
+          'current_time_sec': time,
+          'is_playing': isPlaying,
+          if (episode > 0) 'episode_index': episode,
+        }).eq('id', pinKey);
+      } catch (_) {}
+    }
+
+    _getOrCreatePacketController(pinKey).add(SyncPacket(
+      roomCode: pinKey,
       action: SyncActionTypes.controlAction,
       sender: 'Self',
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: {
         'action': isPlaying ? 'play' : 'pause',
+        'control_action': isPlaying ? 'play' : 'pause',
         'position_ms': (time * 1000).toInt(),
         'is_playing': isPlaying,
         'time': time,
+        'episode': episode,
       },
     ));
+  }
+
+  @override
+  void subscribeToPlaybackSync(
+    String pinCode, {
+    required void Function(double timeSec, bool isPlaying, int episodeIndex) onSyncReceived,
+  }) {
+    final cleanPin = extractPinCode(pinCode);
+    _initSupabaseChannel(cleanPin);
+    final list = _playbackSyncCallbacks.putIfAbsent(cleanPin, () => []);
+    list.add(onSyncReceived);
   }
 
   @override
@@ -725,20 +928,29 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     required String quality,
     required String sender,
   }) async {
-    final key = normalizeCode(roomCode);
-    final room = _rooms[key];
+    final pinKey = extractPinCode(roomCode);
+    final room = _rooms[pinKey];
     if (room != null) {
       final nextEp = room.title.episodes.firstWhere(
         (e) => e.episode == episodeNumber,
         orElse: () => room.episode,
       );
-      _rooms[key] = room.copyWith(episode: nextEp);
+      final updated = room.copyWith(episode: nextEp);
+      _rooms[pinKey] = updated;
+      _rooms[room.code] = updated;
     }
+
+    await broadcastPlayback(
+      roomCode: pinKey,
+      time: 0.0,
+      isPlaying: true,
+      episode: episodeNumber,
+    );
 
     await sendPacket(SyncPacket(
       action: SyncActionTypes.changeEpisode,
       sender: sender,
-      roomCode: key,
+      roomCode: pinKey,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: {
         'episode': episodeNumber,
@@ -754,7 +966,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     String? emoji,
     required String sender,
   }) async {
-    final key = normalizeCode(roomCode);
+    final pinKey = extractPinCode(roomCode);
     final toast = QuickPhraseToast(
       id: '${DateTime.now().microsecondsSinceEpoch}',
       sender: sender,
@@ -766,7 +978,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     await sendPacket(SyncPacket(
       action: SyncActionTypes.quickPhrase,
       sender: sender,
-      roomCode: key,
+      roomCode: pinKey,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: toast.toJson(),
     ));
@@ -774,8 +986,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
   @override
   void emitEvent(SyncEvent event) {
-    final key = normalizeCode(event.roomCode);
-    final controller = _roomControllers[key];
+    final pinKey = extractPinCode(event.roomCode);
+    final controller = _roomControllers[pinKey];
     if (controller != null && !controller.isClosed) {
       controller.add(event);
     }
@@ -783,17 +995,28 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
   @override
   Future<void> startPlayback(String roomCode) async {
-    final key = normalizeCode(roomCode);
-    final senderName = _rooms[key]?.hostName ?? 'Хост';
+    final pinKey = extractPinCode(roomCode);
+    final senderName = _rooms[pinKey]?.hostName ?? 'Хост';
+
+    // Обновляем is_playing в таблице public.rooms
+    final client = _supabase;
+    if (client != null) {
+      try {
+        await client.from('rooms').update({
+          'is_playing': true,
+        }).eq('id', pinKey);
+      } catch (_) {}
+    }
+
     await sendPacket(SyncPacket(
       action: SyncActionTypes.startPlayback,
       sender: senderName,
-      roomCode: key,
+      roomCode: pinKey,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: {},
     ));
     emitEvent(SyncEvent(
-      roomCode: key,
+      roomCode: pinKey,
       type: SyncEventType.startPlayback,
       senderName: senderName,
       timestamp: DateTime.now(),
@@ -802,47 +1025,62 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
 
   @override
   Future<void> leaveRoom(String roomCode) async {
-    final key = normalizeCode(roomCode);
+    final pinKey = extractPinCode(roomCode);
     emitEvent(SyncEvent(
-      roomCode: key,
+      roomCode: pinKey,
       type: SyncEventType.peerLeft,
       senderName: 'Участник',
       timestamp: DateTime.now(),
     ));
 
-    final sbChannel = _supabaseChannels.remove(key);
+    // Обновляем is_playing в таблице public.rooms
+    final client = _supabase;
+    if (client != null) {
+      try {
+        await client.from('rooms').update({
+          'is_playing': false,
+        }).eq('id', pinKey);
+      } catch (_) {}
+    }
+
+    final sbChannel = _supabaseChannels.remove(pinKey);
     if (sbChannel != null && _supabase != null) {
+      try {
+        await sbChannel.untrack();
+      } catch (_) {}
       try {
         await _supabase!.removeChannel(sbChannel);
       } catch (_) {}
     }
 
-    _presences.remove(key);
-    final presenceController = _presenceControllers.remove(key);
+    _playbackSyncCallbacks.remove(pinKey);
+    _presences.remove(pinKey);
+    final presenceController = _presenceControllers.remove(pinKey);
     await presenceController?.close();
 
-    _rooms.remove(key);
-    final controller = _roomControllers.remove(key);
+    _rooms.remove(pinKey);
+    final controller = _roomControllers.remove(pinKey);
     await controller?.close();
 
-    final packetController = _packetControllers.remove(key);
+    final packetController = _packetControllers.remove(pinKey);
     await packetController?.close();
   }
 
   @override
   void simulatePeerJoin(String roomCode, {String peerName = 'Сенпай'}) {
-    final key = normalizeCode(roomCode);
-    final existing = _rooms[key];
+    final pinKey = extractPinCode(roomCode);
+    final existing = _rooms[pinKey];
     if (existing != null) {
       final updated = existing.copyWith(
         peerName: peerName,
         status: SyncRoomStatus.connected,
       );
-      _rooms[key] = updated;
+      _rooms[pinKey] = updated;
+      _rooms[existing.code] = updated;
     }
 
     emitEvent(SyncEvent(
-      roomCode: key,
+      roomCode: pinKey,
       type: SyncEventType.peerJoined,
       senderName: peerName,
       timestamp: DateTime.now(),
@@ -851,13 +1089,13 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     sendPacket(SyncPacket(
       action: SyncActionTypes.roomJoin,
       sender: peerName,
-      roomCode: key,
+      roomCode: pinKey,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       payload: {'user_name': peerName, 'is_host': false},
     ));
 
     updatePresence(
-      roomCode: key,
+      roomCode: pinKey,
       presence: PeerPresence(
         userId: 'simulated_peer',
         name: peerName,

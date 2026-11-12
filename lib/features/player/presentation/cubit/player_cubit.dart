@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit/media_kit.dart' hide PlayerState;
@@ -15,6 +16,7 @@ import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dar
 import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
+import 'package:sync_pai/features/kodik/domain/entities/kodik_translation.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
@@ -74,7 +76,13 @@ class PlayerCubit extends Cubit<PlayerState> {
     bool isHost = true,
     this.syncRepository,
     Duration? initialPosition,
-  })  : player = Player(),
+    Player? existingPlayer,
+  })  : player = existingPlayer ??
+            Player(
+              configuration: const PlayerConfiguration(
+                logLevel: MPVLogLevel.error,
+              ),
+            ),
         // ignore: prefer_initializing_formals
         _initialPosition = initialPosition,
         _pendingInitialSeek = initialPosition ?? _loadSavedPosition(title.id, episode.episode),
@@ -189,7 +197,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void _checkAutoSkipOpening(Duration pos) {
-    final opening = state.episode.opening;
+    final opening = state.effectiveOpening;
     if (isAutoSkipOpening && opening != null) {
       if (pos.inSeconds >= opening.start && pos.inSeconds < opening.start + 2) {
         seek(opening.stopDuration);
@@ -200,13 +208,18 @@ class PlayerCubit extends Cubit<PlayerState> {
   /// Включить / выключить умный авто-пропуск опенингов
   void toggleAutoSkipOpening() {
     isAutoSkipOpening = !isAutoSkipOpening;
+    emit(state.copyWith());
+  }
+
+  void setVideoFit(BoxFit fit) {
+    emit(state.copyWith(videoFit: fit));
   }
 
   /// Пропуск опенинга: по таймкодам или универсально на +90 сек
   void skipOpening() {
     if (state.isSyncRoom && !state.isHost) return;
 
-    final opening = state.episode.opening;
+    final opening = state.effectiveOpening;
     if (opening != null) {
       seek(opening.stopDuration);
     } else {
@@ -365,9 +378,21 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
         break;
 
-      // Управление хоста (Play, Pause, Seek)
+      // Управление хоста (Play, Pause, Seek, Episode)
       case SyncActionTypes.controlAction:
         if (!state.isHost && !isFromSelf) {
+          final remoteEp = (packet.payload['episode'] as num?)?.toInt();
+          if (remoteEp != null && remoteEp > 0 && remoteEp != state.episode.episode) {
+            final nextEp = state.title.episodes.firstWhere(
+              (e) => e.episode == remoteEp,
+              orElse: () => state.episode,
+            );
+            if (nextEp.episode != state.episode.episode) {
+              cancelAutoNextCountdown();
+              _switchEpisodeInternal(nextEp);
+            }
+          }
+
           final act = packet.payload['control_action'] as String? ?? packet.payload['action'] as String?;
           final posMs = packet.payload['position_ms'] as int?;
           final isPlayingVal = packet.payload['is_playing'] as bool?;
@@ -630,7 +655,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   void _broadcastControlAction(String action) {
     if (state.isSyncRoom && state.isHost && state.roomCode != null) {
       final posMs = state.position.inMilliseconds;
-      final isPlaying = action == 'play';
+      final isPlaying = action == 'play' ? true : (action == 'pause' ? false : state.isPlaying);
 
       syncRepository?.sendControlAction(
         roomCode: state.roomCode!,
@@ -639,10 +664,11 @@ class PlayerCubit extends Cubit<PlayerState> {
         sender: 'Хост',
       );
 
-      syncRepository?.sendSyncEvent(
+      syncRepository?.broadcastPlayback(
         roomCode: state.roomCode!,
         time: posMs / 1000.0,
         isPlaying: isPlaying,
+        episode: state.episode.episode,
       );
     }
   }
@@ -778,10 +804,46 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
+  /// Переключение студии озвучки Kodik / AniLibria прямо из плеера
+  Future<void> switchVoiceoverStudio(KodikTranslation studio) async {
+    final currentPos = state.position;
+    final wasPlaying = state.isPlaying;
+
+    if (getIt.isRegistered<KodikCubit>()) {
+      try {
+        final kodik = getIt<KodikCubit>();
+        final qualityStr = state.selectedQuality == PlayerQuality.fhd
+            ? '1080p'
+            : (state.selectedQuality == PlayerQuality.hd ? '720p' : '480p');
+        final streamUrl = await kodik.selectVoiceover(
+          studio,
+          episodeNumber: state.episode.episode,
+          quality: qualityStr,
+        );
+
+        if (streamUrl != null && streamUrl.isNotEmpty && !streamUrl.contains('sample.com')) {
+          _pendingInitialSeek = currentPos;
+          await player.open(
+            Media(
+              streamUrl,
+              start: currentPos > Duration.zero ? currentPos : null,
+            ),
+            play: wasPlaying,
+          );
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // Если выбрана AniLibria или внешний поток Kodik вернул fallback — открываем основной поток с текущей позиции
+    await _loadCurrentEpisodeStream(initialPosition: currentPos);
+  }
+
   /// Переключение варианта озвучки или студии (AniLibria / Kodik / StudioBand)
   /// Обновляет источник воспроизведения без пересоздания всего экрана и с сохранением позиции
   Future<void> changeTranslation(TranslationEntity newTranslation) async {
     final currentPos = state.position;
+    final wasPlaying = state.isPlaying;
     emit(state.copyWith(
       currentTranslation: () => newTranslation,
     ));
@@ -790,13 +852,15 @@ class PlayerCubit extends Cubit<PlayerState> {
       final streamUrl = newTranslation.getStreamForEpisode(state.episode.episode);
       if (streamUrl != null && streamUrl.isNotEmpty) {
         try {
+          _pendingInitialSeek = currentPos;
           await player.open(
             Media(
               streamUrl,
               start: currentPos > Duration.zero ? currentPos : null,
             ),
-            play: state.isPlaying,
+            play: wasPlaying,
           );
+          return;
         } catch (e) {
           emit(state.copyWith(
             errorMessage: () => 'Ошибка переключения потока: $e',
@@ -809,20 +873,34 @@ class PlayerCubit extends Cubit<PlayerState> {
         try {
           final kodik = getIt<KodikCubit>();
           final streamUrl = await kodik.getStreamForEpisode(state.episode.episode);
-          if (streamUrl != null && streamUrl.isNotEmpty) {
+          if (streamUrl != null && streamUrl.isNotEmpty && !streamUrl.contains('sample.com')) {
+            _pendingInitialSeek = currentPos;
             await player.open(
               Media(
                 streamUrl,
                 start: currentPos > Duration.zero ? currentPos : null,
               ),
-              play: state.isPlaying,
+              play: wasPlaying,
             );
             return;
           }
         } catch (_) {}
       }
-      // Если поток недоступен, ставим на паузу
-      await player.pause();
+    }
+
+    // Fallback: поддерживаем непрерывное воспроизведение с текущей позиции
+    final fallbackUrl = _getUrlForQuality(state.episode, state.selectedQuality);
+    if (fallbackUrl != null && fallbackUrl.isNotEmpty && !fallbackUrl.contains('sample.com')) {
+      try {
+        _pendingInitialSeek = currentPos;
+        await player.open(
+          Media(
+            fallbackUrl,
+            start: currentPos > Duration.zero ? currentPos : null,
+          ),
+          play: wasPlaying,
+        );
+      } catch (_) {}
     }
   }
 

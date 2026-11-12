@@ -32,7 +32,25 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
           .toList();
       // Сортировка: самые свежие сверху
       list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return list;
+
+      // Гарантированная дедупликация: одно аниме = ровно одна карточка в истории
+      final deduplicated = <WatchHistoryItem>[];
+      final seenIds = <int>{};
+      final seenNames = <String>{};
+
+      for (final item in list) {
+        final normName = item.titleName.trim().toLowerCase();
+        if (seenIds.contains(item.titleId) ||
+            (normName.isNotEmpty && seenNames.contains(normName))) {
+          continue;
+        }
+        seenIds.add(item.titleId);
+        if (normName.isNotEmpty) {
+          seenNames.add(normName);
+        }
+        deduplicated.add(item);
+      }
+      return deduplicated;
     } catch (_) {
       return [];
     }
@@ -41,8 +59,11 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
   @override
   Future<void> saveProgress(WatchHistoryItem item) async {
     final list = await getAllHistory();
+    final normName = item.titleName.trim().toLowerCase();
     final updated = List<WatchHistoryItem>.from(list)
-      ..removeWhere((e) => e.titleId == item.titleId)
+      ..removeWhere((e) =>
+          e.titleId == item.titleId ||
+          (normName.isNotEmpty && e.titleName.trim().toLowerCase() == normName))
       ..insert(0, item);
 
     // Храним последние 100 тайтлов

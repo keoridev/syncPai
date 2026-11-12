@@ -16,6 +16,9 @@ class UserProfile extends Equatable {
   final String? favoriteAnimeId;
   /// URL постера любимого тайтла — кэшируется при выборе в кастомизаторе
   final String? favoriteAnimePoster;
+  /// URL и название для витрины иллюстраций (Steam Artwork Showcase) — полностью независимо от любимого тайтла
+  final String? artworkUrl;
+  final String? artworkTitle;
   final String? accentColor;
   final String? email;
   final String? provider;
@@ -39,6 +42,8 @@ class UserProfile extends Equatable {
     this.favoriteAnimeTitle,
     this.favoriteAnimeId,
     this.favoriteAnimePoster,
+    this.artworkUrl,
+    this.artworkTitle,
     this.accentColor,
     this.email,
     this.provider,
@@ -107,6 +112,8 @@ class UserProfile extends Equatable {
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
+    String? artworkUrl,
+    String? artworkTitle,
     String? accentColor,
     String? email,
     String? provider,
@@ -130,6 +137,8 @@ class UserProfile extends Equatable {
       favoriteAnimeTitle: favoriteAnimeTitle ?? this.favoriteAnimeTitle,
       favoriteAnimeId: favoriteAnimeId ?? this.favoriteAnimeId,
       favoriteAnimePoster: favoriteAnimePoster ?? this.favoriteAnimePoster,
+      artworkUrl: artworkUrl ?? this.artworkUrl,
+      artworkTitle: artworkTitle ?? this.artworkTitle,
       accentColor: accentColor ?? this.accentColor,
       email: email ?? this.email,
       provider: provider ?? this.provider,
@@ -157,6 +166,8 @@ class UserProfile extends Equatable {
         'favorite_anime_title': favoriteAnimeTitle,
         'favorite_anime_id': favoriteAnimeId,
         'favorite_anime_poster': favoriteAnimePoster,
+        'artwork_url': artworkUrl,
+        'artwork_title': artworkTitle,
         'accent_color': accentColor,
         'email': email,
         'provider': provider,
@@ -216,6 +227,8 @@ class UserProfile extends Equatable {
       favoriteAnimeTitle: json['favorite_anime_title'] as String?,
       favoriteAnimeId: json['favorite_anime_id'] as String?,
       favoriteAnimePoster: json['favorite_anime_poster'] as String?,
+      artworkUrl: json['artwork_url'] as String? ?? (customObj?['artwork_url'] as String?),
+      artworkTitle: json['artwork_title'] as String? ?? (customObj?['artwork_title'] as String?),
       accentColor: accent,
       email: json['email'] as String?,
       provider: json['provider'] as String?,
@@ -242,6 +255,8 @@ class UserProfile extends Equatable {
         favoriteAnimeTitle,
         favoriteAnimeId,
         favoriteAnimePoster,
+        artworkUrl,
+        artworkTitle,
         accentColor,
         email,
         provider,

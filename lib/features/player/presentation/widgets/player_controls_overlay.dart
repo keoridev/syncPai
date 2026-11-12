@@ -15,12 +15,12 @@ import 'player_settings_sheet.dart';
 import 'presence_radar_badge.dart';
 import 'quick_phrases_bar.dart';
 import 'sync_chat_input_bar.dart';
-import 'package:sync_pai/features/player/services/pip_service.dart';
 
 class PlayerControlsOverlay extends StatelessWidget {
   final PlayerCubit cubit;
   final PlayerState state;
   final VoidCallback onBack;
+  final VoidCallback? onMinimize;
   final VoidCallback? onToggleOrientation;
   final SyncStatus? syncStatus;
   final String? syncPeerName;
@@ -30,6 +30,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.cubit,
     required this.state,
     required this.onBack,
+    this.onMinimize,
     this.onToggleOrientation,
     this.syncStatus,
     this.syncPeerName,
@@ -215,57 +216,21 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 },
                               ),
 
-                              // В ЛАНДШАФТНОМ РЕЖИМЕ: расширенный набор
+                              // Кнопка сворачивания в плавающий мини-плеер (In-App PiP)
+                              if (onMinimize != null)
+                                IconButton(
+                                  tooltip: 'Мини-плеер (в окне)',
+                                  icon: const Icon(
+                                    Icons.picture_in_picture_alt_rounded,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  iconSize: isLandscape ? 18 : 20,
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: onMinimize,
+                                ),
+
+                              // В ЛАНДШАФТНОМ РЕЖИМЕ: чистый и лаконичный набор
                               if (isLandscape) ...[
-                                // Danmaku переключатель (бегущие строки)
-                                IconButton(
-                                  tooltip: state.isDanmakuEnabled ? 'Danmaku: ВКЛ' : 'Danmaku: ВЫКЛ',
-                                  icon: Icon(
-                                    state.isDanmakuEnabled ? Icons.subtitles_rounded : Icons.subtitles_off_rounded,
-                                    color: state.isDanmakuEnabled ? AppColors.primary : AppColors.textSecondary,
-                                    size: 18,
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => cubit.toggleDanmaku(),
-                                ),
-
-                                // Переключатель оверлея чата (в режиме синхро-комнаты)
-                                if (state.isSyncRoom) ...[
-                                  IconButton(
-                                    tooltip: state.isChatOverlayVisible ? 'Скрыть чат' : 'Показать чат',
-                                    icon: Icon(
-                                      state.isChatOverlayVisible ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
-                                      color: state.isChatOverlayVisible ? AppColors.primary : AppColors.textSecondary,
-                                      size: 18,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => cubit.toggleChatOverlay(),
-                                  ),
-                                ],
-
-                                // Переключатель автопропуска опенингов
-                                IconButton(
-                                  tooltip: cubit.isAutoSkipOpening ? 'Автопропуск опенингов: ВКЛ' : 'Автопропуск опенингов: ВЫКЛ',
-                                  icon: Icon(
-                                    cubit.isAutoSkipOpening ? Icons.motion_photos_paused_rounded : Icons.motion_photos_off_rounded,
-                                    color: cubit.isAutoSkipOpening ? AppColors.primary : AppColors.textSecondary,
-                                    size: 18,
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () {
-                                    HapticFeedback.lightImpact();
-                                    cubit.toggleAutoSkipOpening();
-                                  },
-                                ),
-
-                                // Список серий
-                                IconButton(
-                                  tooltip: 'Список серий',
-                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                                ),
-
                                 // Кнопка Скорости воспроизведения (быстрый выбор)
                                 InkWell(
                                   onTap: () => _showQuickSpeedSheet(context),
@@ -277,16 +242,9 @@ class PlayerControlsOverlay extends StatelessWidget {
                                       borderRadius: AppDimensions.borderRadiusSmall,
                                       border: Border.all(color: AppColors.strokeMedium),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          '${state.playbackRate}x',
-                                          style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        const Icon(Icons.speed_rounded, color: AppColors.textSecondary, size: 13),
-                                      ],
+                                    child: Text(
+                                      '${state.playbackRate}x',
+                                      style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
                                     ),
                                   ),
                                 ),
@@ -315,27 +273,25 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 4),
 
-                                // Кнопка перехода в режим Картинка-в-картинке (PiP)
+                                // Список серий
                                 IconButton(
-                                  tooltip: 'Картинка в картинке (PiP)',
-                                  icon: const Icon(
-                                    Icons.picture_in_picture_alt_rounded,
-                                    color: AppColors.textSecondary,
-                                    size: 18,
-                                  ),
+                                  tooltip: 'Список серий',
+                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
                                   visualDensity: VisualDensity.compact,
-                                  onPressed: () async {
-                                    final success = await PipService.instance.enterPip();
-                                    if (!success && context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Режим PiP поддерживается на устройствах Android 8.0+'),
-                                          behavior: SnackBarBehavior.floating,
-                                          duration: Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  },
+                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                                ),
+
+                                // Единая шестеренка настроек (Озвучка, Масштаб, Автопропуск, Danmaku, PiP)
+                                IconButton(
+                                  tooltip: 'Настройки плеера',
+                                  icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 19),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => PlayerSettingsSheet.show(
+                                    context,
+                                    cubit: cubit,
+                                    state: state,
+                                    onMinimizeToMiniPlayer: onMinimize,
+                                  ),
                                 ),
 
                                 if (onToggleOrientation != null)
@@ -359,12 +315,17 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
                                 ),
 
-                                // Кнопка всех настроек (Liquid Glass шторка)
+                                // Единая шестеренка всех настроек (Озвучка, Качество, Скорость, Автопропуск)
                                 IconButton(
                                   tooltip: 'Настройки',
-                                  icon: const Icon(Icons.tune_rounded, color: AppColors.textPrimary, size: 20),
+                                  icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 20),
                                   visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerSettingsSheet.show(context, cubit: cubit, state: state),
+                                  onPressed: () => PlayerSettingsSheet.show(
+                                    context,
+                                    cubit: cubit,
+                                    state: state,
+                                    onMinimizeToMiniPlayer: onMinimize,
+                                  ),
                                 ),
 
                                 if (onToggleOrientation != null)
@@ -440,34 +401,51 @@ class PlayerControlsOverlay extends StatelessWidget {
                     children: [
                       // Перемотка на 10 сек назад
                       IconButton(
-                        iconSize: isLandscape ? 30 : 40,
+                        iconSize: isLandscape ? 32 : 40,
                         icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
                         onPressed: () => cubit.seekRelative(-10),
                       ),
-                      SizedBox(width: isLandscape ? 20 : AppDimensions.spacingXl),
+                      SizedBox(width: isLandscape ? 64 : 48),
 
-                      // Кнопка воспроизведения/паузы
+                      // Единая центральная кнопка (синхронизированы 3 состояния: Загрузка / Пауза / Плей)
                       Material(
                         color: Theme.of(context).colorScheme.primary,
                         shape: const CircleBorder(),
+                        elevation: 6,
+                        shadowColor: Colors.black.withValues(alpha: 0.5),
                         child: InkWell(
                           customBorder: const CircleBorder(),
                           onTap: () => cubit.playOrPause(),
                           child: Padding(
-                            padding: EdgeInsets.all(isLandscape ? 10 : AppDimensions.spacingLg),
-                            child: Icon(
-                              state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                              size: isLandscape ? 32 : 44,
-                              color: AppColors.textPrimary,
+                            padding: EdgeInsets.all(isLandscape ? 12 : AppDimensions.spacingLg),
+                            child: SizedBox(
+                              width: isLandscape ? 32 : 44,
+                              height: isLandscape ? 32 : 44,
+                              child: Center(
+                                child: state.isBuffering
+                                    ? SizedBox(
+                                        width: isLandscape ? 24 : 30,
+                                        height: isLandscape ? 24 : 30,
+                                        child: const CircularProgressIndicator(
+                                          strokeWidth: 2.6,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : Icon(
+                                        state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                        size: isLandscape ? 32 : 44,
+                                        color: AppColors.textPrimary,
+                                      ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      SizedBox(width: isLandscape ? 20 : AppDimensions.spacingXl),
+                      SizedBox(width: isLandscape ? 64 : 48),
 
                       // Перемотка на 10 сек вперед
                       IconButton(
-                        iconSize: isLandscape ? 30 : 40,
+                        iconSize: isLandscape ? 32 : 40,
                         icon: const Icon(Icons.forward_10_rounded, color: AppColors.textPrimary),
                         onPressed: () => cubit.seekRelative(10),
                       ),
@@ -657,8 +635,8 @@ class PlayerControlsOverlay extends StatelessWidget {
                         duration: state.duration,
                         buffer: state.buffer,
                         heatmap: state.heatmap,
-                        opening: ep.opening,
-                        ending: ep.ending,
+                        opening: state.effectiveOpening,
+                        ending: state.effectiveEnding,
                         isBuffering: state.isBuffering,
                         onSeek: (pos) => cubit.seek(pos),
                         isLocked: isGuestInSync,
@@ -757,8 +735,8 @@ class PlayerControlsOverlay extends StatelessWidget {
             duration: state.duration,
             buffer: state.buffer,
             heatmap: state.heatmap,
-            opening: ep.opening,
-            ending: ep.ending,
+            opening: state.effectiveOpening,
+            ending: state.effectiveEnding,
             isBuffering: state.isBuffering,
             onSeek: (pos) => cubit.seek(pos),
             isLocked: isGuestInSync,

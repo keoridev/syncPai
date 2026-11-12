@@ -1,7 +1,11 @@
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -116,37 +120,47 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           context.read<CatalogCubit>().onSearchQueryChanged('');
                         },
                       )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SyncPaiLogo(size: 32),
-                          const SizedBox(width: 10),
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: 'Sync',
-                                  style: AppTypography.displayMedium.copyWith(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 22,
-                                    letterSpacing: -0.4,
-                                  ),
-                                ),
-                                TextSpan(
-                                  text: 'Pai',
-                                  style: AppTypography.displayMedium.copyWith(
-                                    color: themePrimary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 22,
-                                    letterSpacing: -0.4,
-                                  ),
-                                ),
-                              ],
+                    : (screenWidth >= 768
+                        ? Text(
+                            'Каталог аниме',
+                            style: AppTypography.displayMedium.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              letterSpacing: -0.4,
                             ),
-                          ),
-                        ],
-                      ),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SyncPaiLogo(size: 32),
+                              const SizedBox(width: 10),
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'Sync',
+                                      style: AppTypography.displayMedium.copyWith(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 22,
+                                        letterSpacing: -0.4,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: 'Pai',
+                                      style: AppTypography.displayMedium.copyWith(
+                                        color: themePrimary,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 22,
+                                        letterSpacing: -0.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )),
                 actions: [
                   if (_isSearchOpen) ...[
                     IconButton(
@@ -255,88 +269,133 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       widget.onTitleSelected?.call(matched);
                     }
 
+                    final bool isDesktop = (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) ||
+                        MediaQuery.sizeOf(context).width > 800;
+
                     return SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 8),
-                        child: InkWell(
-                          onTap: handleResume,
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            height: 54,
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated.withValues(alpha: 0.85),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: themePrimary.withValues(alpha: 0.3),
-                                width: 1.0,
-                              ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: isDesktop ? 460 : double.infinity,
                             ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Stack(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: themePrimary.withValues(alpha: 0.16),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(
-                                          Icons.play_arrow_rounded,
-                                          color: themePrimaryLight,
-                                          size: 18,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              recent.titleName,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: AppTypography.titleSmall.copyWith(
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              'Серия ${recent.episode} • ${recent.formattedPosition} / ${recent.formattedDuration}',
-                                              style: AppTypography.caption.copyWith(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 10.5,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Icon(
-                                        Icons.arrow_forward_ios_rounded,
-                                        size: 12,
-                                        color: themePrimaryLight,
-                                      ),
-                                    ],
+                            child: InkWell(
+                              onTap: handleResume,
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceElevated.withValues(alpha: 0.85),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: themePrimary.withValues(alpha: 0.3),
+                                    width: 1.0,
                                   ),
                                 ),
-                                Positioned(
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  child: LinearProgressIndicator(
-                                    value: recent.progress,
-                                    minHeight: 2.5,
-                                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                    valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
-                                  ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Stack(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      child: Row(
+                                        children: [
+                                          // Мини-постер тайтла слева
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: SizedBox(
+                                              width: 32,
+                                              height: 44,
+                                              child: recent.posterUrl.isNotEmpty
+                                                  ? CachedNetworkImage(
+                                                      imageUrl: wrapCorsSafeUrl(recent.posterUrl),
+                                                      fit: BoxFit.cover,
+                                                      errorWidget: (_, __, ___) => Container(
+                                                        color: themePrimary.withValues(alpha: 0.16),
+                                                        child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      color: themePrimary.withValues(alpha: 0.16),
+                                                      child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
+                                                    ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  recent.titleName,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: AppTypography.titleSmall.copyWith(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Серия ${recent.episode} • ${recent.formattedPosition} / ${recent.formattedDuration}',
+                                                  style: AppTypography.caption.copyWith(
+                                                    color: AppColors.textSecondary,
+                                                    fontSize: 10.5,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          if (isDesktop)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: themePrimary.withValues(alpha: 0.16),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: themePrimary.withValues(alpha: 0.4)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    'Продолжить',
+                                                    style: TextStyle(
+                                                      color: themePrimaryLight,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 3),
+                                                  Icon(Icons.play_arrow_rounded, size: 14, color: themePrimaryLight),
+                                                ],
+                                              ),
+                                            )
+                                          else
+                                            Icon(
+                                              Icons.arrow_forward_ios_rounded,
+                                              size: 12,
+                                              color: themePrimaryLight,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 0,
+                                      child: LinearProgressIndicator(
+                                        value: recent.progress,
+                                        minHeight: 2.5,
+                                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                        valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -449,7 +508,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   child: Text(
                                     genre,
                                     style: TextStyle(
-                                      color: isSelected ? Colors.white : AppColors.textSecondary,
+                                      color: isSelected ? AppColors.onColor(themePrimary) : AppColors.textSecondary,
                                       fontSize: 12.5,
                                       fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                                     ),

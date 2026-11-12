@@ -1,7 +1,33 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/api_constants.dart';
 import '../../../../core/network/dio_client.dart';
 import '../models/anime_title_dto.dart';
+
+/// Top-level функция для парсинга списка релизов AniLibria в изоляте через compute()
+List<AnimeTitleDto> parseAnilibriaDtosInIsolate(dynamic data) {
+  final List<dynamic> list;
+  if (data is List) {
+    list = data;
+  } else if (data is Map<String, dynamic> && data['data'] is List) {
+    list = data['data'] as List;
+  } else {
+    list = [];
+  }
+  return list
+      .whereType<Map<String, dynamic>>()
+      .map((item) => AnimeTitleDto.fromJson(item))
+      .toList();
+}
+
+/// Top-level функция для парсинга полного релиза с эпизодами в изоляте через compute()
+AnimeTitleDto parseSingleAnilibriaDtoInIsolate(Map<String, dynamic> map) {
+  final releaseData = map.containsKey('data') && map['data'] is Map<String, dynamic>
+      ? map['data'] as Map<String, dynamic>
+      : map;
+  return AnimeTitleDto.fromJson(releaseData);
+}
 
 abstract class AnilibriaRemoteDataSource {
   Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 30});
@@ -31,20 +57,11 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       );
 
       final data = response.data;
-      final List<dynamic> list;
-
-      if (data is List) {
-        list = data;
-      } else if (data is Map<String, dynamic> && data['data'] is List) {
-        list = data['data'] as List;
-      } else {
-        list = [];
+      final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+      if (isTest) {
+        return parseAnilibriaDtosInIsolate(data);
       }
-
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((item) => AnimeTitleDto.fromJson(item))
-          .toList();
+      return await compute(parseAnilibriaDtosInIsolate, data);
     } catch (e) {
       if (e is ServerException || e is NetworkException) rethrow;
       throw ParsingException('Не удалось выполнить поиск: $e');
@@ -103,10 +120,11 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
 
       if (response.data is Map<String, dynamic>) {
         final map = response.data as Map<String, dynamic>;
-        final releaseData = map.containsKey('data') && map['data'] is Map<String, dynamic>
-            ? map['data'] as Map<String, dynamic>
-            : map;
-        return AnimeTitleDto.fromJson(releaseData);
+        final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+        if (isTest) {
+          return parseSingleAnilibriaDtoInIsolate(map);
+        }
+        return await compute(parseSingleAnilibriaDtoInIsolate, map);
       }
       throw const ParsingException('Некорректный формат ответа тайтла');
     } catch (e) {

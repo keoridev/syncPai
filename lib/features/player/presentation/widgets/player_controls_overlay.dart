@@ -57,6 +57,18 @@ class PlayerControlsOverlay extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => cubit.toggleControls(),
+          onDoubleTapDown: (details) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            final dx = details.globalPosition.dx;
+            if (dx < screenWidth * 0.38) {
+              cubit.seekRelative(-10);
+            } else if (dx > screenWidth * 0.62) {
+              cubit.seekRelative(10);
+            } else {
+              cubit.togglePlayPause();
+            }
+          },
+          onDoubleTap: () {},
           onVerticalDragUpdate: (details) {
             final screenWidth = MediaQuery.of(context).size.width;
             final isLeft = details.globalPosition.dx < (screenWidth / 2);
@@ -851,39 +863,6 @@ class PlayerControlsOverlay extends StatelessWidget {
 
               const Spacer(),
 
-              // Кнопка пропуска опенинга (компактная пилюля)
-              if (!isGuestInSync &&
-                  ep.opening != null &&
-                  state.position.inSeconds >= ep.opening!.start &&
-                  state.position.inSeconds < ep.opening!.stop)
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                    side: BorderSide(color: AppColors.primary, width: 1.0),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
-                  label: const Text('Опенинг', style: TextStyle(color: AppColors.textPrimary, fontSize: 11)),
-                  onPressed: () => cubit.skipOpening(),
-                )
-              else if (!isGuestInSync &&
-                  ep.opening == null &&
-                  state.position.inSeconds >= 5 &&
-                  state.position.inSeconds < 180)
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    backgroundColor: AppColors.surfaceElevated.withValues(alpha: 0.9),
-                    side: BorderSide(color: AppColors.primary, width: 1.0),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  icon: Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 14),
-                  label: const Text('+90с', style: TextStyle(color: AppColors.textPrimary, fontSize: 11)),
-                  onPressed: () => cubit.skipOpening(),
-                ),
               if (onToggleOrientation != null) ...[
                 const SizedBox(width: 6),
                 IconButton(

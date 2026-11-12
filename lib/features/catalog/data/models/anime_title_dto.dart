@@ -135,14 +135,30 @@ class AnimeTitleDto {
       }
     }
 
-    // 7. Статус (Онгоинг / Завершен)
+    // 7. Статус (Онгоинг / Завершен / Анонс)
     String status = 'Завершен';
-    if (json['is_ongoing'] == true || json['is_in_production'] == true) {
+    if (json['status'] is Map) {
+      final sMap = json['status'] as Map;
+      final code = (sMap['code'] ?? sMap['value'] ?? '').toString().toLowerCase();
+      final stringVal = (sMap['string'] ?? sMap['name'] ?? '').toString().toLowerCase();
+      if (code.contains('anons') || stringVal.contains('анонс')) {
+        status = 'Анонс';
+      } else if (code.contains('in_progress') || code.contains('ongoing') || stringVal.contains('процесс') || stringVal.contains('онгоинг')) {
+        status = 'Онгоинг';
+      } else {
+        status = 'Завершен';
+      }
+    } else if (json['status'] is String) {
+      final s = (json['status'] as String).toLowerCase();
+      if (s.contains('anons') || s.contains('анонс')) {
+        status = 'Анонс';
+      } else if (s.contains('ongoing') || s.contains('онгоинг') || s.contains('in_progress') || s.contains('процесс')) {
+        status = 'Онгоинг';
+      } else {
+        status = 'Завершен';
+      }
+    } else if (json['is_ongoing'] == true || json['is_in_production'] == true) {
       status = 'Онгоинг';
-    } else if (json['status'] is Map<String, dynamic>) {
-      status = (json['status'] as Map<String, dynamic>)['name'] as String? ??
-          (json['status'] as Map<String, dynamic>)['value'] as String? ??
-          'Завершен';
     }
 
     // 8. Описание

@@ -13,6 +13,7 @@ import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/steam_avatar_frame.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
@@ -461,8 +462,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   Widget _buildProfileHeaderRow(BuildContext context, Color accent) {
-    final flag = widget.countryFlag ?? '🇰🇬';
-    final country = widget.countryName ?? 'Kyrgyzstan';
+    final flag = widget.countryFlag ?? widget.profile.countryFlag ?? '🇰🇬';
+    final country = widget.countryName ?? widget.profile.countryName ?? 'Kyrgyzstan';
     final statusText = widget.profile.customStatus?.trim().isNotEmpty == true
         ? widget.profile.customStatus!.trim()
         : 'WELCOME';
@@ -471,9 +472,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // ========================================================
-        // СЛЕВА: КВАДРАТНЫЙ АВАТАР 84×84 С ТЯЖЕЛОЙ РАМКОЙ STEAM
+        // СЛЕВА: АВАТАР (КВАДРАТНЫЙ STEAM 84×84 ИЛИ КРУГЛЫЙ DISCORD NITRO)
         // ========================================================
-        _buildSquareSteamAvatar(accent),
+        _buildSteamAvatar(accent),
 
         const SizedBox(width: 16),
 
@@ -597,10 +598,12 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     );
   }
 
-  Widget _buildSquareSteamAvatar(Color accent) {
+  Widget _buildSteamAvatar(Color accent) {
     const avatarSize = 84.0;
     const cornerLength = 14.0;
     const cornerWidth = 2.4;
+    final isCircle = widget.profile.avatarShape == 'circle';
+    final hasFrame = widget.profile.frameId != null && widget.profile.frameId != 'none';
 
     return GestureDetector(
       onTap: widget.isCurrentUser ? widget.onEditProfileTap : null,
@@ -608,58 +611,122 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          // 1. Золотая / Неоновая квадратная рамка Steam с внешним неоновым свечением
-          Container(
-            width: avatarSize + 12,
-            height: avatarSize + 12,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: accent.withValues(alpha: 0.65),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.35),
-                  blurRadius: 16,
-                  spreadRadius: 1,
+          if (isCircle) ...[
+            // 1. Круглая рамка (Classic / Discord Nitro)
+            if (hasFrame)
+              SteamAvatarFrameWidget(
+                frameId: widget.profile.frameId,
+                size: avatarSize,
+                shape: 'circle',
+                child: AppAvatar(
+                  avatarUrl: widget.profile.avatarUrl,
+                  username: widget.profile.username,
+                  size: avatarSize,
+                  shape: BoxShape.circle,
+                  borderColor: Colors.black,
+                  borderWidth: 2.0,
                 ),
-              ],
-            ),
-          ),
+              )
+            else
+              Container(
+                width: avatarSize + 8,
+                height: avatarSize + 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.65),
+                    width: 2.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: AppAvatar(
+                    avatarUrl: widget.profile.avatarUrl,
+                    username: widget.profile.username,
+                    size: avatarSize,
+                    shape: BoxShape.circle,
+                    borderColor: Colors.black,
+                    borderWidth: 2.0,
+                  ),
+                ),
+              ),
+          ] else ...[
+            // 1. Квадратная рамка Steam с внешним неоновым свечением
+            if (hasFrame)
+              SteamAvatarFrameWidget(
+                frameId: widget.profile.frameId,
+                size: avatarSize,
+                shape: 'square',
+                child: AppAvatar(
+                  avatarUrl: widget.profile.avatarUrl,
+                  username: widget.profile.username,
+                  size: avatarSize,
+                  shape: BoxShape.rectangle,
+                  borderRadius: BorderRadius.circular(12),
+                  borderColor: Colors.black,
+                  borderWidth: 2.0,
+                ),
+              )
+            else ...[
+              Container(
+                width: avatarSize + 12,
+                height: avatarSize + 12,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.65),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
 
-          // 2. Декоративные металлические уголки (Steam Avatar Frame Brackets)
-          Positioned(
-            top: 0,
-            left: 0,
-            child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: true, isLeft: true),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: true, isLeft: false),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: false, isLeft: true),
-          ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: false, isLeft: false),
-          ),
+              // 2. Декоративные металлические уголки (Steam Avatar Frame Brackets)
+              Positioned(
+                top: 0,
+                left: 0,
+                child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: true, isLeft: true),
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: true, isLeft: false),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: false, isLeft: true),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: _buildCornerBracket(cornerLength, cornerWidth, accent, isTop: false, isLeft: false),
+              ),
 
-          // 3. Квадратный аватар 84×84 с легким скруглением
-          AppAvatar(
-            avatarUrl: widget.profile.avatarUrl,
-            username: widget.profile.username,
-            size: avatarSize,
-            shape: BoxShape.rectangle,
-            borderRadius: BorderRadius.circular(12),
-            borderColor: Colors.black,
-            borderWidth: 2.0,
-          ),
+              // 3. Квадратный аватар 84×84 с легким скруглением
+              AppAvatar(
+                avatarUrl: widget.profile.avatarUrl,
+                username: widget.profile.username,
+                size: avatarSize,
+                shape: BoxShape.rectangle,
+                borderRadius: BorderRadius.circular(12),
+                borderColor: Colors.black,
+                borderWidth: 2.0,
+              ),
+            ],
+          ],
 
           // 4. Индикатор онлайн-статуса Steam (В сети / Online)
           Positioned(

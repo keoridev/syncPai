@@ -92,6 +92,9 @@ class _SteamProfileCustomizerSheetState
   late String _selectedBadgeId;
   late String _selectedAvatar;
   late String _selectedShowcaseType;
+  late String _selectedCountryFlag;
+  late String _selectedCountryName;
+  late String _selectedAvatarShape;
   String? _selectedFavAnimeId;
   String? _selectedFavAnimePoster;
 
@@ -138,6 +141,9 @@ class _SteamProfileCustomizerSheetState
     _selectedBadgeId = widget.profile.badgeId ?? 'sync_master';
     _selectedAvatar = widget.profile.avatarUrl ?? 'cat';
     _selectedShowcaseType = widget.profile.showcaseType;
+    _selectedCountryFlag = widget.profile.countryFlag ?? '🇰🇬';
+    _selectedCountryName = widget.profile.countryName ?? 'Kyrgyzstan';
+    _selectedAvatarShape = widget.profile.avatarShape;
     _selectedFavAnimeId = widget.profile.favoriteAnimeId;
     _selectedFavAnimePoster = widget.profile.favoriteAnimePoster;
 
@@ -305,6 +311,9 @@ class _SteamProfileCustomizerSheetState
               newFavAnime.isNotEmpty ? effectiveFavPoster : null,
           accentColor: _selectedAccentHex,
           showcaseType: _selectedShowcaseType,
+          countryFlag: _selectedCountryFlag,
+          countryName: _selectedCountryName,
+          avatarShape: _selectedAvatarShape,
         );
 
     // 2. СИНХРОНИЗАЦИЯ С ТЕМОЙ ПРИЛОЖЕНИЯ:
@@ -864,70 +873,163 @@ class _SteamProfileCustomizerSheetState
 
   // --- 2. ВКЛАДКА «РАМКА» ---
   Widget _buildFramesTab(Color accent) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth <= 360;
-        final isWide = constraints.maxWidth >= 600;
-        final crossCount = isNarrow ? 2 : (isWide ? 4 : 3);
-        final ratio = isNarrow ? 0.72 : (isWide ? 0.85 : 0.68);
-
-        return GridView.builder(
-          padding: EdgeInsets.symmetric(
-            horizontal: isNarrow ? 8 : AppDimensions.spacingXl,
-            vertical: 12,
-          ),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossCount,
-            crossAxisSpacing: isNarrow ? 8 : 10,
-            mainAxisSpacing: isNarrow ? 8 : 10,
-            childAspectRatio: ratio,
-          ),
-          itemCount: SteamAvatarFrame.all.length,
-          itemBuilder: (context, index) {
-            final frame = SteamAvatarFrame.all[index];
-            final isSelected = _selectedFrameId == frame.id;
-
-            return InkWell(
-              onTap: () => setState(() => _selectedFrameId = frame.id),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? accent.withValues(alpha: 0.12)
-                      : AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected ? accent : AppColors.strokeMedium,
-                    width: isSelected ? 2 : 1,
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Center(
-                        child: SteamAvatarFrameWidget(
-                          frameId: frame.id,
-                          size: 30,
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Color(0xFF1E2028),
-                            ),
-                            child: Icon(frame.previewIcon,
-                                size: 15, color: frame.colors.first),
-                          ),
-                        ),
+    return Column(
+      children: [
+        // Переключатель формы аватара и рамки: Квадратная (Steam) / Круглая (Classic)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppDimensions.spacingXl, 10, AppDimensions.spacingXl, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _selectedAvatarShape = 'square'),
+                  borderRadius: BorderRadius.circular(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _selectedAvatarShape == 'square'
+                          ? accent.withValues(alpha: 0.18)
+                          : AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _selectedAvatarShape == 'square' ? accent : AppColors.strokeMedium,
+                        width: _selectedAvatarShape == 'square' ? 1.8 : 1.0,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Expanded(
-                      flex: 2,
-                      child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.crop_square_rounded,
+                          size: 17,
+                          color: _selectedAvatarShape == 'square' ? accent : AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Квадратная (Steam)',
+                          style: TextStyle(
+                            color: _selectedAvatarShape == 'square' ? Colors.white : AppColors.textSecondary,
+                            fontWeight: _selectedAvatarShape == 'square' ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _selectedAvatarShape = 'circle'),
+                  borderRadius: BorderRadius.circular(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _selectedAvatarShape == 'circle'
+                          ? accent.withValues(alpha: 0.18)
+                          : AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _selectedAvatarShape == 'circle' ? accent : AppColors.strokeMedium,
+                        width: _selectedAvatarShape == 'circle' ? 1.8 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.circle_outlined,
+                          size: 16,
+                          color: _selectedAvatarShape == 'circle' ? accent : AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Круглая (Classic)',
+                          style: TextStyle(
+                            color: _selectedAvatarShape == 'circle' ? Colors.white : AppColors.textSecondary,
+                            fontWeight: _selectedAvatarShape == 'circle' ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth <= 360;
+              final isWide = constraints.maxWidth >= 600;
+              final crossCount = isNarrow ? 2 : (isWide ? 4 : 3);
+              final ratio = isNarrow ? 0.72 : (isWide ? 0.85 : 0.68);
+
+              return GridView.builder(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isNarrow ? 8 : AppDimensions.spacingXl,
+                  vertical: 8,
+                ),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossCount,
+                  crossAxisSpacing: isNarrow ? 8 : 10,
+                  mainAxisSpacing: isNarrow ? 8 : 10,
+                  childAspectRatio: ratio,
+                ),
+                itemCount: SteamAvatarFrame.all.length,
+                itemBuilder: (context, index) {
+                  final frame = SteamAvatarFrame.all[index];
+                  final isSelected = _selectedFrameId == frame.id;
+
+                  return InkWell(
+                    onTap: () => setState(() => _selectedFrameId = frame.id),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? accent.withValues(alpha: 0.12)
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected ? accent : AppColors.strokeMedium,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Center(
+                              child: SteamAvatarFrameWidget(
+                                frameId: frame.id,
+                                size: 30,
+                                shape: _selectedAvatarShape,
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    shape: _selectedAvatarShape == 'circle' ? BoxShape.circle : BoxShape.rectangle,
+                                    borderRadius: _selectedAvatarShape == 'square' ? BorderRadius.circular(6) : null,
+                                    color: const Color(0xFF1E2028),
+                                  ),
+                                  child: Icon(frame.previewIcon,
+                                      size: 15, color: frame.colors.first),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Expanded(
+                            flex: 2,
+                            child: Center(
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Padding(
@@ -959,7 +1061,10 @@ class _SteamProfileCustomizerSheetState
           },
         );
       },
-    );
+    ),
+  ),
+],
+);
   }
 
   // --- 3. ВКЛАДКА «АВАТАР» ---
@@ -1695,6 +1800,69 @@ class _SteamProfileCustomizerSheetState
                 ),
               );
             }).toList(),
+          ),
+
+          const SizedBox(height: 18),
+
+          // Выбор страны профиля (Steam Country & Flag)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Страна профиля (Steam Flag & Country):',
+                  style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+              Text('$_selectedCountryFlag $_selectedCountryName',
+                  style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 38,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: SteamCountry.popular.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final country = SteamCountry.popular[index];
+                final isSelected = _selectedCountryName == country.name;
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedCountryFlag = country.flag;
+                      _selectedCountryName = country.name;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected ? accent.withValues(alpha: 0.18) : AppColors.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected ? accent : AppColors.strokeMedium,
+                        width: isSelected ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(country.flag, style: const TextStyle(fontSize: 14)),
+                        const SizedBox(width: 6),
+                        Text(
+                          country.name,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : AppColors.textSecondary,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
 
           const SizedBox(height: 18),

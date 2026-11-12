@@ -21,6 +21,9 @@ class UserProfile extends Equatable {
   final String? provider;
   final bool isAnonymous;
   final String showcaseType; // 'favorite_anime', 'stats_badges', 'custom_text'
+  final String? countryFlag; // '🇰🇬'
+  final String? countryName; // 'Kyrgyzstan'
+  final String avatarShape; // 'square' или 'circle'
   final DateTime createdAt;
 
   const UserProfile({
@@ -41,6 +44,9 @@ class UserProfile extends Equatable {
     this.provider,
     this.isAnonymous = false,
     this.showcaseType = 'favorite_anime',
+    this.countryFlag = '🇰🇬',
+    this.countryName = 'Kyrgyzstan',
+    this.avatarShape = 'square',
     required this.createdAt,
   });
 
@@ -56,6 +62,9 @@ class UserProfile extends Equatable {
         themeColorHex: accentColor ?? '#8A2BE2',
         showcaseType: showcaseType,
         customBio: bio,
+        countryFlag: countryFlag ?? '🇰🇬',
+        countryName: countryName ?? 'Kyrgyzstan',
+        avatarShape: avatarShape,
       );
 
   /// Дефолтный гостевой профиль при первом запуске (Anonymous Auth)
@@ -78,6 +87,9 @@ class UserProfile extends Equatable {
       provider: 'anonymous',
       isAnonymous: true,
       showcaseType: 'favorite_anime',
+      countryFlag: '🇰🇬',
+      countryName: 'Kyrgyzstan',
+      avatarShape: 'square',
       createdAt: DateTime.now(),
     );
   }
@@ -100,6 +112,9 @@ class UserProfile extends Equatable {
     String? provider,
     bool? isAnonymous,
     String? showcaseType,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -120,6 +135,9 @@ class UserProfile extends Equatable {
       provider: provider ?? this.provider,
       isAnonymous: isAnonymous ?? this.isAnonymous,
       showcaseType: showcaseType ?? this.showcaseType,
+      countryFlag: countryFlag ?? this.countryFlag,
+      countryName: countryName ?? this.countryName,
+      avatarShape: avatarShape ?? this.avatarShape,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -144,6 +162,9 @@ class UserProfile extends Equatable {
         'provider': provider,
         'is_anonymous': isAnonymous,
         'showcase_type': showcaseType,
+        'country_flag': countryFlag,
+        'country_name': countryName,
+        'avatar_shape': avatarShape,
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -169,6 +190,18 @@ class UserProfile extends Equatable {
         'favorite_anime';
     final userBio = json['bio'] as String? ??
         customObj?['custom_bio'] as String?;
+    final flag = json['country_flag'] as String? ??
+        json['countryFlag'] as String? ??
+        customObj?['country_flag'] as String? ??
+        '🇰🇬';
+    final country = json['country_name'] as String? ??
+        json['countryName'] as String? ??
+        customObj?['country_name'] as String? ??
+        'Kyrgyzstan';
+    final shape = json['avatar_shape'] as String? ??
+        json['avatarShape'] as String? ??
+        customObj?['avatar_shape'] as String? ??
+        'square';
 
     return UserProfile(
       id: json['id'] as String? ?? '',
@@ -188,6 +221,9 @@ class UserProfile extends Equatable {
       provider: json['provider'] as String?,
       isAnonymous: json['is_anonymous'] as bool? ?? false,
       showcaseType: showcase,
+      countryFlag: flag,
+      countryName: country,
+      avatarShape: shape,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -211,6 +247,9 @@ class UserProfile extends Equatable {
         provider,
         isAnonymous,
         showcaseType,
+        countryFlag,
+        countryName,
+        avatarShape,
         createdAt,
       ];
 }

@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
@@ -25,8 +26,6 @@ import 'qr_scanner_sheet.dart';
 
 enum SyncLobbyTab { host, join }
 
-/// Интерактивная шторка лобби совместного просмотра (SyncRoomLobbySheet)
-/// в стиле Frosted Glass / Nordic Dark.
 class SyncRoomLobbySheet extends StatefulWidget {
   final AnimeTitle title;
   final EpisodeItem episode;
@@ -1220,79 +1219,112 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
           const Divider(color: AppColors.strokeMedium, height: 1),
           const SizedBox(height: 10),
           // Гость
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: hasGuest ? const Color(0xFF00E676).withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
-                  border: Border.all(
-                    color: hasGuest ? const Color(0xFF00E676) : Colors.white24,
-                    width: 1.2,
-                  ),
-                ),
-                child: Center(
-                  child: Icon(
-                    hasGuest ? Icons.person_rounded : Icons.schedule_rounded,
-                    size: 18,
-                    color: hasGuest ? const Color(0xFF00E676) : Colors.white54,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasGuest ? (guestName ?? 'Друг') : 'Ожидание подключения друга…',
-                      style: TextStyle(
-                        color: hasGuest ? Colors.white : AppColors.textMuted,
-                        fontWeight: hasGuest ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 13,
+          InkWell(
+            onTap: hasGuest
+                ? () {
+                    context.pushNamed('profile', queryParameters: {'userId': guestName ?? 'Друг'});
+                  }
+                : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: hasGuest ? const Color(0xFF00E676).withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),
+                      border: Border.all(
+                        color: hasGuest ? const Color(0xFF00E676) : Colors.white24,
+                        width: 1.2,
                       ),
                     ),
-                    Text(
-                      hasGuest ? 'В комнате' : 'Отправьте код или ссылку для входа',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: hasGuest
-                      ? const Color(0xFF00E676).withValues(alpha: 0.15)
-                      : Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 5,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: hasGuest ? const Color(0xFF00E676) : Colors.white38,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      hasGuest ? 'Подключен' : 'Ожидание',
-                      style: TextStyle(
+                    child: Center(
+                      child: Icon(
+                        hasGuest ? Icons.person_rounded : Icons.schedule_rounded,
+                        size: 18,
                         color: hasGuest ? const Color(0xFF00E676) : Colors.white54,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                hasGuest ? (guestName ?? 'Друг') : 'Ожидание подключения друга…',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: hasGuest ? Colors.white : AppColors.textMuted,
+                                  fontWeight: hasGuest ? FontWeight.w700 : FontWeight.w500,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (hasGuest) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Профиль ›',
+                                  style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          hasGuest ? 'В комнате • Нажмите для профиля' : 'Отправьте код или ссылку для входа',
+                          style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: hasGuest
+                          ? const Color(0xFF00E676).withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: hasGuest ? const Color(0xFF00E676) : Colors.white38,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          hasGuest ? 'Подключен' : 'Ожидание',
+                          style: TextStyle(
+                            color: hasGuest ? const Color(0xFF00E676) : Colors.white38,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),

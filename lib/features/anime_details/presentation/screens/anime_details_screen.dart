@@ -971,66 +971,113 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       SizedBox(
                         width: double.infinity,
                         height: 50,
-                        child: ElevatedButton(
-                          onPressed: _isLoadingDetails
-                              ? null
-                              : (currentEpisode != null
-                                  ? () => _requestPlayEpisode(currentEpisode)
-                                  : () => _loadFullDetails()),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: currentEpisode != null
-                                ? Theme.of(context).colorScheme.primary
-                                : AppColors.surfaceElevated,
-                            foregroundColor: AppColors.textPrimary,
-                            elevation: currentEpisode != null ? 3 : 0,
-                            shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              side: BorderSide(
-                                color: currentEpisode != null
-                                    ? Theme.of(context).colorScheme.primary
-                                    : AppColors.strokeMedium,
-                              ),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                          ),
-                          child: _isLoadingDetails
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+                        child: Builder(
+                          builder: (context) {
+                            final isAnons = _currentTitle.status.toLowerCase().contains('анонс') ||
+                                _currentTitle.status.toLowerCase().contains('скоро');
+
+                            if (isAnons) {
+                              return ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF261D15),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    side: const BorderSide(color: Color(0xFFFF9800), width: 1.2),
                                   ),
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
-                                      size: 24,
-                                      color: AppColors.textPrimary,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                ),
+                                icon: const Icon(Icons.campaign_rounded, color: Color(0xFFFFB74D), size: 22),
+                                label: const Text(
+                                  'Анонс • Добавить в «В планах»',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                                ),
+                                onPressed: () {
+                                  if (getIt.isRegistered<AnimeListCubit>()) {
+                                    context.read<AnimeListCubit>().setAnimeStatus(
+                                      animeId: _currentTitle.id,
+                                      titleRu: _currentTitle.displayTitle,
+                                      posterUrl: _currentTitle.posterMedium.isNotEmpty
+                                          ? _currentTitle.posterMedium
+                                          : _currentTitle.posterSmall,
+                                      status: AnimeListStatus.planned,
+                                    );
+                                  }
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('✨ Анонс добавлен в список «В планах»! Оповестим вас о премьере!'),
+                                      duration: Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Color(0xFFE06C53),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: Text(
-                                          currentEpisode != null && currentEpisode.episode > 1
-                                              ? 'Серия ${currentEpisode.episode} • Смотреть'
-                                              : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
-                                          maxLines: 1,
-                                          style: AppTypography.labelLarge.copyWith(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: -0.2,
+                                  );
+                                },
+                              );
+                            }
+
+                            return ElevatedButton(
+                              onPressed: _isLoadingDetails
+                                  ? null
+                                  : (currentEpisode != null
+                                      ? () => _requestPlayEpisode(currentEpisode)
+                                      : () => _loadFullDetails()),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: currentEpisode != null
+                                    ? Theme.of(context).colorScheme.primary
+                                    : AppColors.surfaceElevated,
+                                foregroundColor: AppColors.textPrimary,
+                                elevation: currentEpisode != null ? 3 : 0,
+                                shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  side: BorderSide(
+                                    color: currentEpisode != null
+                                        ? Theme.of(context).colorScheme.primary
+                                        : AppColors.strokeMedium,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                              ),
+                              child: _isLoadingDetails
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
+                                          size: 24,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              currentEpisode != null && currentEpisode.episode > 1
+                                                  ? 'Серия ${currentEpisode.episode} • Смотреть'
+                                                  : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
+                                              maxLines: 1,
+                                              style: AppTypography.labelLarge.copyWith(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                            );
+                          },
                         ),
                       ),
 

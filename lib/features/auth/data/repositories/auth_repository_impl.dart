@@ -481,6 +481,9 @@ class AuthRepositoryImpl implements AuthRepository {
     String? favoriteAnimePoster,
     String? accentColor,
     String? showcaseType,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
   }) async {
     final current = await getCurrentProfile();
     final updated = current.copyWith(
@@ -503,6 +506,9 @@ class AuthRepositoryImpl implements AuthRepository {
           : current.favoriteAnimePoster,
       accentColor: accentColor ?? current.accentColor,
       showcaseType: showcaseType ?? current.showcaseType,
+      countryFlag: countryFlag ?? current.countryFlag,
+      countryName: countryName ?? current.countryName,
+      avatarShape: avatarShape ?? current.avatarShape,
     );
 
     await _saveLocalProfile(updated);

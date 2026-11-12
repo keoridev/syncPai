@@ -568,6 +568,21 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: AppColors.strokeMedium),
+                  minimumSize: const Size(double.infinity, 44),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                icon: const Icon(Icons.account_circle_outlined, size: 19, color: Colors.white70),
+                label: Text('Посмотреть профиль $friendName'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  context.pushNamed('profile', queryParameters: {'userId': friendName});
+                },
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.textPrimary,
                   side: const BorderSide(color: AppColors.strokeMedium),
                   minimumSize: const Size(double.infinity, 44),
@@ -667,7 +682,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.primary),
+                  borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                 ),
               ),
             ),
@@ -1079,7 +1094,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                            borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                           ),
                         ),
                         onSubmitted: (_) => _handleJoinRoom(),

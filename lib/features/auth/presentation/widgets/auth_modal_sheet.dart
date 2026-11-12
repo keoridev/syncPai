@@ -228,7 +228,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                  borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                 ),
               ),
             ),
@@ -495,7 +495,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                                borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                               ),
                             ),
                           ),
@@ -535,7 +535,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                        borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                       ),
                     ),
                   ),
@@ -580,7 +580,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                        borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                       ),
                     ),
                   ),
@@ -625,7 +625,7 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                                borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
                               ),
                             ),
                           ),

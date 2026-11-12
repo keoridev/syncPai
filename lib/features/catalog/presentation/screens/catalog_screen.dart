@@ -167,21 +167,33 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       onPressed: () => setState(() => _isSearchOpen = true),
                     ),
 
-                    // Переключатель Сетка / Список
+                    // Переключатель вида каталога: 2 в ряд / 3 в ряд / Список
                     BlocBuilder<CatalogCubit, CatalogState>(
                       buildWhen: (prev, curr) => curr is CatalogLoaded,
                       builder: (context, state) {
-                        final isGrid = state is CatalogLoaded
-                            ? state.viewMode == CatalogViewMode.grid
-                            : true;
+                        final cubit = context.read<CatalogCubit>();
+                        final isList = state is CatalogLoaded && state.viewMode == CatalogViewMode.list;
+                        final is3Columns = state is CatalogLoaded &&
+                            state.viewMode == CatalogViewMode.grid &&
+                            state.gridDensity == CatalogGridDensity.compact;
+
+                        final IconData icon;
+                        final String tooltip;
+                        if (isList) {
+                          icon = Icons.view_agenda_outlined;
+                          tooltip = 'Вид: Список (тап для 2 в ряд)';
+                        } else if (is3Columns) {
+                          icon = Icons.apps_rounded;
+                          tooltip = 'Вид: 3 в ряд (тап для списка)';
+                        } else {
+                          icon = Icons.grid_view_rounded;
+                          tooltip = 'Вид: 2 в ряд (тап для 3 в ряд)';
+                        }
+
                         return IconButton(
-                          icon: Icon(
-                            isGrid ? Icons.view_agenda_outlined : Icons.grid_view_rounded,
-                            color: AppColors.textPrimary,
-                            size: 21,
-                          ),
-                          tooltip: isGrid ? 'Список' : 'Сетка',
-                          onPressed: () => context.read<CatalogCubit>().toggleViewMode(),
+                          icon: Icon(icon, color: AppColors.textPrimary, size: 21),
+                          tooltip: tooltip,
+                          onPressed: () => cubit.cycleDisplayMode(),
                         );
                       },
                     ),
@@ -459,7 +471,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
               BlocBuilder<CatalogCubit, CatalogState>(
                 builder: (context, state) {
                   final isListMode = (state is CatalogLoaded && state.viewMode == CatalogViewMode.list);
-                  if (state is CatalogLoading) {
+                  if (state is CatalogLoading ||
+                      (state is CatalogLoaded && state.filteredTitles.isEmpty && state.isLoadingMore)) {
                     return _buildSliverLoadingGrid(
                       horizontalPad,
                       isListMode: isListMode,

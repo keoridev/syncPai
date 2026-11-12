@@ -42,6 +42,9 @@ class AuthCubit extends Cubit<AuthState> {
     String? favoriteAnimePoster,
     String? accentColor,
     String? showcaseType,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
   }) async {
     try {
       final updated = await repository.updateProfile(
@@ -58,6 +61,9 @@ class AuthCubit extends Cubit<AuthState> {
         favoriteAnimePoster: favoriteAnimePoster,
         accentColor: accentColor,
         showcaseType: showcaseType,
+        countryFlag: countryFlag,
+        countryName: countryName,
+        avatarShape: avatarShape,
       );
       emit(Authenticated(updated));
     } catch (e) {

@@ -11,12 +11,14 @@ class SteamAvatarFrameWidget extends StatefulWidget {
   final Widget child;
   final String? frameId;
   final double size;
+  final String shape; // 'circle' или 'square'
 
   const SteamAvatarFrameWidget({
     super.key,
     required this.child,
     this.frameId,
     required this.size,
+    this.shape = 'circle',
   });
 
   @override
@@ -85,6 +87,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
       return widget.child;
     }
 
+    final isSquare = widget.shape == 'square';
     final frameOuterSize = widget.size + 14;
     final primaryFrameColor = frame.colors.isNotEmpty ? frame.colors.first : AppColors.primary;
     final thematicType = _resolveThematicType(frame.id);
@@ -95,6 +98,66 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
         builder: (context, _) {
           final t = _animController.value;
           final pulse = (math.sin(t * 2 * math.pi) + 1.0) / 2.0;
+
+          if (isSquare) {
+            return SizedBox(
+              width: frameOuterSize + 16,
+              height: frameOuterSize + 16,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // 1. Внешнее свечение квадратной рамки
+                  Container(
+                    width: frameOuterSize + (pulse * 4.0),
+                    height: frameOuterSize + (pulse * 4.0),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryFrameColor.withValues(alpha: 0.35 + (pulse * 0.15)),
+                          blurRadius: 14 + (pulse * 6.0),
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 2. Квадратный градиентный контур Steam
+                  Container(
+                    width: frameOuterSize,
+                    height: frameOuterSize,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: frame.colors.isNotEmpty
+                            ? frame.colors
+                            : [primaryFrameColor, primaryFrameColor.withValues(alpha: 0.6)],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                  ),
+
+                  // 3. Подложка под аватар
+                  Container(
+                    width: widget.size + 2,
+                    height: widget.size + 2,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF121316),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+
+                  // 4. Сам аватар
+                  widget.child,
+                ],
+              ),
+            );
+          }
 
           return SizedBox(
             width: frameOuterSize + 20,

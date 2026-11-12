@@ -207,6 +207,31 @@ class AnimeCatalogModel {
         ? json['id'].toString()
         : (shikimoriId > 0 ? shikimoriId.toString() : '0');
 
+    String parsedStatus = 'ongoing';
+    if (json['status'] is Map) {
+      final sMap = json['status'] as Map;
+      final code = (sMap['code'] ?? sMap['value'] ?? '').toString().toLowerCase();
+      final stringVal = (sMap['string'] ?? sMap['name'] ?? '').toString().toLowerCase();
+      if (code.contains('anons') || stringVal.contains('анонс')) {
+        parsedStatus = 'anons';
+      } else if (code.contains('completed') || code.contains('released') || stringVal.contains('завершен') || stringVal.contains('вышел')) {
+        parsedStatus = 'released';
+      } else if (code.contains('in_progress') || code.contains('ongoing') || stringVal.contains('процесс') || stringVal.contains('онгоинг') || stringVal.contains('эфир')) {
+        parsedStatus = 'ongoing';
+      }
+    } else if (json['status'] is String) {
+      final s = (json['status'] as String).toLowerCase();
+      if (s.contains('anons') || s.contains('анонс')) {
+        parsedStatus = 'anons';
+      } else if (s.contains('released') || s.contains('завершен') || s.contains('completed')) {
+        parsedStatus = 'released';
+      } else if (s.contains('ongoing') || s.contains('онгоинг') || s.contains('in_progress')) {
+        parsedStatus = 'ongoing';
+      } else {
+        parsedStatus = s;
+      }
+    }
+
     return AnimeCatalogModel(
       id: nativeId,
       shikimoriId: shikimoriId,
@@ -215,7 +240,7 @@ class AnimeCatalogModel {
       posterUrl: primaryPoster,
       fallbackPosterUrl: fallbackPoster,
       kind: json['kind'] as String?,
-      status: json['status'] as String? ?? 'ongoing',
+      status: parsedStatus,
       score: (json['score'] as num?)?.toDouble() ?? 0.0,
       episodesTotal: (json['episodes_total'] as num?)?.toInt() ??
           (json['episodes'] as num?)?.toInt() ??

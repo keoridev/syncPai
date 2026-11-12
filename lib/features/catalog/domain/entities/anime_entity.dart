@@ -91,7 +91,11 @@ class AnimeEntity extends Equatable {
       year: year,
       description: description,
       genres: genres,
-      status: status == 'ongoing' ? 'Онгоинг' : 'Завершен',
+      status: (status.toLowerCase().contains('anons') || status.toLowerCase().contains('анонс'))
+          ? 'Анонс'
+          : (status.toLowerCase().contains('ongoing') || status.toLowerCase().contains('онгоинг') || status.toLowerCase().contains('процесс'))
+              ? 'Онгоинг'
+              : 'Завершен',
       shikimoriUrl: shikimoriId > 0 ? 'https://shikimori.one/animes/$shikimoriId' : null,
     );
   }

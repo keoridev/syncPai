@@ -98,6 +98,12 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
       _matchAll = false;
       _status = null;
     });
+    final cubit = context.read<CatalogCubit>();
+    cubit.clearGenres();
+    cubit.setSortBy(CatalogSort.updates);
+    cubit.setMatchAllGenres(false);
+    cubit.setStatusFilter(null);
+    Navigator.of(context).pop();
   }
 
   @override
@@ -270,6 +276,15 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                           isSelected: _status == 'released',
                           themePrimary: themePrimary,
                           onTap: () => setState(() => _status = 'released'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatusChip(
+                          label: 'Анонсы',
+                          isSelected: _status == 'anons',
+                          themePrimary: themePrimary,
+                          onTap: () => setState(() => _status = 'anons'),
                         ),
                       ),
                     ],

@@ -139,7 +139,17 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    // Если нет — грузим первую страницу
+    // Если нет — оптимистично подсвечиваем кнопку и переходим в состояние скелетона
+    final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
+    if (state is CatalogLoaded) {
+      final current = state as CatalogLoaded;
+      emit(current.copyWith(
+        selectedGenres: genres,
+        filteredTitles: const [], // Показывает скелетон снизу без задержки кнопки
+        isLoadingMore: true,
+      ));
+    }
+
     _pageMap[cleanCategory] = 1;
     _fetchCatalog(category: cleanCategory, isLoadMore: false);
   }
@@ -158,7 +168,9 @@ class CatalogCubit extends Cubit<CatalogState> {
         emit((state as CatalogLoaded).copyWith(isLoadingMore: true));
       }
     } else {
-      emit(const CatalogLoading());
+      if (state is! CatalogLoaded) {
+        emit(const CatalogLoading());
+      }
     }
 
     final requestId = ++_requestId;
@@ -286,6 +298,18 @@ class CatalogCubit extends Cubit<CatalogState> {
         ? CatalogViewMode.list
         : CatalogViewMode.grid;
     setViewMode(newMode);
+  }
+
+  /// Циклическое переключение вида каталога: 2 в ряд -> 3 в ряд -> список -> 2 в ряд
+  void cycleDisplayMode() {
+    if (_currentViewMode == CatalogViewMode.list) {
+      setViewMode(CatalogViewMode.grid);
+      setGridDensity(CatalogGridDensity.standard);
+    } else if (_currentGridDensity == CatalogGridDensity.standard) {
+      setGridDensity(CatalogGridDensity.compact);
+    } else {
+      setViewMode(CatalogViewMode.list);
+    }
   }
 
   void setViewMode(CatalogViewMode mode) {
@@ -619,11 +643,13 @@ class CatalogCubit extends Cubit<CatalogState> {
   }) {
     var result = List<AnimeTitle>.from(list);
 
+    String norm(String s) => s.toLowerCase().replaceAll('ё', 'е').replaceAll('-', ' ').trim();
+
     // 1. Фильтр по жанрам
     if (genres.isNotEmpty) {
-      final cleanGenres = genres.map((g) => g.toLowerCase().trim()).toSet();
+      final cleanGenres = genres.map(norm).toSet();
       result = result.where((title) {
-        final titleGenres = title.genres.map((g) => g.toLowerCase().trim()).toList();
+        final titleGenres = title.genres.map(norm).toList();
         if (titleGenres.isEmpty) {
           // Если у тайтла не распарсен локальный список жанров, доверяем серверному ответу AniLibria
           return true;
@@ -641,12 +667,17 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (statusFilter == 'ongoing') {
         result = result.where((t) {
           final s = t.status.toLowerCase();
-          return s.contains('онгоинг') || s.contains('выходит') || s.contains('ongoing');
+          return s.contains('онгоинг') || s.contains('выходит') || s.contains('ongoing') || s.contains('процесс');
         }).toList();
       } else if (statusFilter == 'released') {
         result = result.where((t) {
           final s = t.status.toLowerCase();
-          return s.contains('завершен') || s.contains('вышел') || s.contains('released');
+          return s.contains('завершен') || s.contains('вышел') || s.contains('released') || s.contains('completed');
+        }).toList();
+      } else if (statusFilter == 'anons' || statusFilter == 'anonses') {
+        result = result.where((t) {
+          final s = t.status.toLowerCase();
+          return s.contains('анонс') || s.contains('anons') || s.contains('скоро') || (t.episodes.isEmpty && (t.episodesTotal ?? 0) == 0);
         }).toList();
       }
     }

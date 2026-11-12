@@ -570,33 +570,49 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   ],
                                 ),
                               ),
-                              // Центр: Кнопка Play/Pause
+                              // Центр: Кнопка Play/Pause или индикатор загрузки
                               Center(
-                                child: GestureDetector(
-                                  onTap: () => _cubit.togglePlayPause(),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.70),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.35),
-                                        width: 1,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.5),
-                                          blurRadius: 10,
+                                child: state.isBuffering
+                                    ? Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.70),
+                                          shape: BoxShape.circle,
                                         ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
+                                        child: const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        ),
+                                      )
+                                    : GestureDetector(
+                                        onTap: () => _cubit.togglePlayPause(),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(alpha: 0.70),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white.withValues(alpha: 0.35),
+                                              width: 1,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.5),
+                                                blurRadius: 10,
+                                              ),
+                                            ],
+                                          ),
+                                          child: Icon(
+                                            state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
                               ),
                               // Нижняя строка: Номер серии и индикатор ресайза
                               Positioned(
@@ -633,7 +649,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
               return GestureDetector(
                 onVerticalDragEnd: (details) {
-                  if (!_isMiniPlayer && details.primaryVelocity != null && details.primaryVelocity! > 350) {
+                  // Минимизируем плеер только при намеренном свайпе вниз в портретном режиме, когда видео не буферизируется
+                  if (!_isMiniPlayer &&
+                      !state.isBuffering &&
+                      MediaQuery.of(context).orientation == Orientation.portrait &&
+                      details.primaryVelocity != null &&
+                      details.primaryVelocity! > 850) {
                     _minimizePlayer();
                   }
                 },

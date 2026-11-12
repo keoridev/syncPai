@@ -156,12 +156,19 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: BorderSide(color: primary, width: 1.2),
+          borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: AppDimensions.borderRadiusMedium,
           borderSide: const BorderSide(color: AppColors.syncError, width: 1.0),
         ),
+      ),
+
+      // Text Selection Theme (нейтральный серый/белый курсор и выделение)
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: Colors.white70,
+        selectionColor: Color(0x40FFFFFF),
+        selectionHandleColor: Colors.white70,
       ),
 
       // BottomSheet

@@ -689,6 +689,30 @@ class SteamCustomTitle {
   ];
 }
 
+class SteamCountry {
+  final String flag;
+  final String name;
+
+  const SteamCountry({required this.flag, required this.name});
+
+  static const List<SteamCountry> popular = [
+    SteamCountry(flag: '🇰🇬', name: 'Kyrgyzstan'),
+    SteamCountry(flag: '🇷🇺', name: 'Russia'),
+    SteamCountry(flag: '🇰🇿', name: 'Kazakhstan'),
+    SteamCountry(flag: '🇧🇾', name: 'Belarus'),
+    SteamCountry(flag: '🇺🇦', name: 'Ukraine'),
+    SteamCountry(flag: '🇯🇵', name: 'Japan'),
+    SteamCountry(flag: '🇰🇷', name: 'South Korea'),
+    SteamCountry(flag: '🇺🇸', name: 'United States'),
+    SteamCountry(flag: '🇩🇪', name: 'Germany'),
+    SteamCountry(flag: '🇬🇧', name: 'United Kingdom'),
+    SteamCountry(flag: '🇫🇷', name: 'France'),
+    SteamCountry(flag: '🇨🇦', name: 'Canada'),
+    SteamCountry(flag: '🇺🇿', name: 'Uzbekistan'),
+    SteamCountry(flag: '🇹🇯', name: 'Tajikistan'),
+  ];
+}
+
 /// Настройки кастомизации профиля пользователя (Steam Point Shop Live Customization)
 class ProfileCustomization {
   final String backgroundType; // 'video', 'image', 'color'
@@ -697,6 +721,9 @@ class ProfileCustomization {
   final String themeColorHex; // Акцентный цвет профиля (#8A2BE2)
   final String showcaseType; // 'favorite_anime', 'stats_badges', 'custom_text'
   final String? customBio; // Текст цитаты профиля
+  final String? countryFlag; // Флаг страны (🇰🇬)
+  final String? countryName; // Название страны (Kyrgyzstan)
+  final String avatarShape; // 'square' или 'circle'
 
   const ProfileCustomization({
     required this.backgroundType,
@@ -705,6 +732,9 @@ class ProfileCustomization {
     this.themeColorHex = '#8A2BE2',
     this.showcaseType = 'favorite_anime',
     this.customBio,
+    this.countryFlag = '🇰🇬',
+    this.countryName = 'Kyrgyzstan',
+    this.avatarShape = 'square',
   });
 
   factory ProfileCustomization.defaultSettings() => const ProfileCustomization(
@@ -712,6 +742,9 @@ class ProfileCustomization {
         backgroundUrl: 'none',
         themeColorHex: '#8A2BE2',
         showcaseType: 'favorite_anime',
+        countryFlag: '🇰🇬',
+        countryName: 'Kyrgyzstan',
+        avatarShape: 'square',
       );
 
   factory ProfileCustomization.fromJson(Map<String, dynamic> json) {
@@ -722,6 +755,9 @@ class ProfileCustomization {
       themeColorHex: json['theme_color_hex'] as String? ?? json['accent_color'] as String? ?? '#8A2BE2',
       showcaseType: json['showcase_type'] as String? ?? 'favorite_anime',
       customBio: json['custom_bio'] as String? ?? json['bio'] as String?,
+      countryFlag: json['country_flag'] as String? ?? json['countryFlag'] as String? ?? '🇰🇬',
+      countryName: json['country_name'] as String? ?? json['countryName'] as String? ?? 'Kyrgyzstan',
+      avatarShape: json['avatar_shape'] as String? ?? json['avatarShape'] as String? ?? 'square',
     );
   }
 
@@ -732,6 +768,9 @@ class ProfileCustomization {
         'theme_color_hex': themeColorHex,
         'showcase_type': showcaseType,
         if (customBio != null) 'custom_bio': customBio,
+        if (countryFlag != null) 'country_flag': countryFlag,
+        if (countryName != null) 'country_name': countryName,
+        'avatar_shape': avatarShape,
       };
 
   ProfileCustomization copyWith({
@@ -741,6 +780,9 @@ class ProfileCustomization {
     String? themeColorHex,
     String? showcaseType,
     String? customBio,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
   }) {
     return ProfileCustomization(
       backgroundType: backgroundType ?? this.backgroundType,
@@ -749,6 +791,9 @@ class ProfileCustomization {
       themeColorHex: themeColorHex ?? this.themeColorHex,
       showcaseType: showcaseType ?? this.showcaseType,
       customBio: customBio ?? this.customBio,
+      countryFlag: countryFlag ?? this.countryFlag,
+      countryName: countryName ?? this.countryName,
+      avatarShape: avatarShape ?? this.avatarShape,
     );
   }
 }

@@ -45,6 +45,9 @@ abstract class AuthRepository {
     String? favoriteAnimePoster,
     String? accentColor,
     String? showcaseType,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
   });
 
   /// Выход из аккаунта

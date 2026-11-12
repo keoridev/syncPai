@@ -111,10 +111,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     // Слушатели медиаплеера libmpv
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(isPlaying: playing));
         _updateDiscordPresence();
       }),
       player.stream.buffering.listen((buffering) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(isBuffering: buffering));
         // При изменении буферизации уведомляем комнату
         if (state.isSyncRoom) {
@@ -126,6 +128,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       }),
       player.stream.position.listen((pos) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(position: pos));
         _checkAutoNextEpisode(pos);
         _checkAutoSkipOpening(pos);
@@ -136,6 +139,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       }),
       player.stream.duration.listen((dur) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(duration: dur));
         _updateDiscordPresence();
         if (dur > Duration.zero && _pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero) {
@@ -145,7 +149,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           if (seekTarget.inSeconds > 10 && (dur - seekTarget).inSeconds > 30) {
             player.seek(seekTarget);
             Future.delayed(const Duration(milliseconds: 350), () {
-              if (!isClosed && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
+              if (!isClosed && !_isDisposing && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
                 player.seek(seekTarget);
               }
             });
@@ -153,15 +157,24 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       }),
       player.stream.buffer.listen((buffer) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(buffer: buffer));
       }),
       player.stream.rate.listen((rate) {
+        if (isClosed || _isDisposing) return;
         emit(state.copyWith(playbackRate: rate));
       }),
+      player.stream.completed.listen((completed) {
+        if (isClosed || _isDisposing) return;
+        if (completed) {
+          emit(state.copyWith(isPlaying: false));
+          playNextEpisode();
+        }
+      }),
       player.stream.error.listen((error) {
+        if (isClosed || _isDisposing) return;
         if (error.isNotEmpty) {
           // Игнорируем нефатальные ошибки разрыва соединения и таймаута TCP-сокетов при паузе и чтении сегментов
-          // (например tcp ffurl_read_returned 0xdfb9b0bb, failed reading, End of file, connection reset)
           final lower = error.toLowerCase();
           final isTransientSocketError = lower.contains('ffurl_read_returned') ||
               lower.contains('failed reading') ||
@@ -1443,27 +1456,46 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   bool _isDisposing = false;
+  bool _playerDisposed = false;
 
   @override
   Future<void> close() async {
     if (_isDisposing) return;
     _isDisposing = true;
-    _savePlaybackPosition(state.position, state.duration);
+
+    // 1. Сначала отменяем все подписки на стримы
+    for (final s in _subscriptions) {
+      try {
+        await s.cancel();
+      } catch (_) {}
+    }
+    _subscriptions.clear();
+
+    // 2. Отменяем фоновые таймеры и сетевые подписки
     _controlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();
     _quickPhraseTimer?.cancel();
-    await _presenceSubscription?.cancel();
-    await _packetSubscription?.cancel();
-    for (final s in _subscriptions) {
-      await s.cancel();
+    try {
+      await _presenceSubscription?.cancel();
+    } catch (_) {}
+    try {
+      await _packetSubscription?.cancel();
+    } catch (_) {}
+
+    _savePlaybackPosition(state.position, state.duration);
+
+    // 3. Безопасное однократное завершение нативного медиаплеера (stop -> dispose)
+    if (!_playerDisposed) {
+      _playerDisposed = true;
+      try {
+        await player.stop();
+      } catch (_) {}
+      try {
+        await player.dispose();
+      } catch (_) {}
     }
-    try {
-      await player.stop();
-    } catch (_) {}
-    try {
-      await player.dispose();
-    } catch (_) {}
+
     if (!kIsWeb) {
       try {
         await WakelockPlus.disable();

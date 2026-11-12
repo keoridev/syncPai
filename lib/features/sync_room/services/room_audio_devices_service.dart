@@ -131,7 +131,7 @@ class RoomAudioDevicesService extends ChangeNotifier {
         }
       }
 
-      // 2. На Windows опрашиваем активные устройства звука Win32_SoundDevice и AudioEndpoint
+      // 2. На Windows опрашиваем активные устройства звука (AudioEndpoint PnP + Win32_SoundDevice)
       if (!kIsWeb && Platform.isWindows && !Platform.environment.containsKey('FLUTTER_TEST')) {
         try {
           final result = await Process.run(
@@ -140,10 +140,10 @@ class RoomAudioDevicesService extends ChangeNotifier {
               '-NoProfile',
               '-NonInteractive',
               '-Command',
-              r"Get-CimInstance Win32_SoundDevice | Where-Object { $_.Status -eq 'OK' } | Select-Object -ExpandProperty Name",
+              r"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $devs = Get-PnpDevice -Class AudioEndpoint -Status OK -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FriendlyName; if (-not $devs) { $devs = (Get-CimInstance Win32_SoundDevice).Name }; $devs",
             ],
             stdoutEncoding: utf8,
-          ).timeout(const Duration(seconds: 3));
+          ).timeout(const Duration(seconds: 4));
 
           if (result.exitCode == 0 && result.stdout is String) {
             final lines = (result.stdout as String)
@@ -155,33 +155,45 @@ class RoomAudioDevicesService extends ChangeNotifier {
 
             for (final name in lines) {
               final lower = name.toLowerCase();
-              final isMic = lower.contains('микрофон') ||
+              final isExplicitMic = lower.contains('микрофон') ||
                   lower.contains('microphone') ||
                   lower.contains('input') ||
                   lower.contains('mic') ||
-                  lower.contains('запись');
+                  lower.contains('запись') ||
+                  lower.contains('webcam') ||
+                  lower.contains('камер');
 
-              if (isMic) {
+              final isExplicitSpeaker = lower.contains('динамики') ||
+                  lower.contains('наушники') ||
+                  lower.contains('speakers') ||
+                  lower.contains('headphones') ||
+                  lower.contains('output') ||
+                  lower.contains('display') ||
+                  lower.contains('hdmi');
+
+              if (isExplicitMic || (!isExplicitSpeaker && (lower.contains('headset') || lower.contains('usb') || lower.contains('audio')))) {
                 final id = 'win_in_${name.hashCode.abs()}';
                 if (!discoveredInputs.any((e) => e.label.toLowerCase() == lower)) {
                   discoveredInputs.add(
                     AudioDeviceEndpoint(
                       id: id,
                       label: name,
-                      subtitle: 'Реальный микрофон ПК ($name)',
+                      subtitle: 'Микрофон / Ввод ($name)',
                       isInput: true,
                       iconType: _detectIconType(name),
                     ),
                   );
                 }
-              } else {
+              }
+
+              if (isExplicitSpeaker || (!isExplicitMic && (lower.contains('headset') || lower.contains('usb') || lower.contains('audio')))) {
                 final id = 'win_out_${name.hashCode.abs()}';
                 if (!discoveredOutputs.any((e) => e.label.toLowerCase() == lower)) {
                   discoveredOutputs.add(
                     AudioDeviceEndpoint(
                       id: id,
                       label: name,
-                      subtitle: 'Реальное устройство вывода ПК ($name)',
+                      subtitle: 'Наушники / Вывод ($name)',
                       isInput: false,
                       iconType: _detectIconType(name),
                     ),

@@ -60,6 +60,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   bool _isCursorVisible = true;
   bool _isVolumeSliderHovered = false;
   bool _isHoveringControls = false;
+  bool _isDisposed = false;
 
   // Режимы экрана
   bool _isFullScreen = false;
@@ -84,7 +85,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
       try {
         final isFs = await windowManager.isFullScreen();
-        if (mounted) {
+        if (mounted && !_isDisposed) {
           setState(() {
             _isFullScreen = isFs || DesktopTitleBar.isFullScreenNotifier.value;
           });
@@ -95,27 +96,31 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _hideControlsTimer?.cancel();
     _flashTimer?.cancel();
     _focusNode.dispose();
     if (_isFullScreen) {
       DesktopTitleBar.isFullScreenNotifier.value = false;
       if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        windowManager.setFullScreen(false).catchError((_) {});
-        defaultExitNativeFullscreen().catchError((_) {});
+        try {
+          windowManager.setFullScreen(false).catchError((_) {});
+          defaultExitNativeFullscreen().catchError((_) {});
+        } catch (_) {}
       }
     }
     super.dispose();
   }
 
   void _triggerFlash({required IconData icon, String? label}) {
+    if (_isDisposed) return;
     _flashTimer?.cancel();
     setState(() {
       _flashIcon = icon;
       _flashLabel = label;
     });
     _flashTimer = Timer(const Duration(milliseconds: 550), () {
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _flashIcon = null;
           _flashLabel = null;
@@ -127,7 +132,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   void _startHideTimer() {
     _hideControlsTimer?.cancel();
     _hideControlsTimer = Timer(const Duration(milliseconds: 2500), () {
-      if (mounted && widget.state.isPlaying && !_isVolumeSliderHovered && !_isHoveringControls) {
+      if (mounted && !_isDisposed && widget.state.isPlaying && !_isVolumeSliderHovered && !_isHoveringControls) {
         setState(() {
           _areControlsVisible = false;
           _isCursorVisible = false;
@@ -137,6 +142,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   }
 
   void _showControls() {
+    if (_isDisposed) return;
     if (!_areControlsVisible || !_isCursorVisible) {
       setState(() {
         _areControlsVisible = true;

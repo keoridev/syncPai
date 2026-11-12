@@ -112,7 +112,11 @@ class _RoomAudioSettingsSectionState extends State<RoomAudioSettingsSection> {
   @override
   void initState() {
     super.initState();
-    _service.refreshDevices(activePlayer: widget.activePlayer);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _service.refreshDevices(activePlayer: widget.activePlayer);
+      }
+    });
   }
 
   IconData _iconForDevice(AudioDeviceEndpoint dev) {

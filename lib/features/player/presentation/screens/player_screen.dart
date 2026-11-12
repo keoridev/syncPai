@@ -18,6 +18,8 @@ import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:window_manager/window_manager.dart';
+import 'package:sync_pai/core/widgets/desktop_title_bar.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
@@ -62,25 +64,34 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
   bool _handedOffToMiniPlayer = false;
+  bool _isDisposed = false;
 
   void _minimizePlayer() {
-    if (_handedOffToMiniPlayer) return;
+    if (_handedOffToMiniPlayer || _isDisposed) return;
     _saveWatchProgress();
 
     final bool isDesktopOS =
         !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-    if (!isDesktopOS) {
+
+    if (isDesktopOS) {
+      try {
+        DesktopTitleBar.isFullScreenNotifier.value = false;
+        windowManager.setFullScreen(false);
+      } catch (_) {}
+    } else {
       // На телефоне возвращаем портретную ориентацию при сворачивании в мини-окно
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
       Future.delayed(const Duration(milliseconds: 500), () {
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
+        if (!_isDisposed) {
+          SystemChrome.setPreferredOrientations([
+            DeviceOrientation.portraitUp,
+            DeviceOrientation.portraitDown,
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
+        }
       });
     }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -271,7 +282,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _handleExit() {
+    if (_isDisposed) return;
     _saveWatchProgress();
+
+    final bool isDesktopOS =
+        !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    if (isDesktopOS) {
+      try {
+        DesktopTitleBar.isFullScreenNotifier.value = false;
+        windowManager.setFullScreen(false);
+      } catch (_) {}
+    }
 
     // Восстанавливаем ориентацию и системные панели UI Android/iOS при выходе
     SystemChrome.setPreferredOrientations([
@@ -363,9 +384,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
+    _isDisposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _pipSubscription?.cancel();
     PipService.instance.setAutoPip(false);
+
+    // Сначала сбрасываем полноэкранный режим на десктопе, предотвращая гонку с Direct3D текстурой
+    final bool isDesktopOS =
+        !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    if (isDesktopOS) {
+      try {
+        DesktopTitleBar.isFullScreenNotifier.value = false;
+        windowManager.setFullScreen(false);
+      } catch (_) {}
+    }
 
     // Сохраняем прогресс просмотра перед уничтожением плеера
     _saveWatchProgress();

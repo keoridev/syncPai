@@ -1,19 +1,17 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../app/di/injection.dart';
-import '../../../../core/theme/app_typography.dart';
 import '../../../../core/theme/cubit/theme_cubit.dart';
-import '../../../../core/theme/theme_preset.dart';
-import '../../../../core/theme/widgets/theme_selector_sheet.dart';
 import '../../../../core/widgets/sync_pai_logo.dart';
 import '../../../catalog/domain/usecases/get_updates.dart';
 
-/// Премиальный кинематографичный Splash-экран SyncPai
-/// с интерактивной примеркой цветовых палитр, мягким атмосферным свечением
-/// и бесшовным входом в каталог.
+/// Современный экран загрузки SyncPai в стиле Steam Client & Discord Startup:
+/// Строгий темный матовый интерфейс, прецизионное кольцо синхронизации,
+/// тонкий бар прогресса и чистая типографика без едких неонов.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -21,186 +19,148 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _introController;
-  late final AnimationController _pulseController;
-  late final Animation<double> _scaleAnimation;
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+  late final AnimationController _rotationController;
+  late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
-  late final Animation<double> _floatAnimation;
 
-  String _statusText = 'Инициализация серверов…';
-  double _loadProgress = 0.15;
+  String _statusText = 'ПОДКЛЮЧЕНИЕ К СЕТИ...';
+  double _loadProgress = 0.20;
   Timer? _navigationTimer;
-  bool _isUserInteractingWithThemes = false;
+  bool _isNavigating = false;
 
   @override
   void initState() {
     super.initState();
 
-    _introController = AnimationController(
+    _rotationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 2200),
     );
 
-    _pulseController = AnimationController(
+    _fadeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _introController,
-        curve: Curves.easeOutBack,
-      ),
+      duration: const Duration(milliseconds: 600),
+      value: 1.0,
     );
 
     _fadeAnimation = CurvedAnimation(
-      parent: _introController,
-      curve: Curves.easeOut,
-    );
-
-    _floatAnimation = Tween<double>(begin: -5.0, end: 5.0).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOutSine,
-      ),
+      parent: _fadeController,
+      curve: Curves.easeInOut,
     );
 
     final isTest = WidgetsBinding.instance.runtimeType.toString().contains('TestWidgetsFlutterBinding');
     if (!isTest) {
-      _pulseController.repeat(reverse: true);
-      _introController.forward();
+      _rotationController.repeat();
       _initializeApp();
-    } else {
-      _introController.value = 1.0;
     }
   }
 
   Future<void> _initializeApp() async {
-    // 1. Старт анимации прогресса
-    await Future.delayed(const Duration(milliseconds: 350));
-    if (mounted) {
-      setState(() {
-        _statusText = 'Синхронизация с каталогом AniLibria…';
-        _loadProgress = 0.55;
-      });
-    }
+    // Шаг 1: Проверка подключения и инициализация ядра
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    setState(() {
+      _statusText = 'СИНХРОНИЗАЦИЯ КАТАЛОГА...';
+      _loadProgress = 0.58;
+    });
 
+    // Шаг 2: Фоновая подгрузка свежих релизов
     try {
       final getUpdates = getIt.isRegistered<GetUpdates>() ? getIt<GetUpdates>() : null;
       if (getUpdates != null) {
-        await getUpdates(page: 1, limit: 30);
+        await getUpdates(page: 1, limit: 30).timeout(const Duration(milliseconds: 1400));
       }
     } catch (_) {}
 
-    if (mounted) {
-      setState(() {
-        _statusText = 'Готово к просмотру!';
-        _loadProgress = 1.0;
-      });
-    }
+    // Шаг 3: Готовность к запуску клиента
+    if (!mounted) return;
+    setState(() {
+      _statusText = 'ЗАПУСК КЛИЕНТА...';
+      _loadProgress = 1.0;
+    });
 
-    // Запускаем переход в приложение через 2.6 сек, если пользователь не примеряет темы
-    _navigationTimer = Timer(const Duration(milliseconds: 2600), () {
-      if (mounted && !_isUserInteractingWithThemes) {
-        _proceedToMain();
-      }
+    // Бесшовный плавный переход в каталог
+    _navigationTimer = Timer(const Duration(milliseconds: 700), () {
+      _proceedToMain();
     });
   }
 
   void _proceedToMain() {
+    if (_isNavigating || !mounted) return;
+    _isNavigating = true;
     _navigationTimer?.cancel();
-    if (mounted) {
-      context.goNamed('main');
-    }
-  }
 
-  void _onSelectPreset(ThemePreset preset) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      _isUserInteractingWithThemes = true;
+    _fadeController.reverse().then((_) {
+      if (mounted) {
+        context.goNamed('main');
+      }
     });
-    context.read<ThemeCubit>().setPreset(preset);
   }
 
   @override
   void dispose() {
     _navigationTimer?.cancel();
-    _introController.dispose();
-    _pulseController.dispose();
+    _rotationController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final themeCubit = context.watch<ThemeCubit>();
-    final currentPreset = themeCubit.state.currentPreset;
-    final primaryColor = currentPreset.primaryColor;
+    final primaryColor = themeCubit.state.currentPreset.primaryColor;
 
     return Scaffold(
-      backgroundColor: currentPreset.backgroundColor,
-      body: Stack(
-        children: [
-          // 1. Атмосферное фоновое свечение (Halo Glow) под цвет выбранной темы
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, child) {
-                final pulseScale = 0.90 + (_pulseController.value * 0.18);
-                return Center(
-                  child: Container(
-                    width: 380 * pulseScale,
-                    height: 380 * pulseScale,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          primaryColor.withValues(alpha: 0.18),
-                          primaryColor.withValues(alpha: 0.05),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.45, 1.0],
-                      ),
-                    ),
+      backgroundColor: const Color(0xFF0D0F14),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            // Клик для мгновенного пропуска загрузки
+            if (_loadProgress >= 0.5) {
+              _proceedToMain();
+            }
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Тонкий фоновый виньеточный градиент (Steam Client Charcoal)
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.1,
+                    colors: [
+                      Color(0xFF141822),
+                      Color(0xFF090B0E),
+                    ],
                   ),
-                );
-              },
-            ),
-          ),
+                ),
+              ),
 
-          // 2. Основной контент по центру
-          SafeArea(
-            child: Center(
-              child: AnimatedBuilder(
-                animation: _introController,
-                builder: (context, child) {
-                  return FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+              // Центр: Логотип + Вращающееся кольцо синхронизации + Название
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Конструкция эмблемы с плавным орбитальным кольцом (Steam Link / Discord Spinner)
+                    SizedBox(
+                      width: 140,
+                      height: 140,
+                      child: Stack(
+                        alignment: Alignment.center,
                         children: [
-                          // Парящий маскот-логотип
+                          // Плавное вращающееся кольцо соединения
                           AnimatedBuilder(
-                            animation: _pulseController,
+                            animation: _rotationController,
                             builder: (context, child) {
-                              return Transform.translate(
-                                offset: Offset(0, _floatAnimation.value),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: primaryColor.withValues(alpha: 0.28),
-                                        blurRadius: 36,
-                                        spreadRadius: 2,
-                                      ),
-                                    ],
-                                  ),
-                                  child: SyncPaiLogo(
-                                    size: 106,
+                              return Transform.rotate(
+                                angle: _rotationController.value * 2 * math.pi,
+                                child: CustomPaint(
+                                  size: const Size(136, 136),
+                                  painter: _SteamLoadingOrbitPainter(
                                     accentColor: primaryColor,
                                   ),
                                 ),
@@ -208,242 +168,169 @@ class _SplashScreenState extends State<SplashScreen>
                             },
                           ),
 
-                          const SizedBox(height: 28),
-
-                          // Название: SyncPai с градиентным акцентом
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: 'Sync',
-                                  style: AppTypography.displayLarge.copyWith(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: -0.6,
-                                    color: Colors.white,
-                                    shadows: const [
-                                      Shadow(
-                                        color: Colors.black87,
-                                        blurRadius: 10,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                TextSpan(
-                                  text: 'Pai',
-                                  style: AppTypography.displayLarge.copyWith(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: -0.6,
-                                    color: primaryColor,
-                                    shadows: [
-                                      Shadow(
-                                        color: primaryColor.withValues(alpha: 0.45),
-                                        blurRadius: 16,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // Слоган
-                          Text(
-                            'Смотри аниме синхронно с друзьями',
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-
-          // 3. Нижний блок: Интерактивная примерка тем оформления + Прогресс-бар
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 24,
-            child: SafeArea(
-              top: false,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Секция «Примерить расцветку»
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.40),
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          width: 1.0,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.palette_outlined,
-                                    size: 16,
-                                    color: primaryColor,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Примерить тему оформления:',
-                                    style: AppTypography.caption.copyWith(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _isUserInteractingWithThemes = true);
-                                  ThemeSelectorSheet.show(context);
-                                },
-                                child: Text(
-                                  'Все ${ThemePreset.all.length} тем ›',
-                                  style: AppTypography.caption.copyWith(
-                                    color: primaryColor,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Горизонтальный ряд цветных кружочков для моментальной примерки
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            child: Row(
-                              children: ThemePreset.all.map((preset) {
-                                final isSelected = preset.id == currentPreset.id;
-
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                                  child: GestureDetector(
-                                    onTap: () => _onSelectPreset(preset),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 220),
-                                      width: isSelected ? 36 : 28,
-                                      height: isSelected ? 36 : 28,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: preset.primaryColor,
-                                        border: Border.all(
-                                          color: isSelected ? Colors.white : Colors.transparent,
-                                          width: isSelected ? 2.5 : 0,
-                                        ),
-                                        boxShadow: isSelected
-                                            ? [
-                                                BoxShadow(
-                                                  color: preset.primaryColor.withValues(alpha: 0.6),
-                                                  blurRadius: 12,
-                                                  spreadRadius: 1,
-                                                ),
-                                              ]
-                                            : null,
-                                      ),
-                                      child: isSelected
-                                          ? const Center(
-                                              child: Icon(
-                                                Icons.check_rounded,
-                                                color: Colors.black,
-                                                size: 18,
-                                              ),
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
+                          // Современная монолитная матовая эмблема SyncPai
+                          SyncPaiLogo(
+                            size: 88,
+                            showBadge: true,
+                            accentColor: primaryColor,
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 28),
 
-                    // Текст статуса загрузки
+                    // Текстовый логотип: чистая строгая геометрия (Steam Style)
+                    const Text(
+                      'SYNCPAI',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4.5,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    // Подзаголовок клиента
                     Text(
-                      _statusText,
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.white60,
-                        fontSize: 12,
+                      'WATCH TOGETHER CLIENT',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2.2,
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-
-                    // Тонкий индикатор загрузки с переходом в основное приложение
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 50),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: _loadProgress),
-                          duration: const Duration(milliseconds: 600),
-                          builder: (context, value, child) {
-                            return LinearProgressIndicator(
-                              value: value,
-                              minHeight: 3.5,
-                              backgroundColor: Colors.white12,
-                              valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-
-                    // Если пользователь примеряет тему, показываем кнопку быстрого входа
-                    if (_isUserInteractingWithThemes) ...[
-                      const SizedBox(height: 14),
-                      TextButton.icon(
-                        onPressed: _proceedToMain,
-                        icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                        label: Text(
-                          'Перейти в каталог с этой темой',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: primaryColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
-            ),
+
+              // Нижний блок: Тонкий прогресс-бар и статус инициализации
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 44,
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Тонкая полоса прогресса (Steam Client Progress Track)
+                      Container(
+                        width: 240,
+                        height: 3.0,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 320),
+                            curve: Curves.easeOutCubic,
+                            width: 240 * _loadProgress,
+                            height: 3.0,
+                            decoration: BoxDecoration(
+                              color: primaryColor,
+                              borderRadius: BorderRadius.circular(100),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Статус загрузки (минималистичный моноширинный)
+                      Text(
+                        _statusText,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.60),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.8,
+                          fontFamily: defaultTargetPlatform == TargetPlatform.windows ? 'Consolas' : 'monospace',
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // Индикатор сети в стиле Steam / Discord
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00FF66),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'ONLINE • BUILD 2.4',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.30),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
+}
+
+/// Минималистичное орбитальное кольцо загрузки в стиле Steam client startup
+class _SteamLoadingOrbitPainter extends CustomPainter {
+  final Color accentColor;
+
+  _SteamLoadingOrbitPainter({required this.accentColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final center = Offset(w / 2, h / 2);
+    final radius = w / 2 - 2;
+
+    // Фоновый тонкий контур
+    final trackPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    // Акцентный сегмент вращения (90 градусов)
+    final arcRect = Rect.fromCircle(center: center, radius: radius);
+    final activePaint = Paint()
+      ..shader = SweepGradient(
+        colors: [
+          Colors.transparent,
+          accentColor.withValues(alpha: 0.35),
+          Colors.white.withValues(alpha: 0.85),
+        ],
+        stops: const [0.0, 0.65, 1.0],
+      ).createShader(arcRect)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 2.2;
+
+    canvas.drawArc(arcRect, 0, math.pi * 0.75, false, activePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SteamLoadingOrbitPainter oldDelegate) =>
+      oldDelegate.accentColor != accentColor;
 }

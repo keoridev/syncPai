@@ -1,9 +1,10 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
 
-/// Премиальный фирменный логотип SyncPai в стиле Cyber-Glass / Liquid Prism:
-/// Двойные синхронизированные орбитальные дуги (символ совместного просмотра)
-/// вокруг граненой неоновой призмы воспроизведения ▶ с кристальным бликом.
+/// Фирменный современный логотип SyncPai в стиле Steam & Discord:
+/// Монолитная матовая эмблема с чистой геометрией без едких неонов.
+/// Символизирует два синхронизированных потока (Watch Together / Dual Node),
+/// объединенных в единый аэродинамический треугольник воспроизведения (Playhead).
 class SyncPaiLogo extends StatelessWidget {
   final double size;
   final bool showBadge;
@@ -20,47 +21,49 @@ class SyncPaiLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveAccent = accentColor ?? Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final primary = accentColor ?? theme.colorScheme.primary;
 
     final emblem = CustomPaint(
       size: Size(size, size),
-      painter: SyncPaiCyberPrismPainter(effectiveAccent),
+      painter: SyncPaiModernEmblemPainter(primary),
     );
 
     if (!showBadge) {
       return emblem;
     }
 
+    // Современный матовый бейдж-сквиркл (Dark Graphite Slate в стиле Steam Deck / Discord)
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
+        color: const Color(0xFF14171F),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF151929),
-            Color(0xFF0B0D16),
+            Color(0xFF1B1E28),
+            Color(0xFF0F1117),
           ],
         ),
         borderRadius: BorderRadius.circular(size * 0.28),
         border: Border.all(
-          color: effectiveAccent.withValues(alpha: 0.45),
-          width: 1.3,
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: effectiveAccent.withValues(alpha: 0.25),
-            blurRadius: size * 0.32,
-            spreadRadius: 0,
-            offset: Offset(0, size * 0.06),
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: size * 0.24,
+            offset: Offset(0, size * 0.08),
           ),
         ],
       ),
       child: Center(
         child: SizedBox(
-          width: size * 0.80,
-          height: size * 0.80,
+          width: size * 0.72,
+          height: size * 0.72,
           child: emblem,
         ),
       ),
@@ -68,121 +71,105 @@ class SyncPaiLogo extends StatelessWidget {
   }
 }
 
-class SyncPaiCyberPrismPainter extends CustomPainter {
+/// Чистый векторный отрисовщик эмблемы SyncPai
+/// Строгие линии, плавные сопряжения, читаемость от 20px до 512px.
+class SyncPaiModernEmblemPainter extends CustomPainter {
   final Color accentColor;
 
-  SyncPaiCyberPrismPainter(this.accentColor);
+  SyncPaiModernEmblemPainter(this.accentColor);
 
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
-    final center = Offset(w * 0.50, h * 0.50);
-    const cyan = Color(0xFF00E5FF);
+    final center = Offset(w * 0.5, h * 0.5);
 
-    // 1. Внешнее свечение центральной призмы
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          accentColor.withValues(alpha: 0.32),
-          cyan.withValues(alpha: 0.08),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: w * 0.46));
-    canvas.drawCircle(center, w * 0.46, glowPaint);
+    // 1. Тонкое фоновое кольцо синхронизации (Dual Track Ring)
+    final ringPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.10)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.055;
+    canvas.drawCircle(center, w * 0.40, ringPaint);
 
-    // 2. Две синхронизированные кибер-дуги (символ Sync / Watch Party)
+    // 2. Верхняя дуга связи (Host Node Arc)
     final arcRect = Rect.fromCircle(center: center, radius: w * 0.40);
-
-    final topArcPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [cyan, accentColor],
-      ).createShader(arcRect)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = w * 0.068;
-
-    final bottomArcPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.bottomRight,
-        end: Alignment.topLeft,
-        colors: [accentColor, const Color(0xFFFF2A85)],
-      ).createShader(arcRect)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = w * 0.068;
-
-    // Верхняя левая синхро-дуга
-    canvas.drawArc(arcRect, -2.55, 2.15, false, topArcPaint);
-    // Нижняя правая синхро-дуга
-    canvas.drawArc(arcRect, 0.59, 2.15, false, bottomArcPaint);
-
-    // 3. Точки-импульсы синхронизации на концах орбит
-    final dotPaintCyan = Paint()
-      ..color = cyan
-      ..style = PaintingStyle.fill;
-    final dotPaintAccent = Paint()
-      ..color = AppColors.syncActive
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(w * 0.82, h * 0.25), w * 0.042, dotPaintCyan);
-    canvas.drawCircle(Offset(w * 0.18, h * 0.75), w * 0.042, dotPaintAccent);
-
-    // 4. Граненая центральная призма воспроизведения (Play Crystal ▶)
-    final playPath = Path();
-    final p1 = Offset(w * 0.37, h * 0.27);
-    final p2 = Offset(w * 0.73, h * 0.50);
-    final p3 = Offset(w * 0.37, h * 0.73);
-
-    playPath
-      ..moveTo(p1.dx, p1.dy + h * 0.04)
-      ..quadraticBezierTo(p1.dx, p1.dy, p1.dx + w * 0.04, p1.dy + h * 0.022)
-      ..lineTo(p2.dx - w * 0.03, p2.dy - h * 0.02)
-      ..quadraticBezierTo(p2.dx + w * 0.01, p2.dy, p2.dx - w * 0.03, p2.dy + h * 0.02)
-      ..lineTo(p3.dx + w * 0.04, p3.dy - h * 0.022)
-      ..quadraticBezierTo(p3.dx, p3.dy, p3.dx, p3.dy - h * 0.04)
-      ..close();
-
-    final playGradientPaint = Paint()
+    final arcPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
-          Colors.white,
-          cyan,
+          Colors.white.withValues(alpha: 0.90),
           accentColor,
         ],
-        stops: const [0.0, 0.45, 1.0],
-      ).createShader(Rect.fromLTWH(w * 0.32, h * 0.25, w * 0.44, h * 0.50))
+      ).createShader(arcRect)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = w * 0.080;
+
+    // Дуга охвата совместного просмотра (180 градусов с поворотом)
+    canvas.drawArc(arcRect, -math.pi * 0.85, math.pi * 0.95, false, arcPaint);
+
+    // 3. Акцентный узел синхронизации (Node Point)
+    final nodeOffset = Offset(
+      center.dx + w * 0.40 * math.cos(-math.pi * 0.85),
+      center.dy + h * 0.40 * math.sin(-math.pi * 0.85),
+    );
+    final nodeGlow = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(nodeOffset, w * 0.055, nodeGlow);
+
+    // 4. Центральный монолитный треугольник Play (Геометричный Playhead)
+    // Со скругленными углами в стиле Steam / YouTube
+    final playPath = Path();
+    final leftX = w * 0.38;
+    final rightX = w * 0.72;
+    final topY = h * 0.30;
+    final midY = h * 0.50;
+    final botY = h * 0.70;
+    final cornerRadius = w * 0.055;
+
+    playPath.moveTo(leftX + cornerRadius, topY);
+    playPath.lineTo(rightX - cornerRadius * 1.5, midY - cornerRadius * 0.8);
+    playPath.quadraticBezierTo(rightX, midY, rightX - cornerRadius * 1.5, midY + cornerRadius * 0.8);
+    playPath.lineTo(leftX + cornerRadius, botY);
+    playPath.quadraticBezierTo(leftX, botY, leftX, botY - cornerRadius);
+    playPath.lineTo(leftX, topY + cornerRadius);
+    playPath.quadraticBezierTo(leftX, topY, leftX + cornerRadius, topY);
+    playPath.close();
+
+    // Заливка треугольника: чистый белый / легкий стальной градиент
+    final playFillPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFFFFFFF),
+          Color(0xFFE2E7EE),
+          Color(0xFFC7CFDC),
+        ],
+      ).createShader(Rect.fromLTWH(leftX, topY, rightX - leftX, botY - topY))
       ..style = PaintingStyle.fill;
 
-    canvas.drawPath(playPath, playGradientPaint);
+    canvas.drawPath(playPath, playFillPaint);
 
-    // Верхняя стеклянная грань призмы для объема (Liquid Glass Highlight)
-    final upperFacet = Path()
-      ..moveTo(p1.dx + w * 0.02, p1.dy + h * 0.03)
-      ..lineTo(p2.dx - w * 0.02, p2.dy)
-      ..lineTo(w * 0.46, h * 0.50)
+    // Тонкий скос / фаска для ощущения физического премиального значка
+    final bevelPath = Path()
+      ..moveTo(leftX, topY + cornerRadius)
+      ..lineTo(rightX - cornerRadius * 1.5, midY)
+      ..lineTo(leftX, midY)
       ..close();
 
-    final facetPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.38)
+    final bevelPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.28)
       ..style = PaintingStyle.fill;
-    canvas.drawPath(upperFacet, facetPaint);
-
-    // Тонкий контур призмы
-    final borderPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.55)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-    canvas.drawPath(playPath, borderPaint);
+    canvas.drawPath(bevelPath, bevelPaint);
   }
 
   @override
-  bool shouldRepaint(covariant SyncPaiCyberPrismPainter oldDelegate) =>
+  bool shouldRepaint(covariant SyncPaiModernEmblemPainter oldDelegate) =>
       oldDelegate.accentColor != accentColor;
 }
 
-typedef SyncPaiAnimeLogoPainter = SyncPaiCyberPrismPainter;
+typedef SyncPaiAnimeLogoPainter = SyncPaiModernEmblemPainter;
+typedef SyncPaiCyberPrismPainter = SyncPaiModernEmblemPainter;

@@ -187,143 +187,148 @@ class _GlobalMiniPlayerOverlayState extends State<GlobalMiniPlayerOverlay> {
         final currentLeft = (service.offset?.dx ?? defaultLeft).clamp(8.0, maxLeft);
         final currentTop = (service.offset?.dy ?? defaultTop).clamp(padding.top + 8.0, maxTop);
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned(
-              left: currentLeft,
-              top: currentTop,
-              width: baseW,
-              height: baseH,
-              child: Material(
-                color: Colors.transparent,
-                child: BlocProvider.value(
-                  value: cubit,
-                  child: BlocBuilder<PlayerCubit, PlayerState>(
-                    builder: (context, state) {
-                      final progress = state.duration.inMilliseconds > 0
-                          ? (state.position.inMilliseconds / state.duration.inMilliseconds)
-                              .clamp(0.0, 1.0)
-                          : 0.0;
+        return Overlay(
+          initialEntries: [
+            OverlayEntry(
+              builder: (overlayContext) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    left: currentLeft,
+                    top: currentTop,
+                    width: baseW,
+                    height: baseH,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: BlocProvider.value(
+                        value: cubit,
+                        child: BlocBuilder<PlayerCubit, PlayerState>(
+                          builder: (context, state) {
+                            final progress = state.duration.inMilliseconds > 0
+                                ? (state.position.inMilliseconds / state.duration.inMilliseconds)
+                                    .clamp(0.0, 1.0)
+                                : 0.0;
 
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onScaleStart: (_) {
-                          _baseScale = service.scale;
-                        },
-                        onScaleUpdate: (details) {
-                          final nextScale = details.pointerCount > 1
-                              ? (_baseScale * details.scale).clamp(0.75, 1.85)
-                              : service.scale;
-                          final nextOffset = Offset(
-                            currentLeft + details.focalPointDelta.dx,
-                            currentTop + details.focalPointDelta.dy,
-                          );
-                          service.updateTransform(
-                            offset: nextOffset,
-                            scale: nextScale,
-                          );
-                        },
-                        onDoubleTap: () => service.expandToFullscreen(),
-                        child: Container(
-                          width: baseW,
-                          height: baseH,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0E1017),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.24),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.75),
-                                blurRadius: 24,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              // Видеопоток
-                              Video(
-                                controller: controller,
-                                controls: NoVideoControls,
-                                fit: state.videoFit,
-                              ),
-
-                              // Мягкое затемнение сверху и снизу для читаемости кнопок
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.black.withValues(alpha: 0.72),
-                                          Colors.transparent,
-                                          Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.82),
-                                        ],
-                                        stops: const [0.0, 0.34, 0.66, 1.0],
-                                      ),
-                                    ),
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onScaleStart: (_) {
+                                _baseScale = service.scale;
+                              },
+                              onScaleUpdate: (details) {
+                                final nextScale = details.pointerCount > 1
+                                    ? (_baseScale * details.scale).clamp(0.75, 1.85)
+                                    : service.scale;
+                                final nextOffset = Offset(
+                                  currentLeft + details.focalPointDelta.dx,
+                                  currentTop + details.focalPointDelta.dy,
+                                );
+                                service.updateTransform(
+                                  offset: nextOffset,
+                                  scale: nextScale,
+                                );
+                              },
+                              onDoubleTap: () => service.expandToFullscreen(),
+                              child: Container(
+                                width: baseW,
+                                height: baseH,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0E1017),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.24),
+                                    width: 1.2,
                                   ),
-                                ),
-                              ),
-
-                              // Верхняя панель: Развернуть, Название, Уменьшить (-), Увеличить (+), Закрыть
-                              Positioned(
-                                top: 5,
-                                left: 6,
-                                right: 6,
-                                child: Row(
-                                  children: [
-                                    _MiniIconButton(
-                                      icon: Icons.open_in_full_rounded,
-                                      tooltip: 'Развернуть на весь экран',
-                                      onTap: () => service.expandToFullscreen(),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.75),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 10),
                                     ),
-                                    const SizedBox(width: 5),
-                                    Expanded(
-                                      child: GestureDetector(
-                                        onTap: () => service.expandToFullscreen(),
-                                        child: Text(
-                                          state.title.displayTitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10.0,
-                                            fontWeight: FontWeight.w700,
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    // Видеопоток
+                                    Video(
+                                      controller: controller,
+                                      controls: NoVideoControls,
+                                      fit: state.videoFit,
+                                    ),
+
+                                    // Мягкое затемнение сверху и снизу для читаемости кнопок
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.black.withValues(alpha: 0.72),
+                                                Colors.transparent,
+                                                Colors.transparent,
+                                                Colors.black.withValues(alpha: 0.82),
+                                              ],
+                                              stops: const [0.0, 0.34, 0.66, 1.0],
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 3),
-                                    _MiniIconButton(
-                                      icon: Icons.remove_rounded,
-                                      tooltip: 'Уменьшить окно',
-                                      onTap: () => service.decreaseScale(),
+
+                                    // Верхняя панель: Развернуть, Название, [Уменьшить/Увеличить на ПК], Закрыть
+                                    Positioned(
+                                      top: 5,
+                                      left: 6,
+                                      right: 6,
+                                      child: Row(
+                                        children: [
+                                          _MiniIconButton(
+                                            icon: Icons.open_in_full_rounded,
+                                            tooltip: 'Развернуть на весь экран',
+                                            onTap: () => service.expandToFullscreen(),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: () => service.expandToFullscreen(),
+                                              child: Text(
+                                                state.title.displayTitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10.0,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          if (isDesktopScreen) ...[
+                                            _MiniIconButton(
+                                              icon: Icons.remove_rounded,
+                                              tooltip: 'Уменьшить окно',
+                                              onTap: () => service.decreaseScale(),
+                                            ),
+                                            const SizedBox(width: 3),
+                                            _MiniIconButton(
+                                              icon: Icons.add_rounded,
+                                              tooltip: 'Увеличить окно',
+                                              onTap: () => service.increaseScale(),
+                                            ),
+                                            const SizedBox(width: 3),
+                                          ],
+                                          _MiniIconButton(
+                                            icon: Icons.close_rounded,
+                                            tooltip: 'Закрыть плеер',
+                                            onTap: () => service.close(),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    const SizedBox(width: 3),
-                                    _MiniIconButton(
-                                      icon: Icons.add_rounded,
-                                      tooltip: 'Увеличить окно',
-                                      onTap: () => service.increaseScale(),
-                                    ),
-                                    const SizedBox(width: 3),
-                                    _MiniIconButton(
-                                      icon: Icons.close_rounded,
-                                      tooltip: 'Закрыть плеер',
-                                      onTap: () => service.close(),
-                                    ),
-                                  ],
-                                ),
-                              ),
 
                               // Центральные кнопки: -10с, Play/Pause (или загрузка), +10с
                               Center(
@@ -474,7 +479,10 @@ class _GlobalMiniPlayerOverlayState extends State<GlobalMiniPlayerOverlay> {
               ),
             ),
           ],
-        );
+        ),
+      ),
+    ],
+  );
       },
     );
   }
@@ -493,10 +501,12 @@ class _MiniIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Tooltip(
-        message: tooltip,
+    return Semantics(
+      label: tooltip,
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(4.5),
           decoration: BoxDecoration(

@@ -52,6 +52,14 @@
                 <data android:scheme="syncpai" android:host="room" />
             </intent-filter>
 
+            <!-- 2. OAuth callback: syncpai://login-callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="syncpai" android:host="login-callback" />
+            </intent-filter>
+
             <!-- 2. HTTPS универсальные ссылки: https://syncpai.app/room/{code} -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

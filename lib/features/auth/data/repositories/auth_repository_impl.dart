@@ -372,13 +372,37 @@ class AuthRepositoryImpl implements AuthRepository {
         }
       }
 
-      final googleSignIn = GoogleSignIn(
-        serverClientId: ApiConstants.googleServerClientId.isNotEmpty
-            ? ApiConstants.googleServerClientId
-            : null,
-        scopes: ['email', 'profile'],
-      );
-      final googleUser = await googleSignIn.signIn();
+      GoogleSignInAccount? googleUser;
+      try {
+        final googleSignIn = GoogleSignIn(
+          serverClientId: ApiConstants.googleServerClientId.isNotEmpty
+              ? ApiConstants.googleServerClientId
+              : null,
+          scopes: ['email', 'profile'],
+        );
+        googleUser = await googleSignIn.signIn();
+      } catch (nativeErr) {
+        debugPrint('[Auth] Native GoogleSignIn error: $nativeErr. Falling back to Supabase OAuth...');
+        if (client != null) {
+          try {
+            await client.auth.signInWithOAuth(
+              OAuthProvider.google,
+              redirectTo: 'syncpai://login-callback',
+            );
+            final user = client.auth.currentUser;
+            if (user != null) {
+              final profile = await _fetchAndMigrateCloudProfile(user);
+              await _saveLocalProfile(profile);
+              _authController.add(profile);
+              return profile;
+            }
+          } catch (oauthErr) {
+            debugPrint('[Auth] Supabase OAuth fallback failed: $oauthErr');
+          }
+        }
+        rethrow;
+      }
+
       if (googleUser == null) {
         // Пользователь отменил системный диалог выбора аккаунта
         return null;

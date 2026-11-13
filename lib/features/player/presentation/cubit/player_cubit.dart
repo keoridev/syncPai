@@ -23,6 +23,8 @@ import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
+import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
+import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'player_state.dart';
 
@@ -47,24 +49,86 @@ class PlayerCubit extends Cubit<PlayerState> {
   DateTime? _lastPosSavedAt;
 
   void _savePlaybackPosition(Duration pos, Duration dur) {
-    if (!getIt.isRegistered<SharedPreferences>()) return;
-    final prefs = getIt<SharedPreferences>();
-    final key = '${state.title.id}_${state.episode.episode}';
-    if (dur > Duration.zero && (dur - pos).inSeconds <= 30) {
-      prefs.remove(key);
-    } else if (pos.inSeconds >= 5) {
-      prefs.setInt(key, pos.inMilliseconds);
+    if (pos.inSeconds < 2) return;
+
+    if (getIt.isRegistered<SharedPreferences>()) {
+      final prefs = getIt<SharedPreferences>();
+      final key = '${state.title.id}_${state.episode.episode}';
+      if (dur > Duration.zero && (dur - pos).inSeconds <= 30) {
+        prefs.remove(key);
+      } else {
+        prefs.setInt(key, pos.inMilliseconds);
+      }
+      if (state.title.shikimoriId != null && state.title.shikimoriId! > 0) {
+        final shikiKey = '${state.title.shikimoriId}_${state.episode.episode}';
+        if (dur > Duration.zero && (dur - pos).inSeconds <= 30) {
+          prefs.remove(shikiKey);
+        } else {
+          prefs.setInt(shikiKey, pos.inMilliseconds);
+        }
+      }
+    }
+
+    if (dur.inSeconds > 0 && getIt.isRegistered<WatchHistoryCubit>()) {
+      try {
+        final hist = getIt<WatchHistoryCubit>();
+        hist.saveProgress(
+          titleId: state.title.id,
+          titleName: state.title.displayTitle,
+          posterUrl: state.title.posterMedium.isNotEmpty
+              ? state.title.posterMedium
+              : state.title.posterSmall,
+          episode: state.episode.episode,
+          episodeName: state.episode.name,
+          position: pos,
+          duration: dur,
+        );
+      } catch (_) {}
     }
   }
 
-  static Duration? _loadSavedPosition(int animeId, int epNum) {
-    if (!getIt.isRegistered<SharedPreferences>()) return null;
-    final prefs = getIt<SharedPreferences>();
-    final key = '${animeId}_$epNum';
-    final ms = prefs.getInt(key);
-    if (ms != null && ms > 10000) {
-      return Duration(milliseconds: ms);
+  static Duration? loadSavedPosition(AnimeTitle title, int epNum) {
+    // 1. SharedPreferences по title.id и shikimoriId
+    if (getIt.isRegistered<SharedPreferences>()) {
+      final prefs = getIt<SharedPreferences>();
+      final key = '${title.id}_$epNum';
+      final ms = prefs.getInt(key);
+      if (ms != null && ms > 3000) {
+        return Duration(milliseconds: ms);
+      }
+      if (title.shikimoriId != null && title.shikimoriId! > 0) {
+        final shikiKey = '${title.shikimoriId}_$epNum';
+        final shikiMs = prefs.getInt(shikiKey);
+        if (shikiMs != null && shikiMs > 3000) {
+          return Duration(milliseconds: shikiMs);
+        }
+      }
     }
+
+    // 2. WatchHistoryCubit
+    if (getIt.isRegistered<WatchHistoryCubit>()) {
+      final histState = getIt<WatchHistoryCubit>().state;
+      var hist = histState.getForTitle(title.id);
+      if (hist == null && title.shikimoriId != null && title.shikimoriId! > 0) {
+        hist = histState.getForTitle(title.shikimoriId!);
+      }
+      if (hist != null && hist.episode == epNum && hist.positionMs > 3000) {
+        return Duration(milliseconds: hist.positionMs);
+      }
+    }
+
+    // 3. AnimeListCubit
+    if (getIt.isRegistered<AnimeListCubit>()) {
+      final listState = getIt<AnimeListCubit>().state;
+      var entry = listState.getEntryFor(title.id);
+      if (entry == null && title.shikimoriId != null && title.shikimoriId! > 0) {
+        entry = listState.getEntryFor(title.shikimoriId!);
+      }
+      if (entry != null && entry.lastEpisode == epNum && entry.positionMs > 3000) {
+        return Duration(milliseconds: entry.positionMs);
+      }
+    }
+
     return null;
   }
 
@@ -85,7 +149,7 @@ class PlayerCubit extends Cubit<PlayerState> {
             ),
         // ignore: prefer_initializing_formals
         _initialPosition = initialPosition,
-        _pendingInitialSeek = initialPosition ?? _loadSavedPosition(title.id, episode.episode),
+        _pendingInitialSeek = initialPosition ?? loadSavedPosition(title, episode.episode),
         super(PlayerState(
           title: title,
           episode: episode,
@@ -145,10 +209,10 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (dur > Duration.zero && _pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero) {
           final seekTarget = _pendingInitialSeek!;
           _pendingInitialSeek = null;
-          // восстанавливать сохраненную позицию (если savedPosition > 10 сек и осталось более 30 сек)
-          if (seekTarget.inSeconds > 10 && (dur - seekTarget).inSeconds > 30) {
+          // восстанавливаем сохраненную позицию
+          if (seekTarget.inSeconds >= 3 && (dur - seekTarget).inSeconds >= 3) {
             player.seek(seekTarget);
-            Future.delayed(const Duration(milliseconds: 350), () {
+            Future.delayed(const Duration(milliseconds: 400), () {
               if (!isClosed && !_isDisposing && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
                 player.seek(seekTarget);
               }
@@ -698,8 +762,9 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _loadCurrentEpisodeStream({Duration? initialPosition}) async {
-    if (initialPosition != null && initialPosition > Duration.zero) {
-      _pendingInitialSeek = initialPosition;
+    final effectiveStart = initialPosition ?? _pendingInitialSeek;
+    if (effectiveStart != null && effectiveStart > Duration.zero) {
+      _pendingInitialSeek = effectiveStart;
     }
     // 1. Проверяем, скачана ли серия локально для офлайн-просмотра без интернета
     String? localFilePath;
@@ -802,8 +867,8 @@ class PlayerCubit extends Cubit<PlayerState> {
       await player.open(
         Media(
           streamUrl,
-          start: (initialPosition != null && initialPosition > Duration.zero)
-              ? initialPosition
+          start: (_pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero)
+              ? _pendingInitialSeek
               : null,
         ),
         play: shouldPlay,
@@ -1363,7 +1428,7 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<void> _switchEpisodeInternal(EpisodeItem nextEpisode) async {
     _savePlaybackPosition(state.position, state.duration);
-    _pendingInitialSeek = _loadSavedPosition(state.title.id, nextEpisode.episode);
+    _pendingInitialSeek = loadSavedPosition(state.title, nextEpisode.episode);
     cancelAutoNextCountdown();
 
     final prevEpisode = state.episode.episode;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -28,22 +29,33 @@ class GlobalMiniPlayerService extends ChangeNotifier {
   Offset? get offset => _offset;
   double get scale => _scale;
 
+  void _notifySafely() {
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.idle) {
+      notifyListeners();
+    } else {
+      binding.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    }
+  }
+
   void updateTransform({Offset? offset, double? scale}) {
     if (offset != null) _offset = offset;
     if (scale != null) _scale = scale.clamp(0.75, 1.85);
-    notifyListeners();
+    _notifySafely();
   }
 
   void increaseScale() {
     HapticFeedback.lightImpact();
     _scale = (_scale + 0.18).clamp(0.75, 1.85);
-    notifyListeners();
+    _notifySafely();
   }
 
   void decreaseScale() {
     HapticFeedback.lightImpact();
     _scale = (_scale - 0.18).clamp(0.75, 1.85);
-    notifyListeners();
+    _notifySafely();
   }
 
   void cycleScale() {
@@ -55,7 +67,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
     } else {
       _scale = 0.85;
     }
-    notifyListeners();
+    _notifySafely();
   }
 
   /// Сворачивает активный плеер в глобальное плавающее окно
@@ -72,7 +84,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
     _onSaveProgress = onSaveProgress;
     _isMinimized = true;
     _isExpanding = false;
-    notifyListeners();
+    _notifySafely();
   }
 
   /// Проверяет, соответствует ли активная сессия мини-плеера запрашиваемому тайтлу
@@ -91,7 +103,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
       _cubit?.player.pause();
     } catch (_) {}
     _isMinimized = false;
-    notifyListeners();
+    _notifySafely();
   }
 
   /// Забирает существующую сессию обратно в полноэкранный PlayerScreen без перезагрузки потока
@@ -103,7 +115,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
     _cubit = null;
     _videoController = null;
     _onSaveProgress = null;
-    notifyListeners();
+    _notifySafely();
     return result;
   }
 
@@ -114,7 +126,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
     final state = _cubit!.state;
     _isMinimized = false;
     _isExpanding = true;
-    notifyListeners();
+    _notifySafely();
 
     appRouter.pushNamed(
       'player',
@@ -139,7 +151,7 @@ class GlobalMiniPlayerService extends ChangeNotifier {
     _onSaveProgress = null;
     _isMinimized = false;
     _isExpanding = false;
-    notifyListeners();
+    _notifySafely();
     await oldCubit?.close();
   }
 }
@@ -187,15 +199,12 @@ class _GlobalMiniPlayerOverlayState extends State<GlobalMiniPlayerOverlay> {
         final currentLeft = (service.offset?.dx ?? defaultLeft).clamp(8.0, maxLeft);
         final currentTop = (service.offset?.dy ?? defaultTop).clamp(padding.top + 8.0, maxTop);
 
-        return Overlay(
-          initialEntries: [
-            OverlayEntry(
-              builder: (overlayContext) => Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned(
-                    left: currentLeft,
-                    top: currentTop,
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned(
+              left: currentLeft,
+              top: currentTop,
                     width: baseW,
                     height: baseH,
                     child: Material(
@@ -479,10 +488,7 @@ class _GlobalMiniPlayerOverlayState extends State<GlobalMiniPlayerOverlay> {
               ),
             ),
           ],
-        ),
-      ),
-    ],
-  );
+        );
       },
     );
   }

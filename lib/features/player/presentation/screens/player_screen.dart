@@ -66,8 +66,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
 
-  void _minimizePlayer() {
+  void _minimizePlayer({bool alreadyPopping = false}) {
     if (_handedOffToMiniPlayer || _isDisposed) return;
+    _handedOffToMiniPlayer = true;
     _saveWatchProgress();
 
     final bool isDesktopOS =
@@ -79,20 +80,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         windowManager.setFullScreen(false);
       } catch (_) {}
     } else {
-      // На телефоне возвращаем портретную ориентацию при сворачивании в мини-окно
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
       ]);
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!_isDisposed) {
-          SystemChrome.setPreferredOrientations([
-            DeviceOrientation.portraitUp,
-            DeviceOrientation.portraitDown,
-            DeviceOrientation.landscapeLeft,
-            DeviceOrientation.landscapeRight,
-          ]);
-        }
-      });
     }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
@@ -102,19 +95,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       return;
     }
 
-    _handedOffToMiniPlayer = true;
     GlobalMiniPlayerService.instance.minimize(
       cubit: _cubit,
       videoController: _videoController,
       onSaveProgress: _saveWatchProgress,
     );
 
-    if (context.canPop()) {
-      context.pop();
-    } else if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    } else {
-      context.go('/');
+    if (mounted) {
+      setState(() {});
+    }
+
+    if (!alreadyPopping && mounted) {
+      if (context.canPop()) {
+        context.pop();
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        context.go('/');
+      }
     }
   }
 
@@ -142,6 +140,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
     });
 
+    final resolvedPos = widget.initialPosition ??
+        PlayerCubit.loadSavedPosition(widget.title, widget.initialEpisode.episode);
+
     final miniService = GlobalMiniPlayerService.instance;
     if (miniService.hasSessionFor(widget.title.id, widget.initialEpisode.episode)) {
       final claimed = miniService.claimSession()!;
@@ -161,7 +162,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         roomCode: widget.roomCode,
         isHost: widget.isHost,
         syncRepository: syncRepo,
-        initialPosition: widget.initialPosition,
+        initialPosition: resolvedPos,
       );
 
       _videoController = VideoController(
@@ -177,10 +178,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _recordInitialWatchHistory();
     _recordPlaybackInAnimeList();
 
-    if (widget.initialPosition != null && widget.initialPosition! > Duration.zero) {
+    if (resolvedPos != null && resolvedPos > const Duration(seconds: 3)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          final totalSec = widget.initialPosition!.inSeconds;
+          final totalSec = resolvedPos.inSeconds;
           final m = (totalSec ~/ 60).toString().padLeft(2, '0');
           final s = (totalSec % 60).toString().padLeft(2, '0');
           ScaffoldMessenger.of(context).showSnackBar(
@@ -467,6 +468,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    if (_handedOffToMiniPlayer) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: SizedBox.shrink(),
+      );
+    }
+
     // В режиме Картинка-в-картинке (PiP) отображаем только чистое видео без оверлеев
     if (_isInPip) {
       return Scaffold(
@@ -481,17 +489,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
 
     return PopScope(
-      canPop: _handedOffToMiniPlayer,
+      canPop: true,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
-          _saveWatchProgress();
-          SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.edgeToEdge,
-          );
+          if (!_handedOffToMiniPlayer) {
+            _minimizePlayer(alreadyPopping: true);
+          }
           return;
-        }
-        if (!_handedOffToMiniPlayer) {
-          _minimizePlayer();
         }
       },
       child: Focus(

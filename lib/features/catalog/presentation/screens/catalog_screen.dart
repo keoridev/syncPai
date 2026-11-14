@@ -7,12 +7,13 @@ import 'package:go_router/go_router.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
-import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/app_avatar.dart';
 import 'package:sync_pai/core/widgets/app_search_bar.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
+import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
+import 'package:sync_pai/core/widgets/mascot/sync_pai_mascot.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
@@ -683,33 +684,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Widget _buildErrorState(BuildContext context, String message) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimensions.spacingXl),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 52, color: AppColors.syncError),
-            const SizedBox(height: AppDimensions.spacingMd),
-            Text(
-              'Не удалось загрузить каталог',
-              style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: AppDimensions.spacingXs),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: AppDimensions.spacingLg),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
-              child: const Text('Повторить попытку', style: TextStyle(color: Colors.white)),
-            ),
-          ],
+      child: SyncPaiMascot(
+        state: message.toLowerCase().contains('connect') || message.toLowerCase().contains('сеть')
+            ? MascotState.networkError
+            : MascotState.serverError,
+        message: 'Не удалось загрузить каталог',
+        description: message,
+        action: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: const Color(0xFF0F1117),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Повторить попытку', style: TextStyle(fontWeight: FontWeight.w700)),
         ),
       ),
     );
@@ -717,36 +707,23 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Widget _buildEmptyState(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimensions.spacingXl),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.search_off_rounded, size: 52, color: AppColors.textMuted),
-            const SizedBox(height: AppDimensions.spacingMd),
-            Text(
-              'Ничего не найдено',
-              style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: AppDimensions.spacingXs),
-            Text(
-              'Попробуйте изменить поисковый запрос или сбросить фильтры',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: AppDimensions.spacingLg),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                context.read<CatalogCubit>().clearGenres();
-                context.read<CatalogCubit>().onSearchQueryChanged('');
-              },
-              child: const Text('Сбросить фильтры'),
-            ),
-          ],
+      child: SyncPaiMascot(
+        state: MascotState.emptySearch,
+        message: 'Ничего не найдено',
+        description: 'Попробуйте изменить поисковый запрос или сбросить фильтры',
+        action: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: Theme.of(context).colorScheme.primary),
+            foregroundColor: AppColors.textPrimary,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () {
+            context.read<CatalogCubit>().clearGenres();
+            context.read<CatalogCubit>().onSearchQueryChanged('');
+          },
+          icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
+          label: const Text('Сбросить фильтры', style: TextStyle(fontWeight: FontWeight.w600)),
         ),
       ),
     );

@@ -66,3 +66,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/icons/
+    - assets/mascot/general/
+    - assets/mascot/errors/
+    - assets/mascot/empty_states/
+    - assets/mascot/watch_party/
+    - assets/mascot/loading_success/

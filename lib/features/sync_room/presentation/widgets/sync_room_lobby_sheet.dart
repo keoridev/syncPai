@@ -1111,13 +1111,25 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                           ),
                         ],
                       )
-                    : Text(
-                        'Ждем подключения друга...',
-                        style: TextStyle(
-                          color: AppColors.primaryLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/mascot/watch_party/mascot_waiting_friends.png',
+                            width: 18,
+                            height: 18,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Ждем подключения друга...',
+                            style: TextStyle(
+                              color: AppColors.primaryLight,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
               ),
             ],

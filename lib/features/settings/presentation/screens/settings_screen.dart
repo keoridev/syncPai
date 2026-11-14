@@ -12,6 +12,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/theme/widgets/theme_selector_sheet.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/mascot/mascot_gallery_widget.dart';
 import '../../../anime_lists/data/datasources/anixart_csv_parser.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../anime_lists/presentation/widgets/import_progress_dialog.dart';
@@ -817,6 +818,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: () => AuthModalSheet.show(context, profile),
                     ),
                   ],
+                ]),
+
+                // 5. Секция "SyncPai Mascot" (Mascot Gallery)
+                _buildSectionHeader('МАСКОТ ПРИЛОЖЕНИЯ'),
+                _buildCard([
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: MascotGalleryWidget(),
+                  ),
                 ]),
 
                 const SizedBox(height: 32),

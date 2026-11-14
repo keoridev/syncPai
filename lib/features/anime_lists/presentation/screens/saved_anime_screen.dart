@@ -14,6 +14,8 @@ import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/tv_focusable.dart';
+import '../../../../core/widgets/mascot/mascot_state.dart';
+import '../../../../core/widgets/mascot/sync_pai_mascot.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/catalog_settings.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
@@ -1359,57 +1361,29 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                   // СПИСОК ТАЙТЛОВ ИЗ ЗАКЛАДОК
                   if (entries.isEmpty)
                     SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 48),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Container(
-                                width: 64,
-                                height: 64,
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: AppColors.strokeMedium),
+                      child: SyncPaiMascot(
+                        state: _searchQuery.isNotEmpty
+                            ? MascotState.emptySearch
+                            : (activeTab == AnimeListStatus.planned
+                                ? MascotState.emptyFavorites
+                                : MascotState.emptyAnime),
+                        message: _searchQuery.isNotEmpty
+                            ? 'По запросу «$_searchQuery» ничего не найдено'
+                            : 'В списке «${activeTab.labelRu}» пока пусто',
+                        description: 'Добавляйте понравившиеся тайтлы из каталога или импортируйте свой профиль из Anixart',
+                        action: widget.onGoToCatalog != null
+                            ? ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
+                                  foregroundColor: const Color(0xFF0F1117),
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  activeTab.icon,
-                                  size: 30,
-                                  color: AppColors.primaryLight,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                _searchQuery.isNotEmpty
-                                    ? 'По запросу «$_searchQuery» ничего не найдено'
-                                    : 'В списке «${activeTab.labelRu}» пока пусто',
-                                style: AppTypography.titleMedium.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Добавляйте понравившиеся тайтлы из каталога или импортируйте свой профиль из Anixart',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                              ),
-                              if (widget.onGoToCatalog != null) ...[
-                                const SizedBox(height: 18),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Theme.of(context).colorScheme.primary,
-                                    foregroundColor: AppColors.textPrimary,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                  onPressed: widget.onGoToCatalog,
-                                  child: const Text('Перейти в каталог', style: TextStyle(fontWeight: FontWeight.w700)),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                                onPressed: widget.onGoToCatalog,
+                                icon: const Icon(Icons.explore_rounded, size: 18),
+                                label: const Text('Перейти в каталог', style: TextStyle(fontWeight: FontWeight.w700)),
+                              )
+                            : null,
                       ),
                     )
                   else if (_viewMode == SavedAnimeViewMode.grid)
@@ -1822,43 +1796,15 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       return [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 48),
-            child: Center(
-              child: Column(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.strokeMedium),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.history_rounded,
-                      size: 30,
-                      color: AppColors.primaryLight,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _searchQuery.isNotEmpty
-                        ? 'По запросу «$_searchQuery» ничего не найдено'
-                        : 'История просмотров пока пуста',
-                    style: AppTypography.titleMedium.copyWith(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Серии и тайтлы, которые вы запускаете в плеере, будут сохраняться здесь с точной секундой остановки',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl, vertical: 36),
+            child: SyncPaiMascot(
+              state: _searchQuery.isNotEmpty
+                  ? MascotState.emptySearch
+                  : MascotState.emptyHistory,
+              message: _searchQuery.isNotEmpty
+                  ? 'По запросу «$_searchQuery» ничего не найдено'
+                  : 'История просмотров пока пуста',
+              description: 'Серии и тайтлы, которые вы запускаете в плеере, будут сохраняться здесь с точной секундой остановки',
             ),
           ),
         ),

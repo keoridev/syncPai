@@ -8,6 +8,8 @@ import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
+import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
+import 'package:sync_pai/core/widgets/mascot/sync_pai_mascot.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
@@ -179,32 +181,21 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
                       },
                     ),
                   ] else ...[
-                    const Icon(
-                      Icons.error_outline_rounded,
-                      color: AppColors.syncError,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Ошибка подключения',
-                      style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _errorMessage ?? 'Комната не найдена',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.surfaceElevated,
-                        foregroundColor: AppColors.textPrimary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    SyncPaiMascot(
+                      state: MascotState.error404,
+                      size: MascotSize.small,
+                      message: 'Ошибка подключения',
+                      description: _errorMessage ?? 'Комната не найдена или закрыта хостом',
+                      action: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.surfaceElevated,
+                          foregroundColor: AppColors.textPrimary,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => context.goNamed('catalog'),
+                        child: const Text('Вернуться в каталог', style: TextStyle(fontWeight: FontWeight.w700)),
                       ),
-                      onPressed: () => context.goNamed('catalog'),
-                      child: const Text('Вернуться в каталог'),
                     ),
                   ],
                 ],

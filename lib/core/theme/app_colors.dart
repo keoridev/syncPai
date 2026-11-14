@@ -40,6 +40,8 @@ abstract final class AppColors {
 
   // Вторичный акцент (мягкий лавандово-серый индиго для тегов или вторичных индикаторов)
   static const accentSecondary = Color(0xFF7C83FD);
+  static const accentTurquoise = Color(0xFF35D9D5);
+  static const accentCoral = Color(0xFFFF806D);
 
   // Статусы синхронизации и воспроизведения
   static const syncActive = Color(0xFF4EAA7A);       // Деликатный шалфейно-зеленый (В синхроне)

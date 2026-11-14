@@ -8,6 +8,7 @@ import '../../features/auth/presentation/screens/auth_screen.dart';
 import '../../features/catalog/domain/entities/anime_entity.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import '../../features/catalog/domain/entities/episode_item.dart';
+import '../../features/downloads/presentation/screens/downloads_screen.dart';
 import '../../features/main/presentation/screens/main_screen.dart';
 import '../../features/player/domain/entities/player_quality.dart';
 import '../../features/player/presentation/screens/player_screen.dart';
@@ -18,6 +19,7 @@ import '../../features/splash/presentation/screens/splash_screen.dart';
 import '../../features/sync_room/presentation/screens/join_room_screen.dart';
 import '../../features/sync_room/presentation/screens/watch_together_screen.dart';
 import '../../features/sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
+import '../../features/wrapped/presentation/screens/wrapped_story_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -202,6 +204,16 @@ final GoRouter appRouter = GoRouter(
         final code = state.pathParameters['code'] ?? '';
         return JoinRoomScreen(code: code);
       },
+    ),
+    GoRoute(
+      path: '/downloads',
+      name: 'downloads',
+      builder: (context, state) => const DownloadsScreen(),
+    ),
+    GoRoute(
+      path: '/wrapped',
+      name: 'wrapped',
+      builder: (context, state) => const WrappedStoryScreen(),
     ),
     GoRoute(
       path: '/player',

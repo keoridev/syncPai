@@ -4,7 +4,8 @@ enum MascotCategory {
   errors('Ошибки', 'Errors'),
   emptyStates('Пустые экраны', 'Empty States'),
   watchParty('Совместный просмотр', 'Watch Party'),
-  loadingSuccess('Загрузка и Успех', 'Loading & Success');
+  loadingSuccess('Загрузка и Успех', 'Loading & Success'),
+  winter('Новогодняя Пай-тян 2026', 'Winter Edition 2026');
 
   final String labelRu;
   final String labelEn;
@@ -283,7 +284,92 @@ enum MascotState {
     assetPath: 'assets/mascot/loading_success/mascot_profile.png',
     defaultMessage: 'Ваш спутник SyncPai',
     defaultDescription: 'Персонаж-компаньон для просмотра аниме.',
+  ),
+
+  // F. Зимняя тема 2026 (Winter Edition)
+  winterWelcome(
+    id: 'winter-welcome',
+    title: 'Зимнее приветствие',
+    description: 'Пай-тян в шапочке Санты с новогодней улыбкой встречает пользователей.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_welcome.png',
+    defaultMessage: 'С наступающим Новым годом в SyncPai! ❄️',
+    defaultDescription: 'Устраивайтесь поудобнее, заваривайте чай и смотрите аниме вместе.',
+  ),
+  winterIdle(
+    id: 'winter-idle',
+    title: 'Зимний уют',
+    description: 'Пай-тян в праздничной шапочке отдыхает среди мягко падающих снежинок.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_idle.png',
+    defaultMessage: 'Зимнее настроение ❄️',
+    defaultDescription: 'Идеальное время для уютного просмотра любимых тайтлов.',
+  ),
+  winterHappy(
+    id: 'winter-happy',
+    title: 'Зимний праздник',
+    description: 'Восторженная новогодняя Пай-тян празднует и радуется зимней атмосфере.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_happy.png',
+    defaultMessage: 'Праздничное чудо!',
+    defaultDescription: 'Сезон подарков, марафонов и приятных открытий.',
+  ),
+  winterEmpty(
+    id: 'winter-empty',
+    title: 'Зимняя пустота',
+    description: 'Пай-тян в новогодней шапке заглядывает в открытый подарок.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_empty.png',
+    defaultMessage: 'Здесь пока пусто ❄️',
+    defaultDescription: 'Самое время добавить первые зимние серии для просмотра.',
+  ),
+  winterLoading(
+    id: 'winter-loading',
+    title: 'Зимняя подготовка',
+    description: 'Новогодняя Пай-тян готовит подарки и упаковывает серию для стрима.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_loading.png',
+    defaultMessage: 'Загружаем новогоднюю атмосферу...',
+    defaultDescription: 'Готовим лучший видеопоток без подвисаний.',
+  ),
+  winterSuccess(
+    id: 'winter-success',
+    title: 'Зимний триумф',
+    description: 'Пай-тян с праздничной лентой и поднятым пальцем вверх.',
+    category: MascotCategory.winter,
+    assetPath: 'assets/mascot/winter/mascot_winter_success.png',
+    defaultMessage: 'Готово к празднику! ✨',
+    defaultDescription: 'Все серии успешно сохранены и настроены.',
   );
+
+  /// Преобразование стандартного состояния в сезонное зимнее
+  MascotState toWinterState() {
+    switch (this) {
+      case MascotState.welcome:
+        return MascotState.winterWelcome;
+      case MascotState.idle:
+      case MascotState.sleeping:
+        return MascotState.winterIdle;
+      case MascotState.happy:
+      case MascotState.thinking:
+        return MascotState.winterHappy;
+      case MascotState.emptyAnime:
+      case MascotState.emptyFavorites:
+      case MascotState.emptyHistory:
+      case MascotState.emptySearch:
+      case MascotState.noNotifications:
+        return MascotState.winterEmpty;
+      case MascotState.loading:
+      case MascotState.uploading:
+        return MascotState.winterLoading;
+      case MascotState.success:
+      case MascotState.favoriteAdded:
+      case MascotState.syncSuccess:
+        return MascotState.winterSuccess;
+      default:
+        return this;
+    }
+  }
 
   final String id;
   final String title;

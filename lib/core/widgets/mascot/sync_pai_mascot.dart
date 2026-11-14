@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../features/winter_theme/domain/services/winter_theme_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_typography.dart';
@@ -123,6 +124,11 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
   void initState() {
     super.initState();
     _initAnimation();
+    WinterThemeService.instance.addListener(_onWinterThemeChanged);
+  }
+
+  void _onWinterThemeChanged() {
+    if (mounted) setState(() {});
   }
 
   void _initAnimation() {
@@ -157,6 +163,7 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
 
   @override
   void dispose() {
+    WinterThemeService.instance.removeListener(_onWinterThemeChanged);
     _floatController?.dispose();
     super.dispose();
   }
@@ -167,18 +174,24 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
     final disableAnimations = MediaQuery.of(context).disableAnimations;
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
+    // Автоматическая трансформация в новогодний скин, если включена опция
+    final winterService = WinterThemeService.instance;
+    final effectiveState = (winterService.isWinterActive && winterService.isWinterMascotEnabled)
+        ? widget.state.toWinterState()
+        : widget.state;
+
     // Адаптивное масштабирование
     final targetWidth = isDesktop ? widget.size.width * 1.05 : widget.size.width;
     final targetHeight = isDesktop ? widget.size.height * 1.05 : widget.size.height;
 
-    final displayMessage = widget.message ?? widget.state.defaultMessage;
-    final displayDesc = widget.description ?? widget.state.defaultDescription;
+    final displayMessage = widget.message ?? effectiveState.defaultMessage;
+    final displayDesc = widget.description ?? effectiveState.defaultDescription;
 
     Widget imageContent = Semantics(
-      label: '${widget.state.title}: ${widget.state.description}',
+      label: '${effectiveState.title}: ${effectiveState.description}',
       image: true,
       child: Image.asset(
-        widget.state.assetPath,
+        effectiveState.assetPath,
         width: targetWidth,
         height: targetHeight,
         fit: BoxFit.contain,

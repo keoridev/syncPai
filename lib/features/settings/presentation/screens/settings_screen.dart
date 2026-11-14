@@ -4,12 +4,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/theme/cubit/theme_cubit.dart';
+import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/theme/widgets/theme_selector_sheet.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/mascot/mascot_gallery_widget.dart';
@@ -21,6 +24,7 @@ import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
+import '../../../winter_theme/domain/services/winter_theme_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -474,6 +478,167 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildWinterSection(BuildContext context, Color themePrimary) {
+    final winter = WinterThemeService.instance;
+    return ListenableBuilder(
+      listenable: winter,
+      builder: (context, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader('ЗИМНЯЯ СКАЗКА 2026 (WINTER EXPERIENCE)'),
+            _buildCard([
+              // 1. Включить зимнюю тему
+              SwitchListTile(
+                secondary: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF35D9D5).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.ac_unit_rounded, color: Color(0xFF35D9D5), size: 20),
+                ),
+                title: const Text(
+                  'Зимняя тема SyncPai',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Праздничное оформление и морозные акценты',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                value: winter.isWinterThemeEnabled,
+                onChanged: (val) {
+                  HapticFeedback.lightImpact();
+                  winter.setWinterTheme(val);
+                },
+              ),
+              _buildDivider(),
+
+              // 2. Падающий снег
+              SwitchListTile(
+                secondary: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.grain_rounded, color: Colors.white, size: 20),
+                ),
+                title: const Text(
+                  'Падающий снег',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Плавная легкая анимация хлопьев снега на экранах',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                value: winter.isSnowfallEnabled,
+                onChanged: (val) {
+                  HapticFeedback.lightImpact();
+                  winter.setSnowfall(val);
+                },
+              ),
+              _buildDivider(),
+
+              // 3. Новогодний маскот Пай-тян
+              SwitchListTile(
+                secondary: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF806D).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.celebration_rounded, color: Color(0xFFFF806D), size: 20),
+                ),
+                title: const Text(
+                  'Новогодняя Пай-тян',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Сезонный праздничный скин с шапочкой Санты',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                value: winter.isWinterMascotEnabled,
+                onChanged: (val) {
+                  HapticFeedback.lightImpact();
+                  winter.setWinterMascot(val);
+                },
+              ),
+              _buildDivider(),
+
+              // 4. Кнопки «Примерить зимнюю тему» и «Сбросить тему»
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF35D9D5),
+                          side: BorderSide(color: const Color(0xFF35D9D5).withValues(alpha: 0.4)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.remove_red_eye_rounded, size: 16),
+                        label: const Text('Примерить тему', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        onPressed: () async {
+                          HapticFeedback.mediumImpact();
+                          await winter.enableFullWinterExperience();
+                          if (context.mounted) {
+                            final preset = ThemePreset.all.firstWhere(
+                              (p) => p.id == 'winter_2026',
+                              orElse: () => ThemePreset.all.first,
+                            );
+                            context.read<ThemeCubit>().setPreset(preset);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('❄️ Новогодняя тема «Зимняя сказка 2026» активирована!'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.textMuted,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Сбросить тему', style: TextStyle(fontSize: 12.5)),
+                        onPressed: () async {
+                          HapticFeedback.lightImpact();
+                          await winter.resetToDefault();
+                          if (context.mounted) {
+                            final defaultPreset = ThemePreset.all.firstWhere(
+                              (p) => p.id == 'sunset_orange',
+                              orElse: () => ThemePreset.all.first,
+                            );
+                            context.read<ThemeCubit>().setPreset(defaultPreset);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Оформление сброшено к стандартной теме.'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ]),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildDivider() {
     return Divider(
       color: Colors.white.withValues(alpha: 0.06),
@@ -516,6 +681,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               children: [
+                // 0. Новогодняя зимняя сказка 2026
+                _buildWinterSection(context, themePrimary),
+
                 // 1. Секция "Внешний вид"
                 _buildSectionHeader('ВНЕШНИЙ ВИД'),
                 _buildCard([
@@ -569,6 +737,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // 2. Секция "Данные и синхронизация"
                 _buildSectionHeader('ДАННЫЕ И СИНХРОНИЗАЦИЯ'),
                 _buildCard([
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: themePrimary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.download_for_offline_rounded, color: themePrimary, size: 20),
+                    ),
+                    title: const Text(
+                      'Менеджер офлайн-загрузок',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Управление скачанными сериями и локальным хранилищем',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                    onTap: () => context.push('/downloads'),
+                  ),
+                  _buildDivider(),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF806D).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFFFF806D), size: 20),
+                    ),
+                    title: const Text(
+                      'SyncPai Wrapped 2026',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Персональные годовые итоги просмотра аниме в стиле Spotify',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                    onTap: () => context.push('/wrapped'),
+                  ),
+                  _buildDivider(),
                   ListTile(
                     leading: Container(
                       padding: const EdgeInsets.all(8),

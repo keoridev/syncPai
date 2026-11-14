@@ -57,12 +57,29 @@ class DownloadCubit extends Cubit<DownloadState> {
     await _repository.startDownload(task);
   }
 
+  Future<void> pauseDownload(String taskId) async {
+    await _repository.pauseDownload(taskId);
+  }
+
+  Future<void> resumeDownload(String taskId) async {
+    await _repository.resumeDownload(taskId);
+  }
+
   Future<void> cancelDownload(String taskId) async {
     await _repository.cancelDownload(taskId);
   }
 
   Future<void> deleteDownload(String taskId) async {
     await _repository.deleteTask(taskId);
+  }
+
+  Future<void> deleteAllDownloads() async {
+    await _repository.deleteAllTasks();
+    emit(state.copyWith(tasks: const {}));
+  }
+
+  Future<int> getStorageUsedBytes() async {
+    return _repository.getTotalStorageUsed();
   }
 
   /// Включение / отключение умных загрузок

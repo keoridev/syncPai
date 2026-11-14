@@ -1470,6 +1470,57 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       );
                     }
 
+                    if (task?.status == DownloadStatus.queued) {
+                      return const SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.0,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (task?.status == DownloadStatus.paused) {
+                      return SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: IconButton(
+                          padding: const EdgeInsets.all(10),
+                          icon: const Icon(
+                            Icons.pause_circle_rounded,
+                            color: Color(0xFFFFB300),
+                            size: 22,
+                          ),
+                          tooltip: 'Загрузка на паузе (нажмите для продолжения)',
+                          onPressed: () => getIt<DownloadCubit>().resumeDownload(task!.id),
+                        ),
+                      );
+                    }
+
+                    if (task?.status == DownloadStatus.failed) {
+                      return SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: IconButton(
+                          padding: const EdgeInsets.all(10),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: AppColors.syncError,
+                            size: 22,
+                          ),
+                          tooltip: 'Ошибка загрузки: ${task?.errorMessage ?? ""}. Нажмите для повтора',
+                          onPressed: () => getIt<DownloadCubit>().resumeDownload(task!.id),
+                        ),
+                      );
+                    }
+
                     if (isDownloaded) {
                       return SizedBox(
                         width: 44,

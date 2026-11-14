@@ -28,6 +28,7 @@ import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
+import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
@@ -709,6 +710,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                                 onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
                                                 onSettingsTap: () => context.push('/settings'),
                                               ),
+                                              const SizedBox(height: 8),
+                                              const WrappedPromoBanner(),
                                               if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
                                                 const SizedBox(height: 8),
                                                 _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
@@ -770,6 +773,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   onEditProfileTap: () => _showEditProfileSheet(context, profile),
                                   onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
                                   onSettingsTap: () => context.push('/settings'),
+                                ),
+                              ),
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  child: WrappedPromoBanner(),
                                 ),
                               ),
                               if (isCurrentUser && isGuest && !_guestBannerDismissed)

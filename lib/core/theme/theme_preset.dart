@@ -23,8 +23,18 @@ class ThemePreset extends Equatable {
     this.icon = Icons.palette_outlined,
   });
 
-  /// 8 дизайнерских кинотеатральных палитр для примерки
+  /// 9 дизайнерских кинотеатральных палитр для примерки
   static const List<ThemePreset> all = [
+    ThemePreset(
+      id: 'winter_2026',
+      name: 'Зимняя Сказка 2026',
+      description: 'Новогодняя палитра: морозный бирюзовый неон и ночной уют',
+      primaryColor: Color(0xFF35D9D5),
+      backgroundColor: Color(0xFF0C101A),
+      surfaceColor: Color(0xFF141A28),
+      surfaceElevatedColor: Color(0xFF1D263B),
+      icon: Icons.ac_unit_rounded,
+    ),
     ThemePreset(
       id: 'sunset_orange',
       name: 'Мандарин Сенпай',

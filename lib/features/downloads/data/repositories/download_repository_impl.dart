@@ -107,6 +107,18 @@ class DownloadRepositoryImpl implements DownloadRepository {
     _updateController.add(currentTask);
     await _persist();
 
+    // Проверка ограничений провайдера
+    if (task.sourceUrl.isEmpty || task.sourceUrl.contains('drm_protected') || task.sourceUrl.contains('paywall')) {
+      currentTask = currentTask.copyWith(
+        status: DownloadStatus.failed,
+        errorMessage: 'Провайдер ограничил офлайн-скачивание для этого потока (DRM/Защита)',
+      );
+      _tasks[task.id] = currentTask;
+      _updateController.add(currentTask);
+      await _persist();
+      return;
+    }
+
     try {
       int lastReportedProgress = 0;
 
@@ -114,6 +126,15 @@ class DownloadRepositoryImpl implements DownloadRepository {
         task.sourceUrl,
         finalPath,
         cancelToken: cancelToken,
+        options: Options(
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Referer': 'https://anilibria.top/',
+            'Origin': 'https://anilibria.top',
+            'Accept': '*/*',
+          },
+        ),
         onReceiveProgress: (received, total) {
           if (total > 0) {
             final progress = received / total;
@@ -169,6 +190,31 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }
 
   @override
+  Future<void> pauseDownload(String taskId) async {
+    final token = _cancelTokens[taskId];
+    token?.cancel('Приостановлено пользователем');
+    _cancelTokens.remove(taskId);
+
+    final task = _tasks[taskId];
+    if (task != null) {
+      final updated = task.copyWith(
+        status: DownloadStatus.paused,
+      );
+      _tasks[taskId] = updated;
+      _updateController.add(updated);
+      await _persist();
+    }
+  }
+
+  @override
+  Future<void> resumeDownload(String taskId) async {
+    final task = _tasks[taskId];
+    if (task != null) {
+      await startDownload(task);
+    }
+  }
+
+  @override
   Future<void> cancelDownload(String taskId) async {
     final token = _cancelTokens[taskId];
     token?.cancel('Отменено пользователем');
@@ -205,6 +251,41 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _updateController.add(cleared);
       await _persist();
     }
+  }
+
+  @override
+  Future<void> deleteAllTasks() async {
+    for (final taskId in _cancelTokens.keys.toList()) {
+      _cancelTokens[taskId]?.cancel('Отменено при очистке');
+    }
+    _cancelTokens.clear();
+
+    for (final task in _tasks.values) {
+      try {
+        final file = File(task.localPath);
+        if (file.existsSync()) {
+          file.deleteSync();
+        }
+      } catch (_) {}
+    }
+    _tasks.clear();
+    await _persist();
+  }
+
+  @override
+  Future<int> getTotalStorageUsed() async {
+    int total = 0;
+    for (final task in _tasks.values) {
+      if (task.status == DownloadStatus.completed) {
+        try {
+          final file = File(task.localPath);
+          if (file.existsSync()) {
+            total += file.lengthSync();
+          }
+        } catch (_) {}
+      }
+    }
+    return total;
   }
 
   @override

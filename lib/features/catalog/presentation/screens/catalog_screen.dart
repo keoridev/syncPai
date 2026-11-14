@@ -20,6 +20,7 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
+import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../cubit/catalog_cubit.dart';
 import '../cubit/catalog_state.dart';
 import '../widgets/anime_list_tile_card.dart';
@@ -405,6 +406,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
 
+              // 2.1 Баннер годовых итогов SyncPai Wrapped 2026
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 8),
+                  child: const WrappedPromoBanner(),
+                ),
+              ),
+
               // 3. Единая строка фильтров (Один горизонтальный скролл чипов + компактная кнопка фильтра слева)
               SliverToBoxAdapter(
                 child: BlocBuilder<CatalogCubit, CatalogState>(
@@ -690,16 +699,33 @@ class _CatalogScreenState extends State<CatalogScreen> {
             : MascotState.serverError,
         message: 'Не удалось загрузить каталог',
         description: message,
-        action: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: const Color(0xFF0F1117),
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onPressed: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
-          icon: const Icon(Icons.refresh_rounded, size: 18),
-          label: const Text('Повторить попытку', style: TextStyle(fontWeight: FontWeight.w700)),
+        action: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: const Color(0xFF0F1117),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Повторить', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => context.push('/downloads'),
+              icon: const Icon(Icons.download_for_offline_rounded, size: 18, color: AppColors.accentTurquoise),
+              label: const Text('Офлайн-загрузки', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
         ),
       ),
     );

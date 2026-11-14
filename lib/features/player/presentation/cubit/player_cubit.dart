@@ -29,6 +29,15 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'player_state.dart';
 
 class PlayerCubit extends Cubit<PlayerState> {
+  static const Map<String, String> defaultStreamingHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Referer': 'https://anilibria.top/',
+    'Origin': 'https://anilibria.top',
+    'Accept': '*/*',
+    'Connection': 'keep-alive',
+  };
+
   final Player player;
   final SyncRoomRepository? syncRepository;
   final List<StreamSubscription> _subscriptions = [];
@@ -40,6 +49,10 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _quickPhraseTimer;
   Timer? _awayDurationTimer;
   Timer? _spoilerShieldTimer;
+  Timer? _bufferingFallbackTimer;
+  Timer? _driftRateTimer;
+  final List<DateTime> _recentBufferEvents = [];
+  Duration _lastEmittedPos = Duration.zero;
   final Random _random = Random();
 
   bool isAutoSkipOpening = false;
@@ -144,7 +157,9 @@ class PlayerCubit extends Cubit<PlayerState> {
   })  : player = existingPlayer ??
             Player(
               configuration: const PlayerConfiguration(
-                logLevel: MPVLogLevel.error,
+                bufferSize: 128 * 1024 * 1024, // 128 МБ для стабильного 1080p HLS
+                osc: false,
+                logLevel: MPVLogLevel.warn,
               ),
             ),
         // ignore: prefer_initializing_formals
@@ -172,6 +187,20 @@ class PlayerCubit extends Cubit<PlayerState> {
       } catch (_) {}
     }
 
+    // 1. Аппаратное декодирование (GPU) и расширенные сетевые флаги libmpv
+    try {
+      final dynamic platform = player.platform;
+      final isWindows = !kIsWeb && Platform.isWindows;
+      platform.setProperty('hwdec', isWindows ? 'd3d11va-copy' : 'auto-safe');
+      platform.setProperty('cache', 'yes');
+      platform.setProperty('demuxer-max-bytes', '134217728'); // 128 МБ
+      platform.setProperty('demuxer-max-back-bytes', '33554432'); // 32 МБ назад
+      platform.setProperty('demuxer-readahead-secs', '45'); // 45 секунд вперед
+      platform.setProperty('network-timeout', '15');
+      platform.setProperty('tls-verify', 'no');
+      platform.setProperty('stream-lavf-o', 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5');
+    } catch (_) {}
+
     // Слушатели медиаплеера libmpv
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
@@ -182,6 +211,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.buffering.listen((buffering) {
         if (isClosed || _isDisposing) return;
         emit(state.copyWith(isBuffering: buffering));
+        _handleBufferingWatchdog(buffering);
         // При изменении буферизации уведомляем комнату
         if (state.isSyncRoom) {
           syncRepository?.sendBufferState(
@@ -193,13 +223,17 @@ class PlayerCubit extends Cubit<PlayerState> {
       }),
       player.stream.position.listen((pos) {
         if (isClosed || _isDisposing) return;
-        emit(state.copyWith(position: pos));
         _checkAutoNextEpisode(pos);
         _checkAutoSkipOpening(pos);
         final now = DateTime.now();
         if (_lastPosSavedAt == null || now.difference(_lastPosSavedAt!).inSeconds >= 3) {
           _lastPosSavedAt = now;
           _savePlaybackPosition(pos, state.duration);
+        }
+        // Троттлинг: обновляем позицию в Bloc не чаще чем раз в 250 мс для защиты FPS
+        if ((pos - _lastEmittedPos).abs() >= const Duration(milliseconds: 250)) {
+          _lastEmittedPos = pos;
+          emit(state.copyWith(position: pos));
         }
       }),
       player.stream.duration.listen((dur) {
@@ -301,6 +335,56 @@ class PlayerCubit extends Cubit<PlayerState> {
       seek(opening.stopDuration);
     } else {
       seekRelative(90);
+    }
+  }
+
+  /// Автоматический контроль буферизации (Watchdog):
+  /// Если буферизация на 1080p длится > 4 сек или возникает чаще 3 раз за 15 сек — авто-фолбэк на 720p
+  void _handleBufferingWatchdog(bool isBuffering) {
+    if (!isBuffering) {
+      _bufferingFallbackTimer?.cancel();
+      _bufferingFallbackTimer = null;
+      return;
+    }
+
+    if (!state.isPlaying || state.selectedQuality != PlayerQuality.fhd) return;
+
+    final now = DateTime.now();
+    _recentBufferEvents.add(now);
+    _recentBufferEvents.removeWhere((t) => now.difference(t).inSeconds > 15);
+
+    // Условие 1: если более 3 раз за 15 секунд сработала буферизация на 1080p
+    if (_recentBufferEvents.length >= 3) {
+      _recentBufferEvents.clear();
+      _fallbackQualityToHd('Частая буферизация');
+      return;
+    }
+
+    // Условие 2: буферизация длится дольше 4 секунд
+    _bufferingFallbackTimer?.cancel();
+    _bufferingFallbackTimer = Timer(const Duration(seconds: 4), () {
+      if (!isClosed && !_isDisposing && state.isBuffering && state.isPlaying && state.selectedQuality == PlayerQuality.fhd) {
+        _fallbackQualityToHd('Низкая скорость сети');
+      }
+    });
+  }
+
+  Future<void> _fallbackQualityToHd(String reason) async {
+    final ep = state.episode;
+    final hasHd = (ep.hdUrl != null && ep.hdUrl!.isNotEmpty) ||
+        (state.title.episodes.isNotEmpty &&
+            state.title.episodes
+                .firstWhere((e) => e.episode == ep.episode, orElse: () => ep)
+                .hdUrl !=
+                null);
+
+    if (hasHd && state.selectedQuality != PlayerQuality.hd) {
+      final currentPos = state.position;
+      emit(state.copyWith(
+        selectedQuality: PlayerQuality.hd,
+        bufferNotice: () => 'Качество автоматически переключено на 720p ($reason)',
+      ));
+      await _loadCurrentEpisodeStream(initialPosition: currentPos);
     }
   }
 
@@ -433,18 +517,27 @@ class PlayerCubit extends Cubit<PlayerState> {
           }
 
           // Интеллектуальное сглаживание рассинхрона (Drift Compensation):
-          if (delta.abs() < 400) {
-            // Разница < 400 мс — синхрон идеален!
-            if (state.playbackRate != 1.0) player.setRate(1.0);
-            emit(state.copyWith(syncStatus: SyncStatus.active));
-          } else if (delta.abs() <= 3000) {
-            // Разница 400–3000 мс: плавная подгонка скорости без заиканий
-            final newRate = delta > 0 ? 1.08 : 0.92;
-            if (state.playbackRate != newRate) player.setRate(newRate);
-            emit(state.copyWith(syncStatus: SyncStatus.aligning));
-          } else {
-            // Разница > 3000 мс (хост мотанул или нажал пропуск опенинга)
-            // Спойлер-щит (Blur Mode при рассинхроне/прыжке вперед более 15 сек):
+          // При расхождении < 1.5 сек НЕ вызываем seek во избежание сброса декодера и буфера
+          if (delta.abs() < 1500) {
+            if (delta.abs() < 300) {
+              if (state.playbackRate != 1.0) player.setRate(1.0);
+              emit(state.copyWith(syncStatus: SyncStatus.active));
+            } else {
+              // Разница 300–1500 мс: плавная временная подстройка скорости (1.05x / 0.95x) на 2 секунды
+              final newRate = delta > 0 ? 1.05 : 0.95;
+              if (state.playbackRate != newRate) {
+                player.setRate(newRate);
+                _driftRateTimer?.cancel();
+                _driftRateTimer = Timer(const Duration(seconds: 2), () {
+                  if (!isClosed && !_isDisposing && state.playbackRate != 1.0) {
+                    player.setRate(1.0);
+                  }
+                });
+              }
+              emit(state.copyWith(syncStatus: SyncStatus.aligning));
+            }
+          } else if (delta.abs() >= 2000) {
+            // Разница >= 2.0 сек: только при значительном отставании или перемотке вызываем жесткий seek
             if (delta > 15000) {
               _activateSpoilerShield();
             }
@@ -478,7 +571,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           final effectivePosMs = posMs ?? timeMs;
 
           if (act == 'play' || isPlayingVal == true) {
-            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() > 1000) {
+            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 2000) {
               player.seek(Duration(milliseconds: effectivePosMs));
             }
             player.play();
@@ -867,6 +960,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       await player.open(
         Media(
           streamUrl,
+          httpHeaders: defaultStreamingHeaders,
           start: (_pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero)
               ? _pendingInitialSeek
               : null,
@@ -904,6 +998,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           await player.open(
             Media(
               streamUrl,
+              httpHeaders: defaultStreamingHeaders,
               start: currentPos > Duration.zero ? currentPos : null,
             ),
             play: wasPlaying,
@@ -934,6 +1029,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           await player.open(
             Media(
               streamUrl,
+              httpHeaders: defaultStreamingHeaders,
               start: currentPos > Duration.zero ? currentPos : null,
             ),
             play: wasPlaying,
@@ -956,6 +1052,7 @@ class PlayerCubit extends Cubit<PlayerState> {
             await player.open(
               Media(
                 streamUrl,
+                httpHeaders: defaultStreamingHeaders,
                 start: currentPos > Duration.zero ? currentPos : null,
               ),
               play: wasPlaying,
@@ -974,6 +1071,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         await player.open(
           Media(
             fallbackUrl,
+            httpHeaders: defaultStreamingHeaders,
             start: currentPos > Duration.zero ? currentPos : null,
           ),
           play: wasPlaying,
@@ -1541,6 +1639,8 @@ class PlayerCubit extends Cubit<PlayerState> {
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();
     _quickPhraseTimer?.cancel();
+    _bufferingFallbackTimer?.cancel();
+    _driftRateTimer?.cancel();
     try {
       await _presenceSubscription?.cancel();
     } catch (_) {}

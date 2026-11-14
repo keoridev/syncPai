@@ -480,9 +480,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: Video(
-            controller: _videoController,
-            controls: NoVideoControls,
+          child: RepaintBoundary(
+            child: Video(
+              controller: _videoController,
+              controls: NoVideoControls,
+            ),
           ),
         ),
       );
@@ -507,6 +509,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             backgroundColor: Colors.black,
             resizeToAvoidBottomInset: false,
             body: BlocConsumer<PlayerCubit, PlayerState>(
+              buildWhen: (previous, current) =>
+                  previous.isPlaying != current.isPlaying ||
+                  previous.isBuffering != current.isBuffering ||
+                  previous.areControlsVisible != current.areControlsVisible ||
+                  previous.selectedQuality != current.selectedQuality ||
+                  previous.episode.episode != current.episode.episode ||
+                  previous.currentTranslation != current.currentTranslation ||
+                  previous.videoFit != current.videoFit ||
+                  previous.isScreenLocked != current.isScreenLocked ||
+                  previous.playbackRate != current.playbackRate ||
+                  previous.autoNextCountdown != current.autoNextCountdown ||
+                  previous.volume != current.volume ||
+                  previous.brightness != current.brightness ||
+                  previous.isSpoilerShieldActive != current.isSpoilerShieldActive ||
+                  previous.isPeerAway != current.isPeerAway ||
+                  previous.isPeerBuffering != current.isPeerBuffering ||
+                  previous.syncStatus != current.syncStatus ||
+                  previous.bufferNotice != current.bufferNotice,
               listenWhen: (previous, current) =>
                   previous.errorMessage != current.errorMessage ||
                   previous.episode.episode != current.episode.episode,
@@ -554,12 +574,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     fit: StackFit.expand,
                     children: [
                       // Видео полотно libmpv без стандартных нативных контролов
-                      Center(
-                        child: Video(
-                          controller: _videoController,
-                          controls: NoVideoControls,
-                          fit: state.videoFit,
-                          fill: Colors.black,
+                      // Изолировано в RepaintBoundary для разгрузки главного потока рендеринга
+                      RepaintBoundary(
+                        child: Center(
+                          child: Video(
+                            controller: _videoController,
+                            controls: NoVideoControls,
+                            fit: state.videoFit,
+                            fill: Colors.black,
+                          ),
                         ),
                       ),
 

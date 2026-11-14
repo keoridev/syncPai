@@ -217,130 +217,27 @@ class _RoomAudioSettingsSectionState extends State<RoomAudioSettingsSection> {
               const SizedBox(height: 12),
 
               // 1. Устройство ввода (Микрофон)
-              Text(
-                'Устройство ввода (Микрофон):',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.strokeMedium),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedInput.id,
-                    isExpanded: true,
-                    dropdownColor: AppColors.surfaceElevated,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.textSecondary),
-                    items: _service.inputDevices.map((dev) {
-                      return DropdownMenuItem<String>(
-                        value: dev.id,
-                        child: Row(
-                          children: [
-                            Icon(
-                              _iconForDevice(dev),
-                              size: 16,
-                              color: dev.id == selectedInput.id ? primary : AppColors.textSecondary,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    dev.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (newId) {
-                      if (newId != null) {
-                        HapticFeedback.selectionClick();
-                        _service.selectInputDevice(newId);
-                      }
-                    },
-                  ),
-                ),
+              _buildDeviceSelector(
+                context: context,
+                label: 'Устройство ввода (Микрофон):',
+                selectedDevice: selectedInput,
+                devices: _service.inputDevices,
+                onSelected: (id) => _service.selectInputDevice(id),
+                isInput: true,
+                primaryColor: primary,
               ),
 
               const SizedBox(height: 10),
 
               // 2. Устройство вывода (Наушники / Динамики)
-              Text(
-                'Устройство вывода (Наушники / Колонки):',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.strokeMedium),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedOutput.id,
-                    isExpanded: true,
-                    dropdownColor: AppColors.surfaceElevated,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.textSecondary),
-                    items: _service.outputDevices.map((dev) {
-                      return DropdownMenuItem<String>(
-                        value: dev.id,
-                        child: Row(
-                          children: [
-                            Icon(
-                              _iconForDevice(dev),
-                              size: 16,
-                              color: dev.id == selectedOutput.id ? primary : AppColors.textSecondary,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                dev.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (newId) {
-                      if (newId != null) {
-                        HapticFeedback.selectionClick();
-                        _service.selectOutputDevice(newId, activePlayer: widget.activePlayer);
-                      }
-                    },
-                  ),
-                ),
+              _buildDeviceSelector(
+                context: context,
+                label: 'Устройство вывода (Наушники / Колонки):',
+                selectedDevice: selectedOutput,
+                devices: _service.outputDevices,
+                onSelected: (id) => _service.selectOutputDevice(id, activePlayer: widget.activePlayer),
+                isInput: false,
+                primaryColor: primary,
               ),
 
               if (!widget.compact) ...[
@@ -440,6 +337,249 @@ class _RoomAudioSettingsSectionState extends State<RoomAudioSettingsSection> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDeviceSelector({
+    required BuildContext context,
+    required String label,
+    required AudioDeviceEndpoint selectedDevice,
+    required List<AudioDeviceEndpoint> devices,
+    required ValueChanged<String> onSelected,
+    required bool isInput,
+    required Color primaryColor,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: AppTypography.caption.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            return PopupMenuButton<String>(
+              tooltip: '',
+              position: PopupMenuPosition.under,
+              offset: const Offset(0, 6),
+              elevation: 12,
+              shadowColor: Colors.black.withValues(alpha: 0.8),
+              color: const Color(0xFF141722),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  width: 1.0,
+                ),
+              ),
+              constraints: BoxConstraints(
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+              ),
+              onSelected: (newId) {
+                HapticFeedback.selectionClick();
+                if (newId == '__refresh__') {
+                  _service.refreshDevices(activePlayer: widget.activePlayer);
+                } else {
+                  onSelected(newId);
+                }
+              },
+              itemBuilder: (context) {
+                final items = <PopupMenuEntry<String>>[];
+                for (final dev in devices) {
+                  final isSelected = dev.id == selectedDevice.id;
+                  items.add(
+                    PopupMenuItem<String>(
+                      value: dev.id,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      height: 52,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? primaryColor.withValues(alpha: 0.12)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                          border: isSelected
+                              ? Border.all(color: primaryColor.withValues(alpha: 0.35), width: 1)
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: (isSelected ? primaryColor : Colors.white)
+                                    .withValues(alpha: isSelected ? 0.2 : 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                _iconForDevice(dev),
+                                size: 16,
+                                color: isSelected ? primaryColor : AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    dev.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : AppColors.textPrimary,
+                                      fontSize: 12.5,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    ),
+                                  ),
+                                  if (dev.subtitle.isNotEmpty)
+                                    Text(
+                                      dev.subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isSelected
+                                            ? primaryColor.withValues(alpha: 0.85)
+                                            : AppColors.textMuted,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (isSelected)
+                              Icon(
+                                Icons.check_circle_rounded,
+                                size: 18,
+                                color: primaryColor,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                items.add(
+                  const PopupMenuDivider(height: 1),
+                );
+                items.add(
+                  PopupMenuItem<String>(
+                    value: '__refresh__',
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh_rounded, size: 15, color: primaryColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Обновить список устройств...',
+                          style: TextStyle(
+                            color: primaryColor,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+
+                return items;
+              },
+              child: Container(
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141720),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    width: 1.0,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        _iconForDevice(selectedDevice),
+                        size: 17,
+                        color: primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            selectedDevice.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            selectedDevice.subtitle.isNotEmpty
+                                ? selectedDevice.subtitle
+                                : (isInput ? 'Микрофон' : 'Устройство воспроизведения'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (_service.isRefreshing)
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          color: primaryColor,
+                        ),
+                      )
+                    else
+                      const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.textSecondary,
+                        size: 20,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

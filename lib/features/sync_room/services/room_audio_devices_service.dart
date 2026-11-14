@@ -281,16 +281,37 @@ class RoomAudioDevicesService extends ChangeNotifier {
 
   static String _detectIconType(String name) {
     final lower = name.toLowerCase();
-    if (lower.contains('bluetooth') || lower.contains('airpods') || lower.contains('tws') || lower.contains('hands-free')) {
+    if (lower.contains('bluetooth') ||
+        lower.contains('airpods') ||
+        lower.contains('tws') ||
+        lower.contains('hands-free') ||
+        lower.contains('wireless')) {
       return 'bluetooth';
     }
     if (lower.contains('webcam') || lower.contains('camera') || lower.contains('камер')) {
       return 'webcam';
     }
-    if (lower.contains('usb') || lower.contains('hyperx') || lower.contains('fifine') || lower.contains('yeti') || lower.contains('razer')) {
+    if (lower.contains('usb') ||
+        lower.contains('hyperx') ||
+        lower.contains('fifine') ||
+        lower.contains('yeti') ||
+        lower.contains('razer') ||
+        lower.contains('logitech') ||
+        lower.contains('g435') ||
+        lower.contains('corsair') ||
+        lower.contains('steelseries') ||
+        lower.contains('headset') ||
+        lower.contains('гарнитур') ||
+        lower.contains('steam streaming')) {
       return 'usb';
     }
-    if (lower.contains('hdmi') || lower.contains('displayport') || lower.contains('nvidia') || lower.contains('amd')) {
+    if (lower.contains('hdmi') ||
+        lower.contains('displayport') ||
+        lower.contains('nvidia') ||
+        lower.contains('amd') ||
+        lower.contains('msi') ||
+        lower.contains('asus') ||
+        lower.contains('tv')) {
       return 'hdmi';
     }
     return 'jack';

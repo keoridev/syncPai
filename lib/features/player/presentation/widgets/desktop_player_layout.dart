@@ -452,13 +452,15 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Полотно libmpv видео на черном фоне
-          Center(
-            child: Video(
-              controller: widget.videoController,
-              controls: NoVideoControls,
-              fit: BoxFit.contain,
-              fill: Colors.black,
+          // 1. Полотно libmpv видео на черном фоне (в RepaintBoundary для изоляции 60 FPS рендеринга от оверлея управления)
+          RepaintBoundary(
+            child: Center(
+              child: Video(
+                controller: widget.videoController,
+                controls: NoVideoControls,
+                fit: BoxFit.contain,
+                fill: Colors.black,
+              ),
             ),
           ),
 

@@ -40,39 +40,60 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
     final client = _supabase;
     if (client != null) {
       try {
-        final dynamic response = await client
-            .from('anime_reviews')
-            .select()
-            .eq('anime_id', animeKey)
-            .order('created_at', ascending: false)
-            .limit(50);
+        final parsedAnimeId = int.tryParse(animeKey.replaceAll(RegExp(r'[^0-9]'), ''));
+        if (parsedAnimeId != null && parsedAnimeId > 0) {
+          dynamic response;
+          try {
+            response = await client
+                .from('anime_reviews')
+                .select('*, profiles:user_id(username, avatar_url)')
+                .eq('anime_id', parsedAnimeId)
+                .order('created_at', ascending: false)
+                .limit(50);
+          } catch (_) {
+            // Fallback на простой select без foreign key
+            response = await client
+                .from('anime_reviews')
+                .select()
+                .eq('anime_id', parsedAnimeId)
+                .order('created_at', ascending: false)
+                .limit(50);
+          }
 
-        if (response is Iterable) {
-          for (final item in response) {
-            if (item is! Map) continue;
-            final row = item.cast<String, dynamic>();
-            final id = 'sync_${row['id']}';
-            seenIds.add(id);
+          if (response is Iterable) {
+            for (final item in response) {
+              if (item is! Map) continue;
+              final row = item.cast<String, dynamic>();
+              final id = 'sync_${row['id']}';
+              seenIds.add(id);
 
-            final parsedScore = row['score'] != null ? (row['score'] as num).toDouble() : null;
-            final createdAt = row['created_at'] != null
-                ? DateTime.tryParse('${row['created_at']}') ?? DateTime.now()
-                : DateTime.now();
+              final profileMap = row['profiles'] is Map ? (row['profiles'] as Map) : null;
+              final authorName = profileMap?['username'] as String? ??
+                  row['user_name'] as String? ??
+                  'Зритель SyncPai';
+              final authorAvatarUrl = profileMap?['avatar_url'] as String? ??
+                  row['user_avatar'] as String?;
 
-            list.add(
-              AnimeReview(
-                id: id,
-                source: ReviewSource.syncpai,
-                authorName: row['user_name'] as String? ?? 'Зритель SyncPai',
-                authorAvatarUrl: row['user_avatar'] as String?,
-                score: parsedScore,
-                sentiment: ReviewSentiment.fromScore(parsedScore),
-                content: row['content'] as String? ?? '',
-                containsSpoiler: row['contains_spoiler'] as bool? ?? false,
-                createdAt: createdAt,
-                likes: row['likes'] as int? ?? 0,
-              ),
-            );
+              final parsedScore = row['score'] != null ? (row['score'] as num).toDouble() : null;
+              final createdAt = row['created_at'] != null
+                  ? DateTime.tryParse('${row['created_at']}') ?? DateTime.now()
+                  : DateTime.now();
+
+              list.add(
+                AnimeReview(
+                  id: id,
+                  source: ReviewSource.syncpai,
+                  authorName: authorName,
+                  authorAvatarUrl: authorAvatarUrl,
+                  score: parsedScore,
+                  sentiment: ReviewSentiment.fromScore(parsedScore),
+                  content: row['content'] as String? ?? '',
+                  containsSpoiler: row['contains_spoiler'] as bool? ?? false,
+                  createdAt: createdAt,
+                  likes: row['likes'] as int? ?? 1,
+                ),
+              );
+            }
           }
         }
       } catch (e) {
@@ -147,18 +168,24 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
     final client = _supabase;
     if (client != null) {
       try {
-        await client.from('anime_reviews').insert({
-          'id': reviewId.replaceFirst('sync_', ''),
-          'anime_id': animeKey,
-          'user_id': userId,
-          'user_name': userName,
-          'user_avatar': userAvatar,
-          'score': score,
-          'content': content.trim(),
-          'contains_spoiler': containsSpoiler,
-          'created_at': now.toIso8601String(),
-          'likes': 1,
-        });
+        final currentUserId = client.auth.currentUser?.id;
+        final effectiveUserId = currentUserId ?? (userId.startsWith('guest_') ? null : userId);
+        final parsedAnimeId = int.tryParse(animeKey.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+        if (effectiveUserId != null && parsedAnimeId > 0) {
+          final intScore = score.round().clamp(1, 10);
+          final trimmedContent = content.trim();
+          if (trimmedContent.length >= 3) {
+            await client.from('anime_reviews').upsert({
+              'user_id': effectiveUserId,
+              'anime_id': parsedAnimeId,
+              'score': intScore,
+              'content': trimmedContent,
+              'contains_spoiler': containsSpoiler,
+              'created_at': now.toUtc().toIso8601String(),
+            });
+          }
+        }
       } catch (e) {
         debugPrint('[SyncPaiReviews] Supabase insert warning (offline/schema fallback): $e');
       }

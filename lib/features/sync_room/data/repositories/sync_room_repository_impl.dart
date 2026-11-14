@@ -318,6 +318,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         'poster_url': posterUrl,
         'episode_index': episodeIndex,
         'current_time_sec': 0.0,
+        'current_position_ms': 0,
         'is_playing': false,
         if (currentUser != null && !currentUser.isAnonymous) 'host_id': currentUser.id,
       };

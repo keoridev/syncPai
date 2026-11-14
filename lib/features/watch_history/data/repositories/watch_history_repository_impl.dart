@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/watch_history_item.dart';
 import '../../domain/repositories/watch_history_repository.dart';
 
@@ -73,6 +74,22 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
 
     final encoded = jsonEncode(updated.map((e) => e.toJson()).toList());
     await prefs.setString(_historyKey, encoded);
+
+    // Асинхронное логирование сессии просмотра в Supabase watch_sessions
+    try {
+      final client = Supabase.instance.client;
+      final currentUid = client.auth.currentUser?.id;
+      if (currentUid != null && item.titleId > 0 && item.positionMs > 0) {
+        final sessionMs = item.positionMs.clamp(0, 14400000);
+        client.from('watch_sessions').insert({
+          'user_id': currentUid,
+          'anime_id': item.titleId,
+          'episode': item.episode,
+          'watched_ms': sessionMs,
+          'watched_at': item.updatedAt.toUtc().toIso8601String(),
+        }).then((_) {}).catchError((_) {});
+      }
+    } catch (_) {}
   }
 
   @override

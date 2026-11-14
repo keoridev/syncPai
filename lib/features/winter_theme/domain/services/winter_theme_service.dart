@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
 
 /// Сервис управления новогодней темой SyncPai «Зимняя сказка 2026».
@@ -62,6 +63,23 @@ class WinterThemeService extends ChangeNotifier {
       _isWinterMascotEnabled = prefs.getBool(_prefWinterMascotKey) ?? true;
       _isManualOverride = prefs.getBool(_prefManualOverrideKey) ?? true;
       notifyListeners();
+
+      // Проверяем удаленный флаг app_config (если настроен в Supabase)
+      try {
+        final client = Supabase.instance.client;
+        final res = await client
+            .from('app_config')
+            .select('value')
+            .eq('key', 'winter_2026')
+            .maybeSingle();
+        if (res != null && res['value'] is Map) {
+          final config = (res['value'] as Map).cast<String, dynamic>();
+          if (config.containsKey('enabled') && prefs.getBool(_prefWinterThemeKey) == null) {
+            _isWinterThemeEnabled = config['enabled'] == true;
+            notifyListeners();
+          }
+        }
+      } catch (_) {}
     } catch (_) {}
   }
 

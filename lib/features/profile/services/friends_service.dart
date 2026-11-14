@@ -38,31 +38,85 @@ class FriendsService {
       }
     }
 
-    // Если список пуст, подтягиваем пользователей из Supabase
+    // Если список пуст, подтягиваем пользователей из Supabase (friendships или profiles)
     if (list.isEmpty) {
       try {
         final client = Supabase.instance.client;
         final currentUid = client.auth.currentUser?.id;
-        final query = client.from('profiles').select('id, username, avatar_url, custom_status');
-        final rows = currentUid != null
-            ? await query.neq('id', currentUid).limit(6)
-            : await query.limit(6);
 
-        for (final row in rows) {
-          final username = (row['username'] ?? '').toString().trim();
-          if (username.isNotEmpty) {
-            list.add({
-              'id': row['id']?.toString() ?? 'sup_${username.hashCode}',
-              'name': username,
-              'avatar': (row['avatar_url'] ?? 'cat').toString(),
-              'status': (row['custom_status'] ?? 'В сети').toString(),
-              'statusText': (row['custom_status'] ?? 'В сети').toString(),
-              'room': null,
-              'roomCode': null,
-              'isOnline': true,
-              'canJoin': false,
-              'streakDays': 1,
-            });
+        // Сначала пробуем получить реальных подтвержденных друзей из friendships
+        if (currentUid != null) {
+          try {
+            final dynamic friendships = await client
+                .from('friendships')
+                .select('user_id, friend_id, status')
+                .or('user_id.eq.$currentUid,friend_id.eq.$currentUid')
+                .eq('status', 'accepted')
+                .limit(20);
+
+            if (friendships is Iterable && friendships.isNotEmpty) {
+              final friendUids = <String>{};
+              for (final f in friendships) {
+                if (f is! Map) continue;
+                final uId = f['user_id']?.toString();
+                final fId = f['friend_id']?.toString();
+                if (uId != null && uId != currentUid) friendUids.add(uId);
+                if (fId != null && fId != currentUid) friendUids.add(fId);
+              }
+
+              if (friendUids.isNotEmpty) {
+                final friendProfiles = await client
+                    .from('profiles')
+                    .select('id, username, avatar_url, last_seen_at')
+                    .filter('id', 'in', friendUids.toList());
+
+                for (final row in friendProfiles) {
+                  final username = (row['username'] ?? '').toString().trim();
+                  if (username.isNotEmpty) {
+                    list.add({
+                      'id': row['id']?.toString() ?? 'sup_${username.hashCode}',
+                      'name': username,
+                      'avatar': (row['avatar_url'] ?? 'cat').toString(),
+                      'status': 'В сети',
+                      'statusText': 'В сети',
+                      'room': null,
+                      'roomCode': null,
+                      'isOnline': true,
+                      'canJoin': false,
+                      'streakDays': 1,
+                    });
+                  }
+                }
+              }
+            }
+          } catch (_) {
+            // Игнорируем ошибку friendships, если таблица еще создается
+          }
+        }
+
+        // Если подтвержденных друзей еще нет, предлагаем профили сообщества
+        if (list.isEmpty) {
+          final query = client.from('profiles').select('id, username, avatar_url, last_seen_at');
+          final rows = currentUid != null
+              ? await query.neq('id', currentUid).limit(6)
+              : await query.limit(6);
+
+          for (final row in rows) {
+            final username = (row['username'] ?? '').toString().trim();
+            if (username.isNotEmpty) {
+              list.add({
+                'id': row['id']?.toString() ?? 'sup_${username.hashCode}',
+                'name': username,
+                'avatar': (row['avatar_url'] ?? 'cat').toString(),
+                'status': 'В сети',
+                'statusText': 'В сети',
+                'room': null,
+                'roomCode': null,
+                'isOnline': true,
+                'canJoin': false,
+                'streakDays': 1,
+              });
+            }
           }
         }
         if (list.isNotEmpty) {
@@ -145,6 +199,26 @@ class FriendsService {
 
     list.insert(0, normalized);
     await saveFriends(list);
+
+    // Синхронизируем дружбу с облачной таблицей friendships при авторизации
+    try {
+      final client = Supabase.instance.client;
+      final currentUid = client.auth.currentUser?.id;
+      final friendId = newFriend['id']?.toString();
+      if (currentUid != null &&
+          friendId != null &&
+          friendId != currentUid &&
+          !friendId.startsWith('fr_') &&
+          !friendId.startsWith('sup_')) {
+        await client.from('friendships').upsert({
+          'user_id': currentUid,
+          'friend_id': friendId,
+          'status': 'accepted',
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
+    } catch (_) {}
+
     return true;
   }
 

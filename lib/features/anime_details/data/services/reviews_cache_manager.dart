@@ -141,3 +141,4 @@ class ReviewsCacheManager {
     _memoryCache[key] = bundle;
   }
 }
+

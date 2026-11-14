@@ -29,3 +29,4 @@ abstract class AnimeReviewsRepository {
     required bool containsSpoiler,
   });
 }
+

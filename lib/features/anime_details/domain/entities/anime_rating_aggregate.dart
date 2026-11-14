@@ -111,3 +111,4 @@ class AnimeRatingAggregate extends Equatable {
         negativeCount,
       ];
 }
+

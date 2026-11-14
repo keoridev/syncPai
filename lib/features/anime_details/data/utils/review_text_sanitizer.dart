@@ -99,3 +99,4 @@ class SanitizedResult {
     required this.containsSpoiler,
   });
 }
+

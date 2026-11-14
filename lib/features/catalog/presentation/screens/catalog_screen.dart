@@ -87,8 +87,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
         .withLightness((HSLColor.fromColor(themePrimary).lightness + 0.15).clamp(0.0, 1.0))
         .toColor();
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    final bool isDesktop = isDesktopOS || screenWidth >= 900;
     final isNarrow = screenWidth <= 360;
-    final horizontalPad = isNarrow ? 12.0 : 16.0;
+    final horizontalPad = isNarrow ? 12.0 : (isDesktop ? 20.0 : 16.0);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -103,9 +105,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
             slivers: [
               // 1. Плавающий SliverAppBar (Логотип слева, профиль и кнопка поиска справа)
               SliverAppBar(
-                floating: true,
-                snap: true,
-                pinned: false,
+                floating: !isDesktop,
+                snap: !isDesktop,
+                pinned: isDesktop,
                 backgroundColor: AppColors.background,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
@@ -113,24 +115,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 titleSpacing: horizontalPad,
                 automaticallyImplyLeading: false,
                 title: _isSearchOpen
-                    ? AppSearchBar(
-                        controller: _searchController,
-                        onChanged: (query) {
-                          context.read<CatalogCubit>().onSearchQueryChanged(query);
-                        },
-                        onClear: () {
-                          context.read<CatalogCubit>().onSearchQueryChanged('');
-                        },
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 540),
+                        child: AppSearchBar(
+                          controller: _searchController,
+                          onChanged: (query) {
+                            context.read<CatalogCubit>().onSearchQueryChanged(query);
+                          },
+                          onClear: () {
+                            context.read<CatalogCubit>().onSearchQueryChanged('');
+                          },
+                        ),
                       )
                     : (screenWidth >= 768
-                        ? Text(
-                            'Каталог аниме',
-                            style: AppTypography.displayMedium.copyWith(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 22,
-                              letterSpacing: -0.4,
-                            ),
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SyncPaiLogo(size: 28),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Каталог аниме',
+                                style: AppTypography.displayMedium.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 22,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                            ],
                           )
                         : Row(
                             mainAxisSize: MainAxisSize.min,
@@ -589,24 +601,28 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       );
                     }
 
-                    final columns = screenWidth > 900
-                        ? 5
-                        : (screenWidth > 600
-                            ? 4
-                            : state.gridDensity.mobileColumns);
-                    // Дефолтный естественный аспект 2:3 без обрезки по вертикали
-                    final ratio = columns >= 3 ? 0.50 : 0.55;
-                    final spacing = columns >= 3 ? 8.0 : 12.0;
+                    // На десктопе (isDesktopOS / screenWidth >= 900) используем SliverGridDelegateWithMaxCrossAxisExtent:
+                    // maxCrossAxisExtent: 215 (7-8 карточек на 1600-1920px), spacing: 16/20, ratio: 0.56
+                    final SliverGridDelegate gridDelegate = isDesktop
+                        ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 215,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 20,
+                            childAspectRatio: 0.56,
+                          )
+                        : SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: screenWidth > 600
+                                ? 4
+                                : state.gridDensity.mobileColumns,
+                            childAspectRatio: (screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 0.50 : 0.55,
+                            crossAxisSpacing: (screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 8.0 : 12.0,
+                            mainAxisSpacing: ((screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 8.0 : 12.0) + 4,
+                          );
 
                     return SliverPadding(
                       padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                       sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: columns,
-                          childAspectRatio: ratio,
-                          crossAxisSpacing: spacing,
-                          mainAxisSpacing: spacing + 4,
-                        ),
+                        gridDelegate: gridDelegate,
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final title = titles[index];
@@ -659,8 +675,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
     required bool isListMode,
     required double screenWidth,
   }) {
-    final int columnsCount = screenWidth > 900 ? 5 : (screenWidth > 600 ? 4 : 2);
-    const double aspectRatio = 0.68;
+    final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    final bool isDesktop = isDesktopOS || screenWidth >= 900;
 
     if (isListMode) {
       return SliverPadding(
@@ -674,18 +690,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
       );
     }
 
+    final SliverGridDelegate gridDelegate = isDesktop
+        ? const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 215,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 20,
+            childAspectRatio: 0.56,
+          )
+        : SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: screenWidth > 600 ? 4 : 2,
+            childAspectRatio: 0.56,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 16,
+          );
+
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: horizontalPad),
       sliver: SliverGrid(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columnsCount,
-          childAspectRatio: aspectRatio,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 16,
-        ),
+        gridDelegate: gridDelegate,
         delegate: SliverChildBuilderDelegate(
           (context, index) => const AnimeCardSkeletonItem(),
-          childCount: columnsCount * 4,
+          childCount: isDesktop ? 16 : 8,
         ),
       ),
     );

@@ -1781,9 +1781,19 @@ class _RecentHistoryCarousel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rawItems = items.isNotEmpty ? items : _fallbackSampleItems;
-    // Дедупликация по titleId, чтобы серии одного аниме не дублировались карточками
+    // Строгая дедупликация по titleId и названию: один тайтл = максимум 1 карточка в карусели
     final seenIds = <int>{};
-    final displayItems = rawItems.where((i) => seenIds.add(i.titleId)).toList();
+    final seenNames = <String>{};
+    final displayItems = rawItems.where((i) {
+      final name = i.titleName.trim().toLowerCase();
+      if ((i.titleId > 0 && seenIds.contains(i.titleId)) ||
+          (name.isNotEmpty && seenNames.contains(name))) {
+        return false;
+      }
+      if (i.titleId > 0) seenIds.add(i.titleId);
+      if (name.isNotEmpty) seenNames.add(name);
+      return true;
+    }).toList();
 
     return _GlassCard(
       accentColor: currentAccentColor,

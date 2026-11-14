@@ -21,6 +21,20 @@ import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Игнорируем известный баг Flutter Engine на Windows при нажатии Alt (Alt Left assertion в raw_keyboard.dart)
+  final defaultOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    final msg = details.exceptionAsString();
+    if (msg.contains('raw_keyboard.dart') || msg.contains('keysPressed.isNotEmpty')) {
+      return;
+    }
+    if (defaultOnError != null) {
+      defaultOnError(details);
+    } else {
+      FlutterError.presentError(details);
+    }
+  };
+
   MediaKit.ensureInitialized();
 
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {

@@ -1799,6 +1799,19 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
   List<Widget> _buildHistorySlivers(BuildContext context, WatchHistoryState historyState) {
     var historyItems = List<WatchHistoryItem>.from(historyState.history);
+    // Строгая дедупликация: один тайтл = одна позиция в истории
+    final seenIds = <int>{};
+    final seenNames = <String>{};
+    historyItems = historyItems.where((h) {
+      final name = h.titleName.trim().toLowerCase();
+      if ((h.titleId > 0 && seenIds.contains(h.titleId)) ||
+          (name.isNotEmpty && seenNames.contains(name))) {
+        return false;
+      }
+      if (h.titleId > 0) seenIds.add(h.titleId);
+      if (name.isNotEmpty) seenNames.add(name);
+      return true;
+    }).toList();
     if (_searchQuery.isNotEmpty) {
       historyItems = historyItems
           .where((h) => h.titleName.toLowerCase().contains(_searchQuery.toLowerCase()))

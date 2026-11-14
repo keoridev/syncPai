@@ -208,6 +208,16 @@ class AnimeCatalogModel {
         : (shikimoriId > 0 ? shikimoriId.toString() : '0');
 
     String parsedStatus = 'ongoing';
+    if (json['is_ongoing'] == false) {
+      parsedStatus = 'released';
+    } else if (json['is_ongoing'] == true) {
+      parsedStatus = 'ongoing';
+    }
+    if (json['is_in_production'] == true &&
+        (json['episodes_total'] == 0 || json['episodes_total'] == null) &&
+        json['is_ongoing'] == false) {
+      parsedStatus = 'anons';
+    }
     if (json['status'] is Map) {
       final sMap = json['status'] as Map;
       final code = (sMap['code'] ?? sMap['value'] ?? '').toString().toLowerCase();

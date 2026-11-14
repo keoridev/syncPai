@@ -23,6 +23,13 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
 
   SyncRoomCubit({required this.repository}) : super(const SyncRoomInitial());
 
+  /// Сбросить ошибку комнаты
+  void clearError() {
+    if (state is SyncRoomError) {
+      emit(const SyncRoomInitial());
+    }
+  }
+
   /// 1. Режим хоста: создать комнату и открыть интерактивное лобби
   Future<void> createRoom({
     required AnimeTitle title,

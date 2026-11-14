@@ -195,7 +195,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         } catch (_) {}
       }
 
-      if (fetchedTitles.isEmpty) {
+      if (fetchedTitles.isEmpty && (genreParam == null || genreParam == 'Все')) {
         fetchedTitles = await getUpdates(page: page, limit: 40);
       }
 
@@ -481,7 +481,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         } catch (_) {}
       }
 
-      if (titles.isEmpty) {
+      if (titles.isEmpty && genres.isEmpty && statusFilter == null) {
         titles = await getUpdates(page: 1, limit: 40);
       }
 
@@ -549,6 +549,42 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: current.sortBy,
         statusFilter: current.statusFilter,
         matchAll: current.matchAllGenres,
+      );
+    }
+  }
+
+  /// Единовременное пакетное применение всех параметров фильтрации из шторки (Filter Sheet)
+  void applyFilterSheet({
+    required Set<String> genres,
+    required CatalogSort sortBy,
+    required bool matchAll,
+    String? statusFilter,
+  }) {
+    if (state is! CatalogLoaded) return;
+    final current = state as CatalogLoaded;
+
+    if (current.searchQuery.isNotEmpty) {
+      final filtered = _applyFiltersAndSorting(
+        current.titles,
+        genres: genres,
+        sortBy: sortBy,
+        matchAll: matchAll,
+        statusFilter: statusFilter,
+      );
+      emit(current.copyWith(
+        selectedGenres: genres,
+        sortBy: sortBy,
+        matchAllGenres: matchAll,
+        statusFilter: statusFilter,
+        clearStatusFilter: statusFilter == null,
+        filteredTitles: filtered,
+      ));
+    } else {
+      _fetchFilteredCatalog(
+        genres: genres,
+        sortBy: sortBy,
+        statusFilter: statusFilter,
+        matchAll: matchAll,
       );
     }
   }

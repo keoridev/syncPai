@@ -74,20 +74,12 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
 
   void _applyFilters() {
     final cubit = context.read<CatalogCubit>();
-    if (_selectedGenres.isEmpty) {
-      cubit.clearGenres();
-    } else {
-      for (final g in allGenres) {
-        final currentlySelected = widget.currentState.selectedGenres.contains(g);
-        final wantsSelected = _selectedGenres.contains(g);
-        if (currentlySelected != wantsSelected) {
-          cubit.toggleGenre(g);
-        }
-      }
-    }
-    cubit.setSortBy(_sortBy);
-    cubit.setMatchAllGenres(_matchAll);
-    cubit.setStatusFilter(_status);
+    cubit.applyFilterSheet(
+      genres: _selectedGenres,
+      sortBy: _sortBy,
+      matchAll: _matchAll,
+      statusFilter: _status,
+    );
     Navigator.of(context).pop();
   }
 

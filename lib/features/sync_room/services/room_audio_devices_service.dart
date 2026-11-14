@@ -19,6 +19,22 @@ class AudioDeviceEndpoint {
     required this.isInput,
     this.iconType = 'default',
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'subtitle': subtitle,
+        'isInput': isInput,
+        'iconType': iconType,
+      };
+
+  factory AudioDeviceEndpoint.fromJson(Map<String, dynamic> json) => AudioDeviceEndpoint(
+        id: json['id'] as String? ?? 'default',
+        label: json['label'] as String? ?? '',
+        subtitle: json['subtitle'] as String? ?? '',
+        isInput: json['isInput'] as bool? ?? false,
+        iconType: json['iconType'] as String? ?? 'default',
+      );
 }
 
 /// Сервис управления микрофоном (устройством ввода) и наушниками/динамиками (устройством вывода)
@@ -93,8 +109,44 @@ class RoomAudioDevicesService extends ChangeNotifier {
       _isMicMuted = prefs.getBool(_prefMicMutedKey) ?? false;
       _isNoiseSuppression = prefs.getBool(_prefNoiseSuppKey) ?? true;
       _micVolume = prefs.getDouble(_prefMicVolumeKey) ?? 0.85;
+
+      final cachedIn = prefs.getStringList('cached_audio_inputs');
+      if (cachedIn != null && cachedIn.isNotEmpty) {
+        final parsed = cachedIn
+            .map((s) {
+              try {
+                return AudioDeviceEndpoint.fromJson(jsonDecode(s) as Map<String, dynamic>);
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<AudioDeviceEndpoint>()
+            .toList();
+        if (parsed.isNotEmpty) {
+          _inputDevices = [..._defaultInputDevices, ...parsed];
+        }
+      }
+
+      final cachedOut = prefs.getStringList('cached_audio_outputs');
+      if (cachedOut != null && cachedOut.isNotEmpty) {
+        final parsed = cachedOut
+            .map((s) {
+              try {
+                return AudioDeviceEndpoint.fromJson(jsonDecode(s) as Map<String, dynamic>);
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<AudioDeviceEndpoint>()
+            .toList();
+        if (parsed.isNotEmpty) {
+          _outputDevices = [..._defaultOutputDevices, ...parsed];
+        }
+      }
       notifyListeners();
     } catch (_) {}
+
+    unawaited(refreshDevices());
   }
 
   /// Опрашивает реальные аудиоустройства Windows и `media_kit` плеера (если передан)
@@ -143,7 +195,7 @@ class RoomAudioDevicesService extends ChangeNotifier {
               r"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $devs = Get-PnpDevice -Class AudioEndpoint -Status OK -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FriendlyName; if (-not $devs) { $devs = (Get-CimInstance Win32_SoundDevice).Name }; $devs",
             ],
             stdoutEncoding: utf8,
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(seconds: 8));
 
           if (result.exitCode == 0 && result.stdout is String) {
             final lines = (result.stdout as String)
@@ -207,6 +259,20 @@ class RoomAudioDevicesService extends ChangeNotifier {
 
       _inputDevices = discoveredInputs;
       _outputDevices = discoveredOutputs;
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final inToCache = discoveredInputs
+            .where((d) => d.id != 'default_input')
+            .map((d) => jsonEncode(d.toJson()))
+            .toList();
+        final outToCache = discoveredOutputs
+            .where((d) => d.id != 'auto')
+            .map((d) => jsonEncode(d.toJson()))
+            .toList();
+        await prefs.setStringList('cached_audio_inputs', inToCache);
+        await prefs.setStringList('cached_audio_outputs', outToCache);
+      } catch (_) {}
     } finally {
       _isRefreshing = false;
       notifyListeners();

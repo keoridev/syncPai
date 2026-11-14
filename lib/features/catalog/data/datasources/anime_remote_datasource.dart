@@ -65,6 +65,53 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
               ),
             );
 
+  static const Map<String, int> _genreNameToId = {
+    'комедия': 1,
+    'меха': 2,
+    'романтика': 3,
+    'сенен': 4,
+    'сёнэн': 4,
+    'сейнен': 5,
+    'сэйнэн': 5,
+    'триллер': 6,
+    'школа': 7,
+    'драма': 8,
+    'мистика': 9,
+    'музыка': 10,
+    'повседневность': 11,
+    'спорт': 12,
+    'ужасы': 13,
+    'экшен': 14,
+    'экшн': 14,
+    'боевые искусства': 15,
+    'демоны': 16,
+    'игры': 17,
+    'игра': 17,
+    'магия': 18,
+    'психологическое': 19,
+    'психология': 19,
+    'военное': 20,
+    'супер сила': 21,
+    'суперсила': 21,
+    'фантастика': 22,
+    'этти': 23,
+    'вампиры': 24,
+    'детектив': 25,
+    'исторический': 26,
+    'история': 26,
+    'приключения': 27,
+    'сверхъестественное': 28,
+    'фэнтези': 29,
+    'киберпанк': 30,
+    'седзе': 31,
+    'сёдзё': 31,
+    'гарем': 32,
+    'дзесей': 33,
+    'дзёсей': 33,
+    'исекай': 34,
+    'самураи': 35,
+  };
+
   @override
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
@@ -76,8 +123,21 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       'page': page,
       'limit': limit,
     };
-    if (genres != null && genres.trim().isNotEmpty) {
-      queryParams['genres'] = genres.trim();
+    if (genres != null && genres.trim().isNotEmpty && genres.trim() != 'Все') {
+      final parts = genres
+          .split(RegExp(r'[,;]+'))
+          .map((s) => s.trim().toLowerCase().replaceAll('ё', 'е'))
+          .where((s) => s.isNotEmpty);
+      final ids = <int>[];
+      for (final p in parts) {
+        final id = _genreNameToId[p] ?? int.tryParse(p);
+        if (id != null && !ids.contains(id)) {
+          ids.add(id);
+        }
+      }
+      if (ids.isNotEmpty) {
+        queryParams['f[genres][]'] = ids.length == 1 ? ids.first : ids;
+      }
     }
     if (year != null && year.trim().isNotEmpty) {
       queryParams['years'] = year.trim();

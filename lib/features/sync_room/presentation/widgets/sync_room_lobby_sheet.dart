@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
-import 'package:sync_pai/core/services/adaptive_palette_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -70,29 +69,15 @@ class SyncRoomLobbySheet extends StatefulWidget {
   State<SyncRoomLobbySheet> createState() => _SyncRoomLobbySheetState();
 }
 
-class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
-    with SingleTickerProviderStateMixin {
+class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
   SyncLobbyTab _currentTab = SyncLobbyTab.host;
   final TextEditingController _pinController = TextEditingController();
   final FocusNode _pinFocusNode = FocusNode();
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
-  Color _themeAccent = AppColors.primary;
+  final Color _themeAccent = AppColors.primary;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
-
-    _pulseAnimation = Tween<double>(begin: 0.95, end: 1.25).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-
-    // Извлечение динамической палитры из постера тайтла (Adaptive Theming)
-    _extractAdaptivePalette();
 
     // По умолчанию сразу создаем комнату для выбранного тайтла и серии в 720p HD
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -104,30 +89,16 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
     });
   }
 
-  Future<void> _extractAdaptivePalette() async {
-    final poster = widget.title.posterMedium.isNotEmpty
-        ? widget.title.posterMedium
-        : widget.title.posterSmall;
-    if (poster.isNotEmpty) {
-      final color = await AdaptivePaletteService.instance.extractDominantColor(
-        poster,
-        fallbackColor: AppColors.primary,
-      );
-      if (mounted) {
-        setState(() => _themeAccent = color);
-      }
-    }
-  }
-
   @override
   void dispose() {
-    _pulseController.dispose();
     _pinController.dispose();
     _pinFocusNode.dispose();
     super.dispose();
   }
 
   void _onPinChanged(String value) {
+    // При любом вводе сбрасываем предыдущую ошибку
+    context.read<SyncRoomCubit>().clearError();
     // Авто-проверка при заполнении 6 символов
     final digits = value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
     if (digits.length >= 6) {
@@ -318,6 +289,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
           setState(() {
             _currentTab = tab;
             if (tab == SyncLobbyTab.join) {
+              context.read<SyncRoomCubit>().clearError();
               _pinFocusNode.requestFocus();
             } else {
               _pinFocusNode.unfocus();
@@ -905,9 +877,11 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                 color: Colors.white.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: errorMsg != null
+                  color: (errorMsg != null && _pinController.text.isNotEmpty)
                       ? AppColors.syncError
-                      : Colors.white.withValues(alpha: 0.15),
+                      : (_pinFocusNode.hasFocus
+                          ? _themeAccent
+                          : Colors.white.withValues(alpha: 0.15)),
                   width: 1.4,
                 ),
               ),
@@ -1137,15 +1111,12 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet>
                           ),
                         ],
                       )
-                    : ScaleTransition(
-                        scale: _pulseAnimation,
-                        child: Text(
-                          'Ждем подключения друга...',
-                          style: TextStyle(
-                            color: AppColors.primaryLight,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
+                    : Text(
+                        'Ждем подключения друга...',
+                        style: TextStyle(
+                          color: AppColors.primaryLight,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
               ),

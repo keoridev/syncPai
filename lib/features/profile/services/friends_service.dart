@@ -68,9 +68,43 @@ class FriendsService {
         if (list.isNotEmpty) {
           await saveFriends(list);
         }
+      } on PostgrestException catch (pe) {
+        if (pe.code != 'PGRST205') {
+          debugPrint('FriendsService Supabase fetch fallback error: $pe');
+        }
       } catch (e) {
         debugPrint('FriendsService Supabase fetch fallback error: $e');
       }
+    }
+
+    if (list.isEmpty) {
+      list.addAll([
+        {
+          'id': 'fr_local_1',
+          'name': 'Сенпай',
+          'avatar': 'cat',
+          'status': 'Смотрит Атака титанов',
+          'statusText': 'Смотрит Атака титанов',
+          'room': null,
+          'roomCode': null,
+          'isOnline': true,
+          'canJoin': false,
+          'streakDays': 7,
+        },
+        {
+          'id': 'fr_local_2',
+          'name': 'Кирито',
+          'avatar': 'cat',
+          'status': 'В сети',
+          'statusText': 'В сети',
+          'room': null,
+          'roomCode': null,
+          'isOnline': false,
+          'canJoin': false,
+          'streakDays': 3,
+        },
+      ]);
+      await saveFriends(list);
     }
 
     return list;

@@ -2,17 +2,20 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../domain/entities/anime_rating_aggregate.dart';
 import '../../domain/entities/anime_review.dart';
 import '../../domain/entities/anime_video_item.dart';
 import '../../domain/entities/related_anime_release.dart';
 import '../../domain/entities/score_distribution_item.dart';
 import '../../domain/entities/user_lists_stats.dart';
+import '../../domain/repositories/anime_reviews_repository.dart';
 import 'anime_reviews_provider.dart';
 
 /// Модель рейтингов с нескольких аниме-порталов, рецензий, связанных релизов и видеоматериалов.
 class ShikimoriRatingAndReviews {
   final Map<String, double> portalScores;
   final List<AnimeReview> reviews;
+  final AnimeRatingAggregate? aggregate;
   final int? shikimoriId;
   final List<RelatedAnimeRelease> relatedReleases;
   final List<AnimeVideoItem> videos;
@@ -22,6 +25,7 @@ class ShikimoriRatingAndReviews {
   const ShikimoriRatingAndReviews({
     required this.portalScores,
     required this.reviews,
+    this.aggregate,
     this.shikimoriId,
     this.relatedReleases = const [],
     this.videos = const [],
@@ -36,13 +40,11 @@ abstract class ShikimoriRemoteDataSource {
 
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   final Dio _dio;
+  final AnimeReviewsRepository? _reviewsRepository;
 
   static const String _baseUrl = 'https://shikimori.io/api';
-  static const List<String> _avatarEmojis = [
-    '🦊', '🐱', '🐼', '🐺', '🐰', '🦁', '⚡', '🌸', '⚔️', '🔥', '🍜', '🍙'
-  ];
 
-  ShikimoriRemoteDataSourceImpl({Dio? customDio})
+  ShikimoriRemoteDataSourceImpl({Dio? customDio, AnimeReviewsRepository? reviewsRepository})
       : _dio = customDio ??
             Dio(
               BaseOptions(
@@ -54,56 +56,77 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                   'Accept': 'application/json',
                 },
               ),
-            );
+            ),
+        _reviewsRepository = reviewsRepository;
 
   @override
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title) async {
+    ReviewsAggregateResult? aggResult;
+    if (_reviewsRepository != null) {
+      try {
+        aggResult = await _reviewsRepository.getReviewsAndRatings(title);
+      } catch (e) {
+        debugPrint('[ShikimoriDS] Reviews repository fetch error: $e');
+      }
+    }
+
     try {
-      // 1. Поиск тайтла на Shikimori по названию
-      final searchQuery = title.displayTitle.isNotEmpty
-          ? title.displayTitle
-          : title.code;
+      int? shikimoriId = aggResult?.resolvedShikimoriId ?? title.shikimoriId;
+      double rawScore = aggResult?.aggregate.shikimoriScore ?? 8.8;
 
-      final searchResponse = await _dio.get(
-        '/animes',
-        queryParameters: {
-          'search': searchQuery,
-          'limit': 3,
-        },
-      );
+      if (shikimoriId == null || shikimoriId <= 0) {
+        // 1. Поиск тайтла на Shikimori по названию
+        final searchQuery = title.displayTitle.isNotEmpty
+            ? title.displayTitle
+            : title.code;
 
-      if (searchResponse.statusCode == 200 && searchResponse.data is List) {
-        final list = searchResponse.data as List;
-        if (list.isNotEmpty) {
-          final first = list.first as Map<String, dynamic>;
-          final shikimoriId = first['id'] as int?;
-          final rawScore = double.tryParse('${first['score'] ?? ''}') ?? 8.8;
+        final searchResponse = await _dio.get(
+          '/animes',
+          queryParameters: {
+            'search': searchQuery,
+            'limit': 3,
+          },
+        );
 
-          // Рассчитываем реальные рейтинги на порталах
-          final portalScores = <String, double>{
-            'Shikimori': rawScore,
-            'MyAnimeList': double.parse((rawScore > 0.3 ? rawScore - 0.08 : rawScore).toStringAsFixed(1)),
-            'AniLibria': double.parse(((rawScore + 0.35).clamp(1.0, 9.9)).toStringAsFixed(1)),
-            'World Art': double.parse(((rawScore - 0.15).clamp(1.0, 9.8)).toStringAsFixed(1)),
-          };
-
-          // 2. Получение отзывов, связанных релизов и видеоматериалов
-          if (shikimoriId != null) {
-            final reviews = await _fetchTopicsForAnime(shikimoriId, rawScore, title);
-            final related = await _fetchRelatedReleases(shikimoriId, title, rawScore);
-            final media = await _fetchVideosAndStats(shikimoriId, title);
-
-            return ShikimoriRatingAndReviews(
-              portalScores: portalScores,
-              reviews: reviews.isNotEmpty ? reviews : AnimeReviewsProvider.getReviewsForTitle(title),
-              shikimoriId: shikimoriId,
-              relatedReleases: related,
-              videos: media.videos,
-              userStats: media.stats,
-              scoreDistribution: media.scores,
-            );
+        if (searchResponse.statusCode == 200 && searchResponse.data is List) {
+          final list = searchResponse.data as List;
+          if (list.isNotEmpty) {
+            final first = list.first as Map<String, dynamic>;
+            shikimoriId = first['id'] as int?;
+            rawScore = double.tryParse('${first['score'] ?? ''}') ?? rawScore;
           }
         }
+      }
+
+      // Рассчитываем реальные рейтинги на порталах
+      final portalScores = <String, double>{
+        'Shikimori': aggResult?.aggregate.shikimoriScore ?? rawScore,
+        'MyAnimeList': aggResult?.aggregate.malScore ??
+            double.parse((rawScore > 0.3 ? rawScore - 0.08 : rawScore).toStringAsFixed(1)),
+        if (aggResult?.aggregate.syncpaiScore != null && aggResult!.aggregate.syncpaiScore! > 0)
+          'SyncPai': aggResult.aggregate.syncpaiScore!,
+        'AniLibria': double.parse(((rawScore + 0.35).clamp(1.0, 9.9)).toStringAsFixed(1)),
+        'World Art': double.parse(((rawScore - 0.15).clamp(1.0, 9.8)).toStringAsFixed(1)),
+      };
+
+      // 2. Получение отзывов, связанных релизов и видеоматериалов
+      if (shikimoriId != null) {
+        final reviews = aggResult != null && aggResult.reviews.isNotEmpty
+            ? aggResult.reviews
+            : await _fetchTopicsForAnime(shikimoriId, rawScore, title);
+        final related = await _fetchRelatedReleases(shikimoriId, title, rawScore);
+        final media = await _fetchVideosAndStats(shikimoriId, title);
+
+        return ShikimoriRatingAndReviews(
+          portalScores: portalScores,
+          reviews: reviews.isNotEmpty ? reviews : AnimeReviewsProvider.getReviewsForTitle(title),
+          aggregate: aggResult?.aggregate,
+          shikimoriId: shikimoriId,
+          relatedReleases: related,
+          videos: media.videos,
+          userStats: media.stats,
+          scoreDistribution: media.scores,
+        );
       }
     } catch (e) {
       debugPrint('Shikimori API fetch failed (graceful fallback): $e');
@@ -117,7 +140,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         'AniLibria': 9.4,
         'World Art': 8.7,
       },
-      reviews: AnimeReviewsProvider.getReviewsForTitle(title),
+      reviews: aggResult?.reviews ?? AnimeReviewsProvider.getReviewsForTitle(title),
+      aggregate: aggResult?.aggregate,
       relatedReleases: _generateFallbackFranchise(title, 8.8),
       videos: _generateFallbackVideos(title),
       userStats: _generateFallbackStats(title),
@@ -152,11 +176,11 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
           final user = item['user'] as Map<String, dynamic>?;
           final nickname = user?['nickname'] as String? ?? 'Аниме-критик';
-          final avatarEmoji = _avatarEmojis[nickname.hashCode.abs() % _avatarEmojis.length];
 
           final commentsCount = item['comments_count'] as int? ?? 12;
-          final createdAt = item['created_at'] as String?;
-          final formattedDate = _formatShikimoriDate(createdAt);
+          final createdAt = item['created_at'] != null
+              ? DateTime.tryParse('${item['created_at']}') ?? DateTime.now()
+              : DateTime.now();
 
           // Оценка рецензента вокруг общего балла тайтла
           final reviewScore = double.parse(
@@ -166,12 +190,14 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           parsedReviews.add(
             AnimeReview(
               id: 'shiki_$id',
-              author: nickname,
-              avatar: avatarEmoji,
+              source: ReviewSource.shikimori,
+              authorName: nickname,
+              authorAvatarUrl: null,
               score: reviewScore,
-              source: 'Shikimori',
-              text: cleanBody,
-              date: formattedDate,
+              sentiment: ReviewSentiment.fromScore(reviewScore),
+              content: cleanBody,
+              containsSpoiler: cleanBody.contains('[Спойлер:'),
+              createdAt: createdAt,
               likes: commentsCount + (nickname.hashCode.abs() % 40) + 10,
             ),
           );
@@ -830,31 +856,5 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     }
 
     return text;
-  }
-
-  static String _formatShikimoriDate(String? isoDate) {
-    if (isoDate == null) return 'Недавно';
-    try {
-      final date = DateTime.parse(isoDate);
-      final now = DateTime.now();
-      final diff = now.difference(date);
-
-      if (diff.inDays == 0) {
-        if (diff.inHours == 0) return 'Только что';
-        return '${diff.inHours} ч. назад';
-      } else if (diff.inDays < 7) {
-        return '${diff.inDays} дн. назад';
-      } else if (diff.inDays < 30) {
-        final weeks = (diff.inDays / 7).floor();
-        return '$weeks нед. назад';
-      } else if (diff.inDays < 365) {
-        final months = (diff.inDays / 30).floor();
-        return '$months мес. назад';
-      } else {
-        return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
-      }
-    } catch (_) {
-      return 'Недавно';
-    }
   }
 }

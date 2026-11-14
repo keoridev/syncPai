@@ -1,7 +1,12 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/dio_client.dart';
+import '../../features/anime_details/data/datasources/jikan_remote_datasource.dart';
 import '../../features/anime_details/data/datasources/shikimori_remote_datasource.dart';
+import '../../features/anime_details/data/datasources/syncpai_reviews_datasource.dart';
+import '../../features/anime_details/data/repositories/anime_reviews_repository_impl.dart';
+import '../../features/anime_details/data/services/reviews_cache_manager.dart';
+import '../../features/anime_details/domain/repositories/anime_reviews_repository.dart';
 import '../../features/anime_lists/data/datasources/anixart_remote_datasource.dart';
 import '../../features/anime_lists/data/repositories/anime_list_repository_impl.dart';
 import '../../features/anime_lists/domain/repositories/anime_list_repository.dart';
@@ -65,8 +70,27 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<AnixartRemoteDataSource>(
     () => AnixartRemoteDataSourceImpl(),
   );
+  // Multi-Source Reviews & Ratings Aggregator (Shikimori, Jikan MAL, SyncPai Native)
+  getIt.registerLazySingleton<ReviewsCacheManager>(
+    () => ReviewsCacheManager(getIt<SharedPreferences>()),
+  );
+  getIt.registerLazySingleton<JikanRemoteDataSource>(
+    () => JikanRemoteDataSourceImpl(),
+  );
+  getIt.registerLazySingleton<SyncPaiReviewsDataSource>(
+    () => SyncPaiReviewsDataSourceImpl(getIt<SharedPreferences>()),
+  );
+  getIt.registerLazySingleton<AnimeReviewsRepository>(
+    () => AnimeReviewsRepositoryImpl(
+      cacheManager: getIt<ReviewsCacheManager>(),
+      jikanDataSource: getIt<JikanRemoteDataSource>(),
+      syncPaiDataSource: getIt<SyncPaiReviewsDataSource>(),
+    ),
+  );
   getIt.registerLazySingleton<ShikimoriRemoteDataSource>(
-    () => ShikimoriRemoteDataSourceImpl(),
+    () => ShikimoriRemoteDataSourceImpl(
+      reviewsRepository: getIt<AnimeReviewsRepository>(),
+    ),
   );
   getIt.registerLazySingleton<AnimeListRepository>(
     () => AnimeListRepositoryImpl(

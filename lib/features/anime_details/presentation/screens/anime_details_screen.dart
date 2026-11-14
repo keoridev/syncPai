@@ -16,6 +16,7 @@ import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubi
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/anime_reviews_provider.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/shikimori_remote_datasource.dart';
+import 'package:sync_pai/features/anime_details/domain/entities/anime_rating_aggregate.dart';
 import 'package:sync_pai/features/anime_details/domain/entities/anime_review.dart';
 import 'package:sync_pai/features/anime_details/domain/entities/anime_video_item.dart';
 import 'package:sync_pai/features/anime_details/domain/entities/related_anime_release.dart';
@@ -79,6 +80,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   int _currentTabIndex = 0; // 0: Серии, 1: Инфо & Трейлер, 2: Отзывы
   late final TabController _tabController;
   late List<AnimeReview> _reviews;
+  AnimeRatingAggregate? _aggregate;
   Map<String, double>? _portalScores;
   List<RelatedAnimeRelease> _relatedReleases = [];
   List<AnimeVideoItem> _videos = [];
@@ -125,6 +127,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       if (mounted) {
         setState(() {
           _reviews = result.reviews;
+          _aggregate = result.aggregate;
           _portalScores = result.portalScores;
           _relatedReleases = result.relatedReleases;
           _videos = result.videos;
@@ -2437,9 +2440,33 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                     padding: const EdgeInsets.all(AppDimensions.spacingXl),
                     child: AnimeReviewsSection(
                       reviews: _reviews,
+                      aggregate: _aggregate,
                       portalScores: _portalScores,
                       scoreDistribution: _scoreDistribution,
                       isLoading: _isLoadingReviews,
+                      title: _currentTitle,
+                      onReviewAdded: (newReview) {
+                        setState(() {
+                          _reviews = [newReview, ..._reviews];
+                          final curAgg = _aggregate ?? const AnimeRatingAggregate();
+                          final newSyncVotes = curAgg.syncpaiVotesCount + 1;
+                          final isPos = newReview.sentiment == ReviewSentiment.positive;
+                          final isNeu = newReview.sentiment == ReviewSentiment.neutral;
+                          final isNeg = newReview.sentiment == ReviewSentiment.negative;
+
+                          _aggregate = AnimeRatingAggregate(
+                            syncpaiScore: newReview.score,
+                            syncpaiVotesCount: newSyncVotes,
+                            shikimoriScore: curAgg.shikimoriScore,
+                            shikimoriVotesCount: curAgg.shikimoriVotesCount,
+                            malScore: curAgg.malScore,
+                            malVotesCount: curAgg.malVotesCount,
+                            positiveCount: curAgg.positiveCount + (isPos ? 1 : 0),
+                            neutralCount: curAgg.neutralCount + (isNeu ? 1 : 0),
+                            negativeCount: curAgg.negativeCount + (isNeg ? 1 : 0),
+                          );
+                        });
+                      },
                     ),
                   ),
                 ),

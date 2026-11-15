@@ -61,6 +61,7 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   late final PlayerCubit _cubit;
   late final VideoController _videoController;
+  final GlobalKey _videoWidgetKey = GlobalKey(debugLabel: 'PersistentSyncPaiVideoSurface');
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
   bool _handedOffToMiniPlayer = false;
@@ -480,11 +481,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: RepaintBoundary(
-            child: Video(
-              controller: _videoController,
-              controls: NoVideoControls,
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                return const SizedBox.shrink();
+              }
+              return RepaintBoundary(
+                child: Video(
+                  key: _videoWidgetKey,
+                  controller: _videoController,
+                  controls: NoVideoControls,
+                ),
+              );
+            },
           ),
         ),
       );
@@ -575,14 +584,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     children: [
                       // Видео полотно libmpv без стандартных нативных контролов
                       // Изолировано в RepaintBoundary для разгрузки главного потока рендеринга
-                      RepaintBoundary(
-                        child: Center(
-                          child: Video(
-                            controller: _videoController,
-                            controls: NoVideoControls,
-                            fit: state.videoFit,
-                            fill: Colors.black,
-                          ),
+                      // LayoutBuilder гарантирует, что Video не создается с нулевыми размерами (0x0 D3D surface)
+                      Positioned.fill(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                              return const SizedBox.shrink();
+                            }
+                            return RepaintBoundary(
+                              child: Center(
+                                child: Video(
+                                  key: _videoWidgetKey,
+                                  controller: _videoController,
+                                  controls: NoVideoControls,
+                                  fit: state.videoFit,
+                                  fill: Colors.black,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
 

@@ -151,18 +151,21 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     if (!_isTestEnv) {
       _idleController?.repeat(reverse: true);
 
-      // 2. Подписка на датчик гироскопа для 3D Parallax эффекта
-      try {
-        _gyroSubscription = gyroscopeEventStream().listen((event) {
-          if (!mounted) return;
-          setState(() {
-            // event.y = поворот влево-вправо (roll), event.x = наклон вперед-назад (pitch)
-            // Применяем фильтр низких частот (low-pass filter) для плавности
-            _tiltX = (_tiltX * 0.82 + event.y * 0.18).clamp(-1.0, 1.0);
-            _tiltY = (_tiltY * 0.82 + event.x * 0.18).clamp(-1.0, 1.0);
-          });
-        }, onError: (_) {});
-      } catch (_) {}
+      // 2. Подписка на датчик гироскопа для 3D Parallax эффекта (только мобильные платформы iOS / Android)
+      final isMobilePlatform = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      if (isMobilePlatform) {
+        try {
+          _gyroSubscription = gyroscopeEventStream().listen((event) {
+            if (!mounted) return;
+            setState(() {
+              // event.y = поворот влево-вправо (roll), event.x = наклон вперед-назад (pitch)
+              // Применяем фильтр низких частот (low-pass filter) для плавности
+              _tiltX = (_tiltX * 0.82 + event.y * 0.18).clamp(-1.0, 1.0);
+              _tiltY = (_tiltY * 0.82 + event.x * 0.18).clamp(-1.0, 1.0);
+            });
+          }, onError: (_) {});
+        } catch (_) {}
+      }
     }
   }
 
@@ -174,10 +177,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   Color _resolveAccentColor(BuildContext context) {
-    final hex = widget.profile.accentColor;
-    if (hex != null && hex.isNotEmpty && hex != '#E06C53') {
-      return SteamProfileThemeAccent.fromHex(hex).color;
-    }
     return Theme.of(context).colorScheme.primary;
   }
 
@@ -217,6 +216,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   void _showArtworkActionDialog(BuildContext context) {
     final favId = widget.profile.favoriteAnimeId!;
     final accent = _resolveAccentColor(context);
+    final scheme = Theme.of(context).colorScheme;
 
     showModalBottomSheet<void>(
       context: context,
@@ -225,9 +225,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         color: Colors.transparent,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF14161F),
+            color: scheme.surfaceContainerHigh,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            border: Border.all(color: accent.withValues(alpha: 0.3)),
+            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
           child: Column(
@@ -237,7 +237,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -245,8 +245,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               Text(
                 _resolveArtworkTitle(),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: scheme.onSurface,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -254,9 +254,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               const SizedBox(height: 20),
               ListTile(
                 leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
-                title: const Text('Открыть страницу аниме', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                title: Text('Открыть страницу аниме', style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                tileColor: Colors.white.withValues(alpha: 0.05),
+                tileColor: scheme.surfaceContainer,
                 onTap: () {
                   Navigator.of(ctx).pop();
                   context.pushNamed('anime-details', pathParameters: {'id': favId});
@@ -265,10 +265,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               if (widget.isCurrentUser) ...[
                 const SizedBox(height: 10),
                 ListTile(
-                  leading: const Icon(Icons.palette_rounded, color: Colors.white70, size: 26),
-                  title: const Text('Сменить иллюстрацию витрины', style: TextStyle(color: Colors.white70)),
+                  leading: Icon(Icons.palette_rounded, color: scheme.onSurfaceVariant, size: 26),
+                  title: Text('Сменить иллюстрацию витрины', style: TextStyle(color: scheme.onSurfaceVariant)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  tileColor: Colors.white.withValues(alpha: 0.05),
+                  tileColor: scheme.surfaceContainer,
                   onTap: () {
                     Navigator.of(ctx).pop();
                     _openArtworkSelectorSheet(context);
@@ -310,19 +310,26 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final bgShiftX = -effectiveTiltX * 10.0;
     final bgShiftY = -effectiveTiltY * 6.0;
 
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF101218).withValues(alpha: 0.88),
+          color: isDark
+              ? scheme.surfaceContainer.withValues(alpha: 0.88)
+              : scheme.surfaceContainerLowest.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.10),
+            color: scheme.outlineVariant.withValues(alpha: 0.35),
             width: 1.2,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.7),
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.7)
+                  : Colors.black.withValues(alpha: 0.08),
               blurRadius: 28,
               offset: const Offset(0, 10),
             ),
@@ -336,51 +343,54 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
           child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ============================================================
-              // ВЕРХНЯЯ СТРОКА: ТЕГИ, УПРАВЛЕНИЕ, НАСТРОЙКИ
-              // ============================================================
-              _buildTopBar(context, accent),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ============================================================
+                // ВЕРХНЯЯ СТРОКА: ТЕГИ, УПРАВЛЕНИЕ, НАСТРОЙКИ
+                // ============================================================
+                _buildTopBar(context, accent),
 
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // ============================================================
-              // 1. STEAM HEADER: КВАДРАТНЫЙ АВАТАР 84×84 + ПРАВЫЙ БЛОК ИНФЫ
-              // ============================================================
-              _buildProfileHeaderRow(context, accent),
+                // ============================================================
+                // 1. STEAM HEADER: КВАДРАТНЫЙ АВАТАР 84×84 + ПРАВЫЙ БЛОК ИНФЫ
+                // ============================================================
+                _buildProfileHeaderRow(context, accent),
 
-              const SizedBox(height: 18),
+                const SizedBox(height: 18),
 
-              // ============================================================
-              // 2. ARTWORK SHOWCASE (ГЛАВНАЯ ВИТРИНА ИЛЛЮСТРАЦИЙ С 3D PARALLAX)
-              // ============================================================
-              _buildArtworkShowcase(
-                context,
-                accent: accent,
-                artworkUrl: artworkUrl,
-                artworkTitle: artworkTitle,
-                bgShiftX: bgShiftX,
-                bgShiftY: bgShiftY,
-                tiltX: effectiveTiltX,
-                tiltY: effectiveTiltY,
-              ),
-            ],
+                // ============================================================
+                // 2. ARTWORK SHOWCASE (ГЛАВНАЯ ВИТРИНА ИЛЛЮСТРАЦИЙ С 3D PARALLAX)
+                // ============================================================
+                _buildArtworkShowcase(
+                  context,
+                  accent: accent,
+                  artworkUrl: artworkUrl,
+                  artworkTitle: artworkTitle,
+                  bgShiftX: bgShiftX,
+                  bgShiftY: bgShiftY,
+                  tiltX: effectiveTiltX,
+                  tiltY: effectiveTiltY,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
 
   Widget _buildTopBar(BuildContext context, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Row(
       children: [
         if (widget.showBackButton) ...[
           IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: scheme.onSurface, size: 16),
             onPressed: widget.onBackTap ?? () => Navigator.of(context).maybePop(),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -395,9 +405,11 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
+                color: isDark
+                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                    : scheme.surfaceContainerHigh.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -405,8 +417,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   Container(
                     width: 7,
                     height: 7,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF57CBDE), // Steam Cyan
+                    decoration: BoxDecoration(
+                      color: accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -417,7 +429,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.caption.copyWith(
-                        color: Colors.white,
+                        color: scheme.onSurface,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.5,
                         fontSize: 11,
@@ -442,19 +454,19 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: badge.color.withValues(alpha: 0.22),
+                    color: accent.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: badge.color.withValues(alpha: 0.7), width: 1.0),
+                    border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.0),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(badge.icon, size: 12, color: badge.color),
+                      Icon(badge.icon, size: 12, color: accent),
                       const SizedBox(width: 4),
                       Text(
                         'Ур. ${badge.level}',
                         style: TextStyle(
-                          color: badge.color,
+                          color: accent,
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                         ),
@@ -479,7 +491,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           ),
           const SizedBox(width: 6),
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white70, size: 20),
+            icon: Icon(Icons.settings, color: scheme.onSurfaceVariant, size: 20),
             tooltip: 'Настройки',
             onPressed: widget.onSettingsTap ?? () => context.push('/settings'),
             padding: EdgeInsets.zero,
@@ -491,6 +503,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   Widget _buildProfileHeaderRow(BuildContext context, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final flag = widget.countryFlag ?? widget.profile.countryFlag ?? '🇰🇬';
     final country = widget.countryName ?? widget.profile.countryName ?? 'Kyrgyzstan';
     final statusText = widget.profile.customStatus?.trim().isNotEmpty == true
@@ -515,7 +529,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Никнейм (20sp, bold, белый, со стрелочкой/иконкой статуса)
+              // Никнейм (20sp, bold, со стрелочкой/иконкой статуса)
               Row(
                 children: [
                   Flexible(
@@ -523,21 +537,21 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                       widget.profile.username,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: scheme.onSurface,
                         letterSpacing: 0.2,
-                        shadows: [
-                          Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 2)),
-                        ],
+                        shadows: isDark
+                            ? const [Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 2))]
+                            : null,
                       ),
                     ),
                   ),
                   const SizedBox(width: 6),
-                  const Icon(
+                  Icon(
                     Icons.arrow_drop_down_rounded,
-                    color: Colors.white60,
+                    color: scheme.onSurfaceVariant,
                     size: 20,
                   ),
                 ],
@@ -545,7 +559,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
               const SizedBox(height: 3),
 
-              // Под ником: флаг страны серым шрифтом 12sp
+              // Под ником: флаг страны
               Row(
                 children: [
                   Text(flag, style: const TextStyle(fontSize: 13)),
@@ -555,7 +569,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.65),
+                      color: scheme.onSurfaceVariant,
                       letterSpacing: 0.2,
                     ),
                   ),
@@ -563,8 +577,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   Container(
                     width: 3,
                     height: 3,
-                    decoration: const BoxDecoration(
-                      color: Colors.white38,
+                    decoration: BoxDecoration(
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -586,7 +600,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
+                  color: isDark
+                      ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                      : scheme.surfaceContainerHigh.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: accent.withValues(alpha: 0.35),
@@ -616,7 +632,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   style: TextStyle(
                     fontSize: 11.5,
                     fontStyle: FontStyle.italic,
-                    color: Colors.white.withValues(alpha: 0.75),
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -761,42 +777,47 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           Positioned(
             bottom: -2,
             right: -2,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF14161F),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF57CBDE), width: 1.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF57CBDE).withValues(alpha: 0.4),
-                    blurRadius: 6,
+            child: Builder(
+              builder: (context) {
+                final scheme = Theme.of(context).colorScheme;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: accent, width: 1.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.35),
+                        blurRadius: 6,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF57CBDE), // Steam Cyan Online
-                      shape: BoxShape.circle,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: accent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        'ONLINE',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 3),
-                  const Text(
-                    'ONLINE',
-                    style: TextStyle(
-                      color: Color(0xFF57CBDE),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -829,6 +850,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required double tiltX,
     required double tiltY,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
     final double showcaseHeight = isDesktopOS ? 360.0 : 200.0;
 
@@ -838,15 +861,15 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         // Заголовок витрины в стиле Steam Showcase
         Row(
           children: [
-            const Icon(Icons.auto_awesome_mosaic_rounded, color: Colors.white70, size: 15),
+            Icon(Icons.auto_awesome_mosaic_rounded, color: accent, size: 15),
             const SizedBox(width: 8),
-            const Flexible(
+            Flexible(
               child: Text(
                 'ВИТРИНА ИЛЛЮСТРАЦИЙ',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: scheme.onSurface,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.3,
@@ -898,15 +921,17 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             child: Container(
               height: showcaseHeight,
               decoration: BoxDecoration(
-                color: const Color(0xFF0C0D12),
+                color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
                   width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.8),
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.8)
+                        : Colors.black.withValues(alpha: 0.08),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
@@ -951,7 +976,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                           Container(
                             width: gap,
                             height: showcaseHeight,
-                            color: const Color(0xFF0C0D12),
+                            color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
                           ),
 
                           // 2. БОКОВАЯ ПОЛОСКА (SIDE SLICE 26%)
@@ -1226,12 +1251,17 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   Widget _buildArtworkBottomBar(Color accent, String title) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.85),
+        color: isDark
+            ? scheme.surfaceContainer.withValues(alpha: 0.92)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.95),
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.12), width: 1.0),
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 1.0),
         ),
       ),
       child: Row(
@@ -1251,13 +1281,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 Icon(
                   _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                   size: 15,
-                  color: _isLiked ? const Color(0xFFFF4081) : Colors.white60,
+                  color: _isLiked ? accent : scheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '$_likesCount',
                   style: TextStyle(
-                    color: _isLiked ? const Color(0xFFFF4081) : Colors.white70,
+                    color: _isLiked ? accent : scheme.onSurfaceVariant,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1271,12 +1301,12 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           // Комментарии
           Row(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white60),
-              SizedBox(width: 4),
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 4),
               Text(
                 '42',
-                style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -1284,7 +1314,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           const SizedBox(width: 12),
 
           // Разделитель
-          Container(width: 1, height: 12, color: Colors.white24),
+          Container(width: 1, height: 12, color: scheme.outlineVariant.withValues(alpha: 0.4)),
 
           const SizedBox(width: 12),
 
@@ -1294,8 +1324,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: scheme.onSurface,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.3,
@@ -1304,7 +1334,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           ),
 
           const SizedBox(width: 6),
-          const Icon(Icons.open_in_new_rounded, size: 13, color: Colors.white54),
+          Icon(Icons.open_in_new_rounded, size: 13, color: scheme.onSurfaceVariant),
         ],
       ),
     );

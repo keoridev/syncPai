@@ -27,6 +27,9 @@ class UserProfile extends Equatable {
   final String? countryFlag; // '🇰🇬'
   final String? countryName; // 'Kyrgyzstan'
   final String avatarShape; // 'square' или 'circle'
+  final String tag; // '#0421'
+  final String? friendCode; // 'SP-8F3K9A'
+  final bool autoAcceptInvites;
   final DateTime createdAt;
 
   const UserProfile({
@@ -52,6 +55,9 @@ class UserProfile extends Equatable {
     this.countryFlag = '🇰🇬',
     this.countryName = 'Kyrgyzstan',
     this.avatarShape = 'square',
+    this.tag = '#0001',
+    this.friendCode,
+    this.autoAcceptInvites = true,
     required this.createdAt,
   });
 
@@ -95,6 +101,9 @@ class UserProfile extends Equatable {
       countryFlag: '🇰🇬',
       countryName: 'Kyrgyzstan',
       avatarShape: 'square',
+      tag: '#${uid.length >= 4 ? uid.substring(uid.length - 4) : '0001'}',
+      friendCode: 'SP-${uid.length >= 6 ? uid.substring(uid.length - 6).toUpperCase() : '777AAA'}',
+      autoAcceptInvites: true,
       createdAt: DateTime.now(),
     );
   }
@@ -122,6 +131,9 @@ class UserProfile extends Equatable {
     String? countryFlag,
     String? countryName,
     String? avatarShape,
+    String? tag,
+    String? friendCode,
+    bool? autoAcceptInvites,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -147,6 +159,9 @@ class UserProfile extends Equatable {
       countryFlag: countryFlag ?? this.countryFlag,
       countryName: countryName ?? this.countryName,
       avatarShape: avatarShape ?? this.avatarShape,
+      tag: tag ?? this.tag,
+      friendCode: friendCode ?? this.friendCode,
+      autoAcceptInvites: autoAcceptInvites ?? this.autoAcceptInvites,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -176,6 +191,9 @@ class UserProfile extends Equatable {
         'country_flag': countryFlag,
         'country_name': countryName,
         'avatar_shape': avatarShape,
+        'tag': tag,
+        'friend_code': friendCode,
+        'auto_accept_invites': autoAcceptInvites,
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -237,6 +255,9 @@ class UserProfile extends Equatable {
       countryFlag: flag,
       countryName: country,
       avatarShape: shape,
+      tag: json['tag'] as String? ?? '#0001',
+      friendCode: json['friend_code'] as String?,
+      autoAcceptInvites: json['auto_accept_invites'] as bool? ?? true,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -265,6 +286,9 @@ class UserProfile extends Equatable {
         countryFlag,
         countryName,
         avatarShape,
+        tag,
+        friendCode,
+        autoAcceptInvites,
         createdAt,
       ];
 }

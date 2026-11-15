@@ -73,8 +73,8 @@ class SyncPaiMascot extends StatefulWidget {
       key: key,
       state: state,
       size: size,
-      message: message,
-      description: description,
+      message: message ?? state.defaultMessage,
+      description: description ?? state.defaultDescription,
       action: action,
     );
   }
@@ -93,8 +93,8 @@ class SyncPaiMascot extends StatefulWidget {
       key: key,
       state: state,
       size: size,
-      message: message,
-      description: description,
+      message: message ?? state.defaultMessage,
+      description: description ?? state.defaultDescription,
       action: onRetry != null
           ? ElevatedButton.icon(
               onPressed: onRetry,
@@ -184,8 +184,8 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
     final targetWidth = isDesktop ? widget.size.width * 1.05 : widget.size.width;
     final targetHeight = isDesktop ? widget.size.height * 1.05 : widget.size.height;
 
-    final displayMessage = widget.message ?? effectiveState.defaultMessage;
-    final displayDesc = widget.description ?? effectiveState.defaultDescription;
+    final displayMessage = widget.message ?? '';
+    final displayDesc = widget.description ?? '';
 
     Widget imageContent = Semantics(
       label: '${effectiveState.title}: ${effectiveState.description}',
@@ -242,48 +242,66 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
       );
     }
 
-    return Padding(
-      padding: widget.padding,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isDesktop ? 480 : 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              imageContent,
-              if (displayMessage.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Text(
-                  displayMessage,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.titleMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: isDesktop ? 17 : 15.5,
-                  ),
-                ),
-              ],
-              if (displayDesc.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  displayDesc,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.45,
-                    fontSize: isDesktop ? 13.5 : 12.5,
-                  ),
-                ),
-              ],
-              if (widget.action != null) ...[
-                const SizedBox(height: 18),
-                widget.action!,
-              ],
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight;
+        final isHeightConstrained = availableHeight.isFinite && availableHeight < (targetHeight + 70);
+
+        // Если родитель жестко ограничен по высоте (например, иконка, баннер или фиксированная карточка),
+        // показываем только маскота, чтобы не вызывать RenderFlex overflow
+        if (isHeightConstrained || (displayMessage.isEmpty && displayDesc.isEmpty && widget.action == null)) {
+          return Padding(
+            padding: widget.padding,
+            child: Center(
+              child: imageContent,
+            ),
+          );
+        }
+
+        return Padding(
+          padding: widget.padding,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isDesktop ? 480 : 360),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  imageContent,
+                  if (displayMessage.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      displayMessage,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.titleMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: isDesktop ? 17 : 15.5,
+                      ),
+                    ),
+                  ],
+                  if (displayDesc.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      displayDesc,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                        fontSize: isDesktop ? 13.5 : 12.5,
+                      ),
+                    ),
+                  ],
+                  if (widget.action != null) ...[
+                    const SizedBox(height: 18),
+                    widget.action!,
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

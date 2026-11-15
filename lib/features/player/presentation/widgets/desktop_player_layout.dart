@@ -18,6 +18,7 @@ import '../../../anime_lists/presentation/cubit/anime_list_state.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../kodik/presentation/cubit/kodik_cubit.dart';
 import '../../../kodik/presentation/widgets/voiceover_selector_sheet.dart';
+import '../../../sync_room/domain/entities/sync_protocol.dart';
 import '../../../sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
@@ -55,6 +56,11 @@ class DesktopPlayerLayout extends StatefulWidget {
 
 class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   final FocusNode _focusNode = FocusNode();
+  final FocusNode _chatInputFocusNode = FocusNode();
+  final GlobalKey _desktopVideoKey = GlobalKey(debugLabel: 'PersistentDesktopVideoSurface');
+  final TextEditingController _chatController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+  int _selectedSidebarTab = 0; // 0 = Чат комнаты, 1 = Эпизоды
   Timer? _hideControlsTimer;
   bool _areControlsVisible = true;
   bool _isCursorVisible = true;
@@ -100,6 +106,9 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     _hideControlsTimer?.cancel();
     _flashTimer?.cancel();
     _focusNode.dispose();
+    _chatInputFocusNode.dispose();
+    _chatController.dispose();
+    _chatScrollController.dispose();
     if (_isFullScreen) {
       DesktopTitleBar.isFullScreenNotifier.value = false;
       if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
@@ -213,11 +222,29 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   }
 
   KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
+    // Если поле ввода сообщений активно, горячие клавиши плеера не перехватывают ввод
+    if (_chatInputFocusNode.hasFocus) {
+      if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+        _chatInputFocusNode.unfocus();
+        _focusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     if (event is KeyDownEvent) {
       final key = event.logicalKey;
 
       // Space: Play / Pause
       if (key == LogicalKeyboardKey.space) {
+        if (widget.state.isSyncRoom && !widget.state.isHost) {
+          widget.cubit.requestPauseFromHost();
+          _triggerFlash(
+            icon: Icons.lock_clock_rounded,
+            label: 'Запрос на паузу отправлен хосту',
+          );
+          return KeyEventResult.handled;
+        }
         widget.cubit.togglePlayPause();
         _triggerFlash(
           icon: widget.state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -227,6 +254,13 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
 
       // Стрелка вправо: +10 сек
       if (key == LogicalKeyboardKey.arrowRight) {
+        if (widget.state.isSyncRoom && !widget.state.isHost) {
+          _triggerFlash(
+            icon: Icons.lock_clock_rounded,
+            label: 'Хост управляет перемоткой',
+          );
+          return KeyEventResult.handled;
+        }
         widget.cubit.seekRelative(10);
         _triggerFlash(icon: Icons.forward_10_rounded, label: '+10 сек');
         return KeyEventResult.handled;
@@ -234,6 +268,13 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
 
       // Стрелка влево: -10 сек
       if (key == LogicalKeyboardKey.arrowLeft) {
+        if (widget.state.isSyncRoom && !widget.state.isHost) {
+          _triggerFlash(
+            icon: Icons.lock_clock_rounded,
+            label: 'Хост управляет перемоткой',
+          );
+          return KeyEventResult.handled;
+        }
         widget.cubit.seekRelative(-10);
         _triggerFlash(icon: Icons.replay_10_rounded, label: '-10 сек');
         return KeyEventResult.handled;
@@ -362,11 +403,11 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             color: Colors.white.withValues(alpha: 0.08),
           ),
 
-        // Правая колонка: 26% ширины — стеклянный сайдбар эпизодов
+        // Правая колонка: 26% ширины — стеклянный сайдбар (режим Solo: эпизоды; режим Комнаты: Чат + Эпизоды)
         if (showSidebar)
           Expanded(
             flex: 26,
-            child: _buildEpisodesSidebar(),
+            child: widget.state.isSyncRoom ? _buildRoomSidebar() : _buildEpisodesSidebar(),
           ),
       ],
     );
@@ -453,14 +494,25 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
         fit: StackFit.expand,
         children: [
           // 1. Полотно libmpv видео на черном фоне (в RepaintBoundary для изоляции 60 FPS рендеринга от оверлея управления)
-          RepaintBoundary(
-            child: Center(
-              child: Video(
-                controller: widget.videoController,
-                controls: NoVideoControls,
-                fit: BoxFit.contain,
-                fill: Colors.black,
-              ),
+          // Защищено LayoutBuilder от нулевых размеров (0x0 D3D surface) и снабжено постоянным GlobalKey
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                  return const SizedBox.shrink();
+                }
+                return RepaintBoundary(
+                  child: Center(
+                    child: Video(
+                      key: _desktopVideoKey,
+                      controller: widget.videoController,
+                      controls: NoVideoControls,
+                      fit: BoxFit.contain,
+                      fill: Colors.black,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
 
@@ -473,6 +525,14 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () {
+                  if (widget.state.isSyncRoom && !widget.state.isHost) {
+                    widget.cubit.requestPauseFromHost();
+                    _triggerFlash(
+                      icon: Icons.lock_clock_rounded,
+                      label: 'Запрос на паузу отправлен хосту',
+                    );
+                    return;
+                  }
                   widget.cubit.togglePlayPause();
                   _triggerFlash(
                     icon: widget.state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -678,6 +738,14 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             duration: state.duration,
             buffer: state.buffer,
             onSeek: (pos) => widget.cubit.seek(pos),
+            isLocked: state.isSyncRoom && !state.isHost,
+            onLockedTap: () {
+              widget.cubit.requestPauseFromHost();
+              _triggerFlash(
+                icon: Icons.lock_clock_rounded,
+                label: 'Хост управляет просмотром',
+              );
+            },
             opening: state.effectiveOpening,
             ending: state.effectiveEnding,
             heatmap: state.heatmap,
@@ -698,6 +766,14 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   color: Colors.white,
                 ),
                 onPressed: () {
+                  if (state.isSyncRoom && !state.isHost) {
+                    widget.cubit.requestPauseFromHost();
+                    _triggerFlash(
+                      icon: Icons.lock_clock_rounded,
+                      label: 'Запрос на паузу отправлен хосту',
+                    );
+                    return;
+                  }
                   widget.cubit.togglePlayPause();
                   _triggerFlash(
                     icon: state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -999,7 +1075,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                             episode: ep,
                             initialQuality: widget.state.selectedQuality,
                             onStartPlayback: (room, isHost) {
-                              // Если уже находимся в плеере, обновляем сессию
+                              widget.cubit.attachRoomSession(room, isHost: isHost);
                             },
                           );
                         },
@@ -1075,6 +1151,524 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
               );
             }
           },
+        );
+      },
+    );
+  }
+
+  /// Сайдбар для режима совместного просмотра: вкладки «Чат» и «Эпизоды»
+  Widget _buildRoomSidebar() {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+
+    return Container(
+      color: const Color(0xFF0F1117),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 1. Верхний компактный инфо-блок комнаты (код, статус, кнопка покинуть)
+          _buildRoomHeader(primary),
+
+          // 2. Селектор вкладок (Чат / Эпизоды)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedSidebarTab = 0),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _selectedSidebarTab == 0 ? primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 15,
+                            color: _selectedSidebarTab == 0 ? Colors.black : Colors.white70,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Чат',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: _selectedSidebarTab == 0 ? Colors.black : Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedSidebarTab = 1),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _selectedSidebarTab == 1 ? primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.format_list_numbered_rounded,
+                            size: 15,
+                            color: _selectedSidebarTab == 1 ? Colors.black : Colors.white70,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Эпизоды',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: _selectedSidebarTab == 1 ? Colors.black : Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(color: Colors.white12, height: 1),
+
+          // 3. Тело вкладки: Чат или Эпизоды
+          Expanded(
+            child: _selectedSidebarTab == 0
+                ? _buildRoomChatTab(primary)
+                : _buildEpisodesListOnly(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomHeader(Color primary) {
+    final code = widget.state.roomCode ?? '';
+    final isHost = widget.state.isHost;
+    final peer = widget.state.peerPresence;
+    final isOnline = peer?.status == PresenceStatus.online;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.02),
+        border: const Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: primary.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  code,
+                  style: TextStyle(
+                    color: primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                iconSize: 17,
+                tooltip: 'Скопировать код комнаты',
+                icon: const Icon(Icons.copy_rounded, color: Colors.white70),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: code));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Код комнаты $code скопирован!'),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+              const Spacer(),
+              // Кнопка покинуть комнату
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFF5252),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.exit_to_app_rounded, size: 15),
+                label: const Text('Выйти', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                onPressed: () => widget.cubit.leaveRoom(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isOnline ? const Color(0xFF00E676) : Colors.orangeAccent,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  isHost
+                      ? 'Вы хост • ${peer != null ? (isOnline ? '${peer.name} в сети' : '${peer.name} не в сети') : 'Ожидание гостя...'}'
+                      : 'В комнате • Хост ${peer?.name ?? 'в сети'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomChatTab(Color primary) {
+    final messages = widget.state.chatMessages;
+
+    return Column(
+      children: [
+        // Список сообщений
+        Expanded(
+          child: messages.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.chat_bubble_outline_rounded, size: 36, color: Colors.white.withValues(alpha: 0.2)),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Чат комнаты пока пуст.\nОтправьте сообщение или реакцию!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: _chatScrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    return _buildDesktopChatMessageItem(msg, primary);
+                  },
+                ),
+        ),
+
+        // Быстрые реакции
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.02),
+            border: const Border(top: BorderSide(color: Colors.white10)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: ['🔥', '😂', '😱', '😭', '❤️'].map((emoji) {
+              return InkWell(
+                onTap: () => widget.cubit.sendReaction(emoji),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text(emoji, style: const TextStyle(fontSize: 18)),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        // Поле ввода сообщения
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: Colors.white10)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _chatController,
+                  focusNode: _chatInputFocusNode,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendRoomMessage(),
+                  decoration: InputDecoration(
+                    hintText: 'Написать сообщение... (Enter)',
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.06),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                icon: Icon(Icons.send_rounded, color: primary, size: 20),
+                tooltip: 'Отправить',
+                onPressed: _sendRoomMessage,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _sendRoomMessage() {
+    final text = _chatController.text.trim();
+    if (text.isEmpty) return;
+    widget.cubit.sendChatMessage(text);
+    _chatController.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Widget _buildDesktopChatMessageItem(ChatMessage msg, Color primary) {
+    if (msg.isSystem) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              msg.text,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final timeStr = '${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                msg.isHost ? '👑 ${msg.sender}' : msg.sender,
+                style: TextStyle(
+                  color: msg.isHost ? const Color(0xFFFFB74D) : primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                timeStr,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            msg.text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodesListOnly() {
+    final allEpisodes = widget.state.title.episodes;
+    final curEp = widget.state.episode.episode;
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      itemCount: allEpisodes.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = allEpisodes[index];
+        final isCurrent = item.episode == curEp;
+
+        return InkWell(
+          onTap: () {
+            if (!isCurrent) {
+              widget.cubit.switchEpisode(item);
+            }
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? AppColors.primary.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isCurrent
+                    ? AppColors.primary.withValues(alpha: 0.55)
+                    : Colors.white.withValues(alpha: 0.06),
+                width: isCurrent ? 1.4 : 1.0,
+              ),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 84,
+                    height: 48,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
+                          CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(item.previewUrl!),
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(
+                              color: const Color(0xFF1B1D26),
+                              child: const Icon(Icons.movie_outlined, color: Colors.white24, size: 20),
+                            ),
+                          )
+                        else
+                          Container(
+                            color: const Color(0xFF1B1D26),
+                            child: const Icon(Icons.movie_outlined, color: Colors.white24, size: 20),
+                          ),
+                        if (isCurrent)
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            child: Center(
+                              child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 24),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Серия ${item.episode}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: isCurrent ? AppColors.primary : Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          if (isCurrent) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'СЕЙЧАС',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (item.name != null && item.name!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          item.name!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );

@@ -70,6 +70,25 @@
                     android:host="syncpai.app"
                     android:pathPrefix="/room" />
             </intent-filter>
+
+            <!-- 3. Social Friend Invite: syncpai://invite/friend/{code} -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="syncpai" android:host="invite" android:pathPrefix="/friend" />
+            </intent-filter>
+
+            <!-- 4. Social Friend Invite Web URL: https://syncpai.app/f/{code} -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="syncpai.app"
+                    android:pathPrefix="/f" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

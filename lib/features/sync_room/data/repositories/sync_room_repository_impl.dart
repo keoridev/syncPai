@@ -926,8 +926,9 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     required String text,
     required String sender,
     bool isHost = false,
-  }) {
-    return sendPacket(SyncPacket(
+  }) async {
+    // 1. Мгновенная доставка через Realtime Broadcast (без поллинга)
+    await sendPacket(SyncPacket(
       action: SyncActionTypes.chatMessage,
       sender: sender,
       roomCode: roomCode,
@@ -938,6 +939,60 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         'is_host': isHost,
       },
     ));
+
+    // 2. Персистентность в public.room_messages (best-effort, не блокирует UI)
+    unawaited(_persistChatMessage(
+      roomCode: roomCode,
+      text: text,
+      sender: sender,
+      isHost: isHost,
+    ));
+  }
+
+  Future<void> _persistChatMessage({
+    required String roomCode,
+    required String text,
+    required String sender,
+    required bool isHost,
+    String type = 'user',
+  }) async {
+    final client = _supabase;
+    if (client == null) return;
+    try {
+      final content = text.length > 500 ? text.substring(0, 500) : text;
+      await client.from('room_messages').insert({
+        'room_id': extractPinCode(roomCode),
+        'user_id': client.auth.currentUser?.id,
+        'sender_name': sender,
+        'content': content,
+        'type': type,
+        'is_host': isHost,
+      });
+    } catch (e) {
+      debugPrint('[WatchTogether] room_messages insert skipped: $e');
+    }
+  }
+
+  @override
+  Future<List<ChatMessage>> fetchChatHistory(String roomCode, {int limit = 50}) async {
+    final client = _supabase;
+    if (client == null) return const [];
+    try {
+      final rows = await client
+          .from('room_messages')
+          .select()
+          .eq('room_id', extractPinCode(roomCode))
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return (rows as List)
+          .map((r) => ChatMessage.fromRoomMessageRow(Map<String, dynamic>.from(r as Map)))
+          .toList()
+          .reversed
+          .toList();
+    } catch (e) {
+      debugPrint('[WatchTogether] room_messages history unavailable: $e');
+      return const [];
+    }
   }
 
   @override

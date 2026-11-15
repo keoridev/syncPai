@@ -8,7 +8,9 @@ import 'theme_preset.dart';
 /// Конфигурация темы приложения SyncPai с поддержкой динамических цветовых палитр
 abstract final class AppTheme {
   /// Тема по умолчанию: Cinema Dark (Мандарин Сенпай)
-  static ThemeData get cinemaDark => fromPreset(ThemePreset.all.first);
+  static ThemeData get cinemaDark => ThemePreset.all.any((p) => p.id == 'sunset_orange')
+      ? fromPreset(ThemePreset.all.firstWhere((p) => p.id == 'sunset_orange'))
+      : createTheme();
 
   /// Генерация темы на основе выбранного пресета
   static ThemeData fromPreset(ThemePreset preset) {
@@ -44,11 +46,16 @@ abstract final class AppTheme {
       colorScheme: ColorScheme.dark(
         primary: primary,
         onPrimary: onPrimary,
-        primaryContainer: primary.withValues(alpha: 0.8),
-        onPrimaryContainer: onPrimary,
+        primaryContainer: primary.withValues(alpha: 0.16),
+        onPrimaryContainer: primary,
         surface: surf,
-        onSurface: AppColors.textPrimary,
+        surfaceContainerLowest: bg,
+        surfaceContainerLow: surf,
+        surfaceContainer: surf,
+        surfaceContainerHigh: surfElevated,
         surfaceContainerHighest: surfElevated,
+        onSurface: AppColors.textPrimary,
+        onSurfaceVariant: AppColors.textSecondary,
         outline: AppColors.stroke,
         outlineVariant: AppColors.strokeMedium,
         error: AppColors.syncError,

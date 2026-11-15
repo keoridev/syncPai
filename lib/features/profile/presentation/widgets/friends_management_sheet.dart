@@ -1,13 +1,27 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../app/di/injection.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../auth/domain/entities/user_profile.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../domain/entities/friend_models.dart';
 import '../../services/friends_service.dart';
+import 'friend_invite_dialog.dart';
+import 'qr_invite_sheet.dart';
+import 'qr_scanner_sheet.dart';
 
 /// Открывает адаптивную панель управления друзьями (Sheet на мобилках, Dialog на десктопе)
-Future<void> showFriendsManagementSheet(BuildContext context, {Color? accentColor, VoidCallback? onFriendsChanged}) {
+Future<void> showFriendsManagementSheet(
+  BuildContext context, {
+  Color? accentColor,
+  VoidCallback? onFriendsChanged,
+  UserProfile? currentUserProfile,
+}) {
   final isDesktop = MediaQuery.of(context).size.width >= 650;
-  final accent = accentColor ?? const Color(0xFF6366F1);
+  final accent = accentColor ?? Theme.of(context).colorScheme.primary;
 
   if (isDesktop) {
     return showDialog(
@@ -17,8 +31,12 @@ Future<void> showFriendsManagementSheet(BuildContext context, {Color? accentColo
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
-          child: FriendsManagementView(accentColor: accent, onFriendsChanged: onFriendsChanged),
+          constraints: const BoxConstraints(maxWidth: 580, maxHeight: 720),
+          child: FriendsManagementView(
+            accentColor: accent,
+            onFriendsChanged: onFriendsChanged,
+            userProfile: currentUserProfile,
+          ),
         ),
       ),
     );
@@ -32,8 +50,12 @@ Future<void> showFriendsManagementSheet(BuildContext context, {Color? accentColo
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.88),
-        child: FriendsManagementView(accentColor: accent, onFriendsChanged: onFriendsChanged),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.9),
+        child: FriendsManagementView(
+          accentColor: accent,
+          onFriendsChanged: onFriendsChanged,
+          userProfile: currentUserProfile,
+        ),
       ),
     ),
   );
@@ -42,11 +64,13 @@ Future<void> showFriendsManagementSheet(BuildContext context, {Color? accentColo
 class FriendsManagementView extends StatefulWidget {
   final Color accentColor;
   final VoidCallback? onFriendsChanged;
+  final UserProfile? userProfile;
 
   const FriendsManagementView({
     super.key,
     required this.accentColor,
     this.onFriendsChanged,
+    this.userProfile,
   });
 
   @override
@@ -58,17 +82,28 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   final TextEditingController _searchController = TextEditingController();
 
   List<Map<String, dynamic>> _friends = [];
-  List<Map<String, dynamic>> _searchResults = [];
+  List<FriendRequestItem> _incomingRequests = [];
+  List<FriendRequestItem> _outgoingRequests = [];
+  List<FriendProfile> _searchResults = [];
+
   bool _isLoadingFriends = true;
+  bool _isLoadingRequests = true;
   bool _isSearching = false;
   String _lastSearchQuery = '';
   Timer? _debounceTimer;
 
+  String? _detectedClipboardInvite;
+  UserProfile? _profile;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _profile = widget.userProfile;
+    _tabController = TabController(length: 3, vsync: this);
+    _loadProfileIfNull();
     _loadFriends();
+    _loadRequests();
+    _checkClipboardForInvite();
   }
 
   @override
@@ -79,6 +114,31 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     super.dispose();
   }
 
+  Future<void> _loadProfileIfNull() async {
+    if (_profile == null) {
+      final authRepo = getIt<AuthRepository>();
+      final p = await authRepo.getCurrentProfile();
+      if (mounted) {
+        setState(() => _profile = p);
+      }
+    }
+  }
+
+  Future<void> _checkClipboardForInvite() async {
+    try {
+      final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = clipboardData?.text;
+      if (text != null && text.isNotEmpty) {
+        final code = FriendsService.extractInviteCode(text);
+        if (code.isNotEmpty && mounted) {
+          setState(() {
+            _detectedClipboardInvite = code;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadFriends() async {
     setState(() => _isLoadingFriends = true);
     final list = await FriendsService.getFriends();
@@ -86,6 +146,18 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
       setState(() {
         _friends = list;
         _isLoadingFriends = false;
+      });
+    }
+  }
+
+  Future<void> _loadRequests() async {
+    setState(() => _isLoadingRequests = true);
+    final requests = await FriendsService.getFriendRequests();
+    if (mounted) {
+      setState(() {
+        _incomingRequests = requests.where((r) => r.isIncoming).toList();
+        _outgoingRequests = requests.where((r) => !r.isIncoming).toList();
+        _isLoadingRequests = false;
       });
     }
   }
@@ -117,25 +189,25 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     });
   }
 
-  Future<void> _addFriend(Map<String, dynamic> user) async {
+  Future<void> _addFriendDirect(Map<String, dynamic> user) async {
     final success = await FriendsService.addFriend(user);
     if (!mounted) return;
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('«${user['name']}» добавлен в список друзей!'),
+          content: Text('«${user['name'] ?? user['username']}» добавлен в список друзей!'),
           backgroundColor: const Color(0xFF00FF66).withValues(alpha: 0.9),
           behavior: SnackBarBehavior.floating,
         ),
       );
       await _loadFriends();
+      await _loadRequests();
       widget.onFriendsChanged?.call();
-      _tabController.animateTo(0);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('«${user['name']}» уже в списке друзей'),
+          content: Text('«${user['name'] ?? user['username']}» уже в списке друзей или запрос отправлен'),
           backgroundColor: Colors.orangeAccent,
           behavior: SnackBarBehavior.floating,
         ),
@@ -143,8 +215,26 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     }
   }
 
+  Future<void> _respondToRequest(String requestId, {required bool accept}) async {
+    final success = await FriendsService.respondToFriendRequest(requestId, accept: accept);
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accept ? 'Заявка принята!' : 'Заявка отклонена'),
+          backgroundColor: accept ? const Color(0xFF00FF66).withValues(alpha: 0.9) : Colors.orangeAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      await _loadFriends();
+      await _loadRequests();
+      widget.onFriendsChanged?.call();
+    }
+  }
+
   Future<void> _removeFriend(Map<String, dynamic> friend) async {
-    final name = friend['name'] ?? '';
+    final name = friend['name'] ?? friend['username'] ?? '';
     final id = friend['id']?.toString() ?? name;
     await FriendsService.removeFriend(id);
     if (!mounted) return;
@@ -159,18 +249,54 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     );
   }
 
+  void _openQrInviteSheet() {
+    String myId = 'me';
+    try {
+      myId = Supabase.instance.client.auth.currentUser?.id ?? 'me';
+    } catch (_) {}
+    final p = _profile ??
+        UserProfile(
+          id: myId,
+          username: 'Пользователь',
+          createdAt: DateTime.now(),
+        );
+    QrInviteSheet.show(context, profile: p, accentColor: widget.accentColor);
+  }
+
+  void _openQrScannerSheet() {
+    QrScannerSheet.show(
+      context,
+      accentColor: widget.accentColor,
+      onCodeDetected: (code) {
+        FriendInviteConfirmationDialog.show(
+          context,
+          inviteCode: code,
+          accentColor: widget.accentColor,
+          onAccepted: () {
+            _loadFriends();
+            _loadRequests();
+            widget.onFriendsChanged?.call();
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final accent = widget.accentColor;
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF131722),
+        color: isDark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.2),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
+            color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.15),
             blurRadius: 30,
             offset: const Offset(0, 10),
           ),
@@ -182,10 +308,10 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           children: [
             // Header bar
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                color: isDark ? Colors.white.withValues(alpha: 0.03) : scheme.surfaceContainerHigh.withValues(alpha: 0.4),
+                border: Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.2))),
               ),
               child: Row(
                 children: [
@@ -198,32 +324,48 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                     child: Icon(Icons.people_alt_rounded, color: accent, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Друзья и Сообщество',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
+                            color: scheme.onSurface,
+                            fontSize: 16.5,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Смотрите аниме вместе и следите за статусами',
+                          'Смотрите аниме вместе и делитесь QR-визиткой',
                           style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11.5,
                           ),
                         ),
                       ],
                     ),
                   ),
+                  // Кнопка «Мой QR»
                   IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    onPressed: _openQrInviteSheet,
+                    icon: Icon(Icons.qr_code_rounded, color: accent),
+                    tooltip: 'Мой QR-код и инвайт-ссылка',
+                  ),
+                  // Кнопка «Сканировать»
+                  IconButton(
+                    onPressed: _openQrScannerSheet,
+                    icon: Icon(Icons.qr_code_scanner_rounded, color: scheme.onSurface),
+                    tooltip: 'Сканировать QR-код',
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant),
                     tooltip: 'Закрыть',
                   ),
                 ],
@@ -235,40 +377,71 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
               margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
               height: 42,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: isDark ? Colors.white.withValues(alpha: 0.05) : scheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
               ),
               child: TabBar(
                 controller: _tabController,
                 indicator: BoxDecoration(
-                  color: accent.withValues(alpha: 0.25),
+                  color: accent.withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: accent.withValues(alpha: 0.6)),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white54,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                labelColor: scheme.onSurface,
+                unselectedLabelColor: scheme.onSurfaceVariant,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
                 tabs: [
                   Tab(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.group_rounded, size: 16),
-                        const SizedBox(width: 6),
-                        Text('Мои друзья (${_friends.length})'),
+                        const Icon(Icons.group_rounded, size: 15),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            'Друзья (${_friends.length})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.mail_outline_rounded, size: 15),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            'Заявки${_incomingRequests.isNotEmpty ? " (${_incomingRequests.length})" : ""}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   const Tab(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person_add_alt_1_rounded, size: 16),
-                        SizedBox(width: 6),
-                        Text('Найти / Добавить'),
+                        Icon(Icons.person_search_rounded, size: 15),
+                        SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            'Поиск и Код',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -281,8 +454,9 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildFriendsListTab(accent),
-                  _buildSearchAndAddTab(accent),
+                  _buildFriendsListTab(accent, scheme, isDark),
+                  _buildRequestsTab(accent, scheme, isDark),
+                  _buildSearchAndAddTab(accent, scheme, isDark),
                 ],
               ),
             ),
@@ -292,7 +466,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     );
   }
 
-  Widget _buildFriendsListTab(Color accent) {
+  Widget _buildFriendsListTab(Color accent, ColorScheme scheme, bool isDark) {
     if (_isLoadingFriends) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -304,28 +478,45 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.group_off_rounded, size: 48, color: Colors.white.withValues(alpha: 0.3)),
+              Icon(Icons.group_off_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'У вас пока нет друзей',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                style: TextStyle(color: scheme.onSurface, fontSize: 15, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Перейдите на вкладку «Найти / Добавить», чтобы найти пользователя в Supabase или ввести его никнейм',
+              Text(
+                'Поделитесь своим QR-кодом или найдите друзей по тегу (#0001) / коду (SP-...)',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
               ),
               const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () => _tabController.animateTo(1),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.search_rounded, size: 16),
-                label: const Text('Найти пользователей'),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _openQrInviteSheet,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: scheme.onPrimary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.qr_code_rounded, size: 16),
+                    label: const Text('Мой QR-код'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _tabController.animateTo(2),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: scheme.onSurface,
+                      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.search_rounded, size: 16),
+                    label: const Text('Найти по тегу'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -340,16 +531,17 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
         final friend = _friends[index];
         final isOnline = friend['isOnline'] == true;
         final roomCode = friend['room'] ?? friend['roomCode'];
-        final friendName = friend['name'] ?? 'Друг';
+        final friendName = friend['name'] ?? friend['username'] ?? 'Друг';
+        final tag = friend['tag'] != null ? friend['tag'].toString() : '';
         final status = friend['status'] ?? friend['statusText'] ?? (isOnline ? 'В сети' : 'Не в сети');
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
           ),
           child: Row(
             children: [
@@ -367,9 +559,9 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: isOnline ? const Color(0xFF00FF66) : Colors.white38,
+                        color: isOnline ? accent : scheme.onSurfaceVariant.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF131722), width: 1.5),
+                        border: Border.all(color: isDark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLowest, width: 1.5),
                       ),
                     ),
                   ),
@@ -380,15 +572,30 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      friendName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            friendName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        if (tag.isNotEmpty)
+                          Text(
+                            tag,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -396,7 +603,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 11,
                       ),
                     ),
@@ -408,13 +615,15 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                   padding: const EdgeInsets.only(right: 6),
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
                       context.push('/watch-together?pin=$roomCode');
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: accent.withValues(alpha: 0.2),
+                      backgroundColor: accent.withValues(alpha: 0.18),
                       foregroundColor: accent,
-                      side: BorderSide(color: accent.withValues(alpha: 0.5)),
+                      side: BorderSide(color: accent.withValues(alpha: 0.45)),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       visualDensity: VisualDensity.compact,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -423,25 +632,27 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                   ),
                 ),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: Colors.white54),
-                color: const Color(0xFF1B2230),
+                icon: Icon(Icons.more_vert_rounded, size: 18, color: scheme.onSurfaceVariant),
+                color: scheme.surfaceContainerHigh,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 onSelected: (val) {
                   if (val == 'remove') {
                     _removeFriend(friend);
                   } else if (val == 'profile') {
-                    Navigator.of(context).pop();
-                    context.pushNamed('profile', queryParameters: {'userId': friendName});
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                    context.pushNamed('profile', queryParameters: {'userId': friend['id']?.toString() ?? friendName});
                   }
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     value: 'profile',
                     child: Row(
-                      children: const [
-                        Icon(Icons.person_outline_rounded, size: 16, color: Colors.white70),
-                        SizedBox(width: 8),
-                        Text('Открыть профиль', style: TextStyle(color: Colors.white, fontSize: 12)),
+                      children: [
+                        Icon(Icons.person_outline_rounded, size: 16, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 8),
+                        Text('Открыть профиль', style: TextStyle(color: scheme.onSurface, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -464,26 +675,260 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     );
   }
 
-  Widget _buildSearchAndAddTab(Color accent) {
+  Widget _buildRequestsTab(Color accent, ColorScheme scheme, bool isDark) {
+    if (_isLoadingRequests) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_incomingRequests.isEmpty && _outgoingRequests.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.mail_outline_rounded, size: 44, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
+              const SizedBox(height: 12),
+              Text(
+                'Нет активных заявок',
+                style: TextStyle(color: scheme.onSurface, fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Здесь будут отображаться входящие и отправленные запросы в друзья',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      children: [
+        if (_incomingRequests.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'ВХОДЯЩИЕ ЗАПРОСЫ (${_incomingRequests.length})',
+              style: TextStyle(
+                color: accent,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          ..._incomingRequests.map((req) {
+            final p = req.profile;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  AppAvatar(avatarUrl: p.avatarUrl, username: p.username, size: 40),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${p.username}${p.tag}',
+                          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700, fontSize: 13.5),
+                        ),
+                        if (p.customStatus != null)
+                          Text(p.customStatus!, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => _respondToRequest(req.id, accept: false),
+                    icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
+                    tooltip: 'Отклонить',
+                  ),
+                  IconButton(
+                    onPressed: () => _respondToRequest(req.id, accept: true),
+                    icon: const Icon(Icons.check_rounded, color: Color(0xFF00FF66), size: 20),
+                    tooltip: 'Принять',
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 12),
+        ],
+
+        if (_outgoingRequests.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'ОТПРАВЛЕННЫЕ ЗАПРОСЫ (${_outgoingRequests.length})',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          ..._outgoingRequests.map((req) {
+            final p = req.profile;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.03) : scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  AppAvatar(avatarUrl: p.avatarUrl, username: p.username, size: 36),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${p.username}${p.tag}',
+                          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                        Text('Ожидает подтверждения', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _respondToRequest(req.id, accept: false),
+                    child: const Text('Отменить', style: TextStyle(color: Colors.redAccent, fontSize: 11.5)),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSearchAndAddTab(Color accent, ColorScheme scheme, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Banner если в буфере обмена найдено приглашение
+          if (_detectedClipboardInvite != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.link_rounded, color: accent, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Найдено приглашение в буфере обмена',
+                          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700, fontSize: 12),
+                        ),
+                        Text(
+                          'Код: $_detectedClipboardInvite',
+                          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      final code = _detectedClipboardInvite!;
+                      setState(() => _detectedClipboardInvite = null);
+                      FriendInviteConfirmationDialog.show(
+                        context,
+                        inviteCode: code,
+                        accentColor: accent,
+                        onAccepted: () {
+                          _loadFriends();
+                          _loadRequests();
+                          widget.onFriendsChanged?.call();
+                        },
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: scheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Открыть', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Quick actions: Мой QR & Сканировать
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openQrInviteSheet,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: scheme.onSurface,
+                    side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: Icon(Icons.qr_code_rounded, color: accent, size: 16),
+                  label: const Text('Моя визитка QR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openQrScannerSheet,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: scheme.onSurface,
+                    side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                  label: const Text('Сканировать QR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
           // Поле ввода поиска
           TextField(
             controller: _searchController,
             onChanged: _onSearchChanged,
-            style: const TextStyle(color: Colors.white, fontSize: 13.5),
+            style: TextStyle(color: scheme.onSurface, fontSize: 13.5),
             decoration: InputDecoration(
-              hintText: 'Поиск по никнейму или ID в Supabase...',
-              hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+              hintText: 'Поиск: Username#0001, SP-XXXXXX или никнейм...',
+              hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.7), fontSize: 12.5),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.05),
+              fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : scheme.surfaceContainerHigh.withValues(alpha: 0.4),
               prefixIcon: Icon(Icons.search_rounded, color: accent, size: 20),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.white54),
+                      icon: Icon(Icons.clear_rounded, size: 18, color: scheme.onSurfaceVariant),
                       onPressed: () {
                         _searchController.clear();
                         _onSearchChanged('');
@@ -492,7 +937,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                   : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -503,16 +948,16 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           ),
           const SizedBox(height: 12),
 
-          // Результаты поиска или кнопка прямого добавления
+          // Результаты поиска
           Expanded(
-            child: _buildSearchResultsSection(accent),
+            child: _buildSearchResultsSection(accent, scheme, isDark),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchResultsSection(Color accent) {
+  Widget _buildSearchResultsSection(Color accent, ColorScheme scheme, bool isDark) {
     if (_isSearching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -524,16 +969,16 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.person_search_rounded, size: 44, color: Colors.white.withValues(alpha: 0.2)),
+            Icon(Icons.person_search_rounded, size: 44, color: scheme.onSurfaceVariant.withValues(alpha: 0.3)),
             const SizedBox(height: 10),
-            const Text(
-              'Начните вводить никнейм',
-              style: TextStyle(color: Colors.white60, fontSize: 13),
+            Text(
+              'Введите никнейм, тег (#XXXX) или код (SP-XXXXXX)',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Поиск синхронизируется с базой аккаунтов Supabase',
-              style: TextStyle(color: Colors.white38, fontSize: 11),
+            Text(
+              'Поиск синхронизируется с базой аккаунтов Supabase в реальном времени',
+              style: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 11),
             ),
           ],
         ),
@@ -547,34 +992,18 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.search_off_rounded, size: 40, color: Colors.white.withValues(alpha: 0.3)),
+              Icon(Icons.search_off_rounded, size: 40, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
               const SizedBox(height: 10),
               Text(
-                'Пользователь «$query» не найден в облаке',
+                'Пользователь «$query» не найден',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                style: TextStyle(color: scheme.onSurface, fontSize: 13, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Вы можете добавить этот никнейм в свой локальный список друзей:',
+              Text(
+                'Убедитесь в правильности тега или попросите друга отправить QR-код/инвайт-ссылку',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54, fontSize: 11),
-              ),
-              const SizedBox(height: 14),
-              ElevatedButton.icon(
-                onPressed: () => _addFriend({
-                  'name': query,
-                  'avatar': 'cat',
-                  'status': 'Пользователь SyncPai',
-                  'isOnline': false,
-                }),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.person_add_rounded, size: 16),
-                label: Text('Добавить «$query»'),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
               ),
             ],
           ),
@@ -585,25 +1014,27 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     return ListView.builder(
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
-        final user = _searchResults[index];
-        final name = user['name'] ?? '';
-        final status = user['status'] ?? 'В SyncPai';
+        final profile = _searchResults[index];
+        final name = profile.username;
+        final tag = profile.tag;
+        final friendCode = profile.friendCode;
+        final status = profile.customStatus ?? (profile.isOnline ? 'В сети' : 'Не в сети');
         final isAlreadyFriend = _friends.any(
-          (f) => (f['name'] ?? '').toString().toLowerCase() == name.toString().toLowerCase(),
+          (f) => (f['id'] ?? '').toString() == profile.id,
         );
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
           ),
           child: Row(
             children: [
               AppAvatar(
-                avatarUrl: user['avatar'] as String?,
+                avatarUrl: profile.avatarUrl,
                 username: name,
                 size: 38,
               ),
@@ -612,19 +1043,34 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            name,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                        if (tag.isNotEmpty)
+                          Text(
+                            tag,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      status,
+                      friendCode != null ? 'Код: $friendCode • $status' : status,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 11,
                       ),
                     ),
@@ -635,24 +1081,24 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: isDark ? Colors.white.withValues(alpha: 0.08) : scheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.check_rounded, size: 14, color: Color(0xFF00FF66)),
-                      SizedBox(width: 4),
-                      Text('В друзьях', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                    children: [
+                      Icon(Icons.check_rounded, size: 14, color: accent),
+                      const SizedBox(width: 4),
+                      Text('В друзьях', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11)),
                     ],
                   ),
                 )
               else
                 ElevatedButton.icon(
-                  onPressed: () => _addFriend(user),
+                  onPressed: () => _addFriendDirect(profile.toMap()),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: scheme.onPrimary,
                     visualDensity: VisualDensity.compact,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -666,4 +1112,3 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     );
   }
 }
-

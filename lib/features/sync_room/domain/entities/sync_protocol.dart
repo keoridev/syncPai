@@ -191,12 +191,15 @@ class QuickPhraseToast extends Equatable {
 }
 
 /// Сообщение в чате совместного просмотра (Twitch style).
+/// [type]: 'user' — сообщение участника, 'system' — системное событие комнаты
+/// («Хост поставил на паузу», «Серия переключена»).
 class ChatMessage extends Equatable {
   final String id;
   final String sender;
   final String text;
   final DateTime timestamp;
   final bool isHost;
+  final String type;
 
   const ChatMessage({
     required this.id,
@@ -204,7 +207,10 @@ class ChatMessage extends Equatable {
     required this.text,
     required this.timestamp,
     this.isHost = false,
+    this.type = 'user',
   });
+
+  bool get isSystem => type == 'system';
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -212,6 +218,7 @@ class ChatMessage extends Equatable {
         'text': text,
         'timestamp': timestamp.millisecondsSinceEpoch,
         'is_host': isHost,
+        'type': type,
       };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -223,11 +230,25 @@ class ChatMessage extends Equatable {
           ? DateTime.fromMillisecondsSinceEpoch(json['timestamp'] as int)
           : DateTime.now(),
       isHost: json['is_host'] as bool? ?? false,
+      type: json['type'] as String? ?? 'user',
+    );
+  }
+
+  /// Маппинг строки таблицы `public.room_messages`
+  factory ChatMessage.fromRoomMessageRow(Map<String, dynamic> row) {
+    final created = DateTime.tryParse(row['created_at']?.toString() ?? '');
+    return ChatMessage(
+      id: row['id']?.toString() ?? '${DateTime.now().microsecondsSinceEpoch}',
+      sender: row['sender_name'] as String? ?? 'Гость',
+      text: row['content'] as String? ?? '',
+      timestamp: created?.toLocal() ?? DateTime.now(),
+      isHost: row['is_host'] as bool? ?? false,
+      type: row['type'] as String? ?? 'user',
     );
   }
 
   @override
-  List<Object?> get props => [id, sender, text, timestamp, isHost];
+  List<Object?> get props => [id, sender, text, timestamp, isHost, type];
 }
 
 /// Плавающая анимированная реакция (Floating Reaction).

@@ -25,6 +25,7 @@ import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
+import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'player_state.dart';
 
@@ -58,6 +59,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   bool isAutoSkipOpening = false;
   final Duration? _initialPosition;
   Duration? _pendingInitialSeek;
+  String? _loadedMediaKey;
 
   DateTime? _lastPosSavedAt;
 
@@ -398,6 +400,9 @@ class PlayerCubit extends Cubit<PlayerState> {
       onError: (_) {},
     );
 
+    // 1.1. История чата комнаты из public.room_messages (для опоздавших участников)
+    _loadChatHistory(code);
+
     // 2. Регистрация собственного присутствия (Presence)
     final myPresence = PeerPresence(
       userId: state.isHost ? 'host' : 'guest',
@@ -571,21 +576,29 @@ class PlayerCubit extends Cubit<PlayerState> {
           final effectivePosMs = posMs ?? timeMs;
 
           if (act == 'play' || isPlayingVal == true) {
-            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 2000) {
+            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 1500) {
               player.seek(Duration(milliseconds: effectivePosMs));
+            }
+            if (!state.isPlaying && packet.sender != 'Self') {
+              _addSystemChatMessage('${packet.sender} продолжил просмотр');
             }
             player.play();
           } else if (act == 'pause' || isPlayingVal == false) {
-            if (effectivePosMs != null) {
+            if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 1500) {
               player.seek(Duration(milliseconds: effectivePosMs));
+            }
+            if (state.isPlaying && packet.sender != 'Self') {
+              _addSystemChatMessage('${packet.sender} поставил на паузу');
             }
             player.pause();
           } else if (act == 'seek' && effectivePosMs != null) {
-            final diff = effectivePosMs - state.position.inMilliseconds;
-            if (diff > 15000) {
-              _activateSpoilerShield();
+            final diff = (effectivePosMs - state.position.inMilliseconds).abs();
+            if (diff >= 1500) {
+              if (effectivePosMs - state.position.inMilliseconds > 15000) {
+                _activateSpoilerShield();
+              }
+              player.seek(Duration(milliseconds: effectivePosMs));
             }
-            player.seek(Duration(milliseconds: effectivePosMs));
           }
         }
         break;
@@ -654,25 +667,21 @@ class PlayerCubit extends Cubit<PlayerState> {
         });
         break;
 
-      // Сообщение в чат (Twitch overlay chat)
+      // Сообщение в чат (Twitch overlay chat + чат сайдбара комнаты)
       case SyncActionTypes.chatMessage:
         final text = packet.payload['text'] as String? ?? '';
         final msgId = packet.payload['id'] as String? ??
             '${DateTime.now().microsecondsSinceEpoch}';
         final isHostMsg = packet.payload['is_host'] as bool? ?? false;
 
-        final message = ChatMessage(
+        _pushChatMessage(ChatMessage(
           id: msgId,
           sender: packet.sender,
           text: text,
           isHost: isHostMsg,
           timestamp: DateTime.now(),
-        );
-
-        final updated = List<ChatMessage>.from(state.chatMessages)..add(message);
-        if (updated.length > 50) updated.removeAt(0);
-        emit(state.copyWith(chatMessages: updated));
-        _addDanmaku(text, packet.sender);
+        ));
+        if (!isFromSelf) _addDanmaku(text, packet.sender);
         break;
 
       // Запрос паузы от гостя
@@ -716,6 +725,9 @@ class PlayerCubit extends Cubit<PlayerState> {
             orElse: () => state.episode,
           );
           cancelAutoNextCountdown();
+          if (nextEp.episode != state.episode.episode) {
+            _addSystemChatMessage('Серия переключена на ${nextEp.episode}');
+          }
           _switchEpisodeInternal(nextEp);
         }
         break;
@@ -950,6 +962,16 @@ class PlayerCubit extends Cubit<PlayerState> {
       return;
     }
 
+    final currentMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
+    if (_loadedMediaKey == currentMediaKey && player.state.playlist.medias.isNotEmpty) {
+      // Медиа уже открыто в плеере — избегаем повторного player.open(), сброса D3D/MediaCodec и AudioTrack
+      final shouldPlay = !state.isSyncRoom || state.isHost;
+      if (shouldPlay && !state.isPlaying) {
+        player.play();
+      }
+      return;
+    }
+
     try {
       final shouldPlay = !state.isSyncRoom || state.isHost;
       emit(state.copyWith(
@@ -967,6 +989,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         ),
         play: shouldPlay,
       );
+      _loadedMediaKey = currentMediaKey;
     } catch (e) {
       emit(state.copyWith(
         errorMessage: () => 'Ошибка запуска видеопотока: $e',
@@ -1003,6 +1026,7 @@ class PlayerCubit extends Cubit<PlayerState> {
             ),
             play: wasPlaying,
           );
+          _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
           return;
         }
       } catch (_) {}
@@ -1034,6 +1058,7 @@ class PlayerCubit extends Cubit<PlayerState> {
             ),
             play: wasPlaying,
           );
+          _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
           return;
         } catch (e) {
           emit(state.copyWith(
@@ -1057,6 +1082,7 @@ class PlayerCubit extends Cubit<PlayerState> {
               ),
               play: wasPlaying,
             );
+            _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
             return;
           }
         } catch (_) {}
@@ -1076,6 +1102,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           ),
           play: wasPlaying,
         );
+        _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$fallbackUrl';
       } catch (_) {}
     }
   }
@@ -1354,6 +1381,42 @@ class PlayerCubit extends Cubit<PlayerState> {
     );
   }
 
+  /// Добавить сообщение в ленту чата комнаты (дедупликация по id, лимит 100)
+  void _pushChatMessage(ChatMessage message) {
+    if (isClosed) return;
+    if (state.chatMessages.any((m) => m.id == message.id)) return;
+    final updated = List<ChatMessage>.from(state.chatMessages)..add(message);
+    if (updated.length > 100) updated.removeRange(0, updated.length - 100);
+    emit(state.copyWith(chatMessages: updated));
+  }
+
+  /// Системное событие комнаты («Хост поставил на паузу», «Серия переключена»)
+  void _addSystemChatMessage(String text) {
+    if (!state.isSyncRoom) return;
+    _pushChatMessage(ChatMessage(
+      id: 'sys_${DateTime.now().microsecondsSinceEpoch}',
+      sender: 'SyncPai',
+      text: text,
+      timestamp: DateTime.now(),
+      type: 'system',
+    ));
+  }
+
+  Future<void> _loadChatHistory(String code) async {
+    try {
+      final history = await syncRepository?.fetchChatHistory(code) ?? const <ChatMessage>[];
+      if (isClosed || history.isEmpty) return;
+      final existingIds = state.chatMessages.map((m) => m.id).toSet();
+      final merged = <ChatMessage>[
+        ...history.where((m) => !existingIds.contains(m.id)),
+        ...state.chatMessages,
+      ]..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      emit(state.copyWith(
+        chatMessages: merged.length > 100 ? merged.sublist(merged.length - 100) : merged,
+      ));
+    } catch (_) {}
+  }
+
   /// Отправить текстовое сообщение в чат и запустить бегущую строку (Danmaku)
   void sendChatMessage(String text) {
     final clean = text.trim();
@@ -1404,6 +1467,48 @@ class PlayerCubit extends Cubit<PlayerState> {
         duration: state.duration,
       );
     } catch (_) {}
+  }
+
+  /// Динамически подключить сессию совместной комнаты к текущему плееру
+  void attachRoomSession(SyncRoom room, {required bool isHost}) {
+    if (isClosed) return;
+    _heartbeatTimer?.cancel();
+    _presenceSubscription?.cancel();
+    _packetSubscription?.cancel();
+
+    emit(state.copyWith(
+      roomCode: room.code,
+      isHost: isHost,
+      peerName: isHost ? room.peerName : room.hostName,
+      syncStatus: SyncStatus.active,
+      chatMessages: const [],
+    ));
+
+    _initSyncGateway();
+    _addSystemChatMessage(isHost ? 'Вы создали комнату ${room.code}' : 'Вы присоединились к комнате ${room.code}');
+  }
+
+  /// Покинуть комнату совместного просмотра и вернуться в соло-режим
+  Future<void> leaveRoom() async {
+    final code = state.roomCode;
+    _heartbeatTimer?.cancel();
+    _presenceSubscription?.cancel();
+    _packetSubscription?.cancel();
+
+    if (code != null && syncRepository != null) {
+      try {
+        await syncRepository!.leaveRoom(code);
+      } catch (_) {}
+    }
+
+    if (!isClosed) {
+      emit(state.copyWith(
+        clearRoom: true,
+        syncStatus: SyncStatus.disconnected,
+        peerPresence: () => null,
+        bufferNotice: () => null,
+      ));
+    }
   }
 
   /// Запрос паузы от ведомого гостя

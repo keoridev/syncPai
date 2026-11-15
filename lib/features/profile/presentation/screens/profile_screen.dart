@@ -13,7 +13,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
@@ -218,26 +217,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
-  /// Динамический Accent Color (Киберпанк / Матрица / Сакура / Discord)
+  /// Единый акцентный цвет профиля, строго синхронизированный с выбранной темой приложения
   Color _resolveDynamicAccent(UserProfile profile, Color themePrimary) {
-    final bg = (profile.backgroundId ?? '').toLowerCase();
-    if (bg.contains('matrix')) {
-      return const Color(0xFF00FF66); // Зеленый неон Матрицы
-    }
-    if (bg.contains('sakura')) {
-      return const Color(0xFFFF2A6D); // Неоново-розовая Сакура
-    }
-    if (bg.contains('cyberpunk') || bg.contains('neon')) {
-      return const Color(0xFF00F0FF); // Циан Cyberpunk
-    }
-    if (profile.accentColor != null &&
-        profile.accentColor!.isNotEmpty &&
-        profile.accentColor != '#E06C53' &&
-        profile.accentColor != '#8A2BE2') {
-      return SteamProfileThemeAccent.fromHex(profile.accentColor!).color;
-    }
-    // По умолчанию: Discord Blurple
-    return const Color(0xFF5865F2);
+    return themePrimary;
   }
 
   void _openDetailsForHistory(BuildContext context, WatchHistoryItem item) {
@@ -277,6 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _showEditProfileSheet(BuildContext context, UserProfile profile) {
+    final scheme = Theme.of(context).colorScheme;
     final controller = TextEditingController(text: profile.username);
     final avatarUrlController = TextEditingController(
       text: (profile.avatarUrl?.startsWith('http') == true) ? profile.avatarUrl : '',
@@ -286,7 +269,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surfaceElevated,
+      backgroundColor: scheme.surfaceContainerHigh,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -308,7 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     width: 38,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.strokeMedium,
+                      color: scheme.outlineVariant.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -318,11 +301,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   children: [
                     Text(
                       'Редактировать профиль',
-                      style: AppTypography.titleMedium.copyWith(color: AppColors.textPrimary),
+                      style: AppTypography.titleMedium.copyWith(color: scheme.onSurface),
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.palette_outlined, color: AppColors.textSecondary, size: 20),
+                      icon: Icon(Icons.palette_outlined, color: scheme.onSurfaceVariant, size: 20),
                       tooltip: 'Полная кастомизация Steam',
                       onPressed: () {
                         Navigator.pop(sheetContext);
@@ -340,12 +323,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+                        color: scheme.primary.withValues(alpha: 0.6),
                         width: 2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
+                          color: scheme.primary.withValues(alpha: 0.25),
                           blurRadius: 12,
                           spreadRadius: 2,
                         ),
@@ -367,9 +350,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                     icon: const Icon(Icons.add_photo_alternate_rounded, size: 20),
                     label: const Text('Загрузить фото из галереи'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6), width: 1.2),
-                      backgroundColor: AppColors.surface,
+                      foregroundColor: scheme.onSurface,
+                      side: BorderSide(color: scheme.primary.withValues(alpha: 0.6), width: 1.2),
+                      backgroundColor: scheme.surfaceContainer,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
@@ -403,37 +386,37 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 const SizedBox(height: 16),
 
-                Text('Имя пользователя', style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+                Text('Имя пользователя', style: AppTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 8),
                 TextField(
                   controller: controller,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: scheme.onSurface),
                   decoration: InputDecoration(
                     hintText: 'Введите имя',
-                    hintStyle: const TextStyle(color: AppColors.textMuted),
+                    hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
                     filled: true,
-                    fillColor: AppColors.surface,
+                    fillColor: scheme.surfaceContainer,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.strokeMedium),
+                      borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                Text('URL ссылки на аватар', style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+                Text('URL ссылки на аватар', style: AppTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 8),
                 TextField(
                   controller: avatarUrlController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: TextStyle(color: scheme.onSurface, fontSize: 13),
                   decoration: InputDecoration(
                     hintText: 'https://.../avatar.png',
-                    hintStyle: const TextStyle(color: AppColors.textMuted),
+                    hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
                     filled: true,
-                    fillColor: AppColors.surface,
+                    fillColor: scheme.surfaceContainer,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.strokeMedium),
+                      borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
                     ),
                   ),
                   onChanged: (val) {
@@ -444,7 +427,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 const SizedBox(height: 16),
 
-                Text('Или выберите силуэт:', style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+                Text('Или выберите силуэт:', style: AppTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 56,
@@ -465,7 +448,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                              color: isSelected ? scheme.primary : Colors.transparent,
                               width: 2,
                             ),
                           ),
@@ -495,10 +478,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                       }
                     },
                     style: FilledButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    child: const Text('Сохранить'),
+                    child: Text('Сохранить', style: TextStyle(color: scheme.onPrimary, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -510,6 +495,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildGuestSyncBanner(BuildContext context, UserProfile profile, Color themePrimary, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
     return _GlassCard(
       accentColor: accent,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -533,20 +519,20 @@ class _ProfileScreenState extends State<ProfileScreen>
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Войти или создать аккаунт',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'Вход по Email / Google для сохранения истории и списков',
                   style: TextStyle(
-                    color: AppColors.textSecondary,
+                    color: scheme.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),
@@ -554,9 +540,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.close_rounded,
-              color: AppColors.textSecondary,
+              color: scheme.onSurfaceVariant,
               size: 18,
             ),
             onPressed: _dismissGuestBanner,
@@ -571,10 +557,12 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    final themePrimary = Theme.of(context).colorScheme.primary;
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themePrimary = scheme.primary;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0E0E12),
+      backgroundColor: scheme.surface,
       body: BlocBuilder<ProfileCubit, ProfileState>(
         bloc: _profileCubit,
         builder: (context, state) {
@@ -663,10 +651,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.25),
+                          (isDark ? Colors.black : Colors.white).withValues(alpha: 0.15),
                           Colors.transparent,
-                          const Color(0xFF0E0E12).withValues(alpha: 0.70),
-                          const Color(0xFF0E0E12).withValues(alpha: 0.96),
+                          scheme.surface.withValues(alpha: isDark ? 0.70 : 0.60),
+                          scheme.surface.withValues(alpha: isDark ? 0.96 : 0.92),
                         ],
                         stops: const [0.0, 0.20, 0.65, 1.0],
                       ),
@@ -834,6 +822,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMobileSegmentedTabs(Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final tabs = [
       (0, 'Обзор', Icons.auto_awesome_mosaic_rounded),
       (1, 'Статистика', Icons.bar_chart_rounded),
@@ -849,10 +839,12 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
+              color: isDark
+                  ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                  : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: accent.withValues(alpha: 0.25),
+                color: scheme.outlineVariant.withValues(alpha: 0.35),
                 width: 1.1,
               ),
             ),
@@ -874,7 +866,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       padding: const EdgeInsets.symmetric(vertical: 9),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? accent.withValues(alpha: 0.22)
+                            ? accent.withValues(alpha: isDark ? 0.22 : 0.16)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
@@ -890,7 +882,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           Icon(
                             icon,
                             size: 14,
-                            color: isSelected ? accent : Colors.white60,
+                            color: isSelected ? accent : scheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -898,7 +890,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelected ? Colors.white : Colors.white60,
+                              color: isSelected ? accent : scheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -915,6 +907,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMobileFriendsBanner(BuildContext context, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
     final onlineCount = _onlineFriends.where((f) => f['isOnline'] == true).length;
     final subtitle = _onlineFriends.isEmpty
         ? 'Нажмите, чтобы перейти во вкладку «Вместе» и добавить друзей'
@@ -944,10 +937,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Друзья в сети →',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: scheme.onSurface,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
@@ -957,8 +950,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white60,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
                     fontSize: 11,
                   ),
                 ),
@@ -972,6 +965,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildFavoriteAnimeShowcase(BuildContext context, UserProfile profile, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
     final title = (profile.favoriteAnimeTitle != null && profile.favoriteAnimeTitle!.isNotEmpty)
         ? profile.favoriteAnimeTitle!
         : 'Клинок, рассекающий демонов';
@@ -990,7 +984,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.star_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'ЛЮБИМЫЙ ТАЙТЛ // ИЗБРАННОЕ',
                   maxLines: 1,
@@ -999,7 +993,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
@@ -1033,10 +1027,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: CachedNetworkImage(
                     imageUrl: wrapCorsSafeUrl(poster),
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => const ColoredBox(color: Colors.black26),
+                    placeholder: (_, __) => Container(color: scheme.surfaceContainer),
                     errorWidget: (_, __, ___) => Container(
-                      color: AppColors.surface,
-                      child: const Icon(Icons.movie_rounded, color: Colors.white38),
+                      color: scheme.surfaceContainer,
+                      child: Icon(Icons.movie_rounded, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
                     ),
                   ),
                 ),
@@ -1050,8 +1044,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: scheme.onSurface,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1060,7 +1054,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     Text(
                       'Все сезоны просмотрены в SyncPai',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 11.5,
                       ),
                     ),
@@ -1094,6 +1088,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildBadgesShowcaseCard(BuildContext context, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final badges = SteamBadge.all.take(8).toList();
 
     return _GlassCard(
@@ -1107,7 +1103,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.military_tech_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'РЕДКИЕ ЗНАЧКИ И ДОСТИЖЕНИЯ',
                   maxLines: 1,
@@ -1116,16 +1112,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
               const SizedBox(width: 6),
               Text(
                 '${badges.length} шт.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white60,
+                  color: scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1152,12 +1148,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: b.color.withValues(alpha: 0.12),
+                      color: isDark
+                          ? scheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                          : scheme.surfaceContainerLowest.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: b.color.withValues(alpha: 0.4), width: 1.0),
+                      border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.0),
                       boxShadow: [
                         BoxShadow(
-                          color: b.color.withValues(alpha: 0.15),
+                          color: accent.withValues(alpha: 0.10),
                           blurRadius: 8,
                         ),
                       ],
@@ -1168,14 +1166,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(b.icon, color: b.color, size: 24),
+                          Icon(b.icon, color: accent, size: 24),
                           const SizedBox(height: 4),
                           Text(
                             'Ур. ${b.level}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: b.color,
+                              color: accent,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1186,10 +1184,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: scheme.onSurface,
                               ),
                             ),
                           ),
@@ -1207,6 +1205,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildOnlineFriendsCard(BuildContext context, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final friends = _onlineFriends;
     final onlineCount = friends.where((f) => f['isOnline'] == true).length;
 
@@ -1221,7 +1221,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.people_alt_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              const Flexible(
+              Flexible(
                 child: Text(
                   'ДРУЗЬЯ ОНЛАЙН',
                   maxLines: 1,
@@ -1230,7 +1230,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
@@ -1251,14 +1251,14 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00FF66).withValues(alpha: 0.18),
+                  color: accent.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF00FF66).withValues(alpha: 0.4)),
+                  border: Border.all(color: accent.withValues(alpha: 0.4)),
                 ),
                 child: Text(
                   '$onlineCount в сети',
-                  style: const TextStyle(
-                    color: Color(0xFF00FF66),
+                  style: TextStyle(
+                    color: accent,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1272,18 +1272,20 @@ class _ProfileScreenState extends State<ProfileScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
+                color: isDark
+                    ? scheme.surfaceContainer.withValues(alpha: 0.4)
+                    : scheme.surfaceContainerLowest.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
               ),
               child: Column(
                 children: [
-                  Icon(Icons.people_outline_rounded, size: 28, color: accent.withValues(alpha: 0.65)),
+                  Icon(Icons.people_outline_rounded, size: 28, color: accent.withValues(alpha: 0.75)),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Пока нет друзей онлайн',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: scheme.onSurface,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1293,7 +1295,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     'Добавьте друзей, чтобы видеть их статус и смотреть аниме синхронно',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
+                      color: scheme.onSurfaceVariant,
                       fontSize: 11,
                     ),
                   ),
@@ -1305,9 +1307,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       onFriendsChanged: _loadRealFriends,
                     ),
                     icon: Icon(Icons.person_add_alt_1_rounded, size: 15, color: accent),
-                    label: const Text('Найти друзей', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    label: Text('Найти друзей', style: TextStyle(color: scheme.onSurface, fontSize: 11.5, fontWeight: FontWeight.w700)),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
+                      foregroundColor: scheme.onSurface,
                       side: BorderSide(color: accent.withValues(alpha: 0.5)),
                       visualDensity: VisualDensity.compact,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1324,9 +1326,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
+                    color: isDark
+                        ? scheme.surfaceContainer.withValues(alpha: 0.45)
+                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
@@ -1344,9 +1348,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                               width: 9,
                               height: 9,
                               decoration: BoxDecoration(
-                                color: f['isOnline'] == true ? const Color(0xFF57CBDE) : Colors.white38,
+                                color: f['isOnline'] == true ? accent : scheme.onSurfaceVariant.withValues(alpha: 0.4),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: const Color(0xFF14161F), width: 1.5),
+                                border: Border.all(color: scheme.surface, width: 1.5),
                               ),
                             ),
                           ),
@@ -1359,8 +1363,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           children: [
                             Text(
                               f['name'] as String,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: scheme.onSurface,
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -1368,7 +1372,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             Text(
                               f['status'] as String,
                               style: TextStyle(
-                                color: room != null ? accent : Colors.white60,
+                                color: room != null ? accent : scheme.onSurfaceVariant,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -1381,13 +1385,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                           onPressed: () => context.push('/room/$room'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: accent,
-                            foregroundColor: AppColors.onColor(accent),
+                            foregroundColor: scheme.onPrimary,
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             visualDensity: VisualDensity.compact,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 0,
                           ),
-                          child: const Text('Войти', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          child: Text('Войти', style: TextStyle(color: scheme.onPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                     ],
                   ),
@@ -1400,6 +1404,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildCommentsWallCard(BuildContext context, UserProfile profile, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final comments = _wallComments;
 
     return _GlassCard(
@@ -1413,7 +1419,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.comment_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              const Flexible(
+              Flexible(
                 child: Text(
                   'СТЕНА КОММЕНТАРИЕВ',
                   maxLines: 1,
@@ -1422,16 +1428,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
               const Spacer(),
               Text(
                 '${comments.length} записи',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white60,
+                  color: scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1442,9 +1448,11 @@ class _ProfileScreenState extends State<ProfileScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: isDark
+                  ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                  : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
             ),
             child: Row(
               children: [
@@ -1452,11 +1460,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: TextField(
                     controller: _commentController,
                     onSubmitted: (_) => _submitWallComment(profile),
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    style: TextStyle(color: scheme.onSurface, fontSize: 12),
                     decoration: InputDecoration(
                       hintText: 'Оставить комментарий в профиле...',
                       hintStyle: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
                         fontSize: 11.5,
                       ),
                       border: InputBorder.none,
@@ -1499,8 +1507,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 c['author'] ?? 'Отаку',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: scheme.onSurface,
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -1510,7 +1518,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             Text(
                               c['time'] ?? '',
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.4),
+                                color: scheme.onSurfaceVariant,
                                 fontSize: 10,
                               ),
                             ),
@@ -1520,7 +1528,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         Text(
                           c['text'] ?? '',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
+                            color: scheme.onSurface.withValues(alpha: 0.88),
                             fontSize: 11,
                           ),
                         ),
@@ -1557,6 +1565,8 @@ class _StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final watchTimeStr = (stats.formattedTime.isNotEmpty && stats.formattedTime != '0 мин.')
         ? stats.formattedTime
         : '4 ч. 36 мин.';
@@ -1575,7 +1585,7 @@ class _StatsCard extends StatelessWidget {
             children: [
               Icon(Icons.bar_chart_rounded, size: 15, color: currentAccentColor),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'СТАТИСТИКА ПРОСМОТРА',
                   maxLines: 1,
@@ -1584,7 +1594,7 @@ class _StatsCard extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
@@ -1594,9 +1604,11 @@ class _StatsCard extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: isDark
+                        ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
+                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1604,15 +1616,15 @@ class _StatsCard extends StatelessWidget {
                       Icon(
                         showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
                         size: 13,
-                        color: Colors.white70,
+                        color: scheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white70,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1629,26 +1641,29 @@ class _StatsCard extends StatelessWidget {
               // 1. Время в аниме
               Expanded(
                 child: _buildStatCol(
+                  context,
                   icon: Icons.access_time_rounded,
                   value: watchTimeStr,
                   label: 'Общее время',
                 ),
               ),
-              Container(width: 1, height: 38, color: Colors.white.withValues(alpha: 0.12)),
+              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
 
               // 2. Тайтлы
               Expanded(
                 child: _buildStatCol(
+                  context,
                   icon: Icons.video_library_rounded,
                   value: '$totalTitles',
                   label: 'В коллекции',
                 ),
               ),
-              Container(width: 1, height: 38, color: Colors.white.withValues(alpha: 0.12)),
+              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
 
               // 3. Серии
               Expanded(
                 child: _buildStatCol(
+                  context,
                   icon: Icons.play_circle_outline_rounded,
                   value: '$totalEpisodes',
                   label: 'Эпизодов',
@@ -1669,11 +1684,11 @@ class _StatsCard extends StatelessWidget {
               ),
               _buildCategoryPill(
                 label: 'Просмотрено: ${stats.completedTitles > 0 ? stats.completedTitles : 2}',
-                color: const Color(0xFF00FF66),
+                color: currentAccentColor.withValues(alpha: 0.80),
               ),
               _buildCategoryPill(
                 label: 'В планах: ${stats.plannedTitles > 0 ? stats.plannedTitles : 1}',
-                color: Colors.white54,
+                color: scheme.onSurfaceVariant,
               ),
             ],
           ),
@@ -1688,11 +1703,13 @@ class _StatsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatCol({
+  Widget _buildStatCol(
+    BuildContext context, {
     required IconData icon,
     required String value,
     required String label,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1702,18 +1719,18 @@ class _StatsCard extends StatelessWidget {
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: scheme.onSurface,
           ),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
-            color: Colors.white60,
+            color: scheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -1789,6 +1806,7 @@ class _RecentHistoryCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final rawItems = items.isNotEmpty ? items : _fallbackSampleItems;
     // Строгая дедупликация по titleId и названию: один тайтл = максимум 1 карточка в карусели
     final seenIds = <int>{};
@@ -1825,7 +1843,7 @@ class _RecentHistoryCarousel extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
-                    color: currentAccentColor,
+                    color: scheme.onSurface,
                   ),
                 ),
               ),
@@ -1873,6 +1891,7 @@ class _RecentHistoryCarousel extends StatelessWidget {
   }
 
   Widget _buildRecentCard(BuildContext context, WatchHistoryItem item) {
+    final scheme = Theme.of(context).colorScheme;
     const cardWidth = 140.0;
     const previewHeight = 78.0; // 16:9
 
@@ -1890,7 +1909,7 @@ class _RecentHistoryCarousel extends StatelessWidget {
               height: previewHeight,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(9),
@@ -1901,10 +1920,10 @@ class _RecentHistoryCarousel extends StatelessWidget {
                       CachedNetworkImage(
                         imageUrl: wrapCorsSafeUrl(item.posterUrl),
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _buildFallbackPreview(),
+                        errorWidget: (_, __, ___) => _buildFallbackPreview(context),
                       )
                     else
-                      _buildFallbackPreview(),
+                      _buildFallbackPreview(context),
 
                     // Черная полупрозрачная маска
                     DecoratedBox(
@@ -1962,7 +1981,7 @@ class _RecentHistoryCarousel extends StatelessWidget {
                             child: LinearProgressIndicator(
                               value: item.progress > 0 ? item.progress : 0.45,
                               minHeight: 3,
-                              backgroundColor: Colors.white.withValues(alpha: 0.20),
+                              backgroundColor: scheme.onSurface.withValues(alpha: 0.15),
                               valueColor: AlwaysStoppedAnimation<Color>(currentAccentColor),
                             ),
                           ),
@@ -1980,10 +1999,10 @@ class _RecentHistoryCarousel extends StatelessWidget {
               item.titleName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: scheme.onSurface,
               ),
             ),
             const SizedBox(height: 2),
@@ -1993,9 +2012,9 @@ class _RecentHistoryCarousel extends StatelessWidget {
               'Серия ${item.episode}${item.episodeName != null && item.episodeName!.isNotEmpty ? ' • ${item.episodeName}' : ''}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: Colors.white60,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -2004,9 +2023,10 @@ class _RecentHistoryCarousel extends StatelessWidget {
     );
   }
 
-  Widget _buildFallbackPreview() {
+  Widget _buildFallbackPreview(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: const Color(0xFF1B1E2B),
+      color: scheme.surfaceContainer,
       child: Center(
         child: Icon(Icons.movie_filter_rounded, size: 24, color: currentAccentColor.withValues(alpha: 0.45)),
       ),
@@ -2034,18 +2054,27 @@ class _GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final cardContent = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
+        color: isDark
+            ? scheme.surfaceContainer.withValues(alpha: 0.65)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: accentColor.withValues(alpha: 0.25),
+          color: isDark
+              ? accentColor.withValues(alpha: 0.25)
+              : scheme.outlineVariant.withValues(alpha: 0.35),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),

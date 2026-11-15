@@ -97,6 +97,10 @@ abstract class SyncRoomRepository {
     bool isHost = false,
   });
 
+  /// История чата комнаты из таблицы `public.room_messages` (последние [limit] сообщений,
+  /// по возрастанию времени). При недоступности Supabase возвращает пустой список.
+  Future<List<ChatMessage>> fetchChatHistory(String roomCode, {int limit = 50});
+
   /// REQUEST_PAUSE: запрос гостя на паузу
   Future<void> sendRequestPause({
     required String roomCode,

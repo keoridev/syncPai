@@ -168,7 +168,9 @@ class ThemePreset extends Equatable {
   ];
 
   static ThemePreset fromId(String? id) {
-    if (id == null || id.isEmpty) return all.first;
+    if (id == null || id.isEmpty) {
+      return all.firstWhere((p) => p.id == 'sunset_orange', orElse: () => all.first);
+    }
     return all.firstWhere((p) => p.id == id, orElse: () => all.first);
   }
 

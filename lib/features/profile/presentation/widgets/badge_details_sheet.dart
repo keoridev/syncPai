@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../domain/entities/steam_profile_customization.dart';
@@ -109,12 +108,16 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final rarityColor = _getRarityColor(widget.badge.rarity);
+    final buttonTextColor = _currentColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: isDark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLowest,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
       child: Column(
@@ -126,7 +129,7 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.strokeMedium,
+                color: scheme.outlineVariant.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -155,7 +158,7 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                 height: 84,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF16181F),
+                  color: isDark ? const Color(0xFF16181F) : scheme.surfaceContainerHigh,
                   border: Border.all(color: _currentColor, width: 2.0),
                   boxShadow: [
                     BoxShadow(
@@ -198,13 +201,13 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
           // Название значка и уровень
           Text(
             widget.badge.title,
-            style: AppTypography.titleLarge.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w800),
+            style: AppTypography.titleLarge.copyWith(color: scheme.onSurface, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             'Уровень ${widget.badge.level} • ${widget.badge.description}',
             textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTypography.bodySmall.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
 
@@ -242,8 +245,8 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                       const SizedBox(height: 2),
                       Text(
                         widget.badge.perkTitle,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: scheme.onSurface,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
@@ -251,8 +254,8 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                       const SizedBox(height: 2),
                       Text(
                         widget.badge.perkDescription,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
                           fontSize: 11.5,
                         ),
                       ),
@@ -267,12 +270,12 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
           // Критерий получения
           Row(
             children: [
-              const Icon(Icons.military_tech_outlined, size: 16, color: AppColors.textMuted),
+              Icon(Icons.military_tech_outlined, size: 16, color: scheme.onSurfaceVariant),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'Получение: ${widget.badge.unlockCriteria}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5),
+                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11.5),
                 ),
               ),
             ],
@@ -283,9 +286,9 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Цвет неона значка:',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               Wrap(
                 spacing: 6,
@@ -305,7 +308,7 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                         color: c,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? Colors.white : Colors.transparent,
+                          color: isSelected ? scheme.onSurface : Colors.transparent,
                           width: 2,
                         ),
                       ),
@@ -321,9 +324,9 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Стиль свечения:',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               SegmentedButton<BadgeGlowStyle>(
                 segments: const [
@@ -364,7 +367,9 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                       ),
                       onPressed: () {
                         widget.onSelectBadge?.call();
-                        Navigator.of(context).pop();
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
                       },
                       child: const Text('Выбрать значок', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
@@ -378,10 +383,14 @@ class _BadgeDetailsSheetState extends State<BadgeDetailsSheet>
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _currentColor,
-                      foregroundColor: Colors.white,
+                      foregroundColor: buttonTextColor,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () {
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
                     child: const Text('Закрыть', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),

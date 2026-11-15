@@ -17,6 +17,9 @@ import 'features/downloads/presentation/cubit/download_cubit.dart';
 import 'features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'features/player/services/global_mini_player_service.dart';
 import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
+import 'features/winter_theme/presentation/widgets/winter_snowfall_overlay.dart';
+import 'core/services/deep_link_service.dart';
+import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,8 +81,46 @@ void main() async {
   runApp(const SyncPaiApp());
 }
 
-class SyncPaiApp extends StatelessWidget {
+class SyncPaiApp extends StatefulWidget {
   const SyncPaiApp({super.key});
+
+  @override
+  State<SyncPaiApp> createState() => _SyncPaiAppState();
+}
+
+class _SyncPaiAppState extends State<SyncPaiApp> {
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  void _initDeepLinks() {
+    DeepLinkService.instance.onFriendInviteDetected = (code) {
+      final navContext = rootNavigatorKey.currentContext;
+      if (navContext != null) {
+        FriendInviteConfirmationDialog.show(
+          navContext,
+          inviteCode: code,
+        );
+      }
+    };
+
+    DeepLinkService.instance.onRoomInviteDetected = (roomCode) {
+      final navContext = rootNavigatorKey.currentContext;
+      if (navContext != null) {
+        appRouter.push('/room/$roomCode');
+      }
+    };
+
+    DeepLinkService.instance.init();
+  }
+
+  @override
+  void dispose() {
+    DeepLinkService.instance.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +153,7 @@ class SyncPaiApp extends StatelessWidget {
                         fit: StackFit.expand,
                         children: [
                           child ?? const SizedBox.shrink(),
+                          const WinterSnowfallOverlay(),
                           const GlobalMiniPlayerOverlay(),
                         ],
                       ),

@@ -122,7 +122,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
       listener: (context, state) {
         if (state is SyncRoomPlaybackStarting) {
           // Синхронный переход в плеер при старте воспроизведения хостом
-          Navigator.of(context).pop();
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
           widget.onStartPlayback(state.room, state.isHost);
         }
       },
@@ -839,7 +841,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                 icon: const Icon(Icons.play_arrow_rounded, size: 22),
                 label: const Text('Войти в плеер сейчас ▶', style: TextStyle(fontWeight: FontWeight.w700)),
                 onPressed: () {
-                  Navigator.of(context).pop();
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
                   widget.onStartPlayback(room, false);
                 },
               ),
@@ -1066,20 +1070,27 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.people_alt_rounded, size: 16, color: Colors.white70),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Участники комнаты',
-                    style: AppTypography.titleSmall.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.people_alt_rounded, size: 16, color: Colors.white70),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Участники комнаты',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.titleSmall.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -1610,7 +1621,9 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
         }
         // Запускаем просмотр подобранного тайтла в плеере и закрываем лобби
         final updatedRoom = room.copyWith(title: matched);
-        Navigator.of(context, rootNavigator: true).pop(); // закрываем лобби
+        if (Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop(); // закрываем лобби
+        }
         widget.onStartPlayback(updatedRoom, isHost);
       },
     );

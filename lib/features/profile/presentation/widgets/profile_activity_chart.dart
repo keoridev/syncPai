@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
@@ -22,10 +21,12 @@ enum ProfileChartMode {
 /// 3. Горизонтальная диаграмма любимых жанров и предпочтений.
 class ProfileActivityChart extends StatefulWidget {
   final UserAnimeStats stats;
+  final Color? accentColor;
 
   const ProfileActivityChart({
     super.key,
     required this.stats,
+    this.accentColor,
   });
 
   @override
@@ -77,15 +78,22 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final accent = widget.accentColor ?? scheme.primary;
+
     final maxHours = _weekData.map((e) => e.hours).reduce((a, b) => a > b ? a : b);
     final totalWeekHours = _weekData.fold<double>(0, (sum, item) => sum + item.hours).toStringAsFixed(1);
 
     return Container(
       padding: const EdgeInsets.all(AppDimensions.spacingLg),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated.withValues(alpha: 0.65),
+        color: isDark
+            ? scheme.surfaceContainer.withValues(alpha: 0.65)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.strokeMedium),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,30 +101,30 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           // Переключатель вида графика (Столбчатый / Кольцевой / Жанры)
           Row(
             children: [
-              _buildChartTypeTab(0, 'По дням', Icons.bar_chart_rounded),
+              _buildChartTypeTab(0, 'По дням', Icons.bar_chart_rounded, accent, scheme, isDark),
               const SizedBox(width: 6),
-              _buildChartTypeTab(1, 'Кольцевой', Icons.donut_large_rounded),
+              _buildChartTypeTab(1, 'Кольцевой', Icons.donut_large_rounded, accent, scheme, isDark),
               const SizedBox(width: 6),
-              _buildChartTypeTab(2, 'Жанры', Icons.radar_rounded),
+              _buildChartTypeTab(2, 'Жанры', Icons.radar_rounded, accent, scheme, isDark),
             ],
           ),
           const SizedBox(height: 16),
 
           if (_selectedChartType == 0)
-            _buildWeeklyBarChart(maxHours, totalWeekHours)
+            _buildWeeklyBarChart(maxHours, totalWeekHours, accent, scheme)
           else if (_selectedChartType == 1)
-            _buildDonutStatusChart()
+            _buildDonutStatusChart(accent, scheme)
           else
-            _buildGenresRadarChart(),
+            _buildGenresRadarChart(accent, scheme),
 
           const SizedBox(height: 16),
-          const Divider(height: 1, color: AppColors.strokeMedium),
+          Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.35)),
           const SizedBox(height: 12),
           Text(
             'РАСПРЕДЕЛЕНИЕ ПО ЖАНРАМ',
             style: AppTypography.caption.copyWith(
               letterSpacing: 1.0,
-              color: AppColors.textMuted,
+              color: scheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
               fontSize: 10.5,
             ),
@@ -125,11 +133,11 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: const [
-              _GenreStatChip(label: 'Сёнэн', pct: '38%', color: Color(0xFF7C4DFF)),
-              _GenreStatChip(label: 'Экшен', pct: '26%', color: Color(0xFF00E5FF)),
-              _GenreStatChip(label: 'Фэнтези', pct: '18%', color: Color(0xFFFF4081)),
-              _GenreStatChip(label: 'Романтика', pct: '12%', color: Color(0xFFFFAB00)),
+            children: [
+              _GenreStatChip(label: 'Сёнэн', pct: '38%', color: accent),
+              _GenreStatChip(label: 'Экшен', pct: '26%', color: accent.withValues(alpha: 0.80)),
+              _GenreStatChip(label: 'Фэнтези', pct: '18%', color: accent.withValues(alpha: 0.65)),
+              _GenreStatChip(label: 'Романтика', pct: '12%', color: accent.withValues(alpha: 0.50)),
             ],
           ),
         ],
@@ -137,7 +145,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
     );
   }
 
-  Widget _buildChartTypeTab(int index, String label, IconData icon) {
+  Widget _buildChartTypeTab(int index, String label, IconData icon, Color accent, ColorScheme scheme, bool isDark) {
     final isSelected = _selectedChartType == index;
     return Expanded(
       child: GestureDetector(
@@ -150,13 +158,13 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.primary.withValues(alpha: 0.22)
-                : Colors.white.withValues(alpha: 0.04),
+                ? accent.withValues(alpha: 0.22)
+                : (isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerHigh.withValues(alpha: 0.4)),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isSelected
-                  ? AppColors.primaryLight.withValues(alpha: 0.65)
-                  : Colors.white.withValues(alpha: 0.08),
+                  ? accent.withValues(alpha: 0.65)
+                  : scheme.outlineVariant.withValues(alpha: 0.25),
               width: 1.0,
             ),
           ),
@@ -166,7 +174,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
               Icon(
                 icon,
                 size: 13,
-                color: isSelected ? AppColors.primaryLight : AppColors.textMuted,
+                color: isSelected ? accent : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 5),
               Flexible(
@@ -177,7 +185,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
+                    color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -188,7 +196,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
     );
   }
 
-  Widget _buildWeeklyBarChart(double maxHours, String totalWeekHours) {
+  Widget _buildWeeklyBarChart(double maxHours, String totalWeekHours, Color accent, ColorScheme scheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -202,7 +210,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption.copyWith(
                   letterSpacing: 1.0,
-                  color: AppColors.textMuted,
+                  color: scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w700,
                   fontSize: 10.5,
                 ),
@@ -212,7 +220,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.16),
+                color: accent.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -220,7 +228,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primaryLight,
+                  color: accent,
                 ),
               ),
             ),
@@ -252,9 +260,9 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: item.isPeak || isSelected ? FontWeight.bold : FontWeight.w500,
-                          color: item.isPeak
-                              ? const Color(0xFFFFB300)
-                              : (isSelected ? AppColors.primaryLight : AppColors.textMuted),
+                          color: (item.isPeak || isSelected)
+                              ? accent
+                              : scheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -269,12 +277,12 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                                 begin: Alignment.bottomCenter,
                                 end: Alignment.topCenter,
                                 colors: item.isPeak
-                                    ? const [Color(0xFFE65100), Color(0xFFFFB300)]
+                                    ? [accent.withValues(alpha: 0.65), accent]
                                     : (isSelected
-                                        ? [AppColors.primary, AppColors.primaryLight]
+                                        ? [accent.withValues(alpha: 0.85), accent]
                                         : [
-                                            AppColors.primary.withValues(alpha: 0.32),
-                                            AppColors.primary.withValues(alpha: 0.72),
+                                            accent.withValues(alpha: 0.20),
+                                            accent.withValues(alpha: 0.50),
                                           ]),
                               ),
                             ),
@@ -288,8 +296,8 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                           fontSize: 11,
                           fontWeight: item.isPeak ? FontWeight.bold : FontWeight.w500,
                           color: item.isPeak
-                              ? AppColors.textPrimary
-                              : (isSelected ? AppColors.primaryLight : AppColors.textSecondary),
+                              ? scheme.onSurface
+                              : (isSelected ? accent : scheme.onSurfaceVariant),
                         ),
                       ),
                     ],
@@ -303,7 +311,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
     );
   }
 
-  Widget _buildDonutStatusChart() {
+  Widget _buildDonutStatusChart(Color accent, ColorScheme scheme) {
     final s = widget.stats;
     final watching = s.watchingTitles > 0 ? s.watchingTitles : 2;
     final completed = s.completedTitles > 0 ? s.completedTitles : 8;
@@ -312,10 +320,10 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
     final total = watching + completed + planned + dropped;
 
     final segments = [
-      (label: 'Просмотрено', count: completed, color: const Color(0xFF7C4DFF)),
-      (label: 'Смотрю', count: watching, color: const Color(0xFF00E676)),
-      (label: 'В планах', count: planned, color: const Color(0xFF00E5FF)),
-      if (dropped > 0) (label: 'Брошено', count: dropped, color: const Color(0xFFFF5252)),
+      (label: 'Просмотрено', count: completed, color: accent),
+      (label: 'Смотрю', count: watching, color: accent.withValues(alpha: 0.75)),
+      (label: 'В планах', count: planned, color: accent.withValues(alpha: 0.50)),
+      if (dropped > 0) (label: 'Брошено', count: dropped, color: scheme.onSurfaceVariant.withValues(alpha: 0.40)),
     ];
 
     return Row(
@@ -337,16 +345,16 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 children: [
                   Text(
                     '$total',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: scheme.onSurface,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const Text(
+                  Text(
                     'тайтлов',
                     style: TextStyle(
-                      color: AppColors.textMuted,
+                      color: scheme.onSurfaceVariant,
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
                     ),
@@ -378,8 +386,8 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                     Expanded(
                       child: Text(
                         seg.label,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -387,8 +395,8 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                     ),
                     Text(
                       '${seg.count} ($pct%)',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: scheme.onSurface,
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                       ),
@@ -403,13 +411,13 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
     );
   }
 
-  Widget _buildGenresRadarChart() {
-    const genres = [
-      (name: 'Сёнэн / Экшен', pct: 0.38, label: '38%', color: Color(0xFF7C4DFF)),
-      (name: 'Фэнтези / Исекай', pct: 0.26, label: '26%', color: Color(0xFF00E5FF)),
-      (name: 'Сэйнэн / Триллер', pct: 0.18, label: '18%', color: Color(0xFFFF4081)),
-      (name: 'Романтика / Драма', pct: 0.12, label: '12%', color: Color(0xFFFFAB00)),
-      (name: 'Киберпанк / Sci-Fi', pct: 0.06, label: '6%', color: Color(0xFF00E676)),
+  Widget _buildGenresRadarChart(Color accent, ColorScheme scheme) {
+    final genres = [
+      (name: 'Сёнэн / Экшен', pct: 0.38, label: '38%', color: accent),
+      (name: 'Фэнтези / Исекай', pct: 0.26, label: '26%', color: accent.withValues(alpha: 0.80)),
+      (name: 'Сэйнэн / Триллер', pct: 0.18, label: '18%', color: accent.withValues(alpha: 0.65)),
+      (name: 'Романтика / Драма', pct: 0.12, label: '12%', color: accent.withValues(alpha: 0.50)),
+      (name: 'Киберпанк / Sci-Fi', pct: 0.06, label: '6%', color: accent.withValues(alpha: 0.35)),
     ];
 
     return Column(
@@ -426,8 +434,8 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                   children: [
                     Text(
                       g.name,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: scheme.onSurface,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -448,7 +456,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                   child: LinearProgressIndicator(
                     value: g.pct,
                     minHeight: 7,
-                    backgroundColor: Colors.white.withValues(alpha: 0.07),
+                    backgroundColor: scheme.onSurface.withValues(alpha: 0.08),
                     valueColor: AlwaysStoppedAnimation<Color>(g.color),
                   ),
                 ),
@@ -510,6 +518,7 @@ class _GenreStatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -528,8 +537,8 @@ class _GenreStatChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: scheme.onSurface,
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
             ),

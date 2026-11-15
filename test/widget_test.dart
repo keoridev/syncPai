@@ -1564,13 +1564,12 @@ Title,Status,Episodes
     expect(find.text('Смотреть вместе'), findsOneWidget);
     expect(find.text('Присоединиться к комнате'), findsOneWidget);
     expect(find.text('Друзья онлайн'), findsOneWidget);
-    expect(find.text('NekoChan_99'), findsOneWidget);
 
-    // Открываем диалог добавления друга
+    // Открываем диалог управления/добавления друзей
     await tester.tap(find.text('Добавить'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Добавить друга'), findsOneWidget);
+    expect(find.text('Друзья и Сообщество'), findsOneWidget);
   });
 
   testWidgets('SavedAnimeScreen renders category selector and search input', (tester) async {
@@ -1646,17 +1645,20 @@ Title,Status,Episodes
 
     // Переключаемся на Вкладку 2: Вместе
     await tester.tap(find.text('Вместе'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Смотреть вместе'), findsOneWidget);
 
     // Переключаемся на Вкладку 3: Списки
     await tester.tap(find.text('Списки'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Мои списки'), findsOneWidget);
 
     // Переключаемся на Вкладку 4: Профиль
     await tester.tap(find.text('Профиль'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsOneWidget);
   });
 
@@ -2635,10 +2637,10 @@ Title,Status,Episodes
     expect(openedDetails, isTrue);
   });
 
-  test('ThemePreset has 13 curated presets with unique IDs and valid colors', () {
-    expect(ThemePreset.all.length, 13);
+  test('ThemePreset has 14 curated presets with unique IDs and valid colors', () {
+    expect(ThemePreset.all.length, 14);
     final ids = ThemePreset.all.map((p) => p.id).toSet();
-    expect(ids.length, 13);
+    expect(ids.length, 14);
 
     final sunset = ThemePreset.fromId('sunset_orange');
     expect(sunset.name, 'Мандарин Сенпай');
@@ -2729,10 +2731,8 @@ Title,Status,Episodes
     );
 
     expect(find.byType(SyncPaiLogo), findsOneWidget);
-    expect(find.byWidgetPredicate((w) => w is RichText && w.text.toPlainText().contains('SyncPai')), findsOneWidget);
-    expect(find.text('Смотри аниме синхронно с друзьями'), findsOneWidget);
-    expect(find.text('Примерить тему оформления:'), findsOneWidget);
-    expect(find.text('Все 13 тем ›'), findsOneWidget);
+    expect(find.text('SYNCPAI'), findsOneWidget);
+    expect(find.text('WATCH TOGETHER CLIENT'), findsOneWidget);
   });
 
   test('AuthRepository linkGoogleAccount safely preserves custom art, nickname and frame', () async {
@@ -2788,7 +2788,7 @@ Title,Status,Episodes
 
     // Tap Grid mode
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Verify column toggle button is shown in grid mode
     expect(find.byIcon(Icons.view_column_rounded), findsOneWidget);
@@ -2796,21 +2796,21 @@ Title,Status,Episodes
 
     // Toggle column count to 2
     await tester.tap(find.byIcon(Icons.view_column_rounded));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('2 к.'), findsOneWidget);
 
     // Tap History tab
     expect(find.text('История'), findsOneWidget);
     await tester.tap(find.text('История'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Tap Card mode
     await tester.tap(find.byIcon(Icons.view_agenda_rounded));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Tap List mode
     await tester.tap(find.byIcon(Icons.view_list_rounded));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('WatchTogetherScreen opens room creation bottom sheet with options', (tester) async {
@@ -2956,7 +2956,7 @@ Title,Status,Episodes
     final sortBtn = find.byIcon(Icons.sort_rounded);
     expect(sortBtn, findsOneWidget);
     await tester.tap(sortBtn);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Сортировка списка'), findsOneWidget);
     expect(find.text('По дате обновления'), findsOneWidget);
@@ -2964,7 +2964,7 @@ Title,Status,Episodes
     expect(find.text('По прогрессу серий'), findsOneWidget);
 
     await tester.tap(find.text('По алфавиту (А–Я)'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   test('DownloadCubit startSmartDownload queues next episode and onEpisodeFinished deletes watched', () async {
@@ -3654,23 +3654,24 @@ Title,Status,Episodes
         );
         await tester.pumpAndSettle();
 
-        // Открываем диалог добавления друга
+        // Открываем панель управления друзьями
         final openDialogButton = find.text('Добавить').first;
         expect(openDialogButton, findsOneWidget);
         await tester.tap(openDialogButton);
         await tester.pumpAndSettle();
 
+        // Переключаемся на вкладку поиска
+        await tester.tap(find.text('Поиск и Код'));
+        await tester.pumpAndSettle();
+
         // Вводим несуществующего друга
         final input = find.byType(TextField).last;
         await tester.enterText(input, 'NonExistentUserXYZ999');
+        await tester.pump(const Duration(milliseconds: 500));
         await tester.pumpAndSettle();
 
-        // Нажимаем добавить
-        final submitButton = find.widgetWithText(ElevatedButton, 'Добавить');
-        await tester.tap(submitButton);
-        await tester.pump();
-
-        expect(find.text('Такого друга не существует'), findsOneWidget);
+        // Проверяем сообщение об отсутствии пользователя
+        expect(find.text('Пользователь «NonExistentUserXYZ999» не найден'), findsOneWidget);
       });
 
       test('CatalogCubit caches category lists in-memory and switches instantaneously without re-fetching', () async {

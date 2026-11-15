@@ -308,3 +308,76 @@ end $$;
 
 
 
+
+
+-- ==============================================================================
+-- 12. Чат комнат совместного просмотра (room_messages)
+-- Realtime-доставка через Broadcast канала room_<pin>; таблица хранит историю.
+-- ==============================================================================
+create table if not exists public.room_messages (
+  id uuid primary key default gen_random_uuid(),
+  room_id text not null,
+  user_id text,
+  sender_name text not null default 'Гость',
+  content text not null check (char_length(content) between 1 and 500),
+  type text not null default 'user' check (type in ('user', 'system')),
+  is_host boolean not null default false,
+  created_at timestamp with time zone not null default timezone('utc'::text, now())
+);
+
+create index if not exists idx_room_messages_room_created
+  on public.room_messages (room_id, created_at desc);
+
+alter table public.room_messages enable row level security;
+
+drop policy if exists "Allow public read room_messages" on public.room_messages;
+create policy "Allow public read room_messages"
+  on public.room_messages for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Allow public insert room_messages" on public.room_messages;
+create policy "Allow public insert room_messages"
+  on public.room_messages for insert
+  to anon, authenticated
+  with check (true);
+
+-- ==============================================================================
+-- 10. Социальная система друзей (QR-коды, инвайт-ссылки, Friend Codes)
+-- ==============================================================================
+alter table public.profiles
+  add column if not exists tag text default '#0001',
+  add column if not exists friend_code text,
+  add column if not exists auto_accept_invites boolean not null default true;
+
+create index if not exists idx_profiles_friend_code on public.profiles (friend_code);
+create index if not exists idx_profiles_username_tag on public.profiles (username, tag);
+
+create table if not exists public.friend_invites (
+  code text primary key,
+  inviter_id uuid references public.profiles(id) on delete cascade not null,
+  max_uses int,
+  uses_count int not null default 0,
+  expires_at timestamptz,
+  created_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+create index if not exists idx_friend_invites_inviter on public.friend_invites (inviter_id);
+create index if not exists idx_friend_invites_code on public.friend_invites (code);
+
+alter table public.friend_invites enable row level security;
+
+drop policy if exists "Friend invites are viewable by everyone" on public.friend_invites;
+create policy "Friend invites are viewable by everyone"
+  on public.friend_invites for select
+  using (true);
+
+drop policy if exists "Users can create their own invites" on public.friend_invites;
+create policy "Users can create their own invites"
+  on public.friend_invites for insert
+  with check (auth.uid() = inviter_id);
+
+drop policy if exists "Users can update/delete their own invites" on public.friend_invites;
+create policy "Users can update/delete their own invites"
+  on public.friend_invites for all
+  using (auth.uid() = inviter_id);

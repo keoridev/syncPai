@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../app/di/injection.dart';
+import '../../auth/presentation/cubit/auth_cubit.dart';
+import '../../auth/presentation/cubit/auth_state.dart';
 import '../domain/entities/friend_models.dart';
 
 class FriendsService {
@@ -18,8 +20,26 @@ class FriendsService {
     }
   }
 
+  /// Проверяет, авторизован ли пользователь в постоянном (не гостевом/анонимном) аккаунте
+  static bool get isCurrentUserPermanent {
+    try {
+      if (getIt.isRegistered<AuthCubit>()) {
+        final state = getIt<AuthCubit>().state;
+        if (state is Authenticated) {
+          return !state.profile.isAnonymous;
+        }
+      }
+    } catch (_) {}
+    final user = _supabaseClient?.auth.currentUser;
+    if (user == null || user.isAnonymous) {
+      return false;
+    }
+    return true;
+  }
+
   /// Получить или сгенерировать персональный код инвайта для текущего пользователя
   static Future<FriendInvite?> getOrCreatePersonalInvite({String? customCode}) async {
+    if (!isCurrentUserPermanent) return null;
     final client = _supabaseClient;
     final currentUid = client?.auth.currentUser?.id;
     if (client == null || currentUid == null) return null;
@@ -59,6 +79,7 @@ class FriendsService {
 
   /// Создать одноразовый временный инвайт (на 24 часа)
   static Future<FriendInvite?> createOneTimeInvite() async {
+    if (!isCurrentUserPermanent) return null;
     final client = _supabaseClient;
     final currentUid = client?.auth.currentUser?.id;
     if (client == null || currentUid == null) return null;
@@ -204,7 +225,10 @@ class FriendsService {
       }
     }
 
-    // 2. Синхронизируем с Supabase friendships
+    // 2. Синхронизируем с Supabase friendships (только для зарегистрированных пользователей, без PostgrestException у гостей)
+    if (!isCurrentUserPermanent) {
+      return list;
+    }
     try {
       final client = _supabaseClient;
       final currentUid = client?.auth.currentUser?.id;
@@ -255,6 +279,7 @@ class FriendsService {
 
   /// Получить входящие и исходящие заявки в друзья (Pending requests)
   static Future<List<FriendRequestItem>> getFriendRequests() async {
+    if (!isCurrentUserPermanent) return [];
     final client = _supabaseClient;
     final currentUid = client?.auth.currentUser?.id;
     if (client == null || currentUid == null) return [];

@@ -33,8 +33,8 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(seconds: 5),
-                receiveTimeout: const Duration(seconds: 5),
+                connectTimeout: const Duration(seconds: 12),
+                receiveTimeout: const Duration(seconds: 12),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',

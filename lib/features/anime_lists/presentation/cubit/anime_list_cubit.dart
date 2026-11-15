@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/datasources/anixart_backup_parser.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
+import '../../services/import_poster_enricher.dart';
 import 'anime_list_state.dart';
 
 class AnimeListCubit extends Cubit<AnimeListState> {
@@ -134,6 +138,9 @@ class AnimeListCubit extends Cubit<AnimeListState> {
         isLoading: false,
         lastImportResult: result,
       ));
+      if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+        unawaited(enrichImportedEntriesInBackground(result.entries));
+      }
     } catch (e) {
       emit(state.copyWith(
         isLoading: false,
@@ -167,6 +174,9 @@ class AnimeListCubit extends Cubit<AnimeListState> {
         isLoading: false,
         lastImportResult: result,
       ));
+      if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+        unawaited(enrichImportedEntriesInBackground(result.entries));
+      }
       return result;
     } catch (e) {
       emit(state.copyWith(
@@ -189,6 +199,9 @@ class AnimeListCubit extends Cubit<AnimeListState> {
         isLoading: false,
         lastImportResult: result,
       ));
+      if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+        unawaited(enrichImportedEntriesInBackground(result.entries));
+      }
       return result;
     } catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
@@ -203,6 +216,41 @@ class AnimeListCubit extends Cubit<AnimeListState> {
   Future<void> syncWithCloud({required String userId}) async {
     await repository.syncWithCloud(userId: userId);
     await loadLists();
+  }
+
+  /// Фоновая дозагрузка постеров, totalEpisodes и animeId для импортированных карточек
+  Future<void> enrichImportedEntriesInBackground(
+    List<UserAnimeEntry> importedEntries, {
+    Dio? dio,
+  }) async {
+    await ImportPosterEnricher.instance.enrichEntries(
+      importedEntries,
+      dio: dio,
+      onEnriched: (match) async {
+        if (isClosed) return;
+        final idx = state.allEntries.indexWhere((e) => e.animeId == match.oldAnimeId);
+        if (idx == -1) return;
+        final current = state.allEntries[idx];
+        final resolvedId = match.matchedAnimeId ?? current.animeId;
+        final updated = current.copyWith(
+          animeId: resolvedId,
+          posterUrl: match.posterUrl,
+          episodesTotal: match.totalEpisodes ?? current.episodesTotal,
+          updatedAt: DateTime.now(),
+        );
+        if (resolvedId != current.animeId) {
+          await repository.removeEntry(current.animeId);
+        }
+        await repository.upsertEntry(updated);
+        if (isClosed) return;
+        final nextList = List<UserAnimeEntry>.from(state.allEntries);
+        nextList[idx] = updated;
+        emit(state.copyWith(
+          allEntries: nextList,
+          stats: UserAnimeStats.compute(nextList),
+        ));
+      },
+    );
   }
 
   /// Тихо обновить постер для тайтла в памяти и локальной базе

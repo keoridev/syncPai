@@ -25,6 +25,7 @@ import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
 import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
@@ -63,11 +64,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   bool _showActivityCharts = true;
   bool _guestBannerDismissed = false;
+  bool _nicknamePromptDismissed = false;
   bool _isBgPaused = false;
   int _selectedMobileTab = 0; // 0: Обзор, 1: Статистика, 2: Стена
   late final ScrollController _scrollController;
   late final ProfileCubit _profileCubit;
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _quickNicknameController = TextEditingController();
   List<WatchHistoryItem> _watchHistory = [];
   List<Map<String, dynamic>> _onlineFriends = [];
   List<Map<String, String>> _wallComments = [
@@ -187,6 +190,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (getIt.isRegistered<SharedPreferences>()) {
       final prefs = getIt<SharedPreferences>();
       _guestBannerDismissed = prefs.getBool('guest_sync_banner_dismissed') ?? false;
+      _nicknamePromptDismissed = prefs.getBool('quick_nickname_prompt_dismissed') ?? false;
     }
   }
 
@@ -194,6 +198,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     setState(() => _guestBannerDismissed = true);
     if (getIt.isRegistered<SharedPreferences>()) {
       getIt<SharedPreferences>().setBool('guest_sync_banner_dismissed', true);
+    }
+  }
+
+  void _dismissNicknamePrompt() {
+    setState(() => _nicknamePromptDismissed = true);
+    if (getIt.isRegistered<SharedPreferences>()) {
+      getIt<SharedPreferences>().setBool('quick_nickname_prompt_dismissed', true);
     }
   }
 
@@ -213,6 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _commentController.dispose();
+    _quickNicknameController.dispose();
     _profileCubit.close();
     super.dispose();
   }
@@ -396,9 +408,20 @@ class _ProfileScreenState extends State<ProfileScreen>
                     hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
                     filled: true,
                     fillColor: scheme.surfaceContainer,
+                    hoverColor: Colors.transparent,
+                    focusColor: Colors.transparent,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: scheme.primary, width: 1.4),
                     ),
                   ),
                 ),
@@ -414,9 +437,20 @@ class _ProfileScreenState extends State<ProfileScreen>
                     hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
                     filled: true,
                     fillColor: scheme.surfaceContainer,
+                    hoverColor: Colors.transparent,
+                    focusColor: Colors.transparent,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: scheme.primary, width: 1.4),
                     ),
                   ),
                   onChanged: (val) {
@@ -490,6 +524,172 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildQuickNicknamePrompt(BuildContext context, UserProfile profile, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    if (_quickNicknameController.text.isEmpty) {
+      _quickNicknameController.text = profile.username;
+    }
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: accent, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Как тебя называть?',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant, size: 18),
+                onPressed: _dismissNicknamePrompt,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: TextField(
+                    controller: _quickNicknameController,
+                    style: TextStyle(color: scheme.onSurface, fontSize: 13.5, fontWeight: FontWeight.w600),
+                    decoration: InputDecoration(
+                      hintText: 'Твой никнейм (например: Ren)',
+                      hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 12.5),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      filled: true,
+                      fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                      hoverColor: Colors.transparent,
+                      focusColor: Colors.transparent,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: accent, width: 1.4),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  minimumSize: const Size(0, 38),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () {
+                  final nextName = _quickNicknameController.text.trim();
+                  if (nextName.isNotEmpty) {
+                    context.read<AuthCubit>().updateProfile(username: nextName);
+                    _dismissNicknamePrompt();
+                  }
+                },
+                child: const Text('Сохранить', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: UserProfile.curatedNicknames.map((preset) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(preset, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    onPressed: () {
+                      _quickNicknameController.text = preset;
+                      context.read<AuthCubit>().updateProfile(username: preset);
+                      _dismissNicknamePrompt();
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSyncedAccountBanner(BuildContext context, UserProfile profile, Color accent) {
+    final scheme = Theme.of(context).colorScheme;
+    final isGoogle = profile.provider == 'google' || (profile.email?.contains('@gmail.com') ?? false);
+    return _GlassCard(
+      accentColor: accent,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00E676).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.cloud_done_rounded, color: Color(0xFF00E676), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isGoogle ? 'Синхронизировано с Google' : 'Облачная синхронизация активна',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                  ),
+                ),
+                if (profile.email != null && profile.email!.isNotEmpty)
+                  Text(
+                    '${profile.email!} • ${profile.tag}',
+                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11.5),
+                  ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: scheme.error,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => context.read<AuthCubit>().signOut(),
+            icon: const Icon(Icons.logout_rounded, size: 16),
+            label: const Text('Выйти', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }
@@ -663,12 +863,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
 
-              // СЛОЙ 3: Безопасный верхний отступ + Двухколоночный десктопный или облегченный мобильный Layout
+              // СЛОЙ 3: Безопасный отступ для мобилок (на десктопе notch отсутствует)
               SafeArea(
+                top: !isDesktopOS,
                 bottom: false,
+                left: !isDesktopOS,
+                right: !isDesktopOS,
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktopOS ? 1280 : 860),
+                    constraints: BoxConstraints(maxWidth: isDesktopOS ? 1440 : 860),
                     child: isDesktopOS
                         ? CustomScrollView(
                             controller: _scrollController,
@@ -700,9 +903,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                                               ),
                                               const SizedBox(height: 8),
                                               const WrappedPromoBanner(),
+                                              if (isCurrentUser &&
+                                                  !_nicknamePromptDismissed &&
+                                                  UserProfile.isDefaultGeneratedNickname(profile.username)) ...[
+                                                const SizedBox(height: 8),
+                                                _buildQuickNicknamePrompt(context, profile, currentAccentColor),
+                                              ],
                                               if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
                                                 const SizedBox(height: 8),
                                                 _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                              ] else if (isCurrentUser && !isGuest) ...[
+                                                const SizedBox(height: 8),
+                                                _buildSyncedAccountBanner(context, profile, currentAccentColor),
+                                              ],
+                                              if (isCurrentUser) ...[
+                                                const SizedBox(height: 8),
+                                                _buildOwnerSupportPill(context, profile, currentAccentColor),
                                               ],
                                               const SizedBox(height: 8),
                                               _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
@@ -734,7 +950,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                               const SizedBox(height: 14),
                                               _buildBadgesShowcaseCard(context, currentAccentColor),
                                               const SizedBox(height: 14),
-                                              _buildOnlineFriendsCard(context, currentAccentColor),
+                                              _buildOnlineFriendsCard(context, profile, currentAccentColor),
                                               const SizedBox(height: 14),
                                               _buildCommentsWallCard(context, profile, currentAccentColor),
                                             ],
@@ -769,9 +985,26 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   child: WrappedPromoBanner(),
                                 ),
                               ),
+                              if (isCurrentUser &&
+                                  !_nicknamePromptDismissed &&
+                                  UserProfile.isDefaultGeneratedNickname(profile.username))
+                                SliverToBoxAdapter(
+                                  child: _buildQuickNicknamePrompt(context, profile, currentAccentColor),
+                                ),
                               if (isCurrentUser && isGuest && !_guestBannerDismissed)
                                 SliverToBoxAdapter(
                                   child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                )
+                              else if (isCurrentUser && !isGuest)
+                                SliverToBoxAdapter(
+                                  child: _buildSyncedAccountBanner(context, profile, currentAccentColor),
+                                ),
+                              if (isCurrentUser)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    child: _buildOwnerSupportPill(context, profile, currentAccentColor),
+                                  ),
                                 ),
                               // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
                               SliverToBoxAdapter(
@@ -789,7 +1022,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                 ),
                                 SliverToBoxAdapter(
-                                  child: _buildMobileFriendsBanner(context, currentAccentColor),
+                                  child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
                                 ),
                               ] else if (_selectedMobileTab == 1) ...[
                                 SliverToBoxAdapter(
@@ -906,12 +1139,71 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildMobileFriendsBanner(BuildContext context, Color accent) {
+  Widget _buildOwnerSupportPill(BuildContext context, UserProfile profile, Color accent) {
+    final tier = profile.supporterTier;
+    final actionLabel = tier == SupporterTier.free
+        ? 'Поддержать'
+        : (tier == SupporterTier.producer ? 'Подробнее' : 'Улучшить');
+    final pillColor = tier == SupporterTier.free ? accent : tier.accentColor;
+
+    return KeyedSubtree(
+      key: const ValueKey('profile_owner_support_pill'),
+      child: _GlassCard(
+        accentColor: pillColor,
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        onTap: () => context.push('/support'),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: pillColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(tier.icon, size: 15, color: pillColor),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                tier.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: pillColor.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: pillColor.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                actionLabel,
+                style: TextStyle(
+                  color: pillColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileFriendsBanner(BuildContext context, UserProfile profile, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     final onlineCount = _onlineFriends.where((f) => f['isOnline'] == true).length;
-    final subtitle = _onlineFriends.isEmpty
-        ? 'Нажмите, чтобы перейти во вкладку «Вместе» и добавить друзей'
-        : '$onlineCount в сети • Нажмите для совместного просмотра';
+    final subtitle = profile.isAnonymous
+        ? 'Хочешь добавлять друзей? Войди в аккаунт (прогресс сохранится!)'
+        : _onlineFriends.isEmpty
+            ? 'Нажмите, чтобы перейти во вкладку «Вместе» и добавить друзей'
+            : '$onlineCount в сети • Нажмите для совместного просмотра';
 
     return _GlassCard(
       accentColor: accent,
@@ -920,6 +1212,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       onTap: () => showFriendsManagementSheet(
         context,
         accentColor: accent,
+        currentUserProfile: profile,
         onFriendsChanged: _loadRealFriends,
       ),
       child: Row(
@@ -1204,7 +1497,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildOnlineFriendsCard(BuildContext context, Color accent) {
+  Widget _buildOnlineFriendsCard(BuildContext context, UserProfile profile, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final friends = _onlineFriends;
@@ -1244,6 +1537,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 onPressed: () => showFriendsManagementSheet(
                   context,
                   accentColor: accent,
+                  currentUserProfile: profile,
                   onFriendsChanged: _loadRealFriends,
                 ),
               ),
@@ -1283,7 +1577,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Icon(Icons.people_outline_rounded, size: 28, color: accent.withValues(alpha: 0.75)),
                   const SizedBox(height: 6),
                   Text(
-                    'Пока нет друзей онлайн',
+                    profile.isAnonymous ? 'Хочешь добавлять друзей?' : 'Пока нет друзей онлайн',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 12.5,
@@ -1292,7 +1586,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Добавьте друзей, чтобы видеть их статус и смотреть аниме синхронно',
+                    profile.isAnonymous
+                        ? 'Войди в аккаунт, чтобы отправлять заявки и делиться своим QR-кодом. Весь твой список аниме сохранится!'
+                        : 'Добавьте друзей, чтобы видеть их статус и смотреть аниме синхронно',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
@@ -1304,10 +1600,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                     onPressed: () => showFriendsManagementSheet(
                       context,
                       accentColor: accent,
+                      currentUserProfile: profile,
                       onFriendsChanged: _loadRealFriends,
                     ),
                     icon: Icon(Icons.person_add_alt_1_rounded, size: 15, color: accent),
-                    label: Text('Найти друзей', style: TextStyle(color: scheme.onSurface, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    label: Text(
+                      profile.isAnonymous ? 'Добавить друзей' : 'Найти друзей',
+                      style: TextStyle(color: scheme.onSurface, fontSize: 11.5, fontWeight: FontWeight.w700),
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: scheme.onSurface,
                       side: BorderSide(color: accent.withValues(alpha: 0.5)),
@@ -1468,6 +1768,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                         fontSize: 11.5,
                       ),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      filled: false,
+                      hoverColor: Colors.transparent,
+                      focusColor: Colors.transparent,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     ),

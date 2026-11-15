@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
+import '../../../../core/services/app_updater_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -38,6 +39,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoPauseOnLeave = true;
   bool _liquidGlassEffects = true;
   String _defaultQuality = '1080p FHD';
+  String _appVersion = '1.0.0';
+  bool _isCheckingUpdates = false;
   SharedPreferences? _prefs;
 
   @override
@@ -50,12 +53,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _prefs = getIt.isRegistered<SharedPreferences>()
         ? getIt<SharedPreferences>()
         : await SharedPreferences.getInstance();
-    if (_prefs != null && mounted) {
+    final ver = await AppUpdaterService.instance.getCurrentVersion();
+    if (mounted) {
       setState(() {
-        _autoSkipOpenings = _prefs!.getBool('settings_auto_skip_openings') ?? true;
-        _autoPauseOnLeave = _prefs!.getBool('settings_auto_pause_on_leave') ?? true;
-        _liquidGlassEffects = _prefs!.getBool('settings_liquid_glass') ?? true;
-        _defaultQuality = _prefs!.getString('settings_default_quality') ?? '1080p FHD';
+        _appVersion = ver;
+        if (_prefs != null) {
+          _autoSkipOpenings = _prefs!.getBool('settings_auto_skip_openings') ?? true;
+          _autoPauseOnLeave = _prefs!.getBool('settings_auto_pause_on_leave') ?? true;
+          _liquidGlassEffects = _prefs!.getBool('settings_liquid_glass') ?? true;
+          _defaultQuality = _prefs!.getString('settings_default_quality') ?? '1080p FHD';
+        }
       });
     }
   }
@@ -148,15 +155,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         if (context.mounted) {
           final res = importResult ?? cubit.state.lastImportResult;
-          final totalCount = res?.totalParsed ?? detectedCount;
+          final stats = cubit.state.stats;
+          final added = res?.addedCount ?? (res?.totalParsed ?? detectedCount);
+          final updated = res?.updatedCount ?? 0;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Успешно импортировано $totalCount тайтлов! Ваша коллекция синхронизирована.',
+                'Импорт завершён: добавлено $added, обновлено $updated дубликатов '
+                '(Смотрю: ${stats.watchingTitles}, В планах: ${stats.plannedTitles}, Просмотрено: ${stats.completedTitles})',
               ),
               backgroundColor: AppColors.syncActive,
               behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 4),
+              duration: const Duration(seconds: 5),
             ),
           );
         }
@@ -262,13 +272,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.strokeMedium),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
                           borderSide: const BorderSide(color: AppColors.strokeMedium),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide(color: AppColors.primary),
                         ),
+                        hoverColor: Colors.transparent,
+                        focusColor: Colors.transparent,
                       ),
                     ),
                     if (localError != null) ...[
@@ -973,11 +989,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         size: 40,
                       ),
                       title: Text(
-                        profile.username,
+                        '${profile.username} ${profile.tag}',
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                       ),
                       subtitle: Text(
-                        profile.email ?? 'Синхронизация активна',
+                        profile.provider == 'google' || (profile.email?.contains('@gmail.com') ?? false)
+                            ? 'Синхронизировано с Google (${profile.email ?? "активно"})'
+                            : (profile.email ?? 'Синхронизация активна'),
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                       ),
                       trailing: const Icon(Icons.check_circle_rounded, color: AppColors.syncActive, size: 20),
@@ -1011,6 +1029,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
+                          color: const Color(0xFF4285F4).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.cloud_sync_rounded, color: Color(0xFF4285F4), size: 20),
+                      ),
+                      title: const Text(
+                        'Войти через Google',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      subtitle: const Text(
+                        'Мгновенная облачная синхронизация истории и списков',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                      onTap: () => AuthModalSheet.show(context, profile),
+                    ),
+                    _buildDivider(),
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
                           color: themePrimary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -1038,6 +1077,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: MascotGalleryWidget(),
                   ),
                 ]),
+
+                // 6. Секция "Обновления и версия"
+                _buildSectionHeader('О ПРИЛОЖЕНИИ'),
+                _buildCard([
+                  ListTile(
+                    key: const ValueKey('settings_check_updates_tile'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: themePrimary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.system_update_rounded, color: themePrimary, size: 20),
+                    ),
+                    title: const Text(
+                      'Проверить обновления',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'SyncPai v$_appVersion',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: _isCheckingUpdates
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                    onTap: _isCheckingUpdates
+                        ? null
+                        : () async {
+                            setState(() => _isCheckingUpdates = true);
+                            try {
+                              await AppUpdaterService.instance.checkForUpdates(
+                                context: context,
+                                manual: true,
+                              );
+                            } finally {
+                              if (mounted) {
+                                setState(() => _isCheckingUpdates = false);
+                              }
+                            }
+                          },
+                  ),
+                ]),
+
+                const SizedBox(height: 18),
+
+                // Ненавязчивая строка поддержки в самом низу настроек над версией приложения
+                _buildCard([
+                  ListTile(
+                    key: const ValueKey('settings_open_support_tile'),
+                    dense: true,
+                    leading: Icon(
+                      Icons.favorite_outline_rounded,
+                      color: AppColors.textSecondary,
+                      size: 19,
+                    ),
+                    title: const Text(
+                      'Поддержать развитие SyncPai',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    onTap: () => context.push('/support'),
+                  ),
+                ]),
+
+                const SizedBox(height: 14),
+                Center(
+                  child: Text(
+                    'SyncPai v$_appVersion',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
 
                 const SizedBox(height: 32),
               ],

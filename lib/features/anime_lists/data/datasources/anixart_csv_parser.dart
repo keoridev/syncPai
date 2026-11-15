@@ -3,6 +3,15 @@ import '../../domain/entities/user_anime_entry.dart';
 import 'anixart_backup_parser.dart';
 import 'shikimori_search_service.dart';
 
+/// Нормализует название тайтла для строгой дедупликации при повторном импорте.
+String normalizeAnimeKey(String title) {
+  return title
+      .toLowerCase()
+      .replaceAll(RegExp(r'''["'«»„“.,:;!?()\[\]{}\-—–_/\\]+'''), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 /// Модель предварительно распарсенной сырой записи из CSV
 class AnixartRawEntry {
   final String title;
@@ -10,6 +19,7 @@ class AnixartRawEntry {
   final int watchedEpisodes;
   final int? totalEpisodes;
   final int? extractedId;
+  final double? score;
 
   const AnixartRawEntry({
     required this.title,
@@ -17,6 +27,7 @@ class AnixartRawEntry {
     this.watchedEpisodes = 0,
     this.totalEpisodes,
     this.extractedId,
+    this.score,
   });
 }
 
@@ -32,9 +43,10 @@ class AnixartCsvParser {
     String rawCsv, {
     AnimeListStatus defaultStatus = AnimeListStatus.planned,
   }) {
-    if (rawCsv.trim().isEmpty) return [];
+    final normalizedCsv = rawCsv.replaceFirst('\uFEFF', '');
+    if (normalizedCsv.trim().isEmpty) return [];
 
-    final lines = rawCsv.split(RegExp(r'\r?\n'));
+    final lines = normalizedCsv.split(RegExp(r'\r?\n'));
 
     // 1. Проверяем формат Anixart со слэш-разделителями (например: 1 / "Название" / "Ромадзи" / ... / В планах)
     final isSlashDelimited = lines.any((l) => l.contains(' / ') && (l.contains('"') || l.contains('В планах') || l.contains('Просмотрено') || l.contains('Брошено') || l.contains('Смотрю')));
@@ -81,37 +93,91 @@ class AnixartCsvParser {
       }
     }
 
-    // 2. Стандартный CSV-парсер (запятая или точка с запятой)
+    // 2. Стандартный CSV/TSV-парсер (автоопределение ; , или \t)
     final firstLine = lines.firstWhere(
-          (l) => l.trim().isNotEmpty,
-          orElse: () => '',
-        );
-    final delimiter = (firstLine.contains(';') && !firstLine.contains(','))
-        ? ';'
-        : (firstLine.contains(';') &&
-                firstLine.split(';').length >= firstLine.split(',').length)
-            ? ';'
-            : ',';
+      (l) => l.trim().isNotEmpty,
+      orElse: () => '',
+    );
+    final semiCount = ';'.allMatches(firstLine).length;
+    final commaCount = ','.allMatches(firstLine).length;
+    final tabCount = '\t'.allMatches(firstLine).length;
+    final String delimiter;
+    if (tabCount >= semiCount && tabCount >= commaCount && tabCount > 0) {
+      delimiter = '\t';
+    } else if (semiCount >= commaCount && semiCount > 0) {
+      delimiter = ';';
+    } else {
+      delimiter = ',';
+    }
 
     final rows = CsvToListConverter(
       shouldParseNumbers: false,
       allowInvalid: true,
       fieldDelimiter: delimiter,
       eol: '\n',
-    ).convert(rawCsv.replaceAll('\r\n', '\n'));
+    ).convert(normalizedCsv.replaceAll('\r\n', '\n'));
 
     if (rows.isEmpty) return [];
 
     final List<AnixartRawEntry> result = [];
 
-    // Определяем наличие заголовка
+    // Гибкое сопоставление колонок заголовка (без учёта регистра)
     int startIndex = 0;
+    int? titleCol;
+    int? statusCol;
+    int? episodesCol;
+    int? scoreCol;
+
     if (rows.isNotEmpty) {
-      final headerStr = rows.first.join(' ').toLowerCase();
-      if (headerStr.contains('title') ||
-          headerStr.contains('название') ||
-          headerStr.contains('status') ||
-          headerStr.contains('статус') ||
+      final headerCells = rows.first
+          .map((c) => c.toString().replaceFirst('\uFEFF', '').trim().toLowerCase())
+          .toList();
+
+      bool hasRecognizedHeader = false;
+      for (int c = 0; c < headerCells.length; c++) {
+        final h = headerCells[c];
+        if (titleCol == null &&
+            (h == 'title' ||
+                h == 'name' ||
+                h == 'anime' ||
+                h.contains('название') ||
+                h.contains('тайтл') ||
+                h == 'русское название' ||
+                h == 'оригинальное название')) {
+          titleCol = c;
+          hasRecognizedHeader = true;
+        } else if (statusCol == null &&
+            (h == 'status' ||
+                h == 'list' ||
+                h == 'category' ||
+                h == 'state' ||
+                h.contains('статус') ||
+                h.contains('список') ||
+                h.contains('категория') ||
+                h.contains('раздел'))) {
+          statusCol = c;
+          hasRecognizedHeader = true;
+        } else if (episodesCol == null &&
+            (h.contains('episode') ||
+                h.contains('watched') ||
+                h.contains('progress') ||
+                h.contains('сери') ||
+                h.contains('просмотр') ||
+                h.contains('эпизод'))) {
+          episodesCol = c;
+          hasRecognizedHeader = true;
+        } else if (scoreCol == null &&
+            (h == 'score' ||
+                h == 'rating' ||
+                h.contains('оценк') ||
+                h.contains('рейтинг'))) {
+          scoreCol = c;
+          hasRecognizedHeader = true;
+        }
+      }
+
+      final headerStr = headerCells.join(' ');
+      if (hasRecognizedHeader ||
           headerStr.contains('anime') ||
           headerStr.contains('аниме') ||
           headerStr.trim().startsWith('#')) {
@@ -126,34 +192,41 @@ class AnixartCsvParser {
       String rawTitle = '';
       String statusRaw = '';
       String episodesRaw = '0';
+      String scoreRaw = '';
       int? extractedId;
 
-      final firstColStr = row[0].toString().trim();
-      final isFirstColNumeric = RegExp(r'^\d+$').hasMatch(firstColStr);
-
-      if (isFirstColNumeric && row.length > 1) {
-        // Пример структуры: 1,"100 девушек, которые очень-очень сильно тебя любят"
-        // Первая колонка — это порядковый номер, вторая колонка — русское название
-        rawTitle = row[1].toString().trim();
-        statusRaw = row.length > 2 ? row[2].toString().trim() : '';
-        episodesRaw = row.length > 3 ? row[3].toString().trim() : '0';
+      if (titleCol != null && titleCol < row.length) {
+        rawTitle = row[titleCol].toString().trim();
+        statusRaw = (statusCol != null && statusCol < row.length)
+            ? row[statusCol].toString().trim()
+            : '';
+        episodesRaw = (episodesCol != null && episodesCol < row.length)
+            ? row[episodesCol].toString().trim()
+            : '0';
+        scoreRaw = (scoreCol != null && scoreCol < row.length)
+            ? row[scoreCol].toString().trim()
+            : '';
       } else {
-        // Первая колонка содержит название (возможно с префиксом ID вроде '6 / ...')
-        rawTitle = firstColStr;
-        statusRaw = row.length > 1 ? row[1].toString().trim() : '';
-        episodesRaw = row.length > 2 ? row[2].toString().trim() : '0';
+        final firstColStr = row[0].toString().trim();
+        final isFirstColNumeric = RegExp(r'^\d+$').hasMatch(firstColStr);
+
+        if (isFirstColNumeric && row.length > 1) {
+          rawTitle = row[1].toString().trim();
+          statusRaw = row.length > 2 ? row[2].toString().trim() : '';
+          episodesRaw = row.length > 3 ? row[3].toString().trim() : '0';
+        } else {
+          rawTitle = firstColStr;
+          statusRaw = row.length > 1 ? row[1].toString().trim() : '';
+          episodesRaw = row.length > 2 ? row[2].toString().trim() : '0';
+        }
       }
 
       // Если статус не найден в ожидаемой колонке, ищем в любой колонке строки с конца
       if (statusRaw.isEmpty) {
-        for (int c = row.length - 1; c >= 1; c--) {
+        for (int c = row.length - 1; c >= 0; c--) {
+          if (c == titleCol) continue;
           final cStr = row[c].toString().toLowerCase().trim();
-          if (cStr.contains('план') ||
-              cStr.contains('смотр') ||
-              cStr.contains('просмотр') ||
-              cStr.contains('заверш') ||
-              cStr.contains('брош') ||
-              cStr.contains('отлож')) {
+          if (_looksLikeStatus(cStr)) {
             statusRaw = row[c].toString().trim();
             break;
           }
@@ -212,6 +285,7 @@ class AnixartCsvParser {
           watchedEpisodes: watchedEpisodes,
           totalEpisodes: totalEpisodes,
           extractedId: extractedId,
+          score: double.tryParse(scoreRaw.replaceAll(',', '.')),
         ),
       );
     }
@@ -330,19 +404,50 @@ class AnixartCsvParser {
     );
   }
 
-  /// Маппинг названий статусов Anixart в модель SyncPai
+  static bool _looksLikeStatus(String lower) {
+    return lower.contains('смотрю') ||
+        lower.contains('watching') ||
+        lower.contains('в процессе') ||
+        lower.contains('current') ||
+        lower.contains('просмотр') ||
+        lower.contains('completed') ||
+        lower.contains('watched') ||
+        lower.contains('заверш') ||
+        lower.contains('брош') ||
+        lower.contains('dropped') ||
+        lower.contains('отлож') ||
+        lower.contains('on_hold') ||
+        lower.contains('paused') ||
+        lower.contains('план') ||
+        lower.contains('plan') ||
+        lower.contains('буду смотреть');
+  }
+
+  /// Маппинг названий статусов Anixart / Shikimori / Excel в модель SyncPai
   static AnimeListStatus mapStatus(String raw) {
     final lower = raw.toLowerCase().trim();
-    if (lower.contains('просмотр') || lower.contains('completed') || lower.contains('заверш')) {
+    if (lower.isEmpty) return AnimeListStatus.planned;
+    if (lower.contains('просмотрен') ||
+        lower.contains('completed') ||
+        lower.contains('watched') ||
+        lower.contains('заверш')) {
       return AnimeListStatus.completed;
-    } else if (lower.contains('смотр') || lower.contains('watching')) {
+    } else if (lower.contains('смотрю') ||
+        lower.contains('watching') ||
+        lower.contains('в процессе') ||
+        lower.contains('current') ||
+        lower.contains('смотр')) {
       return AnimeListStatus.watching;
-    } else if (lower.contains('план') || lower.contains('plan')) {
-      return AnimeListStatus.planned;
-    } else if (lower.contains('отлож') || lower.contains('hold')) {
-      return AnimeListStatus.planned;
-    } else if (lower.contains('брош') || lower.contains('dropped')) {
+    } else if (lower.contains('брош') ||
+        lower.contains('dropped') ||
+        lower.contains('отлож') ||
+        lower.contains('on_hold') ||
+        lower.contains('paused')) {
       return AnimeListStatus.dropped;
+    } else if (lower.contains('план') ||
+        lower.contains('plan') ||
+        lower.contains('буду смотреть')) {
+      return AnimeListStatus.planned;
     }
     return AnimeListStatus.planned;
   }

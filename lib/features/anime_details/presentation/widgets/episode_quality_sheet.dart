@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -31,6 +33,30 @@ class EpisodeQualitySheet extends StatefulWidget {
     required EpisodeItem episode,
     PlayerQuality initialQuality = PlayerQuality.fhd,
   }) {
+    final isDesktop = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux || MediaQuery.of(context).size.width >= 650);
+
+    if (isDesktop) {
+      return showDialog<PlayerQuality>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.75),
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: EpisodeQualitySheet(
+              title: title,
+              episode: episode,
+              initialQuality: initialQuality,
+              onQualitySelected: (quality) {
+                Navigator.of(ctx).pop(quality);
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
     return showModalBottomSheet<PlayerQuality>(
       context: context,
       backgroundColor: Colors.transparent,

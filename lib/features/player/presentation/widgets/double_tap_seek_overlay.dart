@@ -675,23 +675,24 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
     required String label,
     required bool isSun,
   }) {
+    final accentColor = Theme.of(context).colorScheme.primary;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          width: 50,
+          width: 52,
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(22),
+            color: Colors.black.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: isSun ? const Color(0xFFFFB300).withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.2),
-              width: 1.2,
+              color: Colors.white.withValues(alpha: 0.16),
+              width: 1.0,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
+                color: Colors.black.withValues(alpha: 0.45),
                 blurRadius: 20,
               ),
             ],
@@ -701,16 +702,16 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
             children: [
               Icon(
                 icon,
-                color: isSun ? const Color(0xFFFFB300) : Colors.white,
+                color: Colors.white,
                 size: 22,
               ),
               const SizedBox(height: 10),
-              // Вертикальный прогресс-бар
+              // Однотонный чистый прогресс-бар без разноцветных и желтых градиентов
               Expanded(
                 child: Container(
                   width: 6,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
+                    color: Colors.white.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(3),
                   ),
                   alignment: Alignment.bottomCenter,
@@ -718,14 +719,14 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                     heightFactor: value.clamp(0.0, 1.0),
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: isSun
-                              ? [const Color(0xFFFFB300), const Color(0xFFFFE082)]
-                              : [Theme.of(context).colorScheme.primary, const Color(0xFF64B5F6)],
-                        ),
+                        color: accentColor,
                         borderRadius: BorderRadius.circular(3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accentColor.withValues(alpha: 0.35),
+                            blurRadius: 6,
+                          ),
+                        ],
                       ),
                     ),
                   ),

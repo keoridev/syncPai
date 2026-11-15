@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -11,6 +11,7 @@ import '../../../../core/network/api_constants.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../../presentation/utils/auth_error_formatter.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final SharedPreferences _prefs;
@@ -22,6 +23,7 @@ class AuthRepositoryImpl implements AuthRepository {
   /// Флаг: если в Supabase отключён Anonymous Sign-In (422 anonymous_provider_disabled),
   /// не повторяем сетевые запросы signInAnonymously и работаем в режиме LocalGuestUser.
   static bool _anonymousProviderDisabled = false;
+  static bool get isAnonymousProviderDisabled => _anonymousProviderDisabled;
 
   AuthRepositoryImpl(this._prefs) {
     _initSupabaseListener();
@@ -97,7 +99,13 @@ class AuthRepositoryImpl implements AuthRepository {
     final client = _supabase;
     final isAnon = user.isAnonymous;
     final metadata = user.userMetadata ?? {};
-    final googleName = metadata['full_name'] as String? ?? metadata['name'] as String?;
+    final emailFromUser = user.email ?? metadata['email'] as String?;
+    final emailPrefix = (emailFromUser != null && emailFromUser.contains('@'))
+        ? emailFromUser.split('@').first.trim()
+        : null;
+    final googleName = metadata['full_name'] as String? ??
+        metadata['name'] as String? ??
+        (emailPrefix != null && emailPrefix.isNotEmpty ? emailPrefix : null);
     final googleAvatar = metadata['avatar_url'] as String? ?? metadata['picture'] as String?;
 
     // Считываем текущий локальный профиль (настройки гостя)
@@ -116,24 +124,22 @@ class AuthRepositoryImpl implements AuthRepository {
       }
     }
 
-    // 1. Имя пользователя
-    final localHasCustomName = local.username.isNotEmpty &&
-        !local.username.startsWith('Сенпай #') &&
-        !local.username.startsWith('Гость #') &&
-        local.username != 'Анимешник';
+    // 1. Имя пользователя (без хардкода "Сенпай")
+    final localHasCustomName = !UserProfile.isDefaultGeneratedNickname(local.username);
+    final cloudUsername = cloudRow?['username'] as String?;
+    final cloudHasCustomName = !UserProfile.isDefaultGeneratedNickname(cloudUsername);
 
     String effectiveUsername;
     if (explicitUsername != null && explicitUsername.trim().isNotEmpty) {
       effectiveUsername = explicitUsername.trim();
-    } else if (cloudRow != null &&
-        (cloudRow['username'] as String?)?.isNotEmpty == true &&
-        cloudRow['username'] != 'Анимешник' &&
-        !(cloudRow['username'] as String).startsWith('Гость #')) {
-      effectiveUsername = cloudRow['username'] as String;
+    } else if (cloudHasCustomName && cloudUsername != null) {
+      effectiveUsername = cloudUsername;
     } else if (localHasCustomName) {
       effectiveUsername = local.username;
+    } else if (googleName != null && googleName.trim().isNotEmpty) {
+      effectiveUsername = googleName.trim();
     } else {
-      effectiveUsername = googleName ?? local.username;
+      effectiveUsername = UserProfile.generateAnimeNickname(user.id);
     }
 
     // 2. Аватарка
@@ -205,9 +211,17 @@ class AuthRepositoryImpl implements AuthRepository {
     String? effectiveArtworkTitle =
         cloudRow?['artwork_title'] as String? ?? local.artworkTitle;
 
-    // 10. Акцентный цвет
+    // 10. Акцентный цвет, провайдер, email и тег
     String effectiveAccent =
         (cloudRow?['accent_color'] as String?) ?? local.accentColor ?? '#E06C53';
+    final rawTag = (cloudRow?['tag'] as String?) ?? local.tag;
+    final effectiveTag = (rawTag.isNotEmpty && rawTag != '#0001')
+        ? rawTag
+        : UserProfile.generateTag(user.id);
+    final effectiveProvider = user.appMetadata['provider'] as String? ??
+        (googleName != null || googleAvatar != null
+            ? 'google'
+            : (isAnon ? 'anonymous' : (local.provider ?? 'email')));
 
     final merged = UserProfile(
       id: user.id,
@@ -225,7 +239,13 @@ class AuthRepositoryImpl implements AuthRepository {
       artworkUrl: effectiveArtworkUrl,
       artworkTitle: effectiveArtworkTitle,
       accentColor: effectiveAccent,
+      email: emailFromUser ?? local.email,
+      provider: effectiveProvider,
       isAnonymous: isAnon,
+      tag: effectiveTag,
+      friendCode: (cloudRow?['friend_code'] as String?) ??
+          local.friendCode ??
+          'SP-${user.id.length >= 6 ? user.id.substring(0, 6).toUpperCase() : '777AAA'}',
       createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ?? DateTime.now(),
     );
 
@@ -247,74 +267,122 @@ class AuthRepositoryImpl implements AuthRepository {
 
   Future<void> _upsertCloudProfile(UserProfile profile) async {
     final client = _supabase;
-    if (client != null) {
+    if (client == null) return;
+
+    // Повторно используем только уже существующую сессию; НЕ создаём нового анонимного пользователя при каждом обновлении
+    final activeUser = client.auth.currentSession?.user ?? client.auth.currentUser;
+    if (activeUser == null) {
+      return;
+    }
+
+    final cloudUserId = activeUser.id;
+    final effectiveEmail = (activeUser.email != null && activeUser.email!.trim().isNotEmpty)
+        ? activeUser.email!.trim()
+        : (profile.email != null && profile.email!.trim().isNotEmpty
+            ? profile.email!.trim()
+            : null);
+
+    try {
+      await client.from('profiles').upsert({
+        'id': cloudUserId,
+        'username': profile.username,
+        if (effectiveEmail != null) 'email': effectiveEmail,
+        'avatar_url': profile.avatarUrl,
+        'avatar_frame_id': profile.frameId ?? 'none',
+        'background_url': profile.backgroundId ?? 'none',
+        'custom_title': profile.customTitle,
+        'custom_status': profile.customStatus,
+        'bio': profile.bio,
+        'badge_id': profile.badgeId,
+        'favorite_anime_title': profile.favoriteAnimeTitle,
+        'favorite_anime_id': profile.favoriteAnimeId,
+        'favorite_anime_poster': profile.favoriteAnimePoster,
+        'artwork_url': profile.artworkUrl,
+        'artwork_title': profile.artworkTitle,
+        'accent_color': profile.accentColor,
+        'showcase_type': profile.showcaseType,
+        'customization': profile.customization.toJson(),
+        'created_at': profile.createdAt.toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Error upserting cloud profile: $e');
+      // Fallback 1: базовые поля + avatar_frame_id + background_url (+ email если есть)
       try {
         await client.from('profiles').upsert({
-          'id': profile.id,
+          'id': cloudUserId,
           'username': profile.username,
-          'avatar_url': profile.avatarUrl,
-          'avatar_frame_id': profile.frameId,
-          'background_url': profile.backgroundId,
-          'custom_title': profile.customTitle,
-          'custom_status': profile.customStatus,
-          'bio': profile.bio,
-          'badge_id': profile.badgeId,
-          'favorite_anime_title': profile.favoriteAnimeTitle,
-          'favorite_anime_id': profile.favoriteAnimeId,
-          'favorite_anime_poster': profile.favoriteAnimePoster,
-          'artwork_url': profile.artworkUrl,
-          'artwork_title': profile.artworkTitle,
-          'accent_color': profile.accentColor,
-          'showcase_type': profile.showcaseType,
-          'customization': profile.customization.toJson(),
+          if (effectiveEmail != null) 'email': effectiveEmail,
+          'avatar_url': profile.avatarUrl ?? '🐱',
+          'avatar_frame_id': profile.frameId ?? 'none',
+          'background_url': profile.backgroundId ?? 'none',
           'created_at': profile.createdAt.toIso8601String(),
         });
-      } catch (e) {
-        debugPrint('Error upserting cloud profile: $e');
-        // Fallback: запись со стандартным набором полей profiles (id, username, avatar_url, created_at)
+      } catch (e2) {
+        // Fallback 2: минимальный набор без опциональных колонок
         try {
           await client.from('profiles').upsert({
-            'id': profile.id,
+            'id': cloudUserId,
             'username': profile.username,
             'avatar_url': profile.avatarUrl ?? '🐱',
             'created_at': profile.createdAt.toIso8601String(),
           });
-          debugPrint('[Auth] Успешная запись базового профиля в Supabase profiles: ${profile.id}');
-        } catch (e2) {
-          debugPrint('Error upserting minimal cloud profile: $e2');
+        } catch (e3) {
+          debugPrint('Error upserting minimal cloud profile: $e3');
         }
       }
+    }
+  }
+
+  /// Удаляет осиротевший временный профиль анонимного гостя после переноса данных на постоянный аккаунт
+  Future<void> _cleanupOrphanedAnonymousProfile(
+    String? oldAnonId,
+    String newUserId,
+  ) async {
+    final client = _supabase;
+    if (client == null ||
+        oldAnonId == null ||
+        oldAnonId.isEmpty ||
+        oldAnonId == newUserId) {
+      return;
+    }
+    try {
+      await client.from('profiles').delete().eq('id', oldAnonId);
+    } catch (e) {
+      debugPrint('[Auth] Orphaned anonymous profile cleanup skipped: $e');
     }
   }
 
   @override
   Future<UserProfile> getCurrentProfile() async {
     final client = _supabase;
-    if (client != null && client.auth.currentUser != null) {
-      final user = client.auth.currentUser!;
-      final cloud = await _fetchAndMigrateCloudProfile(user);
-      return cloud;
+    final activeUser = client?.auth.currentSession?.user ?? client?.auth.currentUser;
+    if (activeUser != null) {
+      return _fetchAndMigrateCloudProfile(activeUser);
     }
 
-    final local = _loadLocalProfile();
-    // Если есть подключение к Supabase, сессии нет и анонимный провайдер не отключён — пробуем анонимный вход
-    if (client != null && client.auth.currentUser == null && !_anonymousProviderDisabled) {
-      try {
-        return await signInAnonymously();
-      } catch (_) {}
-    }
-    return local;
+    // Не вызываем signInAnonymously() на холодном старте, чтобы не плодить дубликаты профилей.
+    return _loadLocalProfile();
   }
 
   @override
   Future<UserProfile> signInAnonymously() async {
     final local = _loadLocalProfile();
+    final client = _supabase;
+
+    // Если сессия уже существует — переиспользуем её без создания дубликата
+    final existingUser = client?.auth.currentSession?.user ?? client?.auth.currentUser;
+    if (existingUser != null) {
+      final profile = await _fetchAndMigrateCloudProfile(existingUser);
+      await _saveLocalProfile(profile);
+      _authController.add(profile);
+      return profile;
+    }
+
     if (_anonymousProviderDisabled) {
       _authController.add(local);
       return local;
     }
 
-    final client = _supabase;
     if (client != null) {
       try {
         final res = await client.auth.signInAnonymously();
@@ -348,30 +416,127 @@ class AuthRepositoryImpl implements AuthRepository {
     return local;
   }
 
+  static const String _desktopOAuthSuccessHtml = '''
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>SyncPai Auth</title></head>
+<body style="margin:0;background:#0F1118;color:#F3F4F6;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
+  <div style="text-align:center;padding:32px 40px;border-radius:16px;background:#171A24;border:1px solid rgba(255,255,255,0.1);box-shadow:0 16px 40px rgba(0,0,0,0.45);">
+    <h2 style="margin:0 0 8px;color:#38BDF8;">Вход выполнен!</h2>
+    <p style="margin:0;color:#9CA3AF;font-size:15px;">Вернитесь в SyncPai — эту вкладку можно закрыть.</p>
+  </div>
+</body>
+</html>
+''';
+
+  @visibleForTesting
+  static Future<Uri> awaitDesktopOAuthCallback(HttpServer server) async {
+    await for (final request in server.timeout(const Duration(minutes: 2))) {
+      if (request.uri.path == '/favicon.ico') {
+        request.response.statusCode = HttpStatus.noContent;
+        await request.response.close();
+        continue;
+      }
+      final callbackUri = request.uri;
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType('text', 'html', charset: 'utf-8')
+        ..write(_desktopOAuthSuccessHtml);
+      await request.response.close();
+      return callbackUri;
+    }
+    throw TimeoutException('OAuth callback server closed before receiving redirect');
+  }
+
+  /// Возвращает платформенно-зависимый OAuth redirect URL:
+  /// - Android / iOS: `syncpai://login-callback` (deep link)
+  /// - Windows / macOS / Linux: `http://localhost:3000` (loopback)
+  static String? resolveOAuthRedirectTo({
+    required bool isWeb,
+    required bool isMobileOS,
+    required bool isDesktopOS,
+  }) {
+    if (isWeb) return null;
+    if (isMobileOS) return 'syncpai://login-callback';
+    if (isDesktopOS) return 'http://localhost:3000';
+    return null;
+  }
+
   @override
   Future<UserProfile?> signInWithGoogle() async {
     try {
       final client = _supabase;
+      final oldAnonId =
+          (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
       final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+      final bool isMobileOS = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      final String? oauthRedirectTo = resolveOAuthRedirectTo(
+        isWeb: kIsWeb,
+        isMobileOS: isMobileOS,
+        isDesktopOS: isDesktopOS,
+      );
 
-      if (isDesktopOS && client != null) {
+      Future<UserProfile?> launchSupabaseGoogleOAuth() async {
+        if (client == null) return null;
+        HttpServer? server;
         try {
-          await client.auth.signInWithOAuth(
-            OAuthProvider.google,
-            redirectTo: 'syncpai://login-callback',
-          );
+          if (isDesktopOS) {
+            try {
+              server = await HttpServer.bind(InternetAddress.loopbackIPv4, 3000);
+            } catch (_) {
+              server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+            }
+            final desktopRedirectTo = 'http://localhost:${server.port}';
+            final callbackFuture = awaitDesktopOAuthCallback(server);
+            await client.auth.signInWithOAuth(
+              OAuthProvider.google,
+              redirectTo: desktopRedirectTo,
+              authScreenLaunchMode: LaunchMode.externalApplication,
+            );
+            final callbackUri = await callbackFuture;
+            if (callbackUri.queryParameters.containsKey('error')) {
+              final errDesc = callbackUri.queryParameters['error_description'] ??
+                  callbackUri.queryParameters['error'] ??
+                  'OAuth error';
+              throw AuthException(errDesc);
+            }
+            await client.auth.getSessionFromUrl(callbackUri);
+          } else {
+            await client.auth.signInWithOAuth(
+              OAuthProvider.google,
+              redirectTo: oauthRedirectTo,
+              authScreenLaunchMode: LaunchMode.externalApplication,
+            );
+          }
+
           final user = client.auth.currentUser;
-          if (user != null) {
+          if (user != null && !user.isAnonymous) {
             final profile = await _fetchAndMigrateCloudProfile(user);
+            await _cleanupOrphanedAnonymousProfile(oldAnonId, user.id);
             await _saveLocalProfile(profile);
             _authController.add(profile);
             return profile;
           }
         } catch (oauthErr) {
-          debugPrint('[Auth] Desktop signInWithOAuth warning: $oauthErr');
+          debugPrint('[Auth] Supabase signInWithOAuth warning: $oauthErr');
+          if (AuthErrorFormatter.isProviderDisabledError(oauthErr)) {
+            throw AuthException(
+              AuthErrorFormatter.format(oauthErr),
+              code: 'validation_failed',
+            );
+          }
+        } finally {
+          await server?.close(force: true);
         }
+        return null;
       }
 
+      // На Windows / macOS / Linux полностью обходим нативный GoogleSignIn (он даёт MissingPluginException)
+      if (isDesktopOS) {
+        return await launchSupabaseGoogleOAuth();
+      }
+
+      // На Android / iOS сначала пробуем нативный GoogleSignIn
       GoogleSignInAccount? googleUser;
       try {
         final googleSignIn = GoogleSignIn(
@@ -382,25 +547,8 @@ class AuthRepositoryImpl implements AuthRepository {
         );
         googleUser = await googleSignIn.signIn();
       } catch (nativeErr) {
-        debugPrint('[Auth] Native GoogleSignIn error: $nativeErr. Falling back to Supabase OAuth...');
-        if (client != null) {
-          try {
-            await client.auth.signInWithOAuth(
-              OAuthProvider.google,
-              redirectTo: 'syncpai://login-callback',
-            );
-            final user = client.auth.currentUser;
-            if (user != null) {
-              final profile = await _fetchAndMigrateCloudProfile(user);
-              await _saveLocalProfile(profile);
-              _authController.add(profile);
-              return profile;
-            }
-          } catch (oauthErr) {
-            debugPrint('[Auth] Supabase OAuth fallback failed: $oauthErr');
-          }
-        }
-        rethrow;
+        debugPrint('[Auth] Native GoogleSignIn unavailable ($nativeErr). Falling back to Supabase OAuth...');
+        return await launchSupabaseGoogleOAuth();
       }
 
       if (googleUser == null) {
@@ -412,7 +560,12 @@ class AuthRepositoryImpl implements AuthRepository {
       final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
 
-      if (client != null && idToken != null) {
+      if (idToken == null) {
+        debugPrint('[Auth] Google idToken is null. Falling back to Supabase OAuth...');
+        return await launchSupabaseGoogleOAuth();
+      }
+
+      if (client != null) {
         try {
           await client.auth.signInWithIdToken(
             provider: OAuthProvider.google,
@@ -423,12 +576,21 @@ class AuthRepositoryImpl implements AuthRepository {
           final user = client.auth.currentUser;
           if (user != null) {
             final profile = await _fetchAndMigrateCloudProfile(user);
+            await _cleanupOrphanedAnonymousProfile(oldAnonId, user.id);
             await _saveLocalProfile(profile);
             _authController.add(profile);
             return profile;
           }
         } catch (supabaseErr) {
-          debugPrint('Supabase signInWithIdToken warning: $supabaseErr. Using local Google profile link.');
+          if (AuthErrorFormatter.isProviderDisabledError(supabaseErr)) {
+            throw AuthException(
+              AuthErrorFormatter.format(supabaseErr),
+              code: 'validation_failed',
+            );
+          }
+          debugPrint('Supabase signInWithIdToken warning ($supabaseErr). Falling back to OAuth...');
+          final oauthProfile = await launchSupabaseGoogleOAuth();
+          if (oauthProfile != null) return oauthProfile;
         }
       }
 
@@ -455,16 +617,16 @@ class AuthRepositoryImpl implements AuthRepository {
     final client = _supabase;
 
     // Ни в коем случае не затираем кастомный арт, ник или оформление!
-    final localHasCustomName = local.username.isNotEmpty &&
-        !local.username.startsWith('Сенпай #') &&
-        !local.username.startsWith('Гость #') &&
-        local.username != 'Анимешник';
+    final localHasCustomName = !UserProfile.isDefaultGeneratedNickname(local.username);
+    final emailPrefix = email.contains('@') ? email.split('@').first.trim() : email.trim();
 
     final effectiveName = localHasCustomName
         ? local.username
-        : (displayName != null && displayName.trim().isNotEmpty
+        : (displayName != null &&
+                displayName.trim().isNotEmpty &&
+                !UserProfile.isDefaultGeneratedNickname(displayName)
             ? displayName.trim()
-            : local.username);
+            : (emailPrefix.isNotEmpty ? emailPrefix : local.username));
 
     final effectiveAvatar = (local.avatarUrl != null &&
             local.avatarUrl != 'cat' &&
@@ -472,21 +634,21 @@ class AuthRepositoryImpl implements AuthRepository {
         ? local.avatarUrl
         : (photoUrl != null && photoUrl.isNotEmpty ? photoUrl : local.avatarUrl);
 
+    final effectiveTag = (local.tag.isNotEmpty && local.tag != '#0001')
+        ? local.tag
+        : UserProfile.generateTag(email);
+
     final updated = local.copyWith(
       username: effectiveName,
       avatarUrl: effectiveAvatar,
       email: email.trim(),
       provider: 'google',
       isAnonymous: false,
+      tag: effectiveTag,
     );
 
     await _saveLocalProfile(updated);
-    if (client != null) {
-      if (client.auth.currentSession == null) {
-        try {
-          await client.auth.signInAnonymously();
-        } catch (_) {}
-      }
+    if (client != null && client.auth.currentSession != null) {
       final currentUid = client.auth.currentUser?.id;
       final profileToSync = currentUid != null && currentUid.isNotEmpty
           ? updated.copyWith(id: currentUid)
@@ -514,6 +676,8 @@ class AuthRepositoryImpl implements AuthRepository {
     String? username,
   }) async {
     final client = _supabase;
+    final oldAnonId =
+        (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
     if (client != null) {
       try {
         final res = await client.auth.signUp(
@@ -529,6 +693,7 @@ class AuthRepositoryImpl implements AuthRepository {
             res.user!,
             explicitUsername: username,
           );
+          await _cleanupOrphanedAnonymousProfile(oldAnonId, res.user!.id);
           await _saveLocalProfile(profile);
           _authController.add(profile);
           return profile;
@@ -551,20 +716,37 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<UserProfile> signInWithEmail({
-    required String email,
+  Future<UserProfile> signInWithIdentifier({
+    required String identifier,
     required String password,
   }) async {
+    final trimmed = identifier.trim();
     final client = _supabase;
+    final oldAnonId =
+        (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
     if (client != null) {
       try {
+        String resolvedEmail = trimmed;
+        if (!trimmed.contains('@')) {
+          final rpcResult = await client.rpc(
+            'get_email_by_username',
+            params: {'p_username': trimmed},
+          );
+          final candidate = rpcResult?.toString().trim() ?? '';
+          if (candidate.isEmpty) {
+            throw const AuthException('Пользователь с таким логином не найден');
+          }
+          resolvedEmail = candidate;
+        }
+
         final res = await client.auth.signInWithPassword(
-          email: email.trim(),
+          email: resolvedEmail,
           password: password,
         );
 
         if (res.user != null) {
           final profile = await _fetchAndMigrateCloudProfile(res.user!);
+          await _cleanupOrphanedAnonymousProfile(oldAnonId, res.user!.id);
           await _saveLocalProfile(profile);
           _authController.add(profile);
           return profile;
@@ -581,6 +763,14 @@ class AuthRepositoryImpl implements AuthRepository {
     await _saveLocalProfile(migrated);
     _authController.add(migrated);
     return migrated;
+  }
+
+  @override
+  Future<UserProfile> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    return signInWithIdentifier(identifier: email, password: password);
   }
 
   @override

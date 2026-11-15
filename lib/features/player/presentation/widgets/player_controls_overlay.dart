@@ -9,6 +9,8 @@ import '../../../catalog/domain/entities/episode_item.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import '../../../sync_room/presentation/widgets/in_room_anime_picker_sheet.dart';
+import 'floating_pai_chan_reactions_overlay.dart';
 import 'player_episodes_sheet.dart';
 import 'player_progress_bar.dart';
 import 'player_settings_sheet.dart';
@@ -215,6 +217,28 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   cubit.toggleScreenLock();
                                 },
                               ),
+
+                              // Кнопка смены аниме внутри активной комнаты (без выхода из комнаты)
+                              if (state.isSyncRoom)
+                                IconButton(
+                                  key: const ValueKey('player_switch_room_anime_btn'),
+                                  tooltip: 'Сменить аниме в комнате',
+                                  icon: Icon(
+                                    Icons.swap_horiz_rounded,
+                                    color: AppColors.primaryLight,
+                                  ),
+                                  iconSize: isLandscape ? 19 : 21,
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () {
+                                    InRoomAnimePickerSheet.show(
+                                      context,
+                                      roomCode: state.roomCode,
+                                      currentTitle: state.title,
+                                      onAnimeSelected: (newTitle) =>
+                                          cubit.switchAnimeInRoom(newTitle),
+                                    );
+                                  },
+                                ),
 
                               // Кнопка сворачивания в плавающий мини-плеер (In-App PiP)
                               if (onMinimize != null)
@@ -785,10 +809,10 @@ class PlayerControlsOverlay extends StatelessWidget {
 
               const Spacer(),
 
-              // Реакции и чат в комнате
+              // Стикер-реакции Пай-чан и чат в комнате
               if (state.isSyncRoom)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: AppColors.background.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(18),
@@ -797,16 +821,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final emoji in ['🔥', '😂', '😱', '😭', '❤️']) ...[
-                        InkWell(
-                          onTap: () => cubit.sendReaction(emoji),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                            child: Text(emoji, style: const TextStyle(fontSize: 16)),
-                          ),
-                        ),
-                      ],
+                      PaiChanStickerReactionBar(
+                        compact: true,
+                        onStickerSelected: (sticker) => cubit.sendReaction(sticker.id),
+                      ),
                       Container(
                         height: 14,
                         width: 1,

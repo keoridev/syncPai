@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../utils/auth_error_formatter.dart';
 import 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
@@ -86,9 +87,11 @@ class AuthCubit extends Cubit<AuthState> {
         emit(Authenticated(current));
       }
     } catch (e) {
-      emit(AuthError('Ошибка входа через Google: $e'));
+      final friendly = AuthErrorFormatter.format(e);
+      emit(AuthError(friendly));
       final current = await repository.getCurrentProfile();
       emit(Authenticated(current));
+      rethrow;
     }
   }
 
@@ -126,7 +129,26 @@ class AuthCubit extends Cubit<AuthState> {
       );
       emit(Authenticated(profile));
     } catch (e) {
-      emit(AuthError('Ошибка регистрации: $e'));
+      emit(AuthError(AuthErrorFormatter.format(e)));
+      final current = await repository.getCurrentProfile();
+      emit(Authenticated(current));
+      rethrow;
+    }
+  }
+
+  Future<void> signInWithIdentifier({
+    required String identifier,
+    required String password,
+  }) async {
+    emit(const AuthLoading());
+    try {
+      final profile = await repository.signInWithIdentifier(
+        identifier: identifier,
+        password: password,
+      );
+      emit(Authenticated(profile));
+    } catch (e) {
+      emit(AuthError(AuthErrorFormatter.format(e)));
       final current = await repository.getCurrentProfile();
       emit(Authenticated(current));
       rethrow;
@@ -137,19 +159,7 @@ class AuthCubit extends Cubit<AuthState> {
     required String email,
     required String password,
   }) async {
-    emit(const AuthLoading());
-    try {
-      final profile = await repository.signInWithEmail(
-        email: email,
-        password: password,
-      );
-      emit(Authenticated(profile));
-    } catch (e) {
-      emit(AuthError('Ошибка авторизации: $e'));
-      final current = await repository.getCurrentProfile();
-      emit(Authenticated(current));
-      rethrow;
-    }
+    return signInWithIdentifier(identifier: email, password: password);
   }
 
   Future<void> signOut() async {

@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -317,9 +319,9 @@ void main() {
     expect(joined.status, SyncRoomStatus.connected);
     expect(joined.peerName, 'Алиса');
 
-    // Test normalizer
+    // Test normalizer (6-digit room IDs never get auto-hyphenated)
     expect(SyncRoomRepositoryImpl.normalizeCode('sp4821'), 'SP-4821');
-    expect(SyncRoomRepositoryImpl.normalizeCode('749301'), '749-301');
+    expect(SyncRoomRepositoryImpl.normalizeCode('749301'), '749301');
   });
 
   testWidgets('GlassContainer and GlassIconButton render and handle tap', (tester) async {
@@ -685,7 +687,8 @@ void main() {
       ),
     );
 
-    expect(find.text('🔥'), findsOneWidget);
+    expect(find.byKey(const ValueKey('floating_pai_sticker_r1')), findsOneWidget);
+    expect(find.text('Друг'), findsOneWidget);
     expect(find.text('У друга слабый сигнал, ждем…'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
@@ -1221,7 +1224,8 @@ void main() {
     final guest = UserProfile.guest('user_123');
     expect(guest.id, 'user_123');
     expect(guest.isAnonymous, isTrue);
-    expect(guest.username.startsWith('Сенпай'), isTrue);
+    expect(UserProfile.curatedNicknames.contains(guest.username), isTrue);
+    expect(guest.username.contains('Сенпай'), isFalse);
 
     final updated = guest.copyWith(username: 'Хокаге', avatarUrl: '🦊');
     expect(updated.username, 'Хокаге');
@@ -1330,7 +1334,7 @@ Title,Status,Episodes,Score
     expect(entries[1].lastEpisode, 18);
     expect(entries[1].episodesTotal, 24);
 
-    expect(entries[2].status, AnimeListStatus.planned);
+    expect(entries[2].status, AnimeListStatus.dropped);
     expect(entries[3].status, AnimeListStatus.planned);
     expect(entries[4].status, AnimeListStatus.dropped);
     expect(entries[4].lastEpisode, 6);
@@ -3622,7 +3626,7 @@ Title,Status,Episodes
         expect(find.text('Смотрите аниме синхронно с друзьями'), findsOneWidget);
         expect(find.text('Войти через Google'), findsOneWidget);
         expect(find.text('Продолжить как гость'), findsOneWidget);
-        expect(find.text('Email'), findsOneWidget);
+        expect(find.text('Email или логин'), findsOneWidget);
         expect(find.text('Пароль'), findsOneWidget);
       });
 
@@ -3851,6 +3855,61 @@ Title,Status,Episodes
         controller.dispose();
       });
     });
+
+    group('19. Performance, Mascot Emotions & Nickname Polish Tests', () {
+      test('Specific MascotState emotions never fall back to generic winter skins', () {
+        expect(MascotState.uploading.toWinterState(), MascotState.uploading);
+        expect(
+          MascotState.uploading.toWinterState().assetPath,
+          'assets/mascot/loading_success/mascot_uploading.png',
+        );
+        expect(MascotState.thinking.toWinterState(), MascotState.thinking);
+        expect(MascotState.sleeping.toWinterState(), MascotState.sleeping);
+        expect(MascotState.emptySearch.toWinterState(), MascotState.emptySearch);
+        expect(MascotState.emptyFavorites.toWinterState(), MascotState.emptyFavorites);
+        expect(MascotState.emptyHistory.toWinterState(), MascotState.emptyHistory);
+        expect(MascotState.noNotifications.toWinterState(), MascotState.noNotifications);
+        expect(MascotState.favoriteAdded.toWinterState(), MascotState.favoriteAdded);
+        expect(MascotState.syncSuccess.toWinterState(), MascotState.syncSuccess);
+        expect(MascotState.sad, MascotState.emptyFavorites);
+        expect(MascotState.curious, MascotState.thinking);
+        expect(MascotState.sleepy, MascotState.sleeping);
+      });
+
+      test('AnimeDetailsCache stores and retrieves cached details immediately', () {
+        AnimeDetailsCache.clear();
+        const sampleTitle = AnimeTitle(
+          id: 77777,
+          code: 'solo-leveling',
+          russianTitle: 'Поднятие уровня в одиночку',
+          englishTitle: 'Solo Leveling',
+          posterSmall: 'https://example.com/solo.jpg',
+          posterMedium: 'https://example.com/solo.jpg',
+          posterOriginal: 'https://example.com/solo.jpg',
+          episodesTotal: 12,
+          latestEpisode: 12,
+          season: 'Зима 2024',
+          year: 2024,
+          genres: ['Экшен', 'Фэнтези'],
+          description: 'Описание тайтла',
+          status: 'В работе',
+          episodes: [
+            EpisodeItem(
+              episode: 1,
+              name: 'Серия 1',
+              fhdUrl: 'https://example.com/1.m3u8',
+            ),
+          ],
+        );
+
+        AnimeDetailsCache.putTitle(sampleTitle);
+
+        final cached = AnimeDetailsCache.get(77777);
+        expect(cached, isNotNull);
+        expect(cached!.title.id, 77777);
+        expect(cached.title.episodes.length, 1);
+      });
+    });
   });
 }
 
@@ -3865,6 +3924,9 @@ class _CountingMockAnimeCatalogRepository implements AnimeCatalogRepository {
     int limit = 40,
     String? genres,
     String? year,
+    String? sort,
+    String? status,
+    CancelToken? cancelToken,
   }) async {
     onGetCatalog?.call();
     final genreName = genres ?? 'Все';
@@ -3884,7 +3946,12 @@ class _CountingMockAnimeCatalogRepository implements AnimeCatalogRepository {
   }
 
   @override
-  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async => [];
+  Future<List<AnimeEntity>> searchCatalog(
+    String query, {
+    int limit = 30,
+    CancelToken? cancelToken,
+  }) async =>
+      [];
 
   @override
   Future<List<TranslationEntity>> getPlayerLinks(int releaseId, {String? title}) async => [];
@@ -3897,6 +3964,9 @@ class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
     int limit = 40,
     String? genres,
     String? year,
+    String? sort,
+    String? status,
+    CancelToken? cancelToken,
   }) async {
     return [
       const AnimeEntity(
@@ -3912,7 +3982,11 @@ class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
   }
 
   @override
-  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async {
+  Future<List<AnimeEntity>> searchCatalog(
+    String query, {
+    int limit = 30,
+    CancelToken? cancelToken,
+  }) async {
     return [
       const AnimeEntity(
         id: 'test-uuid',

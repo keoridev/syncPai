@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../../core/utils/safe_haptics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -36,7 +39,37 @@ class PlayerSettingsSheet extends StatelessWidget {
     required PlayerState state,
     VoidCallback? onMinimizeToMiniPlayer,
   }) {
-    HapticFeedback.lightImpact();
+    SafeHaptics.lightImpact();
+    final isDesktop = !kIsWeb &&
+        (Platform.isWindows ||
+            Platform.isMacOS ||
+            Platform.isLinux ||
+            MediaQuery.of(context).size.width >= 650);
+
+    if (isDesktop) {
+      return showDialog(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.78),
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 680),
+            child: BlocProvider.value(
+              value: cubit,
+              child: BlocBuilder<PlayerCubit, PlayerState>(
+                builder: (ctx, liveState) => PlayerSettingsSheet(
+                  cubit: cubit,
+                  state: liveState,
+                  onMinimizeToMiniPlayer: onMinimizeToMiniPlayer,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -15,14 +17,18 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
+import 'package:sync_pai/features/auth/presentation/widgets/pai_chan_auth_gate.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
+import 'package:sync_pai/features/profile/services/friends_service.dart';
 import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../domain/entities/sync_room.dart';
 import '../../domain/repositories/sync_room_repository.dart';
+import '../../services/active_room_service.dart';
 import '../../services/room_audio_devices_service.dart';
 import '../cubit/sync_room_cubit.dart';
 import '../cubit/sync_room_state.dart';
 import '../screens/coop_match_screen.dart';
+import 'in_room_anime_picker_sheet.dart';
 import 'qr_scanner_sheet.dart';
 import 'room_audio_settings_section.dart';
 
@@ -49,6 +55,35 @@ class SyncRoomLobbySheet extends StatefulWidget {
     PlayerQuality initialQuality = PlayerQuality.hd,
     required void Function(SyncRoom room, bool isHost) onStartPlayback,
   }) {
+    final isDesktop = !kIsWeb &&
+        (Platform.isWindows ||
+            Platform.isMacOS ||
+            Platform.isLinux ||
+            MediaQuery.of(context).size.width >= 650);
+
+    if (isDesktop) {
+      return showDialog(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.78),
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 720),
+            child: BlocProvider(
+              create: (_) => SyncRoomCubit(repository: getIt<SyncRoomRepository>()),
+              child: SyncRoomLobbySheet(
+                title: title,
+                episode: episode,
+                initialQuality: initialQuality,
+                onStartPlayback: onStartPlayback,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -116,11 +151,109 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
     }
   }
 
+  void _minimizeLobby(BuildContext context) {
+    final cubitState = context.read<SyncRoomCubit>().state;
+    SyncRoom? room;
+    bool isHost = _currentTab == SyncLobbyTab.host;
+    if (cubitState is SyncRoomHostWaiting) {
+      room = cubitState.room;
+      isHost = true;
+    } else if (cubitState is SyncRoomJoined) {
+      room = cubitState.room;
+      isHost = cubitState.isHost;
+    } else {
+      room = SyncRoom(
+        code: 'SP-482100',
+        title: widget.title,
+        episode: widget.episode,
+        quality: widget.initialQuality,
+        hostName: 'Хост (Вы)',
+        status: SyncRoomStatus.waiting,
+        createdAt: DateTime.now(),
+      );
+    }
+
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    final onStartPlayback = widget.onStartPlayback;
+
+    ActiveRoomService.instance.minimizeRoom(
+      room: room,
+      isHost: isHost,
+      isInPlayer: false,
+      onExpandRoom: (expandedRoom, hostFlag) {
+        final navCtx = rootNav.context;
+        if (navCtx.mounted) {
+          SyncRoomLobbySheet.show(
+            navCtx,
+            title: expandedRoom.title,
+            episode: expandedRoom.episode,
+            initialQuality: expandedRoom.quality,
+            onStartPlayback: onStartPlayback,
+          );
+        }
+      },
+    );
+
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _openInRoomAnimePicker(BuildContext context, SyncRoom? room, AnimeTitle currentTitle) async {
+    final cubit = context.read<SyncRoomCubit>();
+    final selected = await InRoomAnimePickerSheet.show(
+      context,
+      roomCode: room?.code,
+      currentTitle: currentTitle,
+      onAnimeSelected: (newTitle) async {
+        await cubit.changeRoomAnime(newTitle);
+        if (ActiveRoomService.instance.hasActiveRoom) {
+          await ActiveRoomService.instance.switchAnimeInActiveRoom(newTitle);
+        }
+      },
+    );
+    if (selected != null && context.mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📺 Тайтл комнаты изменён на «${selected.displayTitle}»'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocListener<SyncRoomCubit, SyncRoomState>(
       listener: (context, state) {
-        if (state is SyncRoomPlaybackStarting) {
+        if (state is SyncRoomHostWaiting) {
+          if (ActiveRoomService.instance.hasActiveRoom) {
+            ActiveRoomService.instance.registerActiveRoom(
+              room: state.room,
+              isHost: true,
+              isInPlayer: false,
+              initialParticipants: state.participants,
+            );
+          }
+        } else if (state is SyncRoomJoined) {
+          if (ActiveRoomService.instance.hasActiveRoom) {
+            ActiveRoomService.instance.registerActiveRoom(
+              room: state.room,
+              isHost: state.isHost,
+              isInPlayer: false,
+              initialParticipants: state.participants,
+            );
+          }
+        } else if (state is SyncRoomPlaybackStarting) {
+          if (ActiveRoomService.instance.hasActiveRoom) {
+            ActiveRoomService.instance.registerActiveRoom(
+              room: state.room,
+              isHost: state.isHost,
+              isInPlayer: true,
+            );
+          }
           // Синхронный переход в плеер при старте воспроизведения хостом
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
@@ -180,44 +313,66 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
 
                     const SizedBox(height: AppDimensions.spacingLg),
 
-                    // Заголовок и кнопка закрытия
+                    // Заголовок и кнопки управления (Свернуть / Закрыть)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.group_outlined,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: AppDimensions.spacingSm),
+                              Flexible(
+                                child: Text(
+                                  'Совместный просмотр',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.titleLarge.copyWith(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 17,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(8),
+                            IconButton(
+                              key: const ValueKey('sync_lobby_minimize_btn'),
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Свернуть комнату в мини-окно',
+                              icon: Icon(
+                                Icons.picture_in_picture_alt_rounded,
+                                color: AppColors.primaryLight,
+                                size: 20,
                               ),
-                              child: Icon(
-                                Icons.group_outlined,
-                                color: AppColors.primary,
-                                size: 18,
-                              ),
+                              onPressed: () => _minimizeLobby(context),
                             ),
-                            const SizedBox(width: AppDimensions.spacingSm),
-                            Text(
-                              'Совместный просмотр',
-                              style: AppTypography.titleLarge.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 17,
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: AppColors.textSecondary,
+                                size: 20,
                               ),
+                              onPressed: () => Navigator.of(context).pop(),
                             ),
                           ],
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: AppColors.textSecondary,
-                            size: 20,
-                          ),
-                          onPressed: () => Navigator.of(context).pop(),
                         ),
                       ],
                     ),
@@ -316,19 +471,24 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                size: 16,
+                size: 15,
                 color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
               ),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 13,
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             ],
@@ -351,19 +511,85 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
           );
         }
 
+        if (state is SyncRoomError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.syncError.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.syncError.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_rounded,
+                    color: AppColors.syncError,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Не удалось создать комнату в облаке',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    state.message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      context.read<SyncRoomCubit>().createRoom(
+                            title: widget.title,
+                            episode: widget.episode,
+                            quality: widget.initialQuality,
+                          );
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Повторить'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _themeAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final room = state is SyncRoomHostWaiting ? state.room : null;
+        final currentTitle = room?.title ?? widget.title;
+        final currentEpisode = room?.episode ?? widget.episode;
         final roomCode = SyncRoomRepositoryImpl.extractPinCode(room?.code ?? '482100');
         final isCodeCopied = state is SyncRoomHostWaiting && state.codeCopied;
         final isLinkCopied = state is SyncRoomHostWaiting && state.linkCopied;
 
-        final previewUrl = widget.episode.previewUrl ??
-            (widget.title.posterMedium.isNotEmpty
-                ? widget.title.posterMedium
-                : widget.title.posterSmall);
+        final previewUrl = currentEpisode.previewUrl ??
+            (currentTitle.posterMedium.isNotEmpty
+                ? currentTitle.posterMedium
+                : currentTitle.posterSmall);
 
         return Column(
           children: [
-            // Карточка выбранного тайтла и серии (с фиксацией качества 720p HD)
+            // Карточка выбранного тайтла и серии + кнопка «Сменить аниме»
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -382,7 +608,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                       width: 90,
                       height: 52,
                       child: Hero(
-                        tag: 'anime-poster-${widget.title.id}',
+                        tag: 'anime-poster-${currentTitle.id}',
                         child: previewUrl.isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: previewUrl,
@@ -402,7 +628,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          widget.title.displayTitle,
+                          currentTitle.displayTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.titleSmall.copyWith(
@@ -412,16 +638,19 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Row(
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          runSpacing: 2,
                           children: [
                             Text(
-                              'Серия ${widget.episode.episode}',
+                              'Серия ${currentEpisode.episode}',
                               style: AppTypography.bodySmall.copyWith(
                                 color: AppColors.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
-                            const Text('  •  ', style: TextStyle(color: AppColors.textMuted)),
+                            const Text('•', style: TextStyle(color: AppColors.textMuted)),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                               decoration: BoxDecoration(
@@ -439,6 +668,17 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                           ],
                         ),
                       ],
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('sync_lobby_change_anime_btn'),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Сменить аниме в комнате',
+                    onPressed: () => _openInRoomAnimePicker(context, room, currentTitle),
+                    icon: Icon(
+                      Icons.swap_horiz_rounded,
+                      size: 20,
+                      color: AppColors.primaryLight,
                     ),
                   ),
                 ],
@@ -579,7 +819,7 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   QrImageView(
-                    data: 'https://syncpai.app/room/${roomCode.replaceAll(RegExp(r'[^A-Z0-9]'), '')}',
+                    data: 'syncpai://room/$roomCode',
                     version: QrVersions.auto,
                     size: 120,
                     gapless: true,
@@ -876,9 +1116,11 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
             const SizedBox(height: AppDimensions.spacingLg),
 
             // Поле ввода пин-кода со стильным нейтральным оформлением
-            Container(
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
+                color: Colors.white.withValues(alpha: _pinFocusNode.hasFocus ? 0.06 : 0.04),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: (errorMsg != null && _pinController.text.isNotEmpty)
@@ -915,9 +1157,17 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                     letterSpacing: 4,
                     color: Colors.white.withValues(alpha: 0.2),
                   ),
+                  filled: false,
+                  isDense: true,
+                  hoverColor: Colors.transparent,
+                  focusColor: Colors.transparent,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
                 ),
                 onChanged: _onPinChanged,
               ),
@@ -1281,6 +1531,41 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                       ],
                     ),
                   ),
+                  if (hasGuest) ...[
+                    IconButton(
+                      icon: Icon(Icons.person_add_alt_1_rounded, size: 17, color: AppColors.primaryLight),
+                      tooltip: 'Добавить в друзья',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final peerName = guestName ?? 'Друг';
+                        final friendData = <String, dynamic>{
+                          'name': peerName,
+                          'username': peerName,
+                        };
+                        if (PaiChanAuthGate.isGuest(context)) {
+                          await PaiChanAuthGate.show(
+                            context,
+                            accentColor: AppColors.primary,
+                            pendingFriendUser: friendData,
+                          );
+                          return;
+                        }
+                        await FriendsService.addFriend(friendData);
+                        if (!mounted) return;
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Заявка отправлена пользователю $peerName! ✨'),
+                            backgroundColor: AppColors.syncActive,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(

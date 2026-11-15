@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -23,10 +22,17 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
 
   SyncRoomCubit({required this.repository}) : super(const SyncRoomInitial());
 
+  void _safeEmit(SyncRoomState newState) {
+    if (!isClosed) {
+      emit(newState);
+    }
+  }
+
   /// Сбросить ошибку комнаты
   void clearError() {
+    if (isClosed) return;
     if (state is SyncRoomError) {
-      emit(const SyncRoomInitial());
+      _safeEmit(const SyncRoomInitial());
     }
   }
 
@@ -36,39 +42,45 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     required EpisodeItem episode,
     PlayerQuality quality = PlayerQuality.hd,
   }) async {
-    emit(const SyncRoomCreating());
+    if (isClosed) return;
+    _safeEmit(const SyncRoomCreating());
     try {
       final room = await repository.createRoom(
         title: title,
         episode: episode,
         quality: quality,
       );
+      if (isClosed) return;
       _currentRoomCode = room.code;
 
       // Подписка на присутствие участников в лобби
       await _presenceSubscription?.cancel();
+      if (isClosed) return;
       _presenceSubscription = repository.subscribeToPresence(room.code).listen((presences) {
+        if (isClosed) return;
         final s = state;
         if (s is SyncRoomHostWaiting) {
           final guestPresence = presences.where((p) => !p.isHost).firstOrNull;
-          emit(s.copyWith(
+          _safeEmit(s.copyWith(
             participants: presences,
             room: guestPresence != null
                 ? s.room.copyWith(peerName: guestPresence.name, status: SyncRoomStatus.connected)
                 : s.room,
           ));
         } else if (s is SyncRoomJoined) {
-          emit(s.copyWith(participants: presences));
+          _safeEmit(s.copyWith(participants: presences));
         }
       });
 
-      // Подписываемся на события комнаты (подключение гостя, старт плеера)
+      // Подписываемся на события комнаты (подключение гостя, старт плеера, смена аниме)
       await _eventSubscription?.cancel();
+      if (isClosed) return;
       _eventSubscription = repository.subscribeToRoom(room.code).listen((event) {
+        if (isClosed) return;
         if (event.type == SyncEventType.peerJoined) {
           final s = state;
           if (s is SyncRoomHostWaiting) {
-            emit(s.copyWith(
+            _safeEmit(s.copyWith(
               room: s.room.copyWith(
                 peerName: event.senderName,
                 status: SyncRoomStatus.connected,
@@ -78,14 +90,29 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         } else if (event.type == SyncEventType.startPlayback) {
           final s = state;
           if (s is SyncRoomHostWaiting) {
-            emit(SyncRoomPlaybackStarting(room: s.room, isHost: true));
+            _safeEmit(SyncRoomPlaybackStarting(room: s.room, isHost: true));
           } else if (s is SyncRoomJoined) {
-            emit(SyncRoomPlaybackStarting(room: s.room, isHost: false));
+            _safeEmit(SyncRoomPlaybackStarting(room: s.room, isHost: false));
+          }
+        } else if (event.type == SyncEventType.animeChanged && event.newTitle != null) {
+          final s = state;
+          final ep = event.newEpisode ??
+              (event.newTitle!.episodes.isNotEmpty
+                  ? event.newTitle!.episodes.first
+                  : const EpisodeItem(episode: 1));
+          if (s is SyncRoomHostWaiting) {
+            _safeEmit(s.copyWith(
+              room: s.room.copyWith(title: event.newTitle, episode: ep),
+            ));
+          } else if (s is SyncRoomJoined) {
+            _safeEmit(s.copyWith(
+              room: s.room.copyWith(title: event.newTitle, episode: ep),
+            ));
           }
         }
       });
 
-      emit(SyncRoomHostWaiting(
+      _safeEmit(SyncRoomHostWaiting(
         room: room,
         participants: [
           PeerPresence(
@@ -99,75 +126,66 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         ],
       ));
     } catch (e) {
-      if (e is PostgrestException ||
-          e.toString().contains('42501') ||
-          e.toString().toLowerCase().contains('row-level security') ||
-          e.toString().toLowerCase().contains('unauthorized')) {
-        // Умный локальный fallback (Offline / Demo Room Mode): создаем комнату локально для тестирования UI и плеера
-        final rawPin = (100000 + Random().nextInt(900000)).toString();
-        final localRoom = SyncRoom(
-          code: 'SP-$rawPin',
-          title: title,
-          episode: episode,
-          quality: quality,
-          hostName: 'Хост (Вы)',
-          status: SyncRoomStatus.waiting,
-          createdAt: DateTime.now(),
-        );
-        _currentRoomCode = localRoom.code;
-        emit(SyncRoomHostWaiting(
-          room: localRoom,
-          participants: [
-            PeerPresence(
-              userId: 'host_${localRoom.code}',
-              name: localRoom.hostName,
-              avatar: '👑',
-              status: PresenceStatus.online,
-              lastSeen: DateTime.now(),
-              isHost: true,
-            ),
-          ],
-        ));
-        return;
+      if (isClosed) return;
+      if (e is PostgrestException) {
+        _safeEmit(SyncRoomError(e.message));
+      } else {
+        _safeEmit(SyncRoomError('Не удалось создать комнату: $e'));
       }
-      emit(SyncRoomError('Не удалось создать комнату: $e'));
     }
   }
 
   /// 2. Режим гостя: валидация и подключение к лобби по коду
   Future<void> joinRoom(String rawCode, {String peerName = 'Друг'}) async {
+    if (isClosed) return;
     final cleanCode = rawCode.trim();
     if (cleanCode.isEmpty) {
-      emit(const SyncRoomError('Введите код комнаты'));
+      _safeEmit(const SyncRoomError('Введите код комнаты'));
       return;
     }
 
-    emit(const SyncRoomJoining());
+    _safeEmit(const SyncRoomJoining());
     try {
       final room = await repository.joinRoom(code: cleanCode, peerName: peerName);
+      if (isClosed) return;
       _currentRoomCode = room.code;
 
       // Подписка на присутствие участников в лобби
       await _presenceSubscription?.cancel();
+      if (isClosed) return;
       _presenceSubscription = repository.subscribeToPresence(room.code).listen((presences) {
+        if (isClosed) return;
         final s = state;
         if (s is SyncRoomJoined) {
-          emit(s.copyWith(participants: presences));
+          _safeEmit(s.copyWith(participants: presences));
         }
       });
 
-      // Подписываемся на события комнаты (старт воспроизведения хостом)
+      // Подписываемся на события комнаты (старт воспроизведения хостом, смена аниме)
       await _eventSubscription?.cancel();
+      if (isClosed) return;
       _eventSubscription = repository.subscribeToRoom(room.code).listen((event) {
+        if (isClosed) return;
         if (event.type == SyncEventType.startPlayback) {
           final s = state;
           if (s is SyncRoomJoined) {
-            emit(SyncRoomPlaybackStarting(room: s.room, isHost: false));
+            _safeEmit(SyncRoomPlaybackStarting(room: s.room, isHost: false));
+          }
+        } else if (event.type == SyncEventType.animeChanged && event.newTitle != null) {
+          final s = state;
+          final ep = event.newEpisode ??
+              (event.newTitle!.episodes.isNotEmpty
+                  ? event.newTitle!.episodes.first
+                  : const EpisodeItem(episode: 1));
+          if (s is SyncRoomJoined) {
+            _safeEmit(s.copyWith(
+              room: s.room.copyWith(title: event.newTitle, episode: ep),
+            ));
           }
         }
       });
 
-      emit(SyncRoomJoined(
+      _safeEmit(SyncRoomJoined(
         room: room,
         isHost: false,
         participants: [
@@ -190,34 +208,75 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         ],
       ));
     } catch (e) {
-      emit(SyncRoomError(e.toString().replaceAll('Exception: ', '')));
+      if (isClosed) return;
+      _safeEmit(SyncRoomError(e.toString().replaceAll('Exception: ', '')));
     }
   }
 
   /// 3. Хост запускает воспроизведение для всех участников лобби одновременно
   Future<void> startPlaybackForAll() async {
+    if (isClosed) return;
     final s = state;
     if (s is SyncRoomHostWaiting) {
       final code = s.room.code;
       await repository.startPlayback(code);
+      if (isClosed) return;
       final runningRoom = s.room.copyWith(
         status: SyncRoomStatus.connected,
         peerName: s.room.peerName ?? 'Гость',
       );
-      emit(SyncRoomPlaybackStarting(room: runningRoom, isHost: true));
+      _safeEmit(SyncRoomPlaybackStarting(room: runningRoom, isHost: true));
     } else if (s is SyncRoomJoined && s.isHost) {
       final code = s.room.code;
       await repository.startPlayback(code);
+      if (isClosed) return;
       final runningRoom = s.room.copyWith(
         status: SyncRoomStatus.connected,
         peerName: s.room.peerName ?? 'Гость',
       );
-      emit(SyncRoomPlaybackStarting(room: runningRoom, isHost: true));
+      _safeEmit(SyncRoomPlaybackStarting(room: runningRoom, isHost: true));
+    }
+  }
+
+  /// Смена аниме в активном лобби без пересоздания комнаты
+  Future<void> changeRoomAnime(AnimeTitle newTitle, {EpisodeItem? episode}) async {
+    if (isClosed) return;
+    final s = state;
+    final ep = episode ??
+        (newTitle.episodes.isNotEmpty
+            ? newTitle.episodes.first
+            : const EpisodeItem(episode: 1));
+
+    if (s is SyncRoomHostWaiting) {
+      final code = s.room.code;
+      final updatedRoom = s.room.copyWith(title: newTitle, episode: ep);
+      _safeEmit(s.copyWith(room: updatedRoom));
+      try {
+        await repository.changeRoomAnime(
+          roomCode: code,
+          title: newTitle,
+          episode: ep,
+          sender: s.room.hostName,
+        );
+      } catch (_) {}
+    } else if (s is SyncRoomJoined) {
+      final code = s.room.code;
+      final updatedRoom = s.room.copyWith(title: newTitle, episode: ep);
+      _safeEmit(s.copyWith(room: updatedRoom));
+      try {
+        await repository.changeRoomAnime(
+          roomCode: code,
+          title: newTitle,
+          episode: ep,
+          sender: s.isHost ? s.room.hostName : (s.room.peerName ?? 'Участник'),
+        );
+      } catch (_) {}
     }
   }
 
   /// Смена тайтла на совпавший в Anime Match и синхронный запуск воспроизведения для комнаты
   Future<void> startMatchedTitlePlayback(AnimeTitle matchedTitle) async {
+    if (isClosed) return;
     final s = state;
     final ep = matchedTitle.episodes.isNotEmpty
         ? matchedTitle.episodes.first
@@ -232,15 +291,16 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         peerName: s.room.peerName ?? 'Гость',
       );
       try {
-        await repository.sendChangeEpisode(
+        await repository.changeRoomAnime(
           roomCode: code,
-          episodeNumber: ep.episode,
-          quality: updatedRoom.quality.label,
+          title: matchedTitle,
+          episode: ep,
           sender: s.room.hostName,
         );
         await repository.startPlayback(code);
       } catch (_) {}
-      emit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: true));
+      if (isClosed) return;
+      _safeEmit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: true));
     } else if (s is SyncRoomJoined) {
       final code = s.room.code;
       final updatedRoom = s.room.copyWith(
@@ -250,47 +310,53 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
       );
       try {
         if (s.isHost) {
-          await repository.sendChangeEpisode(
+          await repository.changeRoomAnime(
             roomCode: code,
-            episodeNumber: ep.episode,
-            quality: updatedRoom.quality.label,
+            title: matchedTitle,
+            episode: ep,
             sender: s.room.hostName,
           );
         }
         await repository.startPlayback(code);
       } catch (_) {}
-      emit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: s.isHost));
+      if (isClosed) return;
+      _safeEmit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: s.isHost));
     }
   }
 
   /// Скопировать 6-значный PIN-код комнаты
   Future<void> copyCode() async {
+    if (isClosed) return;
     final s = state;
     if (s is SyncRoomHostWaiting) {
       try {
         final pinCode = SyncRoomRepositoryImpl.extractPinCode(s.room.code);
         await Clipboard.setData(ClipboardData(text: pinCode));
       } catch (_) {}
-      emit(s.copyWith(codeCopied: true, linkCopied: false));
+      if (isClosed) return;
+      _safeEmit(s.copyWith(codeCopied: true, linkCopied: false));
     }
   }
 
   /// Скопировать ссылку на комнату
   Future<void> copyShareLink() async {
+    if (isClosed) return;
     final s = state;
     if (s is SyncRoomHostWaiting) {
       try {
         await Clipboard.setData(ClipboardData(text: s.room.shareUrl));
       } catch (_) {}
-      emit(s.copyWith(linkCopied: true, codeCopied: false));
+      if (isClosed) return;
+      _safeEmit(s.copyWith(linkCopied: true, codeCopied: false));
     }
   }
 
   /// Симуляция подключения друга (для быстрого тестирования в одном окне)
   void simulatePeerJoin() {
+    if (isClosed) return;
     final code = _currentRoomCode;
     if (code != null) {
-      repository.simulatePeerJoin(code, peerName: 'Сенпай');
+      repository.simulatePeerJoin(code, peerName: 'Ren');
       startPlaybackForAll();
     }
   }
@@ -304,7 +370,9 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     await _eventSubscription?.cancel();
     await _presenceSubscription?.cancel();
     _currentRoomCode = null;
-    emit(const SyncRoomInitial());
+    if (!isClosed) {
+      _safeEmit(const SyncRoomInitial());
+    }
   }
 
   @override

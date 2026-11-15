@@ -15,6 +15,7 @@ import '../../../../core/theme/cubit/theme_cubit.dart';
 import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
+import '../../../../core/widgets/vector_country_flag.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
@@ -749,6 +750,10 @@ class _SteamProfileCustomizerSheetState
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
+            ),
+            enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.strokeMedium),
             ),
@@ -1592,9 +1597,27 @@ class _SteamProfileCustomizerSheetState
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                icon: const Icon(Icons.add_photo_alternate_rounded, size: 15),
-                label: const Text('Свой арт', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                icon: Icon(
+                  widget.profile.supporterTier.unlocksCustomArtworkUpload
+                      ? Icons.add_photo_alternate_rounded
+                      : Icons.lock_rounded,
+                  size: 15,
+                ),
+                label: Text(
+                  widget.profile.supporterTier.unlocksCustomArtworkUpload
+                      ? 'Свой арт'
+                      : 'Свой арт (Pro)',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
                 onPressed: () async {
+                  if (!widget.profile.supporterTier.unlocksCustomArtworkUpload) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Загрузка своих GIF/артов открывается в SyncPai Pro'),
+                      ),
+                    );
+                    return;
+                  }
                   try {
                     final result = await FilePicker.platform.pickFiles(
                       type: FileType.image,
@@ -1965,9 +1988,31 @@ class _SteamProfileCustomizerSheetState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Кастомный титул профиля:',
-                  style: AppTypography.caption
-                      .copyWith(color: AppColors.textMuted)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Кастомный титул профиля:',
+                      style: AppTypography.caption
+                          .copyWith(color: AppColors.textMuted)),
+                  if (!widget.profile.supporterTier.unlocksCustomProfileTitle) ...[
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 12,
+                      color: Color(0xFFA855F7),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'Pro',
+                      style: TextStyle(
+                        color: Color(0xFFA855F7),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
               Text('${_titleController.text.length}/30',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 10.5)),
@@ -1977,6 +2022,16 @@ class _SteamProfileCustomizerSheetState
           TextField(
             controller: _titleController,
             focusNode: _titleFocusNode,
+            readOnly: !widget.profile.supporterTier.unlocksCustomProfileTitle,
+            onTap: !widget.profile.supporterTier.unlocksCustomProfileTitle
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Кастомный титул доступен в SyncPai Pro'),
+                      ),
+                    );
+                  }
+                : null,
             maxLength: 30,
             cursorColor: accent,
             style: const TextStyle(
@@ -2137,7 +2192,13 @@ class _SteamProfileCustomizerSheetState
                     value: country.name,
                     child: Row(
                       children: [
-                        Text(country.flag, style: const TextStyle(fontSize: 18)),
+                        VectorCountryFlag(
+                          countryFlag: country.flag,
+                          countryName: country.name,
+                          width: 20,
+                          height: 14,
+                          borderRadius: 3,
+                        ),
                         const SizedBox(width: 10),
                         Text(
                           country.name,

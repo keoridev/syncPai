@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../profile/domain/entities/steam_profile_customization.dart';
+import '../../../support/domain/entities/supporter_tier.dart';
 
 /// Модель профиля пользователя SyncPai
 class UserProfile extends Equatable {
@@ -30,6 +31,7 @@ class UserProfile extends Equatable {
   final String tag; // '#0421'
   final String? friendCode; // 'SP-8F3K9A'
   final bool autoAcceptInvites;
+  final SupporterTier supporterTier;
   final DateTime createdAt;
 
   const UserProfile({
@@ -58,6 +60,7 @@ class UserProfile extends Equatable {
     this.tag = '#0001',
     this.friendCode,
     this.autoAcceptInvites = true,
+    this.supporterTier = SupporterTier.free,
     required this.createdAt,
   });
 
@@ -78,12 +81,67 @@ class UserProfile extends Equatable {
         avatarShape: avatarShape,
       );
 
+  /// Пул стильных аниме-никнеймов для новых и гостевых пользователей (вместо хардкода «Сенпай»)
+  static const List<String> curatedNicknames = [
+    'Kuro',
+    'Sora',
+    'Ren',
+    'Yuki',
+    'Akira',
+    'Kaito',
+    'Shin',
+    'Riku',
+  ];
+
+  /// Генерация чистого аниме-никнейма на основе ID/seed
+  static String generateAnimeNickname([String? seed]) {
+    final s = (seed != null && seed.isNotEmpty) ? seed : '${DateTime.now().millisecondsSinceEpoch}';
+    int hash = 0;
+    for (int i = 0; i < s.length; i++) {
+      hash = (hash * 31 + s.codeUnitAt(i)) & 0x7fffffff;
+    }
+    final baseName = curatedNicknames[hash % curatedNicknames.length];
+    return baseName;
+  }
+
+  /// Генерация 4-значного числового тега (#0421)
+  static String generateTag([String? seed]) {
+    final s = (seed != null && seed.isNotEmpty) ? seed : '${DateTime.now().millisecondsSinceEpoch}';
+    int hash = 0;
+    for (int i = 0; i < s.length; i++) {
+      hash = (hash * 37 + s.codeUnitAt(i)) & 0x7fffffff;
+    }
+    final digits = (1000 + (hash % 9000)).toString();
+    return '#$digits';
+  }
+
+  /// Проверка, является ли никнейм сгенерированным по умолчанию (не измененным вручную)
+  static bool isDefaultGeneratedNickname(String? rawName) {
+    if (rawName == null || rawName.trim().isEmpty) return true;
+    final clean = rawName.trim();
+    if (clean == 'Анимешник' ||
+        clean == 'Сенпай' ||
+        clean.startsWith('Сенпай #') ||
+        clean.startsWith('Гость #') ||
+        clean == 'Гость') {
+      return true;
+    }
+    for (final preset in curatedNicknames) {
+      if (clean == preset || clean.startsWith('$preset #')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Дефолтный гостевой профиль при первом запуске (Anonymous Auth)
   factory UserProfile.guest([String? id]) {
     final uid = id ?? 'guest_${DateTime.now().millisecondsSinceEpoch}';
+    final generatedName = generateAnimeNickname(uid);
+    final generatedTag = generateTag(uid);
     return UserProfile(
       id: uid,
-      username: 'Сенпай #${uid.length > 5 ? uid.substring(uid.length - 4) : '777'}',
+      username: generatedName,
       avatarUrl: 'cat',
       frameId: 'none',
       backgroundId: 'none',
@@ -101,7 +159,7 @@ class UserProfile extends Equatable {
       countryFlag: '🇰🇬',
       countryName: 'Kyrgyzstan',
       avatarShape: 'square',
-      tag: '#${uid.length >= 4 ? uid.substring(uid.length - 4) : '0001'}',
+      tag: generatedTag,
       friendCode: 'SP-${uid.length >= 6 ? uid.substring(uid.length - 6).toUpperCase() : '777AAA'}',
       autoAcceptInvites: true,
       createdAt: DateTime.now(),
@@ -134,6 +192,7 @@ class UserProfile extends Equatable {
     String? tag,
     String? friendCode,
     bool? autoAcceptInvites,
+    SupporterTier? supporterTier,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -162,6 +221,7 @@ class UserProfile extends Equatable {
       tag: tag ?? this.tag,
       friendCode: friendCode ?? this.friendCode,
       autoAcceptInvites: autoAcceptInvites ?? this.autoAcceptInvites,
+      supporterTier: supporterTier ?? this.supporterTier,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -194,6 +254,7 @@ class UserProfile extends Equatable {
         'tag': tag,
         'friend_code': friendCode,
         'auto_accept_invites': autoAcceptInvites,
+        'supporter_tier': supporterTier.id,
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -232,9 +293,19 @@ class UserProfile extends Equatable {
         customObj?['avatar_shape'] as String? ??
         'square';
 
+    final rawId = json['id'] as String? ?? '';
+    final rawUsername = json['username'] as String?;
+    final resolvedUsername = (rawUsername == null ||
+            rawUsername.trim().isEmpty ||
+            rawUsername == 'Анимешник' ||
+            rawUsername == 'Сенпай' ||
+            rawUsername.startsWith('Сенпай #'))
+        ? generateAnimeNickname(rawId)
+        : rawUsername;
+
     return UserProfile(
-      id: json['id'] as String? ?? '',
-      username: json['username'] as String? ?? 'Анимешник',
+      id: rawId,
+      username: resolvedUsername,
       avatarUrl: json['avatar_url'] as String?,
       frameId: frame,
       backgroundId: bg,
@@ -258,6 +329,7 @@ class UserProfile extends Equatable {
       tag: json['tag'] as String? ?? '#0001',
       friendCode: json['friend_code'] as String?,
       autoAcceptInvites: json['auto_accept_invites'] as bool? ?? true,
+      supporterTier: SupporterTier.fromId(json['supporter_tier'] as String?),
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -289,6 +361,7 @@ class UserProfile extends Equatable {
         tag,
         friendCode,
         autoAcceptInvites,
+        supporterTier,
         createdAt,
       ];
 }

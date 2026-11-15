@@ -15,11 +15,14 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
+import '../../../../core/widgets/vector_country_flag.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
+import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
+import '../../services/friends_service.dart';
 import 'badge_details_sheet.dart';
 import 'live_backgrounds/live_background_widget.dart';
 
@@ -123,6 +126,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   StreamSubscription<GyroscopeEvent>? _gyroSubscription;
   double _tiltX = 0.0;
   double _tiltY = 0.0;
+  double _targetTiltX = 0.0;
+  double _targetTiltY = 0.0;
   AnimationController? _idleController;
   int _likesCount = 1337;
   bool _isLiked = false;
@@ -157,12 +162,21 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         try {
           _gyroSubscription = gyroscopeEventStream().listen((event) {
             if (!mounted) return;
-            setState(() {
-              // event.y = поворот влево-вправо (roll), event.x = наклон вперед-назад (pitch)
-              // Применяем фильтр низких частот (low-pass filter) для плавности
-              _tiltX = (_tiltX * 0.82 + event.y * 0.18).clamp(-1.0, 1.0);
-              _tiltY = (_tiltY * 0.82 + event.x * 0.18).clamp(-1.0, 1.0);
-            });
+            // Интегрируем угловую скорость гироскопа (rad/s) с затуханием к центру (spring centering)
+            // event.y = поворот влево-вправо, event.x = наклон вперед-назад
+            _targetTiltX = (_targetTiltX * 0.92 + event.y * 0.12).clamp(-1.0, 1.0);
+            _targetTiltY = (_targetTiltY * 0.92 + event.x * 0.12).clamp(-1.0, 1.0);
+
+            // Плавная интерполяция к целевому значению
+            final newTiltX = _tiltX + (_targetTiltX - _tiltX) * 0.25;
+            final newTiltY = _tiltY + (_targetTiltY - _tiltY) * 0.25;
+
+            if ((newTiltX - _tiltX).abs() > 0.002 || (newTiltY - _tiltY).abs() > 0.002) {
+              setState(() {
+                _tiltX = newTiltX;
+                _tiltY = newTiltY;
+              });
+            }
           }, onError: (_) {});
         } catch (_) {}
       }
@@ -301,13 +315,15 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final artworkUrl = _resolveArtworkUrl();
     final artworkTitle = _resolveArtworkTitle();
 
-    // 3D Parallax расчеты
+    // 3D Parallax расчеты:
+    // Плавный idle-сдвиг при отсутствии активных движений устройства
     final idleVal = _idleController?.value ?? 0.0;
-    final hasActiveTilt = _tiltX.abs() > 0.03 || _tiltY.abs() > 0.03;
-    final effectiveTiltX = hasActiveTilt ? _tiltX : (math.sin(idleVal * 2 * math.pi) * 0.06);
-    final effectiveTiltY = hasActiveTilt ? _tiltY : (math.cos(idleVal * 2 * math.pi) * 0.04);
+    final hasActiveTilt = _tiltX.abs() > 0.02 || _tiltY.abs() > 0.02;
+    final effectiveTiltX = hasActiveTilt ? _tiltX : (math.sin(idleVal * 2 * math.pi) * 0.04);
+    final effectiveTiltY = hasActiveTilt ? _tiltY : (math.cos(idleVal * 2 * math.pi) * 0.03);
 
-    final bgShiftX = -effectiveTiltX * 10.0;
+    // Сдвиг фонового изображения внутри витрины
+    final bgShiftX = -effectiveTiltX * 8.0;
     final bgShiftY = -effectiveTiltY * 6.0;
 
     final scheme = Theme.of(context).colorScheme;
@@ -444,6 +460,52 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
         const SizedBox(width: 6),
 
+        // Бейдж саппортера SyncPai (Plus / Pro / Founder)
+        if (widget.profile.supporterTier.badgeLabel != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              gradient: widget.profile.supporterTier.isProducer
+                  ? const LinearGradient(
+                      colors: [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFEC4899)],
+                    )
+                  : null,
+              color: widget.profile.supporterTier.isProducer
+                  ? null
+                  : widget.profile.supporterTier.accentColor.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: widget.profile.supporterTier.accentColor.withValues(alpha: 0.7),
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.profile.supporterTier.icon,
+                  size: 12,
+                  color: widget.profile.supporterTier.isProducer
+                      ? Colors.black
+                      : widget.profile.supporterTier.accentColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.profile.supporterTier.badgeLabel!,
+                  style: TextStyle(
+                    color: widget.profile.supporterTier.isProducer
+                        ? Colors.black
+                        : widget.profile.supporterTier.accentColor,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+
         // Уровень Steam / Значок профиля
         if (widget.profile.badgeId != null) ...[
           Builder(
@@ -497,8 +559,257 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
+        ] else ...[
+          IconButton(
+            icon: Icon(Icons.person_add_alt_1_rounded, color: accent, size: 20),
+            tooltip: 'Добавить в друзья',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: () async {
+              final friendUser = <String, dynamic>{
+                'id': widget.profile.id,
+                'username': widget.profile.username,
+                'name': widget.profile.username,
+                'tag': widget.profile.tag,
+                'avatar_url': widget.profile.avatarUrl,
+              };
+              if (PaiChanAuthGate.isGuest(context)) {
+                await PaiChanAuthGate.show(
+                  context,
+                  accentColor: accent,
+                  pendingFriendUser: friendUser,
+                );
+                return;
+              }
+              await FriendsService.addFriend(friendUser);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Заявка отправлена пользователю ${widget.profile.username}! ✨'),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: accent,
+                ),
+              );
+            },
+          ),
         ],
       ],
+    );
+  }
+
+  void _copyUserHandle(BuildContext context, Color accent) {
+    final rawTag = widget.profile.tag.trim();
+    final formattedTag = rawTag.isEmpty
+        ? '#0001'
+        : (rawTag.startsWith('#') ? rawTag : '#$rawTag');
+    final fullHandle = '${widget.profile.username}$formattedTag';
+    Clipboard.setData(ClipboardData(text: fullHandle));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Тег скопирован! Отправь его другу'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: accent,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _showQuickNicknameAndStatusDialog(BuildContext context, Color accent) async {
+    if (!widget.isCurrentUser) {
+      _copyUserHandle(context, accent);
+      return;
+    }
+
+    final nicknameCtrl = TextEditingController(text: widget.profile.username);
+    final statusCtrl = TextEditingController(
+      text: widget.profile.customStatus?.trim().isNotEmpty == true
+          ? widget.profile.customStatus!.trim()
+          : 'WELCOME',
+    );
+    const presets = <String>[
+      'Онлайн • Смотрю аниме',
+      'В поиске тайтла на вечер',
+      'Не беспокоить • Марафон',
+      'WELCOME',
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        final scheme = Theme.of(dialogCtx).colorScheme;
+        return StatefulBuilder(
+          builder: (ctx, setModalState) => Dialog(
+            backgroundColor: const Color(0xFF151821),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: accent.withValues(alpha: 0.35), width: 1.2),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.badge_rounded, color: accent, size: 20),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Никнейм и быстрый статус',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                          icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant, size: 20),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: nicknameCtrl,
+                      maxLength: 24,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      decoration: InputDecoration(
+                        labelText: 'Никнейм',
+                        counterText: '',
+                        prefixIcon: Icon(Icons.person_outline_rounded, color: accent, size: 18),
+                        suffixText: widget.profile.tag.isNotEmpty ? widget.profile.tag : '#0001',
+                        suffixStyle: TextStyle(color: accent, fontWeight: FontWeight.w700),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        hoverColor: Colors.transparent,
+                        focusColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: accent, width: 1.3),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: statusCtrl,
+                      maxLength: 36,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Статус в профиле',
+                        counterText: '',
+                        prefixIcon: Icon(Icons.bolt_rounded, color: accent, size: 18),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        hoverColor: Colors.transparent,
+                        focusColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: accent, width: 1.3),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: presets.map((preset) {
+                        final isSelected = statusCtrl.text.trim() == preset;
+                        return InkWell(
+                          onTap: () => setModalState(() => statusCtrl.text = preset),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? accent.withValues(alpha: 0.22)
+                                  : Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? accent : Colors.white.withValues(alpha: 0.1),
+                              ),
+                            ),
+                            child: Text(
+                              preset,
+                              style: TextStyle(
+                                color: isSelected ? accent : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(dialogCtx).pop();
+                            widget.onEditProfileTap();
+                          },
+                          icon: Icon(Icons.tune_rounded, size: 15, color: scheme.onSurfaceVariant),
+                          label: Text(
+                            'Все настройки',
+                            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                          ),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: () async {
+                            final nextName = nicknameCtrl.text.trim();
+                            final nextStatus = statusCtrl.text.trim();
+                            Navigator.of(dialogCtx).pop();
+                            if (getIt.isRegistered<AuthCubit>()) {
+                              await getIt<AuthCubit>().updateProfile(
+                                username: nextName.isNotEmpty ? nextName : widget.profile.username,
+                                customStatus: nextStatus.isNotEmpty ? nextStatus : 'WELCOME',
+                              );
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: AppColors.onColor(accent),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text(
+                            'Сохранить',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -510,6 +821,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final statusText = widget.profile.customStatus?.trim().isNotEmpty == true
         ? widget.profile.customStatus!.trim()
         : 'WELCOME';
+    final rawTag = widget.profile.tag.trim();
+    final displayTag = rawTag.isEmpty
+        ? (widget.profile.friendCode?.trim().isNotEmpty == true ? widget.profile.friendCode!.trim() : '#0001')
+        : (rawTag.startsWith('#') ? rawTag : '#$rawTag');
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -522,55 +837,86 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         const SizedBox(width: 16),
 
         // ========================================================
-        // СПРАВА: НИКНЕЙМ, СТРАНА, ПЛАШКА СТАТУСА
+        // СПРАВА: НИКНЕЙМ, СТРАНА + #TAG, ПЛАШКА СТАТУСА
         // ========================================================
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Никнейм (20sp, bold, со стрелочкой/иконкой статуса)
+              // Интерактивный никнейм (открывает быстрый редактор никнейма/статуса по клику)
+              Tooltip(
+                message: widget.isCurrentUser
+                    ? 'Изменить никнейм и статус'
+                    : 'Скопировать Ник#Тег',
+                child: InkWell(
+                  onTap: () => _showQuickNicknameAndStatusDialog(context, accent),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.profile.username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: scheme.onSurface,
+                              letterSpacing: 0.2,
+                              shadows: isDark
+                                  ? const [Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 2))]
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
+                          ),
+                          child: Icon(
+                            widget.isCurrentUser ? Icons.edit_rounded : Icons.copy_rounded,
+                            color: accent,
+                            size: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              // Под ником: векторный флаг страны (20x14px, borderRadius: 3) + название страны + копируемый #tag
               Row(
                 children: [
+                  VectorCountryFlag(
+                    countryFlag: flag,
+                    countryName: country,
+                    width: 20,
+                    height: 14,
+                    borderRadius: 3,
+                  ),
+                  const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      widget.profile.username,
+                      country,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onSurface,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
                         letterSpacing: 0.2,
-                        shadows: isDark
-                            ? const [Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 2))]
-                            : null,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.arrow_drop_down_rounded,
-                    color: scheme.onSurfaceVariant,
-                    size: 20,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 3),
-
-              // Под ником: флаг страны
-              Row(
-                children: [
-                  Text(flag, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(width: 5),
-                  Text(
-                    country,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: scheme.onSurfaceVariant,
-                      letterSpacing: 0.2,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -583,12 +929,39 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'SyncPai',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: accent,
+                  Tooltip(
+                    message: 'Скопировать ${widget.profile.username}$displayTag',
+                    child: InkWell(
+                      onTap: () => _copyUserHandle(context, accent),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              displayTag,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: accent,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.copy_rounded,
+                              size: 10.5,
+                              color: accent.withValues(alpha: 0.85),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -1095,26 +1468,32 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required Color accent,
     required String artworkTitle,
   }) {
+    // Увеличенный масштаб медиа-слоя (+8% по ширине и высоте),
+    // чтобы при смещении фона по параллаксу по краям никогда не появлялись черные полосы
+    const bleedScale = 1.08;
+    final bleedWidth = totalWidth * bleedScale;
+    final bleedHeight = showcaseHeight * bleedScale;
+
     return Stack(
       fit: StackFit.expand,
       children: [
         // Единое бесшовное изображение: левая часть (74%) с Alignment.centerLeft,
         // правая узкая полоска (26%) с Alignment.centerRight как продолжение без дублирования
         OverflowBox(
-          minWidth: totalWidth,
-          maxWidth: totalWidth,
-          minHeight: showcaseHeight,
-          maxHeight: showcaseHeight,
+          minWidth: bleedWidth,
+          maxWidth: bleedWidth,
+          minHeight: bleedHeight,
+          maxHeight: bleedHeight,
           alignment: isMain ? Alignment.centerLeft : Alignment.centerRight,
           child: Transform.translate(
             offset: Offset(bgShiftX, bgShiftY),
             child: SizedBox(
-              width: totalWidth,
-              height: showcaseHeight,
+              width: bleedWidth,
+              height: bleedHeight,
               child: _buildArtworkMediaLayer(
                 imageUrl,
-                width: totalWidth,
-                height: showcaseHeight,
+                width: bleedWidth,
+                height: bleedHeight,
               ),
             ),
           ),
@@ -1662,7 +2041,18 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
               prefixIcon: const Icon(Icons.link_rounded, color: Colors.white60),
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              hoverColor: Colors.transparent,
+              focusColor: Colors.transparent,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: widget.accentColor, width: 1.4),
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -1675,7 +2065,18 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
               prefixIcon: const Icon(Icons.title_rounded, color: Colors.white60),
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              hoverColor: Colors.transparent,
+              focusColor: Colors.transparent,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: widget.accentColor, width: 1.4),
+              ),
             ),
           ),
           const SizedBox(height: 20),

@@ -7,12 +7,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit/media_kit.dart' hide PlayerState;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
+import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/downloads/domain/repositories/download_repository.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
@@ -21,6 +23,8 @@ import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
+import 'package:sync_pai/features/profile/presentation/cubit/profile_cubit.dart';
+import 'package:sync_pai/features/profile/presentation/cubit/profile_state.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -147,6 +151,26 @@ class PlayerCubit extends Cubit<PlayerState> {
     return null;
   }
 
+  late final String currentUserId;
+
+  String get currentUserName {
+    try {
+      if (getIt.isRegistered<ProfileCubit>()) {
+        final pState = getIt<ProfileCubit>().state;
+        if (pState.status == ProfileStatus.loaded && pState.profile.username.trim().isNotEmpty) {
+          return pState.profile.username.trim();
+        }
+      }
+    } catch (_) {}
+    try {
+      final metaName = Supabase.instance.client.auth.currentUser?.userMetadata?['username'] as String?;
+      if (metaName != null && metaName.trim().isNotEmpty) {
+        return metaName.trim();
+      }
+    } catch (_) {}
+    return state.isHost ? 'Хост' : (state.peerName ?? 'Гость');
+  }
+
   PlayerCubit({
     required AnimeTitle title,
     required EpisodeItem episode,
@@ -156,6 +180,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     this.syncRepository,
     Duration? initialPosition,
     Player? existingPlayer,
+    String? userIdOverride,
   })  : player = existingPlayer ??
             Player(
               configuration: const PlayerConfiguration(
@@ -176,6 +201,16 @@ class PlayerCubit extends Cubit<PlayerState> {
           peerName: isHost ? 'Друг' : 'Хост',
           heatmap: ReactionHeatmap.initial(titleId: title.id, episode: episode.episode),
         )) {
+    String? resolvedUid = userIdOverride;
+    if (resolvedUid == null || resolvedUid.isEmpty) {
+      try {
+        resolvedUid = Supabase.instance.client.auth.currentUser?.id;
+      } catch (_) {}
+    }
+    currentUserId = (resolvedUid != null && resolvedUid.isNotEmpty)
+        ? resolvedUid
+        : '${isHost ? "host" : "guest"}_${_random.nextInt(999999)}';
+
     _initPlayer();
     if (state.isSyncRoom) {
       _initSyncGateway();
@@ -493,8 +528,12 @@ class PlayerCubit extends Cubit<PlayerState> {
   void _handleIncomingPacket(SyncPacket packet) {
     if (isClosed) return;
 
-    final myName = state.isHost ? 'Хост' : (state.peerName ?? 'Гость');
-    final isFromSelf = packet.sender == myName;
+    final updatedBy = packet.payload['updated_by'] as String? ??
+        packet.payload['sender_id'] as String?;
+    final myName = currentUserName;
+    final isFromSelf = (updatedBy != null && updatedBy == currentUserId) ||
+        packet.sender == 'Self' ||
+        packet.sender == myName;
 
     // Измерение пинга между участниками комнаты
     final ping = (DateTime.now().millisecondsSinceEpoch - packet.timestampMs).abs().clamp(12, 380);
@@ -506,8 +545,10 @@ class PlayerCubit extends Cubit<PlayerState> {
       // HEARTBEAT от хоста (обработка ведомым клиентом с Drift Compensation)
       case SyncActionTypes.heartbeat:
         if (!state.isHost && !isFromSelf) {
-          final hostPos = packet.payload['position_ms'] as int? ?? 0;
+          final hostPos = (packet.payload['position_ms'] as num?)?.toInt() ?? 0;
           final hostPlaying = packet.payload['is_playing'] as bool? ?? false;
+          final hostRate = (packet.payload['playback_rate'] as num?)?.toDouble() ??
+              (packet.payload['rate'] as num?)?.toDouble();
           final now = DateTime.now().millisecondsSinceEpoch;
           final latency = (now - packet.timestampMs).clamp(0, 800);
           final estimatedHostPos = hostPos + (hostPlaying ? latency : 0);
@@ -521,42 +562,58 @@ class PlayerCubit extends Cubit<PlayerState> {
             player.pause();
           }
 
+          if (hostRate != null && hostRate >= 1.25) {
+            if ((state.playbackRate - hostRate).abs() > 0.05) {
+              player.setRate(hostRate);
+              emit(state.copyWith(
+                playbackRate: hostRate,
+                is2xFastForwarding: hostRate >= 1.9,
+              ));
+            }
+            break;
+          }
+
           // Интеллектуальное сглаживание рассинхрона (Drift Compensation):
           // При расхождении < 1.5 сек НЕ вызываем seek во избежание сброса декодера и буфера
           if (delta.abs() < 1500) {
             if (delta.abs() < 300) {
-              if (state.playbackRate != 1.0) player.setRate(1.0);
+              if (state.playbackRate != 1.0 && !state.is2xFastForwarding) {
+                player.setRate(1.0);
+              }
               emit(state.copyWith(syncStatus: SyncStatus.active));
             } else {
               // Разница 300–1500 мс: плавная временная подстройка скорости (1.05x / 0.95x) на 2 секунды
               final newRate = delta > 0 ? 1.05 : 0.95;
-              if (state.playbackRate != newRate) {
+              if (state.playbackRate != newRate && !state.is2xFastForwarding) {
                 player.setRate(newRate);
                 _driftRateTimer?.cancel();
                 _driftRateTimer = Timer(const Duration(seconds: 2), () {
-                  if (!isClosed && !_isDisposing && state.playbackRate != 1.0) {
+                  if (!isClosed && !_isDisposing && state.playbackRate != 1.0 && !state.is2xFastForwarding) {
                     player.setRate(1.0);
                   }
                 });
               }
               emit(state.copyWith(syncStatus: SyncStatus.aligning));
             }
-          } else if (delta.abs() >= 2000) {
-            // Разница >= 2.0 сек: только при значительном отставании или перемотке вызываем жесткий seek
+          } else if (delta.abs() >= 1500) {
+            // Разница >= 1.5 сек: вызываем синхронный seek
             if (delta > 15000) {
               _activateSpoilerShield();
             }
             player.seek(Duration(milliseconds: estimatedHostPos));
-            if (state.playbackRate != 1.0) player.setRate(1.0);
+            if (state.playbackRate != 1.0 && !state.is2xFastForwarding) {
+              player.setRate(1.0);
+            }
             emit(state.copyWith(syncStatus: SyncStatus.active));
           }
         }
         break;
 
-      // Управление хоста (Play, Pause, Seek, Episode)
+      // Двусторонняя синхронизация (Play, Pause, Seek > 1.5s, Episode, 2x Speed) между ПК и телефоном
       case SyncActionTypes.controlAction:
-        if (!state.isHost && !isFromSelf) {
-          final remoteEp = (packet.payload['episode'] as num?)?.toInt();
+        if (!isFromSelf) {
+          final remoteEp = (packet.payload['episode_index'] as num?)?.toInt() ??
+              (packet.payload['episode'] as num?)?.toInt();
           if (remoteEp != null && remoteEp > 0 && remoteEp != state.episode.episode) {
             final nextEp = state.title.episodes.firstWhere(
               (e) => e.episode == remoteEp,
@@ -568,14 +625,27 @@ class PlayerCubit extends Cubit<PlayerState> {
             }
           }
 
+          final remoteRate = (packet.payload['playback_rate'] as num?)?.toDouble();
+          if (remoteRate != null && (state.playbackRate - remoteRate).abs() > 0.05) {
+            player.setRate(remoteRate);
+            emit(state.copyWith(
+              playbackRate: remoteRate,
+              is2xFastForwarding: remoteRate >= 1.9,
+            ));
+          }
+
           final act = packet.payload['control_action'] as String? ?? packet.payload['action'] as String?;
-          final posMs = packet.payload['position_ms'] as int?;
+          final posMs = (packet.payload['position_ms'] as num?)?.toInt();
           final isPlayingVal = packet.payload['is_playing'] as bool?;
-          final timeVal = packet.payload['time'];
+          final timeVal = packet.payload['current_time_sec'] ?? packet.payload['time'];
           final timeMs = timeVal is num ? (timeVal * 1000).toInt() : null;
           final effectivePosMs = posMs ?? timeMs;
 
-          if (act == 'play' || isPlayingVal == true) {
+          if (act == 'rate') {
+            break;
+          }
+
+          if (act == 'play' || (act == null && isPlayingVal == true)) {
             if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 1500) {
               player.seek(Duration(milliseconds: effectivePosMs));
             }
@@ -583,7 +653,7 @@ class PlayerCubit extends Cubit<PlayerState> {
               _addSystemChatMessage('${packet.sender} продолжил просмотр');
             }
             player.play();
-          } else if (act == 'pause' || isPlayingVal == false) {
+          } else if (act == 'pause' || (act == null && isPlayingVal == false)) {
             if (effectivePosMs != null && (effectivePosMs - state.position.inMilliseconds).abs() >= 1500) {
               player.seek(Duration(milliseconds: effectivePosMs));
             }
@@ -597,6 +667,11 @@ class PlayerCubit extends Cubit<PlayerState> {
               if (effectivePosMs - state.position.inMilliseconds > 15000) {
                 _activateSpoilerShield();
               }
+              player.seek(Duration(milliseconds: effectivePosMs));
+            }
+          } else if (effectivePosMs != null) {
+            final diff = (effectivePosMs - state.position.inMilliseconds).abs();
+            if (diff >= 1500) {
               player.seek(Duration(milliseconds: effectivePosMs));
             }
           }
@@ -629,17 +704,30 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
         break;
 
-      // Летящая реакция (Floating Reaction)
+      // Летящая стикер-реакция Пай-чан (Floating Pai-chan Sticker Reaction)
       case SyncActionTypes.reaction:
-        final emoji = packet.payload['emoji'] as String? ?? '❤️';
+      case SyncActionTypes.paiStickerReaction:
         final reactionId = packet.payload['id'] as String? ??
             '${DateTime.now().microsecondsSinceEpoch}';
+        if (isFromSelf || state.activeReactions.any((r) => r.id == reactionId)) {
+          break;
+        }
+
+        final rawSticker = packet.payload['sticker_id'] as String? ??
+            packet.payload['emoji'] as String? ??
+            'love';
+        final sticker = PaiChanSticker.fromIdOrEmoji(rawSticker);
+        final senderName = (packet.payload['sender_name'] as String?)?.trim().isNotEmpty == true
+            ? (packet.payload['sender_name'] as String).trim()
+            : packet.sender;
 
         final reaction = FloatingReaction(
           id: reactionId,
-          emoji: emoji,
-          sender: packet.sender,
-          startXOffset: 0.65 + (_random.nextDouble() * 0.25),
+          emoji: sticker.fallbackEmoji,
+          stickerId: sticker.id,
+          sender: senderName,
+          senderId: updatedBy,
+          startXOffset: 0.18 + (_random.nextDouble() * 0.64),
           timestamp: DateTime.now(),
         );
 
@@ -651,14 +739,14 @@ class PlayerCubit extends Cubit<PlayerState> {
           final updatedHeatmap = state.heatmap!.addReaction(
             timestampSec: state.position.inSeconds.toDouble(),
             totalDurationSec: state.duration.inSeconds.toDouble(),
-            emoji: emoji,
-            sender: packet.sender,
+            emoji: sticker.fallbackEmoji,
+            sender: senderName,
           );
           emit(state.copyWith(heatmap: () => updatedHeatmap));
         }
 
-        // Удаление реакции после завершения анимации (3.5 сек)
-        Timer(const Duration(milliseconds: 3500), () {
+        // Удаление стикера Пай-чан после завершения анимации (2.4 сек)
+        Timer(const Duration(milliseconds: 2400), () {
           if (!isClosed) {
             final filtered = List<FloatingReaction>.from(state.activeReactions)
               ..removeWhere((r) => r.id == reactionId);
@@ -669,19 +757,28 @@ class PlayerCubit extends Cubit<PlayerState> {
 
       // Сообщение в чат (Twitch overlay chat + чат сайдбара комнаты)
       case SyncActionTypes.chatMessage:
-        final text = packet.payload['text'] as String? ?? '';
+        final text = (packet.payload['text'] as String?) ??
+            (packet.payload['content'] as String?) ??
+            '';
+        if (text.trim().isEmpty) break;
         final msgId = packet.payload['id'] as String? ??
             '${DateTime.now().microsecondsSinceEpoch}';
         final isHostMsg = packet.payload['is_host'] as bool? ?? false;
+        final senderName = (packet.payload['sender_name'] as String?)?.trim().isNotEmpty == true
+            ? (packet.payload['sender_name'] as String).trim()
+            : packet.sender;
 
+        final alreadyExists = state.chatMessages.any((m) => m.id == msgId);
         _pushChatMessage(ChatMessage(
           id: msgId,
-          sender: packet.sender,
+          sender: senderName,
           text: text,
           isHost: isHostMsg,
           timestamp: DateTime.now(),
         ));
-        if (!isFromSelf) _addDanmaku(text, packet.sender);
+        if (!isFromSelf && !alreadyExists) {
+          _addDanmaku(text, senderName);
+        }
         break;
 
       // Запрос паузы от гостя
@@ -762,6 +859,54 @@ class PlayerCubit extends Cubit<PlayerState> {
           skipOpening();
         }
         break;
+
+      // Смена аниме в активной комнате без пересоздания комнаты
+      case SyncActionTypes.changeAnime:
+        if (!isFromSelf) {
+          final p = packet.payload;
+          final animeId = (p['anime_id'] as num?)?.toInt() ??
+              int.tryParse('${p['anime_id'] ?? 0}') ??
+              0;
+          final animeTitleStr = (p['anime_title'] as String?) ?? 'Аниме';
+          final englishTitleStr = (p['english_title'] as String?) ?? animeTitleStr;
+          final codeStr = (p['code'] as String?) ?? 'sync_anime_$animeId';
+          final posterUrl = (p['poster_url'] as String?) ?? '';
+          final epNum = (p['episode'] as num?)?.toInt() ?? 1;
+          final epName = p['episode_name'] as String?;
+          final fhdUrl = p['fhd_url'] as String?;
+          final hdUrl = p['hd_url'] as String?;
+          final sdUrl = p['sd_url'] as String?;
+
+          final newEpisode = EpisodeItem(
+            episode: epNum,
+            name: epName ?? 'Серия $epNum',
+            fhdUrl: fhdUrl,
+            hdUrl: hdUrl,
+            sdUrl: sdUrl,
+          );
+
+          final newTitle = AnimeTitle(
+            id: animeId,
+            code: codeStr,
+            russianTitle: animeTitleStr,
+            englishTitle: englishTitleStr,
+            posterSmall: posterUrl,
+            posterMedium: posterUrl,
+            posterOriginal: posterUrl,
+            genres: const ['Аниме'],
+            description: '',
+            status: 'Онгоинг',
+            episodes: [newEpisode],
+          );
+
+          unawaited(switchAnimeInRoom(
+            newTitle,
+            episode: newEpisode,
+            broadcast: false,
+            senderLabel: packet.sender,
+          ));
+        }
+        break;
     }
   }
 
@@ -834,16 +979,19 @@ class PlayerCubit extends Cubit<PlayerState> {
     emit(state.copyWith(showWatchPartyStats: !state.showWatchPartyStats));
   }
 
-  void _broadcastControlAction(String action) {
-    if (state.isSyncRoom && state.isHost && state.roomCode != null) {
-      final posMs = state.position.inMilliseconds;
+  void _broadcastControlAction(String action, {double? playbackRate, Duration? targetPosition}) {
+    if (state.isSyncRoom && state.roomCode != null) {
+      final posMs = (targetPosition ?? state.position).inMilliseconds;
       final isPlaying = action == 'play' ? true : (action == 'pause' ? false : state.isPlaying);
+      final effectiveRate = playbackRate ?? state.playbackRate;
 
       syncRepository?.sendControlAction(
         roomCode: state.roomCode!,
         action: action,
         positionMs: posMs,
-        sender: 'Хост',
+        sender: currentUserName,
+        playbackRate: effectiveRate,
+        updatedBy: currentUserId,
       );
 
       syncRepository?.broadcastPlayback(
@@ -851,6 +999,9 @@ class PlayerCubit extends Cubit<PlayerState> {
         time: posMs / 1000.0,
         isPlaying: isPlaying,
         episode: state.episode.episode,
+        animeId: '${state.title.id}',
+        playbackRate: effectiveRate,
+        updatedBy: currentUserId,
       );
     }
   }
@@ -1118,22 +1269,6 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void playOrPause() {
-    if (state.isSyncRoom && !state.isHost) {
-      if (state.isPlaying) {
-        requestPauseFromHost();
-      } else {
-        emit(state.copyWith(
-          errorMessage: () => 'Только хост может запустить воспроизведение комнаты',
-        ));
-        Timer(const Duration(seconds: 3), () {
-          if (!isClosed && state.errorMessage == 'Только хост может запустить воспроизведение комнаты') {
-            emit(state.copyWith(errorMessage: () => null));
-          }
-        });
-      }
-      return;
-    }
-
     final willPlay = !state.isPlaying;
     if (willPlay && state.errorMessage != null) {
       emit(state.copyWith(errorMessage: () => null));
@@ -1146,16 +1281,8 @@ class PlayerCubit extends Cubit<PlayerState> {
   void togglePlayPause() => playOrPause();
 
   void play() {
-    if (state.isSyncRoom && !state.isHost) {
-      emit(state.copyWith(
-        errorMessage: () => 'Только хост может запустить воспроизведение комнаты',
-      ));
-      Timer(const Duration(seconds: 3), () {
-        if (!isClosed && state.errorMessage == 'Только хост может запустить воспроизведение комнаты') {
-          emit(state.copyWith(errorMessage: () => null));
-        }
-      });
-      return;
+    if (state.errorMessage != null) {
+      emit(state.copyWith(errorMessage: () => null));
     }
     player.play();
     _broadcastControlAction('play');
@@ -1163,10 +1290,6 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void pause() {
-    if (state.isSyncRoom && !state.isHost) {
-      requestPauseFromHost();
-      return;
-    }
     player.pause();
     emit(state.copyWith(pauseCount: state.pauseCount + 1));
     _broadcastControlAction('pause');
@@ -1174,21 +1297,16 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void seek(Duration position) {
-    if (state.isSyncRoom && !state.isHost) {
-      // Гостю таймлайн заблокирован для предотвращения рассинхрона
-      return;
-    }
-
     player.seek(position);
-    _broadcastControlAction('seek');
+    emit(state.copyWith(position: position));
+    _broadcastControlAction('seek', targetPosition: position);
     _resetControlsTimer();
   }
 
   void seekRelative(int seconds) {
-    if (state.isSyncRoom && !state.isHost) return;
-
     final current = state.position.inSeconds;
-    final target = (current + seconds).clamp(0, state.duration.inSeconds);
+    final maxSec = state.duration.inSeconds > 0 ? state.duration.inSeconds : 36000;
+    final target = (current + seconds).clamp(0, maxSec);
     seek(Duration(seconds: target));
   }
 
@@ -1196,15 +1314,18 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   void setPlaybackRate(double rate) {
     player.setRate(rate);
+    emit(state.copyWith(playbackRate: rate));
+    _broadcastControlAction('rate', playbackRate: rate);
     _resetControlsTimer();
   }
 
-  /// Ускорение при удержании экрана (Long Press) с поддержкой свайпов скорости
+  /// Ускорение при удержании экрана (Long Press) или зажатии Space (2x Speed)
   void start2xFastForward() {
     if (state.is2xFastForwarding) return;
-    _preFastForwardRate = state.playbackRate;
+    _preFastForwardRate = state.playbackRate >= 1.9 ? 1.0 : state.playbackRate;
     player.setRate(2.0);
     emit(state.copyWith(is2xFastForwarding: true, playbackRate: 2.0));
+    _broadcastControlAction('rate', playbackRate: 2.0);
   }
 
   /// Плавное изменение скорости при свайпе во время зажатия (от 1.25x до 4.0x)
@@ -1215,33 +1336,45 @@ class PlayerCubit extends Cubit<PlayerState> {
     if ((state.playbackRate - target).abs() > 0.01) {
       player.setRate(target);
       emit(state.copyWith(playbackRate: target));
+      _broadcastControlAction('rate', playbackRate: target);
     }
   }
 
   /// Возврат к обычной скорости при отпускании
   void stop2xFastForward() {
     if (!state.is2xFastForwarding) return;
-    player.setRate(_preFastForwardRate);
-    emit(state.copyWith(is2xFastForwarding: false, playbackRate: _preFastForwardRate));
+    final restoredRate = _preFastForwardRate > 0 ? _preFastForwardRate : 1.0;
+    player.setRate(restoredRate);
+    emit(state.copyWith(is2xFastForwarding: false, playbackRate: restoredRate));
+    _broadcastControlAction('rate', playbackRate: restoredRate);
   }
 
-  /// Отправить реакцию (🔥, 😂, 😱, 😭, ❤️)
-  void sendReaction(String emoji) {
-    HapticFeedback.lightImpact();
+  /// Отправить стикер-реакцию Пай-чан (excited, happy, surprised, sad, love, sleepy)
+  void sendReaction(String emojiOrStickerId) {
+    if (!kIsWeb && !Platform.isWindows) {
+      try {
+        HapticFeedback.lightImpact();
+      } catch (_) {}
+    }
 
-    // 1. Немедленно отображаем реакцию локально на экране
-    final reactionId = '${DateTime.now().microsecondsSinceEpoch}';
+    final sticker = PaiChanSticker.fromIdOrEmoji(emojiOrStickerId);
+    final senderName = currentUserName;
+
+    // 1. Немедленно спавним анимированный стикер Пай-чан локально поверх видео (2.4 сек)
+    final reactionId = 'rx_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(9999)}';
     final reaction = FloatingReaction(
       id: reactionId,
-      emoji: emoji,
-      sender: 'Вы',
-      startXOffset: 0.60 + (_random.nextDouble() * 0.30),
+      emoji: sticker.fallbackEmoji,
+      stickerId: sticker.id,
+      sender: senderName,
+      senderId: currentUserId,
+      startXOffset: 0.18 + (_random.nextDouble() * 0.64),
       timestamp: DateTime.now(),
     );
     final current = List<FloatingReaction>.from(state.activeReactions)..add(reaction);
     emit(state.copyWith(activeReactions: current, emojisSent: state.emojisSent + 1));
 
-    Timer(const Duration(milliseconds: 3500), () {
+    Timer(const Duration(milliseconds: 2400), () {
       if (!isClosed) {
         final remaining = List<FloatingReaction>.from(state.activeReactions)
           ..removeWhere((r) => r.id == reactionId);
@@ -1254,18 +1387,21 @@ class PlayerCubit extends Cubit<PlayerState> {
       final updatedHeatmap = state.heatmap!.addReaction(
         timestampSec: state.position.inSeconds.toDouble(),
         totalDurationSec: state.duration.inSeconds.toDouble(),
-        emoji: emoji,
-        sender: state.isHost ? 'Хост' : (state.peerName ?? 'Вы'),
+        emoji: sticker.fallbackEmoji,
+        sender: senderName,
       );
       emit(state.copyWith(heatmap: () => updatedHeatmap));
     }
 
-    // 3. Отправляем в сокет комнаты
+    // 3. Транслируем pai_sticker_reaction в канал комнаты (room:$roomId) для друзей (Phone <-> PC)
     if (state.isSyncRoom && state.roomCode != null) {
       syncRepository?.sendReaction(
         roomCode: state.roomCode!,
-        emoji: emoji,
-        sender: state.isHost ? 'Хост' : (state.peerName ?? 'Гость'),
+        emoji: sticker.fallbackEmoji,
+        stickerId: sticker.id,
+        sender: senderName,
+        senderId: currentUserId,
+        reactionId: reactionId,
       );
     }
   }
@@ -1421,15 +1557,37 @@ class PlayerCubit extends Cubit<PlayerState> {
   void sendChatMessage(String text) {
     final clean = text.trim();
     if (clean.isEmpty) return;
-    final sender = state.isHost ? 'Хост' : (state.peerName ?? 'Гость');
+    final sender = currentUserName;
+    final msgId = 'msg_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(9999)}';
+
+    // 1. Оптимистичное добавление сообщения в локальный стейт чата мгновенно по нажатию Enter / Send
+    _pushChatMessage(ChatMessage(
+      id: msgId,
+      sender: sender,
+      text: clean,
+      isHost: state.isHost,
+      timestamp: DateTime.now(),
+    ));
     _addDanmaku(clean, sender);
 
+    // 2. Вставка в public.room_messages и мгновенная трансляция в канал комнаты (room:$roomId)
     if (state.isSyncRoom && state.roomCode != null) {
-      syncRepository?.sendChatMessage(
-        roomCode: state.roomCode!,
-        text: clean,
-        sender: sender,
-        isHost: state.isHost,
+      unawaited(
+        (syncRepository?.sendChatMessage(
+                  roomCode: state.roomCode!,
+                  text: clean,
+                  sender: sender,
+                  isHost: state.isHost,
+                  messageId: msgId,
+                ) ??
+                Future.value())
+            .catchError((Object error) {
+          if (!isClosed) {
+            emit(state.copyWith(
+              errorMessage: () => 'Не удалось доставить сообщение: $error',
+            ));
+          }
+        }),
       );
     }
   }
@@ -1543,14 +1701,17 @@ class PlayerCubit extends Cubit<PlayerState> {
     await _loadCurrentEpisodeStream(initialPosition: currentPosition);
   }
 
+  int? _autoNextCancelledForEpisode;
+
   /// Проверка окончания серии для авто-перехода (Auto Next Episode)
   void _checkAutoNextEpisode(Duration pos) {
     final dur = state.duration;
     if (dur <= const Duration(seconds: 20)) return;
+    if (_autoNextCancelledForEpisode == state.episode.episode) return;
 
     final remaining = dur - pos;
-    // Эффект Зейгарник: Автоплей стартует за 15 секунд до конца эндинга с обратным отсчетом
-    if (remaining.inSeconds <= 15 && remaining.inSeconds >= 0 && state.autoNextCountdown == null) {
+    // Автоплей стартует за 10 секунд до конца серии с 10-секундным обратным отсчетом
+    if (remaining.inSeconds <= 10 && remaining.inSeconds > 0 && state.autoNextCountdown == null) {
       final all = state.title.episodes;
       final curIdx = all.indexWhere((e) => e.episode == state.episode.episode);
       if (curIdx >= 0 && curIdx < all.length - 1) {
@@ -1588,9 +1749,12 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   /// Отмена авто-перехода
-  void cancelAutoNextCountdown() {
+  void cancelAutoNextCountdown({bool markCancelledForEpisode = true}) {
     _countdownTimer?.cancel();
     _countdownTimer = null;
+    if (markCancelledForEpisode) {
+      _autoNextCancelledForEpisode = state.episode.episode;
+    }
     emit(state.copyWith(
       autoNextCountdown: () => null,
       nextEpisode: () => null,
@@ -1615,24 +1779,119 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<void> switchEpisode(EpisodeItem nextEpisode) async {
     if (nextEpisode.episode == state.episode.episode) return;
-    if (state.isSyncRoom && !state.isHost) return;
 
-    if (state.isSyncRoom && state.isHost) {
+    if (state.isSyncRoom && state.roomCode != null) {
       syncRepository?.sendChangeEpisode(
         roomCode: state.roomCode!,
         episodeNumber: nextEpisode.episode,
         quality: state.selectedQuality.name,
-        sender: 'Хост',
+        sender: currentUserName,
+      );
+      syncRepository?.broadcastPlayback(
+        roomCode: state.roomCode!,
+        time: 0.0,
+        isPlaying: true,
+        episode: nextEpisode.episode,
+        animeId: '${state.title.id}',
+        playbackRate: state.playbackRate,
+        updatedBy: currentUserId,
       );
     }
 
     await _switchEpisodeInternal(nextEpisode);
   }
 
+  /// Смена аниме прямо внутри активной комнаты без пересоздания комнаты и без разрыва чата
+  Future<void> switchAnimeInRoom(
+    AnimeTitle newTitle, {
+    EpisodeItem? episode,
+    bool broadcast = true,
+    String? senderLabel,
+  }) async {
+    if (isClosed) return;
+
+    _savePlaybackPosition(state.position, state.duration);
+    _pendingInitialSeek = Duration.zero;
+    _autoNextCancelledForEpisode = null;
+    cancelAutoNextCountdown(markCancelledForEpisode: false);
+
+    AnimeTitle resolvedTitle = newTitle;
+    if (resolvedTitle.episodes.length <= 1 &&
+        resolvedTitle.id > 0 &&
+        getIt.isRegistered<CatalogRepository>()) {
+      try {
+        final full = await getIt<CatalogRepository>().getTitleDetails(
+          id: resolvedTitle.id,
+          code: resolvedTitle.code,
+        );
+        if (full.episodes.isNotEmpty) {
+          resolvedTitle = resolvedTitle.copyWith(
+            episodes: full.episodes,
+            episodesTotal: full.episodesTotal ?? full.episodes.length,
+            description: resolvedTitle.description.isNotEmpty
+                ? resolvedTitle.description
+                : full.description,
+            genres: resolvedTitle.genres.isNotEmpty
+                ? resolvedTitle.genres
+                : full.genres,
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (isClosed) return;
+
+    EpisodeItem targetEpisode = episode ??
+        (resolvedTitle.episodes.isNotEmpty
+            ? resolvedTitle.episodes.first
+            : const EpisodeItem(episode: 1, name: 'Серия 1'));
+
+    if (resolvedTitle.episodes.isNotEmpty && targetEpisode.bestAvailableUrl == null) {
+      targetEpisode = resolvedTitle.episodes.firstWhere(
+        (e) => e.episode == targetEpisode.episode,
+        orElse: () => resolvedTitle.episodes.first,
+      );
+    }
+
+    _loadedMediaKey = null;
+    emit(state.copyWith(
+      title: resolvedTitle,
+      episode: targetEpisode,
+      position: Duration.zero,
+      duration: Duration.zero,
+      buffer: Duration.zero,
+      isBuffering: true,
+      bufferNotice: () => null,
+      errorMessage: () => null,
+    ));
+
+    final actor = senderLabel ?? (state.isHost ? 'Хост' : (state.peerName ?? 'Участник'));
+    _addSystemChatMessage(
+      broadcast
+          ? 'Вы сменили аниме на «${resolvedTitle.displayTitle}» (Серия ${targetEpisode.episode})'
+          : '$actor сменил аниме на «${resolvedTitle.displayTitle}» (Серия ${targetEpisode.episode})',
+    );
+
+    if (broadcast && state.isSyncRoom && state.roomCode != null) {
+      unawaited(
+        syncRepository?.changeRoomAnime(
+              roomCode: state.roomCode!,
+              title: resolvedTitle,
+              episode: targetEpisode,
+              sender: actor,
+            ) ??
+            Future.value(),
+      );
+    }
+
+    await _loadCurrentEpisodeStream(initialPosition: Duration.zero);
+  }
+
   Future<void> _switchEpisodeInternal(EpisodeItem nextEpisode) async {
     _savePlaybackPosition(state.position, state.duration);
     _pendingInitialSeek = loadSavedPosition(state.title, nextEpisode.episode);
-    cancelAutoNextCountdown();
+    _autoNextCancelledForEpisode = null;
+    cancelAutoNextCountdown(markCancelledForEpisode: false);
 
     final prevEpisode = state.episode.episode;
     try {

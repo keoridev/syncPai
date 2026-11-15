@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../auth/domain/entities/user_profile.dart';
+import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../domain/entities/friend_models.dart';
 import '../../services/friends_service.dart';
 
@@ -24,6 +25,21 @@ class QrInviteSheet extends StatefulWidget {
 
   static Future<void> show(BuildContext context, {required UserProfile profile, Color? accentColor}) {
     final accent = accentColor ?? Theme.of(context).colorScheme.primary;
+    if (profile.isAnonymous) {
+      return PaiChanAuthGate.show(
+        context,
+        currentProfile: profile,
+        accentColor: accent,
+        onAuthenticated: () {
+          if (!context.mounted) return;
+          final updated = PaiChanAuthGate.resolveCurrentProfile(context);
+          if (!updated.isAnonymous) {
+            QrInviteSheet.show(context, profile: updated, accentColor: accent);
+          }
+        },
+      );
+    }
+
     final isDesktop = MediaQuery.of(context).size.width >= 650;
 
     if (isDesktop) {

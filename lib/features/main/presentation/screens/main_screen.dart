@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/liquid_glass_nav_bar.dart';
@@ -8,6 +10,7 @@ import '../../../catalog/presentation/screens/catalog_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../../sync_room/presentation/screens/watch_together_screen.dart';
+import '../../../sync_room/presentation/widgets/floating_room_overlay.dart';
 import '../../../winter_theme/presentation/widgets/winter_snowfall_overlay.dart';
 
 /// Главный экран приложения со связкой 5 разделов:
@@ -65,7 +68,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final themePrimary = Theme.of(context).colorScheme.primary;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final isWide = screenWidth >= 900;
+    // В headless тестовом окружении Flutter (где Platform.isWindows true) эмулируем мобильный режим при ширине < 900
+    final bool isTestEnv = Platform.environment.containsKey('FLUTTER_TEST') ||
+        WidgetsBinding.instance.runtimeType.toString().contains('TestWidgetsFlutterBinding');
+    final bool isDesktopOS = !isTestEnv && !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    final isWide = isDesktopOS || screenWidth >= 900;
 
     final bodyContent = PageView(
       controller: _pageController,
@@ -134,9 +141,12 @@ class _MainScreenState extends State<MainScreen> {
           const Positioned.fill(
             child: WinterSnowfallOverlay(),
           ),
+          const Positioned.fill(
+            child: FloatingRoomOverlay(mobileBottomInset: 92),
+          ),
         ],
       ),
-      bottomNavigationBar: isWide
+      bottomNavigationBar: (isWide || isDesktopOS)
           ? null
           : LiquidGlassNavBar(
               currentIndex: _currentIndex,

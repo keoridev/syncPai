@@ -342,29 +342,40 @@ enum MascotState {
     defaultDescription: 'Все серии успешно сохранены и настроены.',
   );
 
-  /// Преобразование стандартного состояния в сезонное зимнее
+  /// Семантические алиасы эмоций маскота для удобного вызова в UI
+  static const MascotState sad = MascotState.emptyFavorites;
+  static const MascotState surprised = MascotState.serverError;
+  static const MascotState sleepy = MascotState.sleeping;
+  static const MascotState excited = MascotState.friendsJoined;
+  static const MascotState curious = MascotState.thinking;
+  static const MascotState error = MascotState.networkError;
+
+  /// Возвращает `sleeping` глубокой ночью (01:00–04:59), иначе `idle`
+  static MascotState contextualIdle({DateTime? now}) {
+    final hour = (now ?? DateTime.now()).hour;
+    if (hour >= 1 && hour < 5) {
+      return MascotState.sleeping;
+    }
+    return MascotState.idle;
+  }
+
+  /// Преобразование базового состояния в сезонное зимнее.
+  /// Важно: специфические эмоции (uploading, thinking, sleeping, emptySearch,
+  /// emptyFavorites, emptyHistory, noNotifications, favoriteAdded, syncSuccess и др.)
+  /// НЕ перезаписываются дефолтным зимним скином и всегда отображают свой уникальный ассет.
   MascotState toWinterState() {
     switch (this) {
       case MascotState.welcome:
         return MascotState.winterWelcome;
       case MascotState.idle:
-      case MascotState.sleeping:
         return MascotState.winterIdle;
       case MascotState.happy:
-      case MascotState.thinking:
         return MascotState.winterHappy;
       case MascotState.emptyAnime:
-      case MascotState.emptyFavorites:
-      case MascotState.emptyHistory:
-      case MascotState.emptySearch:
-      case MascotState.noNotifications:
         return MascotState.winterEmpty;
       case MascotState.loading:
-      case MascotState.uploading:
         return MascotState.winterLoading;
       case MascotState.success:
-      case MascotState.favoriteAdded:
-      case MascotState.syncSuccess:
         return MascotState.winterSuccess;
       default:
         return this;

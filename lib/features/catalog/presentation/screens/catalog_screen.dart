@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -18,6 +19,7 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
+import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
 import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
@@ -42,6 +44,7 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   final TextEditingController _searchController = TextEditingController();
   late final ScrollController _scrollController;
+  Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
 
   static const List<String> _popularGenres = [
@@ -66,6 +69,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   void dispose() {
+    _scrollDebounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
@@ -74,9 +78,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    // Pre-fetch следующей страницы за 800px до конца списка
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 800) {
-      context.read<CatalogCubit>().loadMore();
+    final pos = _scrollController.position;
+    if (pos.pixels <= 0 || pos.maxScrollExtent <= 0) return;
+    // Pre-fetch следующей страницы за 600px до конца списка с дебаунсом
+    if (pos.pixels >= pos.maxScrollExtent - 600) {
+      if (_scrollDebounceTimer?.isActive ?? false) return;
+      _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          context.read<CatalogCubit>().loadMore();
+        }
+      });
     }
   }
 
@@ -95,11 +106,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: RefreshIndicator(
-          color: themePrimary,
-          backgroundColor: AppColors.surfaceElevated,
-          onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
-          child: CustomScrollView(
+        top: !isDesktopOS,
+        bottom: !isDesktopOS,
+        left: !isDesktopOS,
+        right: !isDesktopOS,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isDesktop ? 1440 : double.infinity,
+            ),
+            child: RefreshIndicator(
+              color: themePrimary,
+              backgroundColor: AppColors.surfaceElevated,
+              onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+              child: CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
             slivers: [
@@ -115,17 +135,31 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 titleSpacing: horizontalPad,
                 automaticallyImplyLeading: false,
                 title: _isSearchOpen
-                    ? ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: AppSearchBar(
-                          controller: _searchController,
-                          onChanged: (query) {
-                            context.read<CatalogCubit>().onSearchQueryChanged(query);
-                          },
-                          onClear: () {
-                            context.read<CatalogCubit>().onSearchQueryChanged('');
-                          },
-                        ),
+                    ? Row(
+                        children: [
+                          if (screenWidth >= 768) ...[
+                            const SyncPaiLogo(size: 28),
+                            const SizedBox(width: 12),
+                          ],
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 720),
+                                child: AppSearchBar(
+                                  controller: _searchController,
+                                  autofocus: true,
+                                  onChanged: (query) {
+                                    context.read<CatalogCubit>().onSearchQueryChanged(query);
+                                  },
+                                  onClear: () {
+                                    context.read<CatalogCubit>().onSearchQueryChanged('');
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       )
                     : (screenWidth >= 768
                         ? Row(
@@ -147,7 +181,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              SyncPaiLogo(size: 32),
+                              const SyncPaiLogo(size: 32),
                               const SizedBox(width: 10),
                               RichText(
                                 text: TextSpan(
@@ -176,104 +210,110 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ],
                           )),
                 actions: [
-                  if (_isSearchOpen) ...[
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 22),
-                      tooltip: 'Закрыть поиск',
-                      onPressed: () {
+                  // Кнопка открытия / свертывания поиска
+                  IconButton(
+                    icon: Icon(
+                      _isSearchOpen ? Icons.search_off_rounded : Icons.search_rounded,
+                      color: _isSearchOpen ? themePrimary : AppColors.textPrimary,
+                      size: 22,
+                    ),
+                    tooltip: _isSearchOpen ? 'Скрыть строку поиска' : 'Поиск аниме',
+                    onPressed: () {
+                      if (_isSearchOpen) {
                         setState(() => _isSearchOpen = false);
                         _searchController.clear();
                         context.read<CatalogCubit>().onSearchQueryChanged('');
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                  ] else ...[
-                    // Кнопка открытия поиска
-                    IconButton(
-                      icon: const Icon(Icons.search_rounded, color: AppColors.textPrimary, size: 22),
-                      tooltip: 'Поиск аниме',
-                      onPressed: () => setState(() => _isSearchOpen = true),
-                    ),
+                      } else {
+                        setState(() => _isSearchOpen = true);
+                      }
+                    },
+                  ),
 
-                    // Переключатель вида каталога: 2 в ряд / 3 в ряд / Список
-                    BlocBuilder<CatalogCubit, CatalogState>(
-                      buildWhen: (prev, curr) => curr is CatalogLoaded,
-                      builder: (context, state) {
-                        final cubit = context.read<CatalogCubit>();
-                        final isList = state is CatalogLoaded && state.viewMode == CatalogViewMode.list;
-                        final is3Columns = state is CatalogLoaded &&
-                            state.viewMode == CatalogViewMode.grid &&
-                            state.gridDensity == CatalogGridDensity.compact;
+                  // Переключатель вида каталога: 2 в ряд / 3 в ряд / Список
+                  BlocBuilder<CatalogCubit, CatalogState>(
+                    buildWhen: (prev, curr) => curr is CatalogLoaded,
+                    builder: (context, state) {
+                      final cubit = context.read<CatalogCubit>();
+                      final isList = state is CatalogLoaded && state.viewMode == CatalogViewMode.list;
+                      final is3Columns = state is CatalogLoaded &&
+                          state.viewMode == CatalogViewMode.grid &&
+                          state.gridDensity == CatalogGridDensity.compact;
 
-                        final IconData icon;
-                        final String tooltip;
-                        if (isList) {
-                          icon = Icons.view_agenda_outlined;
-                          tooltip = 'Вид: Список (тап для 2 в ряд)';
-                        } else if (is3Columns) {
-                          icon = Icons.apps_rounded;
-                          tooltip = 'Вид: 3 в ряд (тап для списка)';
-                        } else {
-                          icon = Icons.grid_view_rounded;
-                          tooltip = 'Вид: 2 в ряд (тап для 3 в ряд)';
-                        }
+                      final IconData icon;
+                      final String tooltip;
+                      if (isList) {
+                        icon = Icons.view_agenda_outlined;
+                        tooltip = 'Вид: Список (тап для 2 в ряд)';
+                      } else if (is3Columns) {
+                        icon = Icons.apps_rounded;
+                        tooltip = 'Вид: 3 в ряд (тап для списка)';
+                      } else {
+                        icon = Icons.grid_view_rounded;
+                        tooltip = 'Вид: 2 в ряд (тап для 3 в ряд)';
+                      }
 
-                        return IconButton(
-                          icon: Icon(icon, color: AppColors.textPrimary, size: 21),
-                          tooltip: tooltip,
-                          onPressed: () => cubit.cycleDisplayMode(),
+                      return IconButton(
+                        icon: Icon(icon, color: AppColors.textPrimary, size: 21),
+                        tooltip: tooltip,
+                        onPressed: () => cubit.cycleDisplayMode(),
+                      );
+                    },
+                  ),
+
+                  // Аватарка профиля
+                  if (getIt.isRegistered<AuthCubit>())
+                    BlocBuilder<AuthCubit, AuthState>(
+                      bloc: getIt<AuthCubit>(),
+                      builder: (context, authState) {
+                        final profile = authState is Authenticated ? authState.profile : null;
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 4, right: 12),
+                          child: GestureDetector(
+                            onTap: () => context.pushNamed('profile'),
+                            child: AppAvatar(
+                              avatarUrl: profile?.avatarUrl,
+                              username: profile?.username ?? 'Гость',
+                              size: 34,
+                              borderWidth: 1.2,
+                            ),
+                          ),
                         );
                       },
                     ),
-
-                    // Аватарка профиля
-                    if (getIt.isRegistered<AuthCubit>())
-                      BlocBuilder<AuthCubit, AuthState>(
-                        bloc: getIt<AuthCubit>(),
-                        builder: (context, authState) {
-                          final profile = authState is Authenticated ? authState.profile : null;
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 4, right: 12),
-                            child: GestureDetector(
-                              onTap: () => context.pushNamed('profile'),
-                              child: AppAvatar(
-                                avatarUrl: profile?.avatarUrl,
-                                username: profile?.username ?? 'Гость',
-                                size: 34,
-                                borderWidth: 1.2,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                  ],
                 ],
               ),
 
-              // 2. Компактная плашка "Продолжить просмотр" (Высота 52-54 dp)
+              // 2. Полоса "Продолжить просмотр" (сбалансированная на Desktop и Mobile)
               if (getIt.isRegistered<WatchHistoryCubit>())
                 BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
                   bloc: getIt<WatchHistoryCubit>(),
                   builder: (context, historyState) {
-                    final recent = historyState.history.isNotEmpty ? historyState.history.first : null;
-                    if (recent == null || recent.positionMs < 15000 || recent.progress >= 0.95) {
+                    final bool isDesktop = (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) ||
+                        MediaQuery.sizeOf(context).width > 800;
+                    final seenTitleIds = <int>{};
+                    final resumableItems = historyState.history.where((item) {
+                      if (item.positionMs < 15000 || item.progress >= 0.95) return false;
+                      return seenTitleIds.add(item.titleId);
+                    }).take(isDesktop ? 3 : 1).toList();
+
+                    if (resumableItems.isEmpty) {
                       return const SliverToBoxAdapter(child: SizedBox.shrink());
                     }
 
-                    void handleResume() {
+                    void handleResumeItem(WatchHistoryItem item) {
                       final currentTitles = context.read<CatalogCubit>().state is CatalogLoaded
                           ? (context.read<CatalogCubit>().state as CatalogLoaded).titles
                           : <AnimeTitle>[];
                       final matched = currentTitles.firstWhere(
-                        (t) => t.id == recent.titleId,
+                        (t) => t.id == item.titleId,
                         orElse: () => AnimeTitle(
-                          id: recent.titleId,
+                          id: item.titleId,
                           code: '',
-                          russianTitle: recent.titleName,
+                          russianTitle: item.titleName,
                           englishTitle: '',
-                          posterSmall: recent.posterUrl,
-                          posterMedium: recent.posterUrl,
-                          posterOriginal: recent.posterUrl,
+                          posterSmall: item.posterUrl,
+                          posterMedium: item.posterUrl,
+                          posterOriginal: item.posterUrl,
                           episodesTotal: 12,
                           genres: const [],
                           description: '',
@@ -283,136 +323,178 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       widget.onTitleSelected?.call(matched);
                     }
 
-                    final bool isDesktop = (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) ||
-                        MediaQuery.sizeOf(context).width > 800;
+                    Widget buildResumeCard(WatchHistoryItem item, {required bool isSingleHeroDesktop}) {
+                      final pct = (item.progress * 100).round().clamp(1, 99);
+                      return InkWell(
+                        onTap: () => handleResumeItem(item),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          height: isDesktop ? 60 : 56,
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: themePrimary.withValues(alpha: 0.3),
+                              width: 1.0,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                child: Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: SizedBox(
+                                        width: 34,
+                                        height: 46,
+                                        child: item.posterUrl.isNotEmpty
+                                            ? CachedNetworkImage(
+                                                imageUrl: wrapCorsSafeUrl(item.posterUrl),
+                                                fit: BoxFit.cover,
+                                                errorWidget: (_, __, ___) => Container(
+                                                  color: themePrimary.withValues(alpha: 0.16),
+                                                  child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
+                                                ),
+                                              )
+                                            : Container(
+                                                color: themePrimary.withValues(alpha: 0.16),
+                                                child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
+                                              ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.titleName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTypography.titleSmall.copyWith(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Серия ${item.episode} • ${item.formattedPosition} / ${item.formattedDuration}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTypography.caption.copyWith(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 10.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (isSingleHeroDesktop) ...[
+                                      const SizedBox(width: 16),
+                                      SizedBox(
+                                        width: 140,
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              'Просмотрено $pct%',
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 5),
+                                            ClipRRect(
+                                              borderRadius: BorderRadius.circular(4),
+                                              child: LinearProgressIndicator(
+                                                value: item.progress,
+                                                minHeight: 4,
+                                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                                valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(width: 12),
+                                    if (isDesktop)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: themePrimary.withValues(alpha: 0.16),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: themePrimary.withValues(alpha: 0.4)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Продолжить',
+                                              style: TextStyle(
+                                                color: themePrimaryLight,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Icon(Icons.play_arrow_rounded, size: 14, color: themePrimaryLight),
+                                          ],
+                                        ),
+                                      )
+                                    else
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 12,
+                                        color: themePrimaryLight,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: LinearProgressIndicator(
+                                  value: item.progress,
+                                  minHeight: 2.5,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                  valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
 
                     return SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: isDesktop ? 460 : double.infinity,
-                            ),
-                            child: InkWell(
-                              onTap: handleResume,
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                height: 56,
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated.withValues(alpha: 0.85),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: themePrimary.withValues(alpha: 0.3),
-                                    width: 1.0,
-                                  ),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: Stack(
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      child: Row(
-                                        children: [
-                                          // Мини-постер тайтла слева
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: SizedBox(
-                                              width: 32,
-                                              height: 44,
-                                              child: recent.posterUrl.isNotEmpty
-                                                  ? CachedNetworkImage(
-                                                      imageUrl: wrapCorsSafeUrl(recent.posterUrl),
-                                                      fit: BoxFit.cover,
-                                                      errorWidget: (_, __, ___) => Container(
-                                                        color: themePrimary.withValues(alpha: 0.16),
-                                                        child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
-                                                      ),
-                                                    )
-                                                  : Container(
-                                                      color: themePrimary.withValues(alpha: 0.16),
-                                                      child: Icon(Icons.play_arrow_rounded, color: themePrimaryLight, size: 16),
-                                                    ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  recent.titleName,
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: AppTypography.titleSmall.copyWith(
-                                                    fontSize: 12.5,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Серия ${recent.episode} • ${recent.formattedPosition} / ${recent.formattedDuration}',
-                                                  style: AppTypography.caption.copyWith(
-                                                    color: AppColors.textSecondary,
-                                                    fontSize: 10.5,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          if (isDesktop)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                              decoration: BoxDecoration(
-                                                color: themePrimary.withValues(alpha: 0.16),
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: themePrimary.withValues(alpha: 0.4)),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    'Продолжить',
-                                                    style: TextStyle(
-                                                      color: themePrimaryLight,
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 3),
-                                                  Icon(Icons.play_arrow_rounded, size: 14, color: themePrimaryLight),
-                                                ],
-                                              ),
-                                            )
-                                          else
-                                            Icon(
-                                              Icons.arrow_forward_ios_rounded,
-                                              size: 12,
-                                              color: themePrimaryLight,
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      bottom: 0,
-                                      child: LinearProgressIndicator(
-                                        value: recent.progress,
-                                        minHeight: 2.5,
-                                        backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                        valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                        child: isDesktop && resumableItems.length > 1
+                            ? Row(
+                                children: [
+                                  for (int i = 0; i < resumableItems.length; i++) ...[
+                                    if (i > 0) const SizedBox(width: 12),
+                                    Expanded(
+                                      child: buildResumeCard(
+                                        resumableItems[i],
+                                        isSingleHeroDesktop: false,
                                       ),
                                     ),
                                   ],
-                                ),
+                                ],
+                              )
+                            : buildResumeCard(
+                                resumableItems.first,
+                                isSingleHeroDesktop: isDesktop,
                               ),
-                            ),
-                          ),
-                        ),
                       ),
                     );
                   },
@@ -601,23 +683,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       );
                     }
 
-                    // На десктопе (isDesktopOS / screenWidth >= 900) используем SliverGridDelegateWithMaxCrossAxisExtent:
-                    // maxCrossAxisExtent: 215 (7-8 карточек на 1600-1920px), spacing: 16/20, ratio: 0.56
+                    // Единая адаптивная сетка (Catalog == My Lists):
+                    // Desktop: maxCrossAxisExtent: 215, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.62
+                    // Mobile: crossAxisCount: 2 (или 3 в компактном режиме), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62
+                    final int mobileCols = state.gridDensity.mobileColumns;
                     final SliverGridDelegate gridDelegate = isDesktop
                         ? const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 215,
                             crossAxisSpacing: 16,
-                            mainAxisSpacing: 20,
-                            childAspectRatio: 0.56,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 0.62,
                           )
-                        : SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: screenWidth > 600
-                                ? 4
-                                : state.gridDensity.mobileColumns,
-                            childAspectRatio: (screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 0.50 : 0.55,
-                            crossAxisSpacing: (screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 8.0 : 12.0,
-                            mainAxisSpacing: ((screenWidth > 600 ? 4 : state.gridDensity.mobileColumns) >= 3 ? 8.0 : 12.0) + 4,
-                          );
+                        : (screenWidth > 600
+                            ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 195,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.62,
+                              )
+                            : SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: mobileCols,
+                                childAspectRatio: mobileCols >= 3 ? 0.56 : 0.62,
+                                crossAxisSpacing: 12.0,
+                                mainAxisSpacing: 12.0,
+                              ));
 
                     return SliverPadding(
                       padding: EdgeInsets.symmetric(horizontal: horizontalPad),
@@ -667,7 +756,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildSliverLoadingGrid(
@@ -694,14 +785,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
         ? const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 215,
             crossAxisSpacing: 16,
-            mainAxisSpacing: 20,
-            childAspectRatio: 0.56,
+            mainAxisSpacing: 16,
+            childAspectRatio: 0.62,
           )
         : SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: screenWidth > 600 ? 4 : 2,
-            childAspectRatio: 0.56,
+            crossAxisCount: screenWidth > 600 ? 3 : 2,
+            childAspectRatio: 0.62,
             crossAxisSpacing: 12,
-            mainAxisSpacing: 16,
+            mainAxisSpacing: 12,
           );
 
     return SliverPadding(

@@ -1,4 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:equatable/equatable.dart';
+import '../../../../core/widgets/mascot/mascot_state.dart';
+import '../../../support/domain/entities/supporter_tier.dart';
 
 /// Типы событий протокола синхронизации SyncPai.
 abstract final class SyncActionTypes {
@@ -8,6 +11,7 @@ abstract final class SyncActionTypes {
   static const String bufferWait = 'BUFFER_WAIT';
   static const String bufferReady = 'BUFFER_READY';
   static const String reaction = 'REACTION';
+  static const String paiStickerReaction = 'PAI_STICKER_REACTION';
   static const String chatMessage = 'CHAT_MESSAGE';
   static const String requestPause = 'REQUEST_PAUSE';
   static const String changeEpisode = 'CHANGE_EPISODE';
@@ -21,6 +25,121 @@ abstract final class SyncActionTypes {
   static const String roomInfo = 'ROOM_INFO';
   static const String pokeNudge = 'POKE_NUDGE';
   static const String coopSkipVote = 'COOP_SKIP_VOTE';
+  static const String changeAnime = 'CHANGE_ANIME';
+}
+
+/// 6 круговых стикер-эмоций Пай-чан для совместного просмотра (Watch-Together)
+enum PaiChanSticker {
+  excited(
+    id: 'excited',
+    label: 'Хайп',
+    tooltip: 'Восторг / Хайп',
+    mascotState: MascotState.friendsJoined,
+    assetPath: 'assets/stickers/pai_hype.png',
+    fallbackEmoji: '🔥',
+    glowColor: Colors.amber,
+  ),
+  happy(
+    id: 'happy',
+    label: 'Смех',
+    tooltip: 'Радость / Смех',
+    mascotState: MascotState.happy,
+    assetPath: 'assets/stickers/pai_laugh.png',
+    fallbackEmoji: '😂',
+    glowColor: Colors.cyan,
+  ),
+  surprised(
+    id: 'surprised',
+    label: 'Шок',
+    tooltip: 'Шок / Поворот',
+    mascotState: MascotState.serverError,
+    assetPath: 'assets/stickers/pai_shock.png',
+    fallbackEmoji: '😮',
+    glowColor: Colors.purple,
+  ),
+  sad(
+    id: 'sad',
+    label: 'Слёзы',
+    tooltip: 'Грусть / Слёзы',
+    mascotState: MascotState.emptyFavorites,
+    assetPath: 'assets/stickers/pai_cry.png',
+    fallbackEmoji: '😭',
+    glowColor: Colors.blue,
+  ),
+  love(
+    id: 'love',
+    label: 'Любовь',
+    tooltip: 'Любовь / Сердечко',
+    mascotState: MascotState.favoriteAdded,
+    assetPath: 'assets/stickers/pai_love.png',
+    fallbackEmoji: '❤️',
+    glowColor: Colors.pink,
+  ),
+  sleepy(
+    id: 'sleepy',
+    label: 'Чилл',
+    tooltip: 'Чилл / Сон',
+    mascotState: MascotState.sleeping,
+    assetPath: 'assets/stickers/pai_sleepy.png',
+    fallbackEmoji: '😴',
+    glowColor: Colors.indigo,
+  );
+
+  final String id;
+  final String label;
+  final String tooltip;
+  final MascotState mascotState;
+  final String assetPath;
+  final String fallbackEmoji;
+  final Color glowColor;
+
+  const PaiChanSticker({
+    required this.id,
+    required this.label,
+    required this.tooltip,
+    required this.mascotState,
+    required this.assetPath,
+    required this.fallbackEmoji,
+    required this.glowColor,
+  });
+
+  static PaiChanSticker fromIdOrEmoji(String raw) {
+    final cleaned = raw.trim().toLowerCase();
+    for (final s in PaiChanSticker.values) {
+      if (s.id == cleaned || s.name.toLowerCase() == cleaned || s.fallbackEmoji == raw.trim()) {
+        return s;
+      }
+    }
+    switch (raw.trim()) {
+      case '🔥':
+      case '👍':
+      case 'hype':
+        return PaiChanSticker.excited;
+      case '😂':
+      case '😆':
+      case 'laugh':
+        return PaiChanSticker.happy;
+      case '😱':
+      case '😮':
+      case 'shock':
+        return PaiChanSticker.surprised;
+      case '😭':
+      case '😢':
+      case 'cry':
+        return PaiChanSticker.sad;
+      case '❤️':
+      case '❤':
+      case '😍':
+      case 'heart':
+        return PaiChanSticker.love;
+      case '😴':
+      case '💤':
+      case 'chill':
+        return PaiChanSticker.sleepy;
+      default:
+        return PaiChanSticker.love;
+    }
+  }
 }
 
 /// Легковесный сетевой пакет протокола совместного просмотра.
@@ -200,6 +319,7 @@ class ChatMessage extends Equatable {
   final DateTime timestamp;
   final bool isHost;
   final String type;
+  final String? supporterTierId;
 
   const ChatMessage({
     required this.id,
@@ -208,9 +328,11 @@ class ChatMessage extends Equatable {
     required this.timestamp,
     this.isHost = false,
     this.type = 'user',
+    this.supporterTierId,
   });
 
   bool get isSystem => type == 'system';
+  SupporterTier get supporterTier => SupporterTier.fromId(supporterTierId);
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -219,6 +341,7 @@ class ChatMessage extends Equatable {
         'timestamp': timestamp.millisecondsSinceEpoch,
         'is_host': isHost,
         'type': type,
+        if (supporterTierId != null) 'supporter_tier': supporterTierId,
       };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -231,42 +354,54 @@ class ChatMessage extends Equatable {
           : DateTime.now(),
       isHost: json['is_host'] as bool? ?? false,
       type: json['type'] as String? ?? 'user',
+      supporterTierId: json['supporter_tier'] as String?,
     );
   }
 
   /// Маппинг строки таблицы `public.room_messages`
   factory ChatMessage.fromRoomMessageRow(Map<String, dynamic> row) {
     final created = DateTime.tryParse(row['created_at']?.toString() ?? '');
+    final rawText = (row['text'] as String?) ?? (row['content'] as String?) ?? '';
+    final rawType = row['type'] as String? ?? 'user';
     return ChatMessage(
       id: row['id']?.toString() ?? '${DateTime.now().microsecondsSinceEpoch}',
       sender: row['sender_name'] as String? ?? 'Гость',
-      text: row['content'] as String? ?? '',
+      text: rawText,
       timestamp: created?.toLocal() ?? DateTime.now(),
       isHost: row['is_host'] as bool? ?? false,
-      type: row['type'] as String? ?? 'user',
+      type: rawType == 'text' ? 'user' : rawType,
+      supporterTierId: row['supporter_tier'] as String?,
     );
   }
 
   @override
-  List<Object?> get props => [id, sender, text, timestamp, isHost, type];
+  List<Object?> get props => [id, sender, text, timestamp, isHost, type, supporterTierId];
 }
 
-/// Плавающая анимированная реакция (Floating Reaction).
+/// Плавающая анимированная стикер-реакция Пай-чан (Floating Pai-chan Reaction).
 class FloatingReaction extends Equatable {
   final String id;
   final String emoji;
+  final String stickerId;
   final String sender;
+  final String? senderId;
   final double startXOffset;
   final DateTime timestamp;
 
-  const FloatingReaction({
+  FloatingReaction({
     required this.id,
     required this.emoji,
+    String? stickerId,
     required this.sender,
+    this.senderId,
     this.startXOffset = 0.85,
     required this.timestamp,
-  });
+  }) : stickerId = stickerId ?? PaiChanSticker.fromIdOrEmoji(emoji).id;
+
+  PaiChanSticker get sticker =>
+      PaiChanSticker.fromIdOrEmoji(stickerId.isNotEmpty ? stickerId : emoji);
 
   @override
-  List<Object?> get props => [id, emoji, sender, startXOffset, timestamp];
+  List<Object?> get props =>
+      [id, emoji, stickerId, sender, senderId, startXOffset, timestamp];
 }

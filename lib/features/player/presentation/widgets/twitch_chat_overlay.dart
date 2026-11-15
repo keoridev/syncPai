@@ -129,6 +129,30 @@ class _TwitchChatOverlayState extends State<TwitchChatOverlay> {
               child: Text.rich(
                 TextSpan(
                   children: [
+                    if (msg.supporterTier.chatBadgeLabel != null) ...[
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 3),
+                          child: Icon(
+                            msg.supporterTier.icon,
+                            size: 12,
+                            color: msg.supporterTier.accentColor,
+                          ),
+                        ),
+                      ),
+                      TextSpan(
+                        text: '[${msg.supporterTier.chatBadgeLabel}] ',
+                        style: TextStyle(
+                          fontSize: 11.0,
+                          fontWeight: FontWeight.w800,
+                          color: msg.supporterTier.accentColor,
+                          shadows: const [
+                            Shadow(color: Colors.black, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                    ],
                     // Никнейм
                     TextSpan(
                       text: msg.isHost ? '👑 ${msg.sender}: ' : '${msg.sender}: ',

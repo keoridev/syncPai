@@ -45,6 +45,7 @@ class SyncPaiMascot extends StatefulWidget {
   final String? description;
   final Widget? action;
   final bool animated;
+  final bool allowSeasonalSkin;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry padding;
 
@@ -56,6 +57,7 @@ class SyncPaiMascot extends StatefulWidget {
     this.description,
     this.action,
     this.animated = true,
+    this.allowSeasonalSkin = true,
     this.onTap,
     this.padding = const EdgeInsets.all(AppDimensions.spacingMd),
   });
@@ -174,9 +176,11 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
     final disableAnimations = MediaQuery.of(context).disableAnimations;
     final isDesktop = MediaQuery.of(context).size.width >= 900;
 
-    // Автоматическая трансформация в новогодний скин, если включена опция
+    // Автоматическая трансформация в новогодний скин (только для базовых состояний и если разрешено)
     final winterService = WinterThemeService.instance;
-    final effectiveState = (winterService.isWinterActive && winterService.isWinterMascotEnabled)
+    final effectiveState = (widget.allowSeasonalSkin &&
+            winterService.isWinterActive &&
+            winterService.isWinterMascotEnabled)
         ? widget.state.toWinterState()
         : widget.state;
 
@@ -192,11 +196,16 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
       image: true,
       child: Image.asset(
         effectiveState.assetPath,
+        key: ValueKey<String>(effectiveState.assetPath),
         width: targetWidth,
         height: targetHeight,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.medium,
         errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            '[SyncPaiMascot] Fallback triggered for state="${effectiveState.id}" '
+            'asset="${effectiveState.assetPath}": $error',
+          );
           // Изящный fallback в случае отсутствия ассета
           return Container(
             width: targetWidth,

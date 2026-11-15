@@ -1,27 +1,76 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../profile/services/pending_invite_storage.dart';
 import '../../domain/entities/user_profile.dart';
 import '../cubit/auth_cubit.dart';
+import '../utils/auth_error_formatter.dart';
 import '../cubit/auth_state.dart';
 
 /// Модальное окно входа и регистрации с сохранением и бесшовным переносом данных
 class AuthModalSheet extends StatefulWidget {
   final UserProfile currentProfile;
+  final int initialTabIndex;
+  final VoidCallback? onSuccess;
 
-  const AuthModalSheet({super.key, required this.currentProfile});
+  const AuthModalSheet({
+    super.key,
+    required this.currentProfile,
+    this.initialTabIndex = 0,
+    this.onSuccess,
+  });
 
-  static Future<void> show(BuildContext context, UserProfile currentProfile) {
-    return showModalBottomSheet(
+  static Future<bool?> show(
+    BuildContext context,
+    UserProfile currentProfile, {
+    int initialTabIndex = 0,
+    VoidCallback? onSuccess,
+  }) {
+    final isDesktop = !kIsWeb &&
+        (Platform.isWindows ||
+            Platform.isMacOS ||
+            Platform.isLinux ||
+            MediaQuery.of(context).size.width >= 650);
+
+    if (isDesktop) {
+      return showDialog<bool>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.78),
+        builder: (ctx) => Dialog(
+          backgroundColor: AppColors.surfaceElevated,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: AppColors.strokeMedium),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: AuthModalSheet(
+              currentProfile: currentProfile,
+              initialTabIndex: initialTabIndex,
+              onSuccess: onSuccess,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surfaceElevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (ctx) => AuthModalSheet(currentProfile: currentProfile),
+      builder: (ctx) => AuthModalSheet(
+        currentProfile: currentProfile,
+        initialTabIndex: initialTabIndex,
+        onSuccess: onSuccess,
+      ),
     );
   }
 
@@ -41,17 +90,22 @@ class _AuthModalSheetState extends State<AuthModalSheet>
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _didCompleteAuth = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 1),
+    );
     _tabController.addListener(() {
       if (mounted) setState(() => _errorMessage = null);
     });
 
-    final defaultNick = widget.currentProfile.username.startsWith('Сенпай #')
+    final defaultNick = UserProfile.isDefaultGeneratedNickname(widget.currentProfile.username)
         ? ''
         : widget.currentProfile.username;
     _usernameController = TextEditingController(text: defaultNick);
@@ -66,6 +120,26 @@ class _AuthModalSheetState extends State<AuthModalSheet>
     _confirmPasswordController.dispose();
     _usernameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _completeAuthAndClose(String message) async {
+    if (!mounted || _didCompleteAuth) return;
+    _didCompleteAuth = true;
+    final rootCtx = Navigator.of(context, rootNavigator: true).context;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+    }
+    widget.onSuccess?.call();
+    if (rootCtx.mounted) {
+      ScaffoldMessenger.of(rootCtx).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppColors.syncActive,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      await PendingInviteStorage.resolvePendingActionsAfterAuth(rootCtx);
+    }
   }
 
   Future<void> _submit() async {
@@ -86,59 +160,25 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                   : null,
             );
       } else {
-        await context.read<AuthCubit>().signInWithEmail(
-              email: _emailController.text.trim(),
+        await context.read<AuthCubit>().signInWithIdentifier(
+              identifier: _emailController.text.trim(),
               password: _passwordController.text.trim(),
             );
       }
 
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isRegister
-                  ? '✨ Аккаунт создан! Профиль, арты и закладки перенесены.'
-                  : '✨ Вход выполнен успешно!',
-            ),
-            backgroundColor: AppColors.syncActive,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      await _completeAuthAndClose(
+        isRegister
+            ? '✨ Аккаунт создан! Профиль, арты и закладки перенесены.'
+            : '✨ Вход выполнен успешно!',
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = _parseErrorMessage(e.toString());
+          _errorMessage = AuthErrorFormatter.format(e);
           _isLoading = false;
         });
       }
     }
-  }
-
-  String _parseErrorMessage(String raw) {
-    if (raw.contains('already registered') || raw.contains('User already registered')) {
-      return 'Пользователь с таким email уже зарегистрирован. Переключитесь на «Вход».';
-    }
-    if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
-      return 'Неверный email или пароль. Проверьте правильность ввода.';
-    }
-    if (raw.contains('Password should be at least') || raw.contains('Signup requires a valid password')) {
-      return 'Пароль должен содержать минимум 6 символов.';
-    }
-    if (raw.contains('Email not confirmed')) {
-      return 'Email не подтвержден. Пожалуйста, перейдите по ссылке в отправленном письме.';
-    }
-    if (raw.contains('over_email_send_rate_limit') || raw.contains('rate limit')) {
-      return 'Слишком много попыток. Пожалуйста, подождите немного.';
-    }
-    if (raw.contains('SocketException') || raw.contains('Network error') || raw.contains('Failed host lookup')) {
-      return 'Ошибка сети. Проверьте интернет-соединение.';
-    }
-    if (raw.contains('Invalid email') || raw.contains('invalid_email')) {
-      return 'Пожалуйста, введите корректный адрес электронной почты.';
-    }
-    return raw.replaceFirst('Exception: ', '').replaceFirst('AuthException: ', '');
   }
 
   Future<void> _handleGoogleAuth() async {
@@ -149,20 +189,24 @@ class _AuthModalSheetState extends State<AuthModalSheet>
 
     try {
       await context.read<AuthCubit>().signInWithGoogle();
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✨ Профиль успешно синхронизирован с Google!'),
-            backgroundColor: AppColors.syncActive,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      if (!mounted) return;
+      final authState = context.read<AuthCubit>().state;
+      if (authState is Authenticated && !authState.profile.isAnonymous) {
+        await _completeAuthAndClose('✨ Профиль успешно синхронизирован с Google!');
+      } else {
+        // Ожидаем завершения OAuth в браузере (onAuthStateChange -> Authenticated)
+        setState(() => _isLoading = false);
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        _showDirectGoogleLinkDialog();
+        if (AuthErrorFormatter.isProviderDisabledError(e)) {
+          setState(() {
+            _errorMessage = AuthErrorFormatter.format(e);
+          });
+        } else {
+          _showDirectGoogleLinkDialog();
+        }
       }
     }
   }
@@ -222,7 +266,13 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                 prefixIcon: const Icon(Icons.alternate_email_rounded, color: AppColors.textSecondary),
                 filled: true,
                 fillColor: AppColors.surface,
+                hoverColor: Colors.transparent,
+                focusColor: Colors.transparent,
                 border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.strokeMedium),
+                ),
+                enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppColors.strokeMedium),
                 ),
@@ -253,14 +303,19 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                       photoUrl: widget.currentProfile.avatarUrl,
                     );
                 if (mounted) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('✨ Google аккаунт ($email) успешно привязан! Все данные сохранены.'),
-                      backgroundColor: AppColors.syncActive,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                  final rootCtx = Navigator.of(context, rootNavigator: true).context;
+                  Navigator.of(context).pop(true);
+                  widget.onSuccess?.call();
+                  if (rootCtx.mounted) {
+                    ScaffoldMessenger.of(rootCtx).showSnackBar(
+                      SnackBar(
+                        content: Text('✨ Google аккаунт ($email) успешно привязан! Все данные сохранены.'),
+                        backgroundColor: AppColors.syncActive,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    await PendingInviteStorage.resolvePendingActionsAfterAuth(rootCtx);
+                  }
                 }
               } catch (e) {
                 if (mounted) {
@@ -289,7 +344,9 @@ class _AuthModalSheetState extends State<AuthModalSheet>
 
     return BlocListener<AuthCubit, AuthState>(
       listener: (context, state) {
-        if (state is AuthError && mounted) {
+        if (state is Authenticated && !state.profile.isAnonymous && mounted) {
+          _completeAuthAndClose('✨ Профиль успешно синхронизирован!');
+        } else if (state is AuthError && mounted) {
           setState(() {
             _isLoading = false;
             _errorMessage = state.message;
@@ -505,39 +562,75 @@ class _AuthModalSheetState extends State<AuthModalSheet>
                     },
                   ),
 
-                  // Поле: Email
-                  Text('Email',
-                      style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(color: Colors.white),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Введите email';
-                      if (!v.contains('@') || !v.contains('.')) return 'Некорректный email';
-                      return null;
+                  // Поле: Email или логин (на Входе) / Email (на Регистрации)
+                  AnimatedBuilder(
+                    animation: _tabController,
+                    builder: (context, _) {
+                      final isLogin = _tabController.index == 0;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isLogin ? 'Email или логин' : 'Email',
+                            style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: isLogin
+                                ? TextInputType.text
+                                : TextInputType.emailAddress,
+                            style: const TextStyle(color: Colors.white),
+                            validator: (v) {
+                              final trimmed = v?.trim() ?? '';
+                              if (trimmed.isEmpty) {
+                                return isLogin ? 'Введите email или логин' : 'Введите email';
+                              }
+                              if (isLogin) {
+                                if (trimmed.contains('@')) {
+                                  if (!trimmed.contains('.')) {
+                                    return 'Некорректный email';
+                                  }
+                                } else if (trimmed.length < 2 || trimmed.contains(' ')) {
+                                  return 'Логин должен быть без пробелов (мин. 2 символа)';
+                                }
+                                return null;
+                              }
+                              if (!trimmed.contains('@') || !trimmed.contains('.')) {
+                                return 'Некорректный email';
+                              }
+                              return null;
+                            },
+                            decoration: InputDecoration(
+                              hintText: isLogin
+                                  ? 'sync или name@gmail.com'
+                                  : 'name@example.com',
+                              hintStyle: const TextStyle(color: AppColors.textMuted),
+                              prefixIcon: Icon(
+                                isLogin
+                                    ? Icons.person_search_rounded
+                                    : Icons.alternate_email_rounded,
+                                color: AppColors.textSecondary,
+                              ),
+                              filled: true,
+                              fillColor: AppColors.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: AppColors.strokeMedium),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: AppColors.strokeMedium),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
                     },
-                    decoration: InputDecoration(
-                      hintText: 'name@example.com',
-                      hintStyle: const TextStyle(color: AppColors.textMuted),
-                      prefixIcon: const Icon(Icons.alternate_email_rounded,
-                          color: AppColors.textSecondary),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.strokeMedium),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.strokeMedium),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
-                      ),
-                    ),
                   ),
 
                   const SizedBox(height: 14),

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
@@ -14,7 +15,22 @@ class WinterThemeService extends ChangeNotifier {
   static final WinterThemeService instance = WinterThemeService._();
 
   WinterThemeService._() {
-    _loadFromPreferences();
+    Future.microtask(_loadFromPreferences);
+  }
+
+  @override
+  void notifyListeners() {
+    final binding = SchedulerBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks ||
+        binding.schedulerPhase == SchedulerPhase.midFrameMicrotasks) {
+      binding.addPostFrameCallback((_) {
+        if (hasListeners) {
+          super.notifyListeners();
+        }
+      });
+      return;
+    }
+    super.notifyListeners();
   }
 
   static const String _prefWinterThemeKey = 'syncpai_winter_theme_enabled';

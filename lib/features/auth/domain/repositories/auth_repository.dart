@@ -24,6 +24,12 @@ abstract class AuthRepository {
     String? username,
   });
 
+  /// Авторизация через Email или логин (username) и пароль с сохранением и переносом локального профиля
+  Future<UserProfile> signInWithIdentifier({
+    required String identifier,
+    required String password,
+  });
+
   /// Авторизация через Email и пароль с сохранением и переносом локального профиля
   Future<UserProfile> signInWithEmail({
     required String email,

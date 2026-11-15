@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../domain/entities/anime_entity.dart';
@@ -16,6 +17,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
     int limit = 40,
     String? genres,
     String? year,
+    String? sort,
+    String? status,
+    CancelToken? cancelToken,
   }) async {
     try {
       final models = await remoteDataSource.getCatalog(
@@ -23,6 +27,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
         limit: limit,
         genres: genres,
         year: year,
+        sort: sort,
+        status: status,
+        cancelToken: cancelToken,
       );
       return models.map((m) => m.toDomain()).toList();
     } on NetworkException catch (e) {
@@ -37,9 +44,17 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
   }
 
   @override
-  Future<List<AnimeEntity>> searchCatalog(String query, {int limit = 30}) async {
+  Future<List<AnimeEntity>> searchCatalog(
+    String query, {
+    int limit = 30,
+    CancelToken? cancelToken,
+  }) async {
     try {
-      final models = await remoteDataSource.searchCatalog(query, limit: limit);
+      final models = await remoteDataSource.searchCatalog(
+        query,
+        limit: limit,
+        cancelToken: cancelToken,
+      );
       return models.map((m) => m.toDomain()).toList();
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);

@@ -23,16 +23,23 @@ List<AnimeCatalogModel> parseAnimeCatalogReleasesInIsolate(dynamic data) {
 }
 
 abstract class AnimeRemoteDataSource {
-  /// Получение каталога напрямую через AniLiberty (AniLibria v1) API
+  /// Получение каталога напрямую через AniLiberty (AniLibria v1) API / Supabase anime_catalog
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
     int limit = 40,
     String? genres,
     String? year,
+    String? sort,
+    String? status,
+    CancelToken? cancelToken,
   });
 
   /// Поиск по аниме через AniLiberty (AniLibria v1) API
-  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 20});
+  Future<List<AnimeCatalogModel>> searchCatalog(
+    String query, {
+    int limit = 20,
+    CancelToken? cancelToken,
+  });
 
   /// Получение прямых ссылок и озвучек напрямую через AniLiberty API
   Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title});
@@ -118,6 +125,9 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     int limit = 40,
     String? genres,
     String? year,
+    String? sort,
+    String? status,
+    CancelToken? cancelToken,
   }) async {
     final queryParams = <String, dynamic>{
       'page': page,
@@ -136,37 +146,77 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
         }
       }
       if (ids.isNotEmpty) {
-        queryParams['f[genres][]'] = ids.length == 1 ? ids.first : ids;
+        // AniLibria v1 expects f[genres] as comma-separated IDs (e.g. f[genres]=4 or f[genres]=4,14)
+        queryParams['f[genres]'] = ids.join(',');
       }
     }
     if (year != null && year.trim().isNotEmpty) {
-      queryParams['years'] = year.trim();
+      queryParams['f[years][from_year]'] = year.trim();
+      queryParams['f[years][to_year]'] = year.trim();
+    }
+    if (sort != null && sort.isNotEmpty) {
+      switch (sort) {
+        case 'yearDesc':
+          queryParams['f[sorting]'] = 'YEAR_DESC';
+          break;
+        case 'yearAsc':
+          queryParams['f[sorting]'] = 'YEAR_ASC';
+          break;
+        case 'rating':
+          queryParams['f[sorting]'] = 'RATING_DESC';
+          break;
+        case 'updates':
+        default:
+          queryParams['f[sorting]'] = 'FRESH_AT_DESC';
+          break;
+      }
+    }
+    if (status != null && status.isNotEmpty) {
+      if (status == 'ongoing') {
+        queryParams['f[publish_statuses]'] = 'IS_ONGOING';
+      } else if (status == 'released') {
+        queryParams['f[publish_statuses]'] = 'IS_NOT_ONGOING';
+      }
     }
 
     try {
       final response = await _dio.get(
         _catalogUrl,
         queryParameters: queryParams,
+        cancelToken: cancelToken,
       );
-      return await _parseReleasesAsync(response.data);
-    } catch (_) {
-      try {
-        final fallbackRes = await _dio.get(
-          _fallbackCatalogUrl,
-          queryParameters: queryParams,
-        );
-        return await _parseReleasesAsync(fallbackRes.data);
-      } catch (e) {
-        throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
+      final parsed = await _parseReleasesAsync(response.data);
+      if (parsed.isNotEmpty) {
+        return parsed;
       }
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
+    } catch (_) {}
+
+    try {
+      final fallbackRes = await _dio.get(
+        _fallbackCatalogUrl,
+        queryParameters: queryParams,
+        cancelToken: cancelToken,
+      );
+      return await _parseReleasesAsync(fallbackRes.data);
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
+      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
+    } catch (e) {
+      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
     }
   }
 
   @override
-  Future<List<AnimeCatalogModel>> searchCatalog(String query, {int limit = 20}) async {
+  Future<List<AnimeCatalogModel>> searchCatalog(
+    String query, {
+    int limit = 20,
+    CancelToken? cancelToken,
+  }) async {
     final clean = query.trim();
     if (clean.isEmpty) {
-      return getCatalog(page: 1, limit: limit);
+      return getCatalog(page: 1, limit: limit, cancelToken: cancelToken);
     }
 
     try {
@@ -175,8 +225,23 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
         queryParameters: {
           'query': clean,
         },
+        cancelToken: cancelToken,
       );
       return await _parseReleasesAsync(response.data);
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
+      try {
+        final fallbackRes = await _dio.get(
+          _fallbackSearchUrl,
+          queryParameters: {
+            'query': clean,
+          },
+          cancelToken: cancelToken,
+        );
+        return await _parseReleasesAsync(fallbackRes.data);
+      } catch (e2) {
+        throw ServerException('Ошибка поиска AniLiberty: $e2');
+      }
     } catch (_) {
       try {
         final fallbackRes = await _dio.get(
@@ -184,6 +249,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
           queryParameters: {
             'query': clean,
           },
+          cancelToken: cancelToken,
         );
         return await _parseReleasesAsync(fallbackRes.data);
       } catch (e) {

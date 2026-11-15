@@ -13,7 +13,9 @@ import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
+import 'package:sync_pai/features/sync_room/services/active_room_service.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
@@ -28,7 +30,7 @@ import 'package:sync_pai/features/player/services/pip_service.dart';
 import '../widgets/auto_next_episode_banner.dart';
 import '../widgets/desktop_player_layout.dart';
 import '../widgets/double_tap_seek_overlay.dart';
-import '../widgets/floating_reactions_layer.dart';
+import '../widgets/floating_pai_chan_reactions_overlay.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/quick_phrase_toast_widget.dart';
 import '../widgets/twitch_chat_overlay.dart';
@@ -66,6 +68,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _isInPip = false;
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
+  int? _dismissedOpeningEpisode;
+  int? _dismissedEndingEpisode;
 
   void _minimizePlayer({bool alreadyPopping = false}) {
     if (_handedOffToMiniPlayer || _isDisposed) return;
@@ -101,6 +105,43 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       videoController: _videoController,
       onSaveProgress: _saveWatchProgress,
     );
+
+    if (_cubit.state.isSyncRoom && _cubit.state.roomCode != null) {
+      final rootNav = Navigator.of(context, rootNavigator: true);
+      final currentRoom = SyncRoom(
+        code: _cubit.state.roomCode!,
+        title: _cubit.state.title,
+        episode: _cubit.state.episode,
+        quality: _cubit.state.selectedQuality,
+        hostName: _cubit.state.isHost ? 'Хост (Вы)' : 'Хост',
+        peerName: _cubit.state.peerName,
+        status: SyncRoomStatus.connected,
+        createdAt: DateTime.now(),
+      );
+      ActiveRoomService.instance.minimizeRoom(
+        room: currentRoom,
+        isHost: _cubit.state.isHost,
+        isInPlayer: true,
+        onSwitchAnime: (newTitle, {episode}) =>
+            _cubit.switchAnimeInRoom(newTitle, episode: episode),
+        onExpandRoom: (expandedRoom, hostFlag) {
+          if (GlobalMiniPlayerService.instance.cubit != null) {
+            GlobalMiniPlayerService.instance.expandToFullscreen();
+            return;
+          }
+          final navCtx = rootNav.context;
+          if (navCtx.mounted) {
+            GoRouter.of(navCtx).pushNamed('player', extra: {
+              'title': _cubit.state.title,
+              'episode': _cubit.state.episode,
+              'quality': _cubit.state.selectedQuality,
+              'roomCode': _cubit.state.roomCode,
+              'isHost': _cubit.state.isHost,
+            });
+          }
+        },
+      );
+    }
 
     if (mounted) {
       setState(() {});
@@ -178,6 +219,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     // Фиксируем открытие серии в истории просмотров (не затрагивая вкладку «Смотрю»)
     _recordInitialWatchHistory();
     _recordPlaybackInAnimeList();
+
+    if (widget.roomCode != null && widget.roomCode!.isNotEmpty) {
+      ActiveRoomService.instance.registerActiveRoom(
+        room: SyncRoom(
+          code: widget.roomCode!,
+          title: widget.title,
+          episode: widget.initialEpisode,
+          quality: widget.initialQuality,
+          hostName: widget.isHost ? 'Хост (Вы)' : 'Хост',
+          status: SyncRoomStatus.connected,
+          createdAt: DateTime.now(),
+        ),
+        isHost: widget.isHost,
+        isInPlayer: true,
+        onSwitchAnime: (newTitle, {episode}) =>
+            _cubit.switchAnimeInRoom(newTitle, episode: episode),
+      );
+    }
 
     if (resolvedPos != null && resolvedPos > const Duration(seconds: 3)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -510,7 +569,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         }
       },
       child: Focus(
-        autofocus: true,
+        autofocus: !(!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)),
         onKeyEvent: _handleTvKeyEvent,
         child: BlocProvider.value(
           value: _cubit,
@@ -524,10 +583,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   previous.areControlsVisible != current.areControlsVisible ||
                   previous.selectedQuality != current.selectedQuality ||
                   previous.episode.episode != current.episode.episode ||
+                  previous.title.id != current.title.id ||
                   previous.currentTranslation != current.currentTranslation ||
                   previous.videoFit != current.videoFit ||
                   previous.isScreenLocked != current.isScreenLocked ||
                   previous.playbackRate != current.playbackRate ||
+                  previous.is2xFastForwarding != current.is2xFastForwarding ||
                   previous.autoNextCountdown != current.autoNextCountdown ||
                   previous.volume != current.volume ||
                   previous.brightness != current.brightness ||
@@ -535,7 +596,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   previous.isPeerAway != current.isPeerAway ||
                   previous.isPeerBuffering != current.isPeerBuffering ||
                   previous.syncStatus != current.syncStatus ||
-                  previous.bufferNotice != current.bufferNotice,
+                  previous.bufferNotice != current.bufferNotice ||
+                  previous.chatMessages != current.chatMessages ||
+                  previous.activeReactions != current.activeReactions ||
+                  previous.danmakuMessages != current.danmakuMessages ||
+                  previous.activeQuickPhrase != current.activeQuickPhrase ||
+                  previous.roomCode != current.roomCode ||
+                  previous.peerPresence != current.peerPresence ||
+                  previous.position.inSeconds != current.position.inSeconds ||
+                  previous.duration.inSeconds != current.duration.inSeconds ||
+                  previous.isChatOverlayVisible != current.isChatOverlayVisible ||
+                  previous.isVoiceMuted != current.isVoiceMuted ||
+                  previous.isTalking != current.isTalking ||
+                  previous.isPeerTalking != current.isPeerTalking ||
+                  previous.pokeNudgeMessage != current.pokeNudgeMessage ||
+                  previous.showWatchPartyStats != current.showWatchPartyStats ||
+                  previous.coopSkipVotes != current.coopSkipVotes ||
+                  previous.hasVotedCoopSkip != current.hasVotedCoopSkip,
               listenWhen: (previous, current) =>
                   previous.errorMessage != current.errorMessage ||
                   previous.episode.episode != current.episode.episode,
@@ -628,17 +705,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         (state.title.posterMedium.isNotEmpty
                             ? state.title.posterMedium
                             : state.title.posterSmall),
-                    isLocked: state.isSyncRoom && !state.isHost,
-                    onLockedTap: () {
-                      _cubit.requestPauseFromHost();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Хост управляет просмотром. Запрос на паузу отправлен хосту'),
-                          duration: Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
+                    isLocked: false,
+                    onLockedTap: () {},
                     onLongPressStart: () => _cubit.start2xFastForward(),
                     onLongPressEnd: () => _cubit.stop2xFastForward(),
                     onFastForwardRateChanged: (rate) => _cubit.setFastForwardRate(rate),
@@ -716,9 +784,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       onToggleVisibility: () => _cubit.toggleChatOverlay(),
                     ),
 
-                  // Слой плавающих летящих реакций (Floating Reactions)
-                  if (state.isSyncRoom)
-                    FloatingReactionsLayer(
+                  // Слой плавающих стикер-реакций Пай-чан поверх видео (FloatingPaiChanReactionsOverlay)
+                  if (state.isSyncRoom || state.activeReactions.isNotEmpty)
+                    FloatingPaiChanReactionsOverlay(
                       reactions: state.activeReactions,
                     ),
 
@@ -1010,50 +1078,105 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final op = state.effectiveOpening;
     final ed = state.effectiveEnding;
     final curSec = state.position.inSeconds;
+    final totalSec = state.duration.inSeconds;
+    final curEpNum = state.episode.episode;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final bottomOffset = MediaQuery.paddingOf(context).bottom +
         (state.areControlsVisible ? (isLandscape ? 82.0 : 142.0) : 28.0);
+    final primaryAccent = Theme.of(context).colorScheme.primary;
 
-    // 1. Обратный отсчет за 15 секунд до начала эндинга («До эндинга: X сек»)
-    if (ed != null && ed.start > 30 && curSec >= ed.start - 15 && curSec < ed.start) {
-      final remainingToEnding = ed.start - curSec;
+    // 1. Умная кнопка пропуска опенинга с живым обратным отсчетом секунд и прогрессом
+    final isOpening = op != null &&
+        curSec >= op.start &&
+        curSec <= op.stop &&
+        _dismissedOpeningEpisode != curEpNum;
+
+    if (isOpening) {
+      final remainingOp = (op.stop - curSec).clamp(1, 999);
+      final totalOp = (op.stop - op.start).clamp(1, 999);
+      final opProgress = ((curSec - op.start) / totalOp).clamp(0.0, 1.0);
+
       return Positioned(
         bottom: bottomOffset,
         right: 20,
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            _cubit.seek(ed.stopDuration);
-          },
+        child: Material(
+          color: Colors.transparent,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            constraints: const BoxConstraints(minWidth: 210),
             decoration: BoxDecoration(
-              color: const Color(0xFF14161F).withValues(alpha: 0.90),
-              borderRadius: BorderRadius.circular(14),
+              color: const Color(0xFF12151E).withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFFBA68C8).withValues(alpha: 0.55),
+                color: primaryAccent.withValues(alpha: 0.55),
                 width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.65),
+                  color: Colors.black.withValues(alpha: 0.6),
                   blurRadius: 18,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
-            child: Row(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.timer_outlined, color: Color(0xFFCE93D8), size: 16),
-                const SizedBox(width: 7),
-                Text(
-                  'До эндинга: $remainingToEnding сек • Скип ▶',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.0,
-                    letterSpacing: 0.2,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          _cubit.seek(op.stopDuration);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.fast_forward_rounded,
+                              color: primaryAccent,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Пропустить опенинг • $remainingOpс',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.0,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => setState(() => _dismissedOpeningEpisode = curEpNum),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 3,
+                  width: 220,
+                  child: LinearProgressIndicator(
+                    value: opProgress,
+                    backgroundColor: Colors.white.withValues(alpha: 0.12),
+                    valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
                   ),
                 ),
               ],
@@ -1063,77 +1186,167 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       );
     }
 
-    // 2. Активная фаза опенинга или эндинга (кнопка видна на протяжении всего интервала!)
-    final isOpening = op != null && curSec >= op.start && curSec <= op.stop;
-    final isEnding = ed != null && curSec >= ed.start && curSec <= ed.stop;
+    // 2. Умная кнопка пропуска эндинга / перехода к следующей серии с 10-секундным отсчетом
+    if (_dismissedEndingEpisode == curEpNum) {
+      return const SizedBox.shrink();
+    }
 
-    if (!isOpening && !isEnding) return const SizedBox.shrink();
+    final allEpisodes = state.title.episodes;
+    final curIdx = allEpisodes.indexWhere((e) => e.episode == curEpNum);
+    final hasNext = curIdx >= 0 && curIdx < allEpisodes.length - 1;
+    final nextEp = hasNext ? allEpisodes[curIdx + 1] : null;
 
-    final label = isOpening ? 'Пропустить опенинг' : 'Пропустить эндинг';
-    final targetDuration = isOpening ? op.stopDuration : ed!.stopDuration;
-    final accentBorder = isOpening
-        ? const Color(0xFFFFB300).withValues(alpha: 0.65)
-        : const Color(0xFFBA68C8).withValues(alpha: 0.65);
+    final isPreEndingCountdown =
+        ed != null && ed.start > 30 && curSec >= ed.start - 10 && curSec < ed.start;
+    final isInEndingSegment = ed != null && curSec >= ed.start && curSec <= ed.stop;
+    final isEndOfEpisodeCountdown =
+        totalSec > 60 && (totalSec - curSec) <= 10 && (totalSec - curSec) > 0;
+
+    if (!isPreEndingCountdown && !isInEndingSegment && !isEndOfEpisodeCountdown) {
+      return const SizedBox.shrink();
+    }
+
+    final hasPostCredits = ed != null && totalSec > 0 && (totalSec - ed.stop) > 20;
+
+    int countdownSec;
+    if (state.autoNextCountdown != null) {
+      countdownSec = state.autoNextCountdown!.clamp(1, 10);
+    } else if (isPreEndingCountdown) {
+      countdownSec = (ed.start - curSec).clamp(1, 10);
+    } else if (isEndOfEpisodeCountdown) {
+      countdownSec = (totalSec - curSec).clamp(1, 10);
+    } else {
+      final elapsedInEnding = curSec - ed!.start;
+      countdownSec = (10 - (elapsedInEnding % 10)).clamp(1, 10);
+    }
+
+    final countdownProgress = ((10 - countdownSec) / 10.0).clamp(0.0, 1.0);
+
+    final String buttonLabel;
+    if (isPreEndingCountdown) {
+      buttonLabel = 'До эндинга • $countdownSecс';
+    } else if (hasPostCredits) {
+      buttonLabel = 'Пропустить эндинг • $countdownSecс';
+    } else if (hasNext) {
+      buttonLabel = 'Следующая серия • $countdownSecс';
+    } else {
+      buttonLabel = 'Пропустить эндинг • $countdownSecс';
+    }
 
     return Positioned(
       bottom: bottomOffset,
       right: 20,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            if (isEnding) {
-              final all = state.title.episodes;
-              final curIdx = all.indexWhere((e) => e.episode == state.episode.episode);
-              final hasNext = curIdx >= 0 && curIdx < all.length - 1;
-              // Если эндинг в самом конце серии и есть следующая серия — переходим к концу или запускаем отсчет следующей
-              _cubit.seek(targetDuration);
-              if (hasNext && (state.duration.inSeconds - ed.stop) <= 15) {
-                _cubit.startAutoNextCountdown(all[curIdx + 1]);
-              }
-            } else {
-              _cubit.seek(targetDuration);
-            }
-          },
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF14161F).withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: accentBorder,
-                width: 1.3,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 220),
+          decoration: BoxDecoration(
+            color: const Color(0xFF12151E).withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: primaryAccent.withValues(alpha: 0.6),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.65),
+                blurRadius: 18,
+                offset: const Offset(0, 4),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  blurRadius: 18,
-                  offset: const Offset(0, 4),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        if (!isPreEndingCountdown && !hasPostCredits && hasNext && nextEp != null) {
+                          _cubit.playNextEpisode(nextEp);
+                        } else if (ed != null) {
+                          _cubit.seek(ed.stopDuration);
+                          if (hasNext && nextEp != null && !hasPostCredits) {
+                            _cubit.startAutoNextCountdown(nextEp);
+                          }
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: countdownProgress,
+                                  strokeWidth: 2.2,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.16),
+                                  valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
+                                ),
+                                Icon(
+                                  hasNext && !hasPostCredits && !isPreEndingCountdown
+                                      ? Icons.skip_next_rounded
+                                      : Icons.fast_forward_rounded,
+                                  color: Colors.white,
+                                  size: 12,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          Text(
+                            buttonLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.0,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Остаться',
+                      child: InkWell(
+                        onTap: () {
+                          _cubit.cancelAutoNextCountdown();
+                          setState(() => _dismissedEndingEpisode = curEpNum);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: Colors.white.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.fast_forward_rounded,
-                  color: isOpening ? const Color(0xFFFFCA28) : const Color(0xFFCE93D8),
-                  size: 18,
+              ),
+              SizedBox(
+                height: 3,
+                width: 230,
+                child: LinearProgressIndicator(
+                  value: countdownProgress,
+                  backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13.0,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

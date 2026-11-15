@@ -7,6 +7,7 @@ import '../datasources/anixart_csv_parser.dart';
 import '../datasources/anixart_remote_datasource.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
+import '../../services/lists_sync_service.dart';
 
 class AnimeListRepositoryImpl implements AnimeListRepository {
   final SharedPreferences _prefs;
@@ -76,21 +77,11 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     // Фоновая синхронизация с Supabase
     final client = _supabase;
     if (client != null && client.auth.currentUser != null) {
-      try {
-        await client.from('user_anime_lists').upsert({
-          'user_id': client.auth.currentUser!.id,
-          'anime_id': entry.animeId,
-          'title_ru': entry.titleRu,
-          'poster_url': entry.posterUrl,
-          'status': entry.status.name,
-          'last_episode': entry.lastEpisode,
-          'position_ms': entry.positionMs,
-          'episodes_total': entry.episodesTotal,
-          'updated_at': entry.updatedAt.toIso8601String(),
-        }, onConflict: 'user_id, anime_id');
-      } catch (e) {
-        debugPrint('Supabase upsert error: $e');
-      }
+      await ListsSyncService.upsertEntry(
+        client,
+        userId: client.auth.currentUser!.id,
+        entry: entry,
+      );
     }
   }
 
@@ -148,50 +139,94 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     await _saveLocal(all);
   }
 
+  Future<AnixartImportResult> _mergeAndSaveImportedEntries(
+    AnixartImportResult result,
+  ) async {
+    final current = await getAllEntries();
+    final List<UserAnimeEntry> merged = List<UserAnimeEntry>.from(current);
+    final Map<int, int> indexById = {};
+    final Map<String, int> indexByKey = {};
+
+    for (var i = 0; i < merged.length; i++) {
+      final entry = merged[i];
+      indexById[entry.animeId] = i;
+      final k = normalizeAnimeKey(entry.titleRu);
+      if (k.isNotEmpty) {
+        indexByKey.putIfAbsent(k, () => i);
+      }
+    }
+
+    final seenBatchIndices = <int>{};
+    final Map<int, UserAnimeEntry> toUpsertByIndex = {};
+    int addedCount = 0;
+    int updatedCount = 0;
+
+    for (final imported in result.entries) {
+      final normKey = normalizeAnimeKey(imported.titleRu);
+      final existingIdx = indexById[imported.animeId] ??
+          (normKey.isNotEmpty ? indexByKey[normKey] : null);
+
+      if (existingIdx != null) {
+        final existing = merged[existingIdx];
+        final resolvedPoster = (existing.posterUrl != null && existing.posterUrl!.isNotEmpty)
+            ? existing.posterUrl
+            : imported.posterUrl;
+        final resolvedEpisode = imported.lastEpisode > existing.lastEpisode
+            ? imported.lastEpisode
+            : existing.lastEpisode;
+        final updatedEntry = existing.copyWith(
+          posterUrl: resolvedPoster,
+          status: imported.status,
+          lastEpisode: resolvedEpisode,
+          episodesTotal: imported.episodesTotal ?? existing.episodesTotal,
+          updatedAt: imported.updatedAt,
+        );
+        merged[existingIdx] = updatedEntry;
+        toUpsertByIndex[existingIdx] = updatedEntry;
+        if (seenBatchIndices.add(existingIdx)) {
+          updatedCount++;
+        }
+      } else {
+        final newIdx = merged.length;
+        merged.add(imported);
+        indexById[imported.animeId] = newIdx;
+        if (normKey.isNotEmpty) {
+          indexByKey[normKey] = newIdx;
+        }
+        toUpsertByIndex[newIdx] = imported;
+        seenBatchIndices.add(newIdx);
+        addedCount++;
+      }
+    }
+
+    final toUpsert = toUpsertByIndex.values.toList();
+
+    merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await _saveLocal(merged);
+
+    final client = _supabase;
+    if (client != null && client.auth.currentUser != null && toUpsert.isNotEmpty) {
+      await ListsSyncService.upsertEntries(
+        client,
+        userId: client.auth.currentUser!.id,
+        entries: toUpsert,
+      );
+    }
+
+    return result.copyWith(
+      entries: toUpsert,
+      addedCount: addedCount,
+      updatedCount: updatedCount,
+    );
+  }
+
   @override
   Future<AnixartImportResult> importAnixartBackup(
     String jsonContent, {
     required String userId,
   }) async {
     final result = AnixartBackupParser.parse(jsonContent, userId: userId);
-
-    final current = await getAllEntries();
-    final map = {for (final e in current) e.animeId: e};
-
-    // Объединяем, не затирая более свежие изменения
-    for (final imported in result.entries) {
-      map[imported.animeId] = imported;
-    }
-
-    final merged = map.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _saveLocal(merged);
-
-    // Пачковая отправка в облако
-    final client = _supabase;
-    if (client != null && client.auth.currentUser != null) {
-      try {
-        final payload = result.entries.map((e) => {
-              'user_id': client.auth.currentUser!.id,
-              'anime_id': e.animeId,
-              'title_ru': e.titleRu,
-              'poster_url': e.posterUrl,
-              'status': e.status.name,
-              'last_episode': e.lastEpisode,
-              'position_ms': e.positionMs,
-              'episodes_total': e.episodesTotal,
-              'updated_at': e.updatedAt.toIso8601String(),
-            }).toList();
-
-        await client.from('user_anime_lists').upsert(
-              payload,
-              onConflict: 'user_id, anime_id',
-            );
-      } catch (e) {
-        debugPrint('Cloud bulk import error: $e');
-      }
-    }
-
-    return result;
+    return _mergeAndSaveImportedEntries(result);
   }
 
   @override
@@ -209,44 +244,7 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
       overrideStatus: overrideStatus,
       onProgress: onProgress,
     );
-
-    final current = await getAllEntries();
-    final map = {for (final e in current) e.animeId: e};
-
-    for (final imported in result.entries) {
-      map[imported.animeId] = imported;
-    }
-
-    final merged = map.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _saveLocal(merged);
-
-    // Пачковый UPSERT в таблицу Supabase
-    final client = _supabase;
-    if (client != null && client.auth.currentUser != null) {
-      try {
-        final payload = result.entries.map((e) => {
-              'user_id': client.auth.currentUser!.id,
-              'anime_id': e.animeId,
-              'shikimori_id': e.animeId,
-              'title_ru': e.titleRu,
-              'poster_url': e.posterUrl,
-              'status': e.status.name,
-              'last_episode': e.lastEpisode,
-              'position_ms': e.positionMs,
-              'episodes_total': e.episodesTotal,
-              'updated_at': e.updatedAt.toIso8601String(),
-            }).toList();
-
-        await client.from('user_anime_lists').upsert(
-              payload,
-              onConflict: 'user_id, anime_id',
-            );
-      } catch (e) {
-        debugPrint('Cloud bulk UPSERT error: $e');
-      }
-    }
-
-    return result;
+    return _mergeAndSaveImportedEntries(result);
   }
 
   @override
@@ -259,43 +257,7 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
       loginOrId: loginOrId,
       userId: userId,
     );
-
-    final current = await getAllEntries();
-    final map = {for (final e in current) e.animeId: e};
-
-    for (final imported in result.entries) {
-      map[imported.animeId] = imported;
-    }
-
-    final merged = map.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    await _saveLocal(merged);
-
-    // Синхронизация с облаком Supabase
-    final client = _supabase;
-    if (client != null && client.auth.currentUser != null) {
-      try {
-        final payload = result.entries.map((e) => {
-              'user_id': client.auth.currentUser!.id,
-              'anime_id': e.animeId,
-              'title_ru': e.titleRu,
-              'poster_url': e.posterUrl,
-              'status': e.status.name,
-              'last_episode': e.lastEpisode,
-              'position_ms': e.positionMs,
-              'episodes_total': e.episodesTotal,
-              'updated_at': e.updatedAt.toIso8601String(),
-            }).toList();
-
-        await client.from('user_anime_lists').upsert(
-              payload,
-              onConflict: 'user_id, anime_id',
-            );
-      } catch (e) {
-        debugPrint('Cloud bulk import error: $e');
-      }
-    }
-
-    return result;
+    return _mergeAndSaveImportedEntries(result);
   }
 
   @override
@@ -304,18 +266,13 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     if (client == null || client.auth.currentUser == null) return;
 
     try {
-      final List<dynamic> response = await client
-          .from('user_anime_lists')
-          .select()
-          .eq('user_id', userId)
-          .order('updated_at', ascending: false);
-
-      final cloudEntries = response
-          .map((item) => UserAnimeEntry.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final cloudEntries = await ListsSyncService.fetchEntries(
+        client,
+        userId: userId,
+      );
 
       final localEntries = await getAllEntries();
-      final map = {for (final e in localEntries) e.animeId: e};
+      final map = {for (final e in localEntries) e.animeId: e.copyWith(userId: userId)};
 
       // Слияние: если в облаке новее — берем облако, иначе оставляем локальное
       for (final cloud in cloudEntries) {
@@ -325,27 +282,15 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
         }
       }
 
-      await _saveLocal(map.values.toList());
+      final mergedList = map.values.toList();
+      await _saveLocal(mergedList);
 
       // Загружаем объединенные закладки пользователя в облако
-      if (map.isNotEmpty) {
-        final payload = map.values.map((e) => {
-              'user_id': userId,
-              'anime_id': e.animeId,
-              'title_ru': e.titleRu,
-              'poster_url': e.posterUrl,
-              'status': e.status.name,
-              'last_episode': e.lastEpisode,
-              'position_ms': e.positionMs,
-              'episodes_total': e.episodesTotal,
-              'updated_at': e.updatedAt.toIso8601String(),
-            }).toList();
-
-        await client.from('user_anime_lists').upsert(
-              payload,
-              onConflict: 'user_id, anime_id',
-            );
-      }
+      await ListsSyncService.upsertEntries(
+        client,
+        userId: userId,
+        entries: mergedList,
+      );
     } catch (e) {
       debugPrint('Cloud sync error: $e');
     }

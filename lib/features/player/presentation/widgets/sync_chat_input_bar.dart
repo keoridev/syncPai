@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../cubit/player_cubit.dart';
+import 'floating_pai_chan_reactions_overlay.dart';
 
 /// Шторка быстрого набора сообщений и реакций для совместного просмотра.
 /// Полностью адаптирована под горизонтальный (landscape) режим экрана
@@ -33,7 +34,6 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  static const List<String> _quickReactions = ['🔥', '😂', '😱', '😭', '❤️'];
   static const List<String> _quickPhrases = [
     'Опенинг пушка! 🔥',
     'Ха-ха, классика 😂',
@@ -66,8 +66,8 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
     }
   }
 
-  void _sendReaction(String emoji) {
-    widget.cubit.sendReaction(emoji);
+  void _sendStickerReaction(String stickerId) {
+    widget.cubit.sendReaction(stickerId);
     Navigator.of(context).pop();
   }
 
@@ -106,25 +106,13 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (isLandscape) ...[
-                    // В ландшафтном режиме: ультра-компактный ряд (эмодзи + поле ввода)
+                    // В ландшафтном режиме: ультра-компактный ряд (стикеры Пай-чан + поле ввода)
                     Row(
                       children: [
-                        for (final emoji in _quickReactions)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: InkWell(
-                              onTap: () => _sendReaction(emoji),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(emoji, style: const TextStyle(fontSize: 18)),
-                              ),
-                            ),
-                          ),
+                        PaiChanStickerReactionBar(
+                          compact: true,
+                          onStickerSelected: (sticker) => _sendStickerReaction(sticker.id),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildInputRow(context),
@@ -132,27 +120,9 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
                       ],
                     ),
                   ] else ...[
-                    // В портретном режиме: полноразмерные блоки реакций и шорткатов
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: _quickReactions.map((emoji) {
-                        return InkWell(
-                          onTap: () => _sendReaction(emoji),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                            ),
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 24),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                    // В портретном режиме: полоска 6 стикер-реакций Пай-чан
+                    PaiChanStickerReactionBar(
+                      onStickerSelected: (sticker) => _sendStickerReaction(sticker.id),
                     ),
 
                     const SizedBox(height: AppDimensions.spacingMd),
@@ -195,41 +165,64 @@ class _SyncChatInputSheetState extends State<SyncChatInputSheet> {
   }
 
   Widget _buildInputRow(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Row(
       children: [
         Expanded(
-          child: Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            alignment: Alignment.center,
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-              cursorColor: Theme.of(context).colorScheme.primary,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'Сообщение в комнату…',
-                hintStyle: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textMuted,
-                  fontSize: 13.5,
+          child: ListenableBuilder(
+            listenable: _focusNode,
+            builder: (context, _) {
+              final hasFocus = _focusNode.hasFocus;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: hasFocus ? 0.08 : 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: hasFocus
+                        ? scheme.primary
+                        : scheme.outlineVariant.withValues(alpha: 0.3),
+                    width: hasFocus ? 1.4 : 1.0,
+                  ),
                 ),
-              ),
-            ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
+                  cursorColor: scheme.primary,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    filled: false,
+                    hoverColor: Colors.transparent,
+                    focusColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    hintText: 'Сообщение в комнату…',
+                    hintStyle: AppTypography.bodyMedium.copyWith(
+                      color: AppColors.textMuted,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(width: AppDimensions.spacingSm),
         IconButton.filled(
           style: IconButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.primary,
+            backgroundColor: scheme.primary,
             minimumSize: const Size(44, 44),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),

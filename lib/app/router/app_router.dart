@@ -14,6 +14,7 @@ import '../../features/player/domain/entities/player_quality.dart';
 import '../../features/player/presentation/screens/player_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/support/presentation/screens/support_screen.dart';
 import '../../features/shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../features/splash/presentation/screens/splash_screen.dart';
 import '../../features/sync_room/presentation/screens/join_room_screen.dart';
@@ -161,6 +162,11 @@ final GoRouter appRouter = GoRouter(
       path: '/settings',
       name: 'settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/support',
+      name: 'support',
+      builder: (context, state) => const SupportScreen(),
     ),
     GoRoute(
       path: '/watch_together',

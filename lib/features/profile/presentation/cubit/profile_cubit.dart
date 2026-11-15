@@ -18,9 +18,16 @@ class ProfileCubit extends Cubit<ProfileState> {
     this.animeListRepository,
   }) : super(ProfileState.initial());
 
+  void _safeEmit(ProfileState newState) {
+    if (!isClosed) {
+      emit(newState);
+    }
+  }
+
   /// Загрузка данных профиля пользователя (своего или профиля друга по ID)
   Future<void> loadProfile({String? targetUserId}) async {
-    emit(state.copyWith(status: ProfileStatus.loading));
+    if (isClosed) return;
+    _safeEmit(state.copyWith(status: ProfileStatus.loading));
 
     String? currentUserId;
     try {
@@ -30,9 +37,12 @@ class ProfileCubit extends Cubit<ProfileState> {
     if (currentUserId == null && authRepository != null) {
       try {
         final current = await authRepository!.getCurrentProfile();
+        if (isClosed) return;
         currentUserId = current.id;
       } catch (_) {}
     }
+
+    if (isClosed) return;
 
     final bool isCurrent = targetUserId == null ||
         targetUserId.trim().isEmpty ||
@@ -47,6 +57,7 @@ class ProfileCubit extends Cubit<ProfileState> {
           debugPrint('Error getting current profile: $e');
         }
       }
+      if (isClosed) return;
 
       UserAnimeStats stats = const UserAnimeStats(
         totalTitles: 0,
@@ -66,8 +77,9 @@ class ProfileCubit extends Cubit<ProfileState> {
           debugPrint('Error getting anime list entries: $e');
         }
       }
+      if (isClosed) return;
 
-      emit(state.copyWith(
+      _safeEmit(state.copyWith(
         status: ProfileStatus.loaded,
         profile: profile,
         stats: stats,
@@ -77,8 +89,8 @@ class ProfileCubit extends Cubit<ProfileState> {
       _authSubscription?.cancel();
       if (authRepository != null) {
         _authSubscription = authRepository!.authStateChanges.listen((updated) {
-          if (updated != null && state.isCurrentUser) {
-            emit(state.copyWith(profile: updated));
+          if (!isClosed && updated != null && state.isCurrentUser) {
+            _safeEmit(state.copyWith(profile: updated));
           }
         });
       }
@@ -99,6 +111,7 @@ class ProfileCubit extends Cubit<ProfileState> {
                 .maybeSingle();
           } catch (_) {}
         }
+        if (isClosed) return;
 
         final friendProfile = cloudRow != null
             ? UserProfile(
@@ -155,15 +168,17 @@ class ProfileCubit extends Cubit<ProfileState> {
             debugPrint('Error getting friend anime lists: $e');
           }
         }
+        if (isClosed) return;
 
-        emit(state.copyWith(
+        _safeEmit(state.copyWith(
           status: ProfileStatus.loaded,
           profile: friendProfile,
           stats: friendStats,
           isCurrentUser: false,
         ));
       } catch (e) {
-        emit(state.copyWith(
+        if (isClosed) return;
+        _safeEmit(state.copyWith(
           status: ProfileStatus.loaded,
           profile: _buildFallbackFriendProfile(targetUserId),
           stats: const UserAnimeStats(
@@ -185,7 +200,7 @@ class ProfileCubit extends Cubit<ProfileState> {
     final lower = targetUserId.toLowerCase();
     String username = targetUserId;
     if (username.startsWith('fr_') || username.startsWith('guest_')) {
-      username = 'Сенпай #${username.length > 5 ? username.substring(username.length - 4) : '777'}';
+      username = UserProfile.generateAnimeNickname(targetUserId);
     }
 
     if (lower.contains('sakura')) {

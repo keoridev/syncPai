@@ -2,11 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../app/di/injection.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../auth/presentation/cubit/auth_cubit.dart';
+import '../../../auth/presentation/cubit/auth_state.dart';
+import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../domain/entities/friend_models.dart';
 import '../../services/friends_service.dart';
 import 'friend_invite_dialog.dart';
@@ -94,20 +97,57 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
 
   String? _detectedClipboardInvite;
   UserProfile? _profile;
+  StreamSubscription<AuthState>? _authSub;
+
+  bool get _isGuest {
+    if (_profile != null) {
+      return _profile!.isAnonymous;
+    }
+    return PaiChanAuthGate.isGuest(context);
+  }
 
   @override
   void initState() {
     super.initState();
     _profile = widget.userProfile;
     _tabController = TabController(length: 3, vsync: this);
+    _subscribeAuthChanges();
     _loadProfileIfNull();
-    _loadFriends();
-    _loadRequests();
+    if (!_isGuest) {
+      _loadFriends();
+      _loadRequests();
+    } else {
+      _isLoadingFriends = false;
+      _isLoadingRequests = false;
+    }
     _checkClipboardForInvite();
+  }
+
+  void _subscribeAuthChanges() {
+    try {
+      if (getIt.isRegistered<AuthCubit>()) {
+        final cubit = getIt<AuthCubit>();
+        if (_profile == null && cubit.state is Authenticated) {
+          _profile = (cubit.state as Authenticated).profile;
+        }
+        _authSub = cubit.stream.listen((state) {
+          if (state is Authenticated && mounted) {
+            final wasGuest = _isGuest;
+            setState(() => _profile = state.profile);
+            if (wasGuest && !state.profile.isAnonymous) {
+              _loadFriends();
+              _loadRequests();
+              widget.onFriendsChanged?.call();
+            }
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _debounceTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
@@ -115,12 +155,18 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   Future<void> _loadProfileIfNull() async {
-    if (_profile == null) {
-      final authRepo = getIt<AuthRepository>();
-      final p = await authRepo.getCurrentProfile();
-      if (mounted) {
-        setState(() => _profile = p);
-      }
+    if (_profile == null && getIt.isRegistered<AuthRepository>()) {
+      try {
+        final authRepo = getIt<AuthRepository>();
+        final p = await authRepo.getCurrentProfile();
+        if (mounted) {
+          setState(() => _profile = p);
+          if (!p.isAnonymous) {
+            _loadFriends();
+            _loadRequests();
+          }
+        }
+      } catch (_) {}
     }
   }
 
@@ -190,6 +236,21 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   Future<void> _addFriendDirect(Map<String, dynamic> user) async {
+    if (_isGuest) {
+      await PaiChanAuthGate.show(
+        context,
+        currentProfile: _profile,
+        accentColor: widget.accentColor,
+        pendingFriendUser: user,
+        onAuthenticated: () {
+          _loadFriends();
+          _loadRequests();
+          widget.onFriendsChanged?.call();
+        },
+      );
+      return;
+    }
+
     final success = await FriendsService.addFriend(user);
     if (!mounted) return;
 
@@ -250,6 +311,20 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   void _openQrInviteSheet() {
+    if (_isGuest) {
+      PaiChanAuthGate.show(
+        context,
+        currentProfile: _profile,
+        accentColor: widget.accentColor,
+        onAuthenticated: () {
+          _loadProfileIfNull();
+          _loadFriends();
+          _loadRequests();
+          widget.onFriendsChanged?.call();
+        },
+      );
+      return;
+    }
     String myId = 'me';
     try {
       myId = Supabase.instance.client.auth.currentUser?.id ?? 'me';
@@ -257,7 +332,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     final p = _profile ??
         UserProfile(
           id: myId,
-          username: 'Пользователь',
+          username: 'Kuro',
           createdAt: DateTime.now(),
         );
     QrInviteSheet.show(context, profile: p, accentColor: widget.accentColor);
@@ -467,6 +542,23 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   Widget _buildFriendsListTab(Color accent, ColorScheme scheme, bool isDark) {
+    if (_isGuest) {
+      return Center(
+        child: PaiChanAuthGate(
+          isEmbedded: true,
+          currentProfile: _profile,
+          accentColor: accent,
+          pendingInviteCode: _detectedClipboardInvite,
+          onAuthenticated: () {
+            _loadProfileIfNull();
+            _loadFriends();
+            _loadRequests();
+            widget.onFriendsChanged?.call();
+          },
+        ),
+      );
+    }
+
     if (_isLoadingFriends) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -936,13 +1028,19 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                     )
                   : null,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: accent, width: 1.5),
               ),
+              hoverColor: Colors.transparent,
+              focusColor: Colors.transparent,
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),

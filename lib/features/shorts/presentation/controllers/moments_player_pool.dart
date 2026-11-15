@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../domain/entities/anime_clip.dart';
@@ -68,6 +69,22 @@ class MomentsPlayerPool extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isMuted => _isMuted;
   PooledPlayerEntry? getEntry(int index) => _pool[index];
+
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    final binding = SchedulerBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks ||
+        binding.schedulerPhase == SchedulerPhase.midFrameMicrotasks) {
+      binding.addPostFrameCallback((_) {
+        if (!_isDisposed && hasListeners) {
+          super.notifyListeners();
+        }
+      });
+      return;
+    }
+    super.notifyListeners();
+  }
 
   /// Обновление активного индекса при свайпе
   void updateActiveIndex(int newIndex, List<AnimeClip> clips) {

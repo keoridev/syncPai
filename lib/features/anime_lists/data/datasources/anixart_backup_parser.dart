@@ -8,19 +8,42 @@ class AnixartImportResult {
   final int totalParsed;
   final int totalEpisodes;
   final String estimatedTimeSpent;
+  final int addedCount;
+  final int updatedCount;
 
   const AnixartImportResult({
     required this.entries,
     required this.totalParsed,
     required this.totalEpisodes,
     required this.estimatedTimeSpent,
+    this.addedCount = 0,
+    this.updatedCount = 0,
   });
+
+  AnixartImportResult copyWith({
+    List<UserAnimeEntry>? entries,
+    int? totalParsed,
+    int? totalEpisodes,
+    String? estimatedTimeSpent,
+    int? addedCount,
+    int? updatedCount,
+  }) {
+    return AnixartImportResult(
+      entries: entries ?? this.entries,
+      totalParsed: totalParsed ?? this.totalParsed,
+      totalEpisodes: totalEpisodes ?? this.totalEpisodes,
+      estimatedTimeSpent: estimatedTimeSpent ?? this.estimatedTimeSpent,
+      addedCount: addedCount ?? this.addedCount,
+      updatedCount: updatedCount ?? this.updatedCount,
+    );
+  }
 }
 
 abstract final class AnixartBackupParser {
   /// Распарсить сырой файл выгрузки Anixart (.csv, .txt или .json)
   static AnixartImportResult parse(String rawContent, {required String userId}) {
-    final trimmed = rawContent.trim();
+    final cleaned = rawContent.replaceFirst('\uFEFF', '');
+    final trimmed = cleaned.trim();
     if (trimmed.isEmpty) {
       return const AnixartImportResult(
         entries: [],

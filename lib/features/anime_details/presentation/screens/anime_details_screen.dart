@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/glass_container.dart';
+import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
@@ -28,7 +31,9 @@ import 'package:sync_pai/features/anime_details/presentation/widgets/episode_qua
 import 'package:sync_pai/features/anime_details/presentation/widgets/related_releases_section.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/resume_progress_card.dart';
 import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_distribution_widget.dart';
+import 'package:sync_pai/features/sync_room/presentation/widgets/floating_room_overlay.dart';
 import 'package:sync_pai/features/sync_room/presentation/widgets/sync_room_config_sheet.dart';
+import 'package:sync_pai/features/sync_room/services/active_room_service.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -48,6 +53,114 @@ import 'package:sync_pai/features/torrents/presentation/widgets/torrent_releases
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_state.dart';
 import 'package:sync_pai/features/kodik/presentation/widgets/voiceover_selector_sheet.dart';
+
+/// In-Memory LRU кэш с 30-минутным TTL для мгновенного повторного открытия деталей аниме (0ms)
+class CachedAnimeDetails {
+  final AnimeTitle title;
+  final List<AnimeReview>? reviews;
+  final AnimeRatingAggregate? aggregate;
+  final Map<String, double>? portalScores;
+  final List<RelatedAnimeRelease>? relatedReleases;
+  final List<AnimeVideoItem>? videos;
+  final UserListsStats? userStats;
+  final List<ScoreDistributionItem>? scoreDistribution;
+  final DateTime cachedAt;
+
+  const CachedAnimeDetails({
+    required this.title,
+    this.reviews,
+    this.aggregate,
+    this.portalScores,
+    this.relatedReleases,
+    this.videos,
+    this.userStats,
+    this.scoreDistribution,
+    required this.cachedAt,
+  });
+
+  bool get isExpired => DateTime.now().difference(cachedAt).inMinutes >= 30;
+
+  CachedAnimeDetails copyWith({
+    AnimeTitle? title,
+    List<AnimeReview>? reviews,
+    AnimeRatingAggregate? aggregate,
+    Map<String, double>? portalScores,
+    List<RelatedAnimeRelease>? relatedReleases,
+    List<AnimeVideoItem>? videos,
+    UserListsStats? userStats,
+    List<ScoreDistributionItem>? scoreDistribution,
+    DateTime? cachedAt,
+  }) {
+    return CachedAnimeDetails(
+      title: title ?? this.title,
+      reviews: reviews ?? this.reviews,
+      aggregate: aggregate ?? this.aggregate,
+      portalScores: portalScores ?? this.portalScores,
+      relatedReleases: relatedReleases ?? this.relatedReleases,
+      videos: videos ?? this.videos,
+      userStats: userStats ?? this.userStats,
+      scoreDistribution: scoreDistribution ?? this.scoreDistribution,
+      cachedAt: cachedAt ?? this.cachedAt,
+    );
+  }
+}
+
+class AnimeDetailsCache {
+  static const int _maxEntries = 50;
+  static final LinkedHashMap<int, CachedAnimeDetails> _lru = LinkedHashMap<int, CachedAnimeDetails>();
+
+  static CachedAnimeDetails? get(int id) {
+    if (id <= 0) return null;
+    final entry = _lru.remove(id);
+    if (entry == null) return null;
+    if (entry.isExpired) return null;
+    // Перемещаем в конец (MRU)
+    _lru[id] = entry;
+    return entry;
+  }
+
+  static void putTitle(AnimeTitle title) {
+    if (title.id <= 0) return;
+    final existing = _lru.remove(title.id);
+    if (_lru.length >= _maxEntries) {
+      _lru.remove(_lru.keys.first);
+    }
+    _lru[title.id] = (existing ?? CachedAnimeDetails(title: title, cachedAt: DateTime.now())).copyWith(
+      title: title,
+      cachedAt: DateTime.now(),
+    );
+  }
+
+  static void putReviews({
+    required int id,
+    required AnimeTitle fallbackTitle,
+    required List<AnimeReview> reviews,
+    AnimeRatingAggregate? aggregate,
+    Map<String, double>? portalScores,
+    List<RelatedAnimeRelease>? relatedReleases,
+    List<AnimeVideoItem>? videos,
+    UserListsStats? userStats,
+    List<ScoreDistributionItem>? scoreDistribution,
+  }) {
+    if (id <= 0) return;
+    final existing = _lru.remove(id);
+    if (_lru.length >= _maxEntries) {
+      _lru.remove(_lru.keys.first);
+    }
+    _lru[id] = (existing ?? CachedAnimeDetails(title: fallbackTitle, cachedAt: DateTime.now())).copyWith(
+      reviews: reviews,
+      aggregate: aggregate,
+      portalScores: portalScores,
+      relatedReleases: relatedReleases,
+      videos: videos,
+      userStats: userStats,
+      scoreDistribution: scoreDistribution,
+      cachedAt: DateTime.now(),
+    );
+  }
+
+  static void clear() => _lru.clear();
+}
 
 /// Детальный экран аниме в премиальном стиле Cinematic Dark / Nordic Dark.
 ///
@@ -96,8 +209,33 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _currentTitle = widget.title;
-    _reviews = AnimeReviewsProvider.getReviewsForTitle(widget.title);
+    final cached = AnimeDetailsCache.get(widget.title.id);
+    if (cached != null) {
+      _currentTitle = cached.title.episodes.isNotEmpty
+          ? widget.title.copyWith(
+              episodes: cached.title.episodes,
+              episodesTotal: cached.title.episodesTotal ?? widget.title.episodesTotal,
+              description: widget.title.description.isNotEmpty
+                  ? widget.title.description
+                  : cached.title.description,
+              genres: widget.title.genres.isNotEmpty
+                  ? widget.title.genres
+                  : cached.title.genres,
+              year: widget.title.year ?? cached.title.year,
+            )
+          : widget.title;
+      _reviews = cached.reviews ?? AnimeReviewsProvider.getReviewsForTitle(_currentTitle);
+      _aggregate = cached.aggregate;
+      _portalScores = cached.portalScores;
+      _relatedReleases = cached.relatedReleases ?? [];
+      _videos = cached.videos ?? [];
+      _userStats = cached.userStats ?? const UserListsStats();
+      _scoreDistribution = cached.scoreDistribution ?? [];
+    } else {
+      _currentTitle = widget.title;
+      _reviews = AnimeReviewsProvider.getReviewsForTitle(widget.title);
+    }
+
     _scrollController = ScrollController()..addListener(_handleScroll);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
@@ -105,25 +243,54 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         setState(() => _currentTabIndex = _tabController.index);
       }
     });
+
+    // Декаплинг параллельной загрузки (SWR + независимые стримы без блокирующего Future.wait)
     if (_currentTitle.episodes.length <= 1) {
-      _loadFullDetails();
+      unawaited(_loadFullDetails(silent: cached != null));
+    } else if (cached != null && DateTime.now().difference(cached.cachedAt).inMinutes >= 5) {
+      // Тихая фоновая ревалидация кэшированных серий (SWR)
+      unawaited(_loadFullDetails(silent: true));
     }
-    _loadShikimoriReviews();
+
+    if (cached?.reviews == null) {
+      unawaited(_loadShikimoriReviews());
+    } else if (DateTime.now().difference(cached!.cachedAt).inMinutes >= 5) {
+      // Тихая фоновая ревалидация метаданных/отзывов (SWR)
+      unawaited(_loadShikimoriReviews(silent: true));
+    }
+
     if (getIt.isRegistered<KodikCubit>()) {
-      getIt<KodikCubit>().loadVoiceovers(
-        shikimoriId: _currentTitle.shikimoriId,
-        title: _currentTitle.displayTitle,
+      unawaited(
+        getIt<KodikCubit>().loadVoiceovers(
+          shikimoriId: _currentTitle.shikimoriId,
+          title: _currentTitle.displayTitle,
+        ),
       );
     }
   }
 
-  Future<void> _loadShikimoriReviews() async {
-    setState(() => _isLoadingReviews = true);
+  Future<void> _loadShikimoriReviews({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _isLoadingReviews = true);
+    }
     try {
       final shikiSource = getIt.isRegistered<ShikimoriRemoteDataSource>()
           ? getIt<ShikimoriRemoteDataSource>()
           : ShikimoriRemoteDataSourceImpl();
-      final result = await shikiSource.getReviewsAndRatings(_currentTitle);
+      final result = await shikiSource
+          .getReviewsAndRatings(_currentTitle)
+          .timeout(const Duration(seconds: 4));
+      AnimeDetailsCache.putReviews(
+        id: _currentTitle.id,
+        fallbackTitle: _currentTitle,
+        reviews: result.reviews,
+        aggregate: result.aggregate,
+        portalScores: result.portalScores,
+        relatedReleases: result.relatedReleases,
+        videos: result.videos,
+        userStats: result.userStats,
+        scoreDistribution: result.scoreDistribution,
+      );
       if (mounted) {
         setState(() {
           _reviews = result.reviews;
@@ -424,17 +591,18 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     );
   }
 
-  Future<void> _loadFullDetails() async {
-    setState(() => _isLoadingDetails = true);
-    try {
-      final releaseId = _currentTitle.id;
-      final titleRu = _currentTitle.russianTitle;
-      final titleEn = _currentTitle.englishTitle;
-      final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
+  Future<void> _loadFullDetails({bool silent = false}) async {
+    if (!silent && _currentTitle.episodes.length <= 1) {
+      setState(() => _isLoadingDetails = true);
+    }
+    final releaseId = _currentTitle.id;
+    final titleRu = _currentTitle.russianTitle;
+    final titleEn = _currentTitle.englishTitle;
+    final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
 
-      // Получаем видеопотоки напрямую через AniLiberty API
-      final List<EpisodeItem> directEpisodes = [];
-      if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
+    // 1. Независимая быстрая загрузка серий/потоков AniLibria (не ждёт метаданные)
+    if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
+      unawaited(Future<void>(() async {
         try {
           final translations = await getIt<GetPlayerLinksUseCase>().call(
             releaseId,
@@ -443,27 +611,74 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           if (translations.isNotEmpty) {
             final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
             if (direct.isNotEmpty) {
-              directEpisodes.addAll(direct.first.episodes.map((e) => e.toEpisodeItem()));
+              final eps = direct.first.episodes.map((e) => e.toEpisodeItem()).toList();
+              if (eps.isNotEmpty) {
+                final updated = _currentTitle.copyWith(
+                  episodes: eps,
+                  episodesTotal: eps.length,
+                );
+                AnimeDetailsCache.putTitle(updated);
+                if (mounted) {
+                  setState(() {
+                    _currentTitle = updated;
+                    _isLoadingDetails = false;
+                  });
+                }
+                return;
+              }
             }
           }
         } catch (_) {}
-      }
+        if (mounted && _isLoadingDetails) {
+          setState(() => _isLoadingDetails = false);
+        }
+      }));
+    }
 
-      if (mounted) {
-        setState(() {
-          _isLoadingDetails = false;
-          if (directEpisodes.isNotEmpty) {
-            _currentTitle = _currentTitle.copyWith(
-              episodes: directEpisodes,
-              episodesTotal: directEpisodes.length,
-            );
+    // 2. Независимая подгрузка метаданных/запасного списка серий (не блокирует AniLibria)
+    final needsMetadata = _currentTitle.description.isEmpty ||
+        _currentTitle.genres.isEmpty ||
+        _currentTitle.episodes.length <= 1;
+    if (needsMetadata && getIt.isRegistered<CatalogRepository>()) {
+      unawaited(Future<void>(() async {
+        try {
+          final fetchedDetails = await getIt<CatalogRepository>().getTitleDetails(
+            id: releaseId,
+            code: _currentTitle.code,
+          );
+          final resolvedEpisodes = _currentTitle.episodes.length > 1
+              ? _currentTitle.episodes
+              : (fetchedDetails.episodes.isNotEmpty
+                  ? fetchedDetails.episodes
+                  : _currentTitle.episodes);
+          final updatedTitle = _currentTitle.copyWith(
+            episodes: resolvedEpisodes,
+            episodesTotal: resolvedEpisodes.isNotEmpty
+                ? resolvedEpisodes.length
+                : (_currentTitle.episodesTotal ?? fetchedDetails.episodesTotal),
+            description: _currentTitle.description.isNotEmpty
+                ? _currentTitle.description
+                : fetchedDetails.description,
+            genres: _currentTitle.genres.isNotEmpty
+                ? _currentTitle.genres
+                : fetchedDetails.genres,
+            year: _currentTitle.year ?? fetchedDetails.year,
+          );
+          AnimeDetailsCache.putTitle(updatedTitle);
+          if (mounted) {
+            setState(() {
+              _isLoadingDetails = false;
+              _currentTitle = updatedTitle;
+            });
           }
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _isLoadingDetails = false);
-      }
+        } catch (_) {
+          if (mounted && _isLoadingDetails) {
+            setState(() => _isLoadingDetails = false);
+          }
+        }
+      }));
+    } else if (!getIt.isRegistered<GetPlayerLinksUseCase>() && mounted && _isLoadingDetails) {
+      setState(() => _isLoadingDetails = false);
     }
   }
 
@@ -781,67 +996,93 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       width: width,
       height: height,
       child: ElevatedButton(
-        onPressed: _isLoadingDetails
-            ? null
-            : (currentEpisode != null
-                ? () => _requestPlayEpisode(currentEpisode)
-                : () => _loadFullDetails()),
+        onPressed: () {
+          if (currentEpisode != null) {
+            _requestPlayEpisode(currentEpisode);
+          } else {
+            _requestPlayEpisode(const EpisodeItem(episode: 1));
+          }
+        },
         style: ElevatedButton.styleFrom(
-          backgroundColor: currentEpisode != null
-              ? themePrimary
-              : AppColors.surfaceElevated,
-          foregroundColor: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
-          elevation: currentEpisode != null ? 3 : 0,
+          backgroundColor: themePrimary,
+          foregroundColor: onThemePrimary,
+          elevation: 3,
           shadowColor: themePrimary.withValues(alpha: 0.35),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            side: BorderSide(
-              color: currentEpisode != null
-                  ? themePrimary
-                  : AppColors.strokeMedium,
-            ),
+            side: BorderSide(color: themePrimary),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16),
         ),
-        child: _isLoadingDetails
-            ? SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: onThemePrimary,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.play_arrow_rounded,
+              size: 24,
+              color: onThemePrimary,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  currentEpisode != null && currentEpisode.episode > 1
+                      ? 'Серия ${currentEpisode.episode} • Смотреть'
+                      : 'Смотреть',
+                  maxLines: 1,
+                  style: AppTypography.labelLarge.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                    color: onThemePrimary,
+                  ),
                 ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    currentEpisode != null ? Icons.play_arrow_rounded : Icons.search_rounded,
-                    size: 24,
-                    color: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        currentEpisode != null && currentEpisode.episode > 1
-                            ? 'Серия ${currentEpisode.episode} • Смотреть'
-                            : (currentEpisode != null ? 'Смотреть' : 'Найти в AniLibria'),
-                        maxLines: 1,
-                        style: AppTypography.labelLarge.copyWith(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
-                          color: currentEpisode != null ? onThemePrimary : AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Future<void> _handleWatchTogetherTap(
+    BuildContext context,
+    AnimeTitle title,
+    EpisodeItem? currentEpisode,
+  ) async {
+    final ep = currentEpisode ?? const EpisodeItem(episode: 1, name: 'Серия 1');
+    final roomService = ActiveRoomService.instance;
+
+    if (roomService.hasActiveRoom) {
+      await roomService.switchAnimeInActiveRoom(title, episode: ep);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '📺 В комнате ${roomService.formattedRoomCode} включено «${title.displayTitle}»!',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      roomService.expandRoom();
+      return;
+    }
+
+    widget.onStartSyncRoom?.call(title, ep);
+    SyncRoomConfigSheet.show(
+      context,
+      title: title,
+      episode: ep,
+      onConfirm: ({
+        required int maxPeers,
+        required bool isHostControlOnly,
+        required PlayerQuality quality,
+        required String roomCode,
+      }) {},
     );
   }
 
@@ -852,121 +1093,106 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     String backdropUrl, {
     bool isDesktop = false,
   }) {
-    if (isDesktop) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildDesktopActionButton(
-            icon: Icons.group_outlined,
-            label: 'Вместе',
-            onTap: currentEpisode != null
-                ? () {
-                    widget.onStartSyncRoom?.call(title, currentEpisode);
-                    SyncRoomConfigSheet.show(
-                      context,
-                      title: title,
-                      episode: currentEpisode,
-                      onConfirm: ({
-                        required int maxPeers,
-                        required bool isHostControlOnly,
-                        required PlayerQuality quality,
-                        required String roomCode,
-                      }) {},
+    return ListenableBuilder(
+      listenable: ActiveRoomService.instance,
+      builder: (context, _) {
+        final hasActiveRoom = ActiveRoomService.instance.hasActiveRoom;
+        final watchTogetherLabel = hasActiveRoom
+            ? 'В комнату ${ActiveRoomService.instance.formattedRoomCode}'
+            : 'Вместе';
+        final watchTogetherIcon = hasActiveRoom
+            ? Icons.swap_horiz_rounded
+            : Icons.group_outlined;
+
+        if (isDesktop) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDesktopActionButton(
+                icon: watchTogetherIcon,
+                iconColor: hasActiveRoom ? AppColors.syncActive : AppColors.textPrimary,
+                label: watchTogetherLabel,
+                onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
+              ),
+              const SizedBox(width: 10),
+              _buildDesktopActionButton(
+                icon: Icons.movie_outlined,
+                label: 'Трейлеры',
+                onTap: () {
+                  context.pushNamed('anime-videos', extra: {
+                    'title': _currentTitle.displayTitle,
+                    'backdrop': backdropUrl,
+                    'videos': _videos,
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              if (getIt.isRegistered<AnimeListCubit>())
+                BlocBuilder<AnimeListCubit, AnimeListState>(
+                  bloc: getIt<AnimeListCubit>(),
+                  builder: (context, listState) {
+                    final entry = listState.getEntryFor(title.id);
+                    final isInList = entry != null;
+                    return _buildDesktopActionButton(
+                      icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
+                      label: isInList ? entry.status.labelRu : 'В закладки',
+                      onTap: () => _showAnimeStatusSheet(context, title, entry),
                     );
-                  }
-                : null,
-          ),
-          const SizedBox(width: 10),
-          _buildDesktopActionButton(
-            icon: Icons.movie_outlined,
-            label: 'Трейлеры',
-            onTap: () {
-              context.pushNamed('anime-videos', extra: {
-                'title': _currentTitle.displayTitle,
-                'backdrop': backdropUrl,
-                'videos': _videos,
-              });
-            },
-          ),
-          const SizedBox(width: 10),
-          if (getIt.isRegistered<AnimeListCubit>())
-            BlocBuilder<AnimeListCubit, AnimeListState>(
-              bloc: getIt<AnimeListCubit>(),
-              builder: (context, listState) {
-                final entry = listState.getEntryFor(title.id);
-                final isInList = entry != null;
-                return _buildDesktopActionButton(
-                  icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                  iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
-                  label: isInList ? entry.status.labelRu : 'В закладки',
-                  onTap: () => _showAnimeStatusSheet(context, title, entry),
-                );
+                  },
+                ),
+              const SizedBox(width: 10),
+              _buildDesktopActionButton(
+                icon: Icons.cloud_download_outlined,
+                label: 'Скачать',
+                onTap: () => _openTorrentsSheet(context),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildSecondaryActionButton(
+              icon: watchTogetherIcon,
+              iconColor: hasActiveRoom ? AppColors.syncActive : AppColors.textPrimary,
+              label: hasActiveRoom ? 'В комнату' : 'Вместе',
+              onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
+            ),
+            _buildSecondaryActionButton(
+              icon: Icons.movie_outlined,
+              label: 'Трейлеры',
+              onTap: () {
+                context.pushNamed('anime-videos', extra: {
+                  'title': _currentTitle.displayTitle,
+                  'backdrop': backdropUrl,
+                  'videos': _videos,
+                });
               },
             ),
-          const SizedBox(width: 10),
-          _buildDesktopActionButton(
-            icon: Icons.cloud_download_outlined,
-            label: 'Скачать',
-            onTap: () => _openTorrentsSheet(context),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildSecondaryActionButton(
-          icon: Icons.group_outlined,
-          label: 'Вместе',
-          onTap: currentEpisode != null
-              ? () {
-                  widget.onStartSyncRoom?.call(title, currentEpisode);
-                  SyncRoomConfigSheet.show(
-                    context,
-                    title: title,
-                    episode: currentEpisode,
-                    onConfirm: ({
-                      required int maxPeers,
-                      required bool isHostControlOnly,
-                      required PlayerQuality quality,
-                      required String roomCode,
-                    }) {},
+            if (getIt.isRegistered<AnimeListCubit>())
+              BlocBuilder<AnimeListCubit, AnimeListState>(
+                bloc: getIt<AnimeListCubit>(),
+                builder: (context, listState) {
+                  final entry = listState.getEntryFor(title.id);
+                  final isInList = entry != null;
+                  return _buildSecondaryActionButton(
+                    icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
+                    label: isInList ? entry.status.labelRu : 'В закладки',
+                    onTap: () => _showAnimeStatusSheet(context, title, entry),
                   );
-                }
-              : null,
-        ),
-        _buildSecondaryActionButton(
-          icon: Icons.movie_outlined,
-          label: 'Трейлеры',
-          onTap: () {
-            context.pushNamed('anime-videos', extra: {
-              'title': _currentTitle.displayTitle,
-              'backdrop': backdropUrl,
-              'videos': _videos,
-            });
-          },
-        ),
-        if (getIt.isRegistered<AnimeListCubit>())
-          BlocBuilder<AnimeListCubit, AnimeListState>(
-            bloc: getIt<AnimeListCubit>(),
-            builder: (context, listState) {
-              final entry = listState.getEntryFor(title.id);
-              final isInList = entry != null;
-              return _buildSecondaryActionButton(
-                icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
-                label: isInList ? entry.status.labelRu : 'В закладки',
-                onTap: () => _showAnimeStatusSheet(context, title, entry),
-              );
-            },
-          ),
-        _buildSecondaryActionButton(
-          icon: Icons.cloud_download_outlined,
-          label: 'Скачать',
-          onTap: () => _openTorrentsSheet(context),
-        ),
-      ],
+                },
+              ),
+            _buildSecondaryActionButton(
+              icon: Icons.cloud_download_outlined,
+              label: 'Скачать',
+              onTap: () => _openTorrentsSheet(context),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1647,7 +1873,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       backgroundColor: AppColors.background,
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
+          constraints: const BoxConstraints(maxWidth: 1440),
           child: Stack(
             children: [
               CustomScrollView(
@@ -2248,23 +2474,42 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (_isLoadingDetails) ...[
-                              SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: AppColors.primary,
+                        if (_isLoadingDetails) ...[
+                          Column(
+                            children: List.generate(
+                              4,
+                              (i) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Container(
+                                  height: 86,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.02),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      ShimmerPlaceholder(width: 120, height: 70, borderRadius: BorderRadius.circular(8)),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            ShimmerPlaceholder(width: 96, height: 14, borderRadius: BorderRadius.circular(6)),
+                                            const SizedBox(height: 8),
+                                            ShimmerPlaceholder(width: 160, height: 11, borderRadius: BorderRadius.circular(6)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Загрузка серий и плеера...',
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ] else ...[
+                            ),
+                          ),
+                        ] else ...[
                               Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
@@ -2530,6 +2775,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 ),
               ),
             ),
+          ),
+
+          // 8. Плавающий мини-док активной свернутой комнаты совместного просмотра
+          const Positioned.fill(
+            child: FloatingRoomOverlay(mobileBottomInset: 24),
           ),
         ],
       ),

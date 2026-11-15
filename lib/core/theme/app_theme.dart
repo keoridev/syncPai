@@ -144,33 +144,22 @@ abstract final class AppTheme {
         ),
       ),
 
-      // Input Decoration (Поле поиска, поля ввода кода)
+      // Input Decoration (Глобально без двойных внутренних рамок и фоновой заливки)
       inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: surfElevated,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppDimensions.spacingLg,
-          vertical: AppDimensions.spacingMd,
-        ),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        filled: false,
+        isDense: true,
+        hoverColor: Colors.transparent,
+        focusColor: Colors.transparent,
+        contentPadding: EdgeInsets.zero,
         hintStyle: AppTypography.bodyMedium.copyWith(color: AppColors.textMuted),
         prefixIconColor: AppColors.textSecondary,
         suffixIconColor: AppColors.textSecondary,
-        border: OutlineInputBorder(
-          borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: const BorderSide(color: AppColors.stroke, width: 1.0),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: AppDimensions.borderRadiusMedium,
-          borderSide: const BorderSide(color: AppColors.syncError, width: 1.0),
-        ),
       ),
 
       // Text Selection Theme (нейтральный серый/белый курсор и выделение)

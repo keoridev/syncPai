@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../../../core/utils/qr_payload_router.dart';
 import '../../services/friends_service.dart';
 
 /// Адаптивный сканер QR-кодов SyncPai для добавления друзей
@@ -89,8 +91,13 @@ class _QrScannerSheetState extends State<QrScannerSheet> with WidgetsBindingObse
 
   void _handleDetectedRaw(String raw) {
     if (_isProcessing) return;
-    final cleanCode = FriendsService.extractInviteCode(raw);
-    if (cleanCode.isEmpty) {
+    final parsed = QrPayloadRouter.parse(raw);
+    final cleanId = parsed.isValid
+        ? parsed.cleanCode
+        : FriendsService.extractInviteCode(raw);
+    debugPrint('[QR] Scanned raw: $raw -> clean: $cleanId');
+
+    if (cleanId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('В QR-коде не найдено корректное приглашение SyncPai'),
@@ -104,7 +111,7 @@ class _QrScannerSheetState extends State<QrScannerSheet> with WidgetsBindingObse
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
-    widget.onCodeDetected(cleanCode);
+    widget.onCodeDetected(cleanId);
   }
 
   Future<void> _pickImageFromGallery() async {
@@ -361,50 +368,86 @@ class _QrScannerSheetState extends State<QrScannerSheet> with WidgetsBindingObse
     );
   }
 
+  Future<void> _pasteFromClipboard() async {
+    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = clip?.text?.trim() ?? '';
+    if (text.isNotEmpty) {
+      _manualInputController.text = text;
+      _handleDetectedRaw(text);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Буфер обмена пуст'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildDesktopFallback(Color accent, ColorScheme scheme, bool isDark) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: accent.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.qr_code_2_rounded, color: accent, size: 54),
+              child: Icon(Icons.qr_code_2_rounded, color: accent, size: 48),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text(
-              'Сканирование на Desktop',
+              'Добавление через QR / Код',
               style: TextStyle(
                 color: scheme.onSurface,
                 fontWeight: FontWeight.w800,
                 fontSize: 18,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
-              'Выберите изображение с QR-кодом или вставьте инвайт-ссылку / персональный код в поле ниже.',
+              'Выберите изображение с QR-кодом или вставьте инвайт-ссылку из буфера обмена.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: scheme.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.4,
+                fontSize: 12.5,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 24),
-            OutlinedButton.icon(
-              onPressed: _pickImageFromGallery,
-              icon: const Icon(Icons.image_search_rounded, size: 18),
-              label: const Text('Выбрать картинку с диска'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: scheme.onSurface,
-                side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _pickImageFromGallery,
+                icon: const Icon(Icons.image_search_rounded, size: 18),
+                label: const Text('Выбрать скриншот QR с диска'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: scheme.onSurface,
+                  side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _pasteFromClipboard,
+                icon: const Icon(Icons.content_paste_rounded, size: 18),
+                label: const Text('Вставить ссылку или код из буфера'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: scheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
           ],

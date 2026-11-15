@@ -64,35 +64,9 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
             for (final item in response) {
               if (item is! Map) continue;
               final row = item.cast<String, dynamic>();
-              final id = 'sync_${row['id']}';
-              seenIds.add(id);
-
-              final profileMap = row['profiles'] is Map ? (row['profiles'] as Map) : null;
-              final authorName = profileMap?['username'] as String? ??
-                  row['user_name'] as String? ??
-                  'Зритель SyncPai';
-              final authorAvatarUrl = profileMap?['avatar_url'] as String? ??
-                  row['user_avatar'] as String?;
-
-              final parsedScore = row['score'] != null ? (row['score'] as num).toDouble() : null;
-              final createdAt = row['created_at'] != null
-                  ? DateTime.tryParse('${row['created_at']}') ?? DateTime.now()
-                  : DateTime.now();
-
-              list.add(
-                AnimeReview(
-                  id: id,
-                  source: ReviewSource.syncpai,
-                  authorName: authorName,
-                  authorAvatarUrl: authorAvatarUrl,
-                  score: parsedScore,
-                  sentiment: ReviewSentiment.fromScore(parsedScore),
-                  content: row['content'] as String? ?? '',
-                  containsSpoiler: row['contains_spoiler'] as bool? ?? false,
-                  createdAt: createdAt,
-                  likes: row['likes'] as int? ?? 1,
-                ),
-              );
+              final review = fromSupabaseRow(row);
+              seenIds.add(review.id);
+              list.add(review);
             }
           }
         }
@@ -176,14 +150,33 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
           final intScore = score.round().clamp(1, 10);
           final trimmedContent = content.trim();
           if (trimmedContent.length >= 3) {
-            await client.from('anime_reviews').upsert({
-              'user_id': effectiveUserId,
-              'anime_id': parsedAnimeId,
-              'score': intScore,
-              'content': trimmedContent,
-              'contains_spoiler': containsSpoiler,
-              'created_at': now.toUtc().toIso8601String(),
-            });
+            final row = toSupabaseRow(
+              animeId: parsedAnimeId,
+              userId: effectiveUserId,
+              authorName: userName,
+              authorAvatar: userAvatar,
+              rating: intScore,
+              comment: trimmedContent,
+              likesCount: 1,
+              createdAt: now,
+            );
+            try {
+              await client.from('anime_reviews').upsert(row);
+            } on PostgrestException catch (e) {
+              if (e.code == 'PGRST204') {
+                // Fallback для legacy-схемы (score/content/contains_spoiler)
+                await client.from('anime_reviews').upsert({
+                  'user_id': effectiveUserId,
+                  'anime_id': parsedAnimeId,
+                  'score': intScore,
+                  'content': trimmedContent,
+                  'contains_spoiler': containsSpoiler,
+                  'created_at': now.toUtc().toIso8601String(),
+                });
+              } else {
+                rethrow;
+              }
+            }
           }
         }
       } catch (e) {
@@ -192,5 +185,63 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
     }
 
     return review;
+  }
+
+  static Map<String, dynamic> toSupabaseRow({
+    required int animeId,
+    required String userId,
+    required String authorName,
+    String? authorAvatar,
+    required int rating,
+    required String comment,
+    int likesCount = 1,
+    required DateTime createdAt,
+  }) {
+    return {
+      'anime_id': animeId,
+      'user_id': userId,
+      'author_name': authorName,
+      'author_avatar': authorAvatar,
+      'rating': rating,
+      'comment': comment,
+      'likes_count': likesCount,
+      'created_at': createdAt.toUtc().toIso8601String(),
+    };
+  }
+
+  static AnimeReview fromSupabaseRow(Map<String, dynamic> row) {
+    final id = 'sync_${row['id']}';
+    final profileMap = row['profiles'] is Map ? (row['profiles'] as Map) : null;
+    final authorName = (row['author_name'] as String?) ??
+        (profileMap?['username'] as String?) ??
+        (row['user_name'] as String?) ??
+        'Зритель SyncPai';
+    final authorAvatarUrl = (row['author_avatar'] as String?) ??
+        (profileMap?['avatar_url'] as String?) ??
+        (row['user_avatar'] as String?);
+
+    final rawRating = row['rating'] ?? row['score'];
+    final parsedScore = rawRating is num
+        ? rawRating.toDouble()
+        : double.tryParse('${rawRating ?? ''}');
+    final comment = (row['comment'] as String?) ?? (row['content'] as String?) ?? '';
+    final likesRaw = row['likes_count'] ?? row['likes'];
+    final likesCount = likesRaw is num ? likesRaw.toInt() : 1;
+    final createdAt = row['created_at'] != null
+        ? DateTime.tryParse('${row['created_at']}') ?? DateTime.now()
+        : DateTime.now();
+
+    return AnimeReview(
+      id: id,
+      source: ReviewSource.syncpai,
+      authorName: authorName,
+      authorAvatarUrl: authorAvatarUrl,
+      score: parsedScore,
+      sentiment: ReviewSentiment.fromScore(parsedScore),
+      content: comment,
+      containsSpoiler: row['contains_spoiler'] as bool? ?? false,
+      createdAt: createdAt,
+      likes: likesCount,
+    );
   }
 }

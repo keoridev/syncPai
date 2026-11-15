@@ -167,17 +167,32 @@ class UserAnimeEntry extends Equatable {
       };
 
   factory UserAnimeEntry.fromJson(Map<String, dynamic> json) {
+    final rawAnimeId = json['anime_id'];
+    final parsedAnimeId = rawAnimeId is num
+        ? rawAnimeId.toInt()
+        : int.tryParse('${rawAnimeId ?? 0}') ?? 0;
+    final rawTitle = (json['anime_title'] as String?) ??
+        (json['title_ru'] as String?) ??
+        '';
+    final rawCategory = (json['category'] as String?) ??
+        (json['status'] as String?);
+    final rawEpisodes = json['episodes_watched'] ?? json['last_episode'];
+    final parsedEpisodes = rawEpisodes is num
+        ? rawEpisodes.toInt()
+        : int.tryParse('${rawEpisodes ?? 1}') ?? 1;
+
     return UserAnimeEntry(
-      id: json['id'] as String? ?? '',
-      userId: json['user_id'] as String? ?? '',
-      animeId: json['anime_id'] as int? ?? 0,
-      titleRu: json['title_ru'] as String? ?? '',
+      id: json['id']?.toString() ?? '$parsedAnimeId',
+      userId: json['user_id']?.toString() ?? '',
+      animeId: parsedAnimeId,
+      titleRu: rawTitle,
       posterUrl: json['poster_url'] as String?,
-      status: AnimeListStatus.fromString(json['status'] as String?),
-      lastEpisode: json['last_episode'] as int? ?? 1,
+      status: AnimeListStatus.fromString(rawCategory),
+      lastEpisode: parsedEpisodes,
       positionMs: (json['position_ms'] as num?)?.toInt() ?? 0,
-      episodesTotal: json['episodes_total'] as int?,
-      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
+      episodesTotal: ((json['total_episodes'] ?? json['episodes_total']) as num?)?.toInt(),
+      updatedAt:
+          DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
 

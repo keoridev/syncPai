@@ -44,12 +44,17 @@ abstract class SyncRoomRepository {
     required String sender,
   });
 
-  /// CONTROL_ACTION: хост нажал Play / Pause / Seek
+  /// CONTROL_ACTION: участник нажал Play / Pause / Seek / Rate
   Future<void> sendControlAction({
     required String roomCode,
     required String action,
     required int positionMs,
     required String sender,
+    bool? isPlaying,
+    int? episode,
+    String? animeId,
+    double? playbackRate,
+    String? updatedBy,
   });
 
   /// Отправка быстрого Broadcast-события синхронизации плеера по WebSockets (sync_player)
@@ -65,6 +70,9 @@ abstract class SyncRoomRepository {
     required double time,
     required bool isPlaying,
     required int episode,
+    String? animeId,
+    double? playbackRate,
+    String? updatedBy,
   }) async {
     await sendSyncEvent(roomCode: roomCode, time: time, isPlaying: isPlaying);
   }
@@ -82,19 +90,24 @@ abstract class SyncRoomRepository {
     required String sender,
   });
 
-  /// REACTION: отправка летящих эмодзи
+  /// REACTION / PAI_STICKER_REACTION: отправка летящих стикеров Пай-чан
   Future<void> sendReaction({
     required String roomCode,
     required String emoji,
     required String sender,
+    String? stickerId,
+    String? senderId,
+    String? reactionId,
   });
 
-  /// CHAT_MESSAGE: отправка сообщения в Twitch-чат
+  /// CHAT_MESSAGE: отправка сообщения в комнату (Realtime Broadcast + public.room_messages)
   Future<void> sendChatMessage({
     required String roomCode,
     required String text,
     required String sender,
     bool isHost = false,
+    String? messageId,
+    String? userId,
   });
 
   /// История чата комнаты из таблицы `public.room_messages` (последние [limit] сообщений,
@@ -114,6 +127,14 @@ abstract class SyncRoomRepository {
     required String quality,
     required String sender,
   });
+
+  /// CHANGE_ANIME: смена аниме-тайтла внутри активной комнаты без пересоздания комнаты
+  Future<SyncRoom?> changeRoomAnime({
+    required String roomCode,
+    required AnimeTitle title,
+    EpisodeItem? episode,
+    String sender = 'Хост',
+  }) async => null;
 
   /// QUICK_PHRASE: отправка шортката быстрой фразы (с авто-показом плашки на 3 секунды)
   Future<void> sendQuickPhrase({
@@ -142,5 +163,5 @@ abstract class SyncRoomRepository {
   Future<void> leaveRoom(String roomCode);
 
   /// Симуляция подключения друга (для быстрого тестирования)
-  void simulatePeerJoin(String roomCode, {String peerName = 'Сенпай'});
+  void simulatePeerJoin(String roomCode, {String peerName = 'Ren'});
 }

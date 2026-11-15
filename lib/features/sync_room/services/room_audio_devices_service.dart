@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,7 +44,22 @@ class RoomAudioDevicesService extends ChangeNotifier {
   static final RoomAudioDevicesService instance = RoomAudioDevicesService._();
 
   RoomAudioDevicesService._() {
-    _loadSavedPreferences();
+    Future.microtask(_loadSavedPreferences);
+  }
+
+  @override
+  void notifyListeners() {
+    final binding = SchedulerBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks ||
+        binding.schedulerPhase == SchedulerPhase.midFrameMicrotasks) {
+      binding.addPostFrameCallback((_) {
+        if (hasListeners) {
+          super.notifyListeners();
+        }
+      });
+      return;
+    }
+    super.notifyListeners();
   }
 
   static const String _prefInputIdKey = 'sync_room_audio_input_id';

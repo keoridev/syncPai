@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,6 +13,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/player_navigation_guard.dart';
+import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/tv_focusable.dart';
@@ -22,6 +25,7 @@ import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
+import '../../../catalog/presentation/widgets/anime_poster_card.dart';
 import '../../../downloads/domain/entities/download_task.dart';
 import '../../../downloads/presentation/cubit/download_cubit.dart';
 import '../../../downloads/presentation/cubit/download_state.dart';
@@ -62,7 +66,7 @@ enum SavedAnimeSort {
 class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  SavedAnimeViewMode _viewMode = SavedAnimeViewMode.list;
+  SavedAnimeViewMode _viewMode = SavedAnimeViewMode.grid;
   int _gridColumns = 3;
   bool _isHistoryTab = false;
   SavedAnimeSort _sortBy = SavedAnimeSort.dateAdded;
@@ -97,7 +101,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       if (modeStr != null) {
         _viewMode = SavedAnimeViewMode.values.firstWhere(
           (m) => m.name == modeStr,
-          orElse: () => SavedAnimeViewMode.list,
+          orElse: () => SavedAnimeViewMode.grid,
         );
       }
       _gridColumns = prefs.getInt('grid_columns_count') ??
@@ -266,6 +270,29 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         }
       } catch (_) {}
     });
+  }
+
+  AnimeTitle _toUnifiedAnimeTitle(UserAnimeEntry entry) {
+    final posterUrl = _resolvePosterUrl(entry);
+    final hasValidUrl = posterUrl.isNotEmpty &&
+        !posterUrl.contains('placeholder') &&
+        posterUrl.startsWith('http');
+    if (!hasValidUrl) {
+      _triggerPosterFetch(entry);
+    }
+    return AnimeTitle(
+      id: entry.animeId,
+      code: 'saved_${entry.animeId}',
+      russianTitle: entry.cleanTitleRu.isNotEmpty ? entry.cleanTitleRu : entry.titleRu,
+      englishTitle: '',
+      posterMedium: hasValidUrl ? posterUrl : '',
+      posterOriginal: hasValidUrl ? posterUrl : '',
+      posterSmall: hasValidUrl ? posterUrl : '',
+      genres: const [],
+      description: '',
+      status: entry.status.labelRu,
+      latestEpisode: entry.episodesTotal ?? (entry.lastEpisode > 0 ? entry.lastEpisode : null),
+    );
   }
 
   /// Виджет постера: ShimmerPlaceholder вместо сломанных иконок документов
@@ -841,6 +868,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
             break;
         }
 
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+        final bool isDesktop = isDesktopOS || screenWidth >= 900;
+
         return PopScope(
           canPop: !_isSelectionMode,
           onPopInvokedWithResult: (didPop, _) {
@@ -854,10 +885,18 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                 ? _buildBatchEditBar(context, entries)
                 : null,
             body: SafeArea(
+              top: !isDesktopOS,
               bottom: false,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
+              left: !isDesktopOS,
+              right: !isDesktopOS,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktop ? 1440 : double.infinity,
+                  ),
+                  child: CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
                   // ЗАГОЛОВОК: «Мои списки & Закладки»
                   SliverToBoxAdapter(
                     child: Padding(
@@ -1182,69 +1221,18 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                       },
                     ),
 
-                  // СТРОКА ПОИСКА ПО ЗАКЛАДКАМ В СТИЛЕ ЖИДКОГО СТЕКЛА И КНОПКА СОРТИРОВКИ
+                  // СТРОКА ПОИСКА ПО ЗАКЛАДКАМ (Единый стиль с Каталогом: 46px, r=14, AppSearchBar) И КНОПКА СОРТИРОВКИ
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
                       child: Row(
                         children: [
                           Expanded(
-                            child: Container(
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A24),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                  width: 1.0,
-                                ),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.search_rounded,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _searchController,
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 13.5,
-                                      ),
-                                      decoration: const InputDecoration(
-                                        hintText: 'Поиск по сохраненным тайтлам...',
-                                        hintStyle: TextStyle(
-                                          color: AppColors.textMuted,
-                                          fontSize: 13,
-                                        ),
-                                        border: InputBorder.none,
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
-                                    ),
-                                  ),
-                                  if (_searchQuery.isNotEmpty)
-                                    GestureDetector(
-                                      onTap: () {
-                                        _searchController.clear();
-                                        setState(() => _searchQuery = '');
-                                      },
-                                      child: const Padding(
-                                        padding: EdgeInsets.all(4),
-                                        child: Icon(
-                                          Icons.clear_rounded,
-                                          color: AppColors.textMuted,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                            child: AppSearchBar(
+                              controller: _searchController,
+                              hintText: 'Поиск по сохраненным тайтлам...',
+                              onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                              onClear: () => setState(() => _searchQuery = ''),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1390,21 +1378,26 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     SliverPadding(
                       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
                       sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: _gridColumns,
-                          childAspectRatio: _gridColumns == 1
-                              ? 2.8
-                              : (_gridColumns == 2
-                                  ? 0.55
-                                  : (_gridColumns == 3 ? 0.50 : 0.48)),
-                          crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
-                          mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
-                        ),
+                        gridDelegate: isDesktop
+                            ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 215,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 0.62,
+                              )
+                            : SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: _gridColumns,
+                                childAspectRatio: _gridColumns == 1
+                                    ? 2.8
+                                    : (_gridColumns >= 3 ? 0.56 : 0.62),
+                                crossAxisSpacing: _gridColumns == 1 ? 0 : 12.0,
+                                mainAxisSpacing: _gridColumns == 1 ? 8 : 12.0,
+                              ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final entry = entries[index];
 
-                            if (_gridColumns == 1) {
+                            if (!isDesktop && _gridColumns == 1) {
                               return InkWell(
                                 onTap: () => _handleItemTap(context, entry),
                                 onLongPress: () => _isSelectionMode
@@ -1504,68 +1497,33 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               );
                             }
 
-                            return InkWell(
+                            final badgeText = entry.episodesTotal != null && entry.episodesTotal! > 0
+                                ? '${entry.lastEpisode} / ${entry.episodesTotal} эп.'
+                                : (entry.lastEpisode > 0
+                                    ? '${entry.lastEpisode} эп.'
+                                    : entry.status.labelRu);
+                            final progressVal = (entry.episodesTotal != null && entry.episodesTotal! > 0)
+                                ? (entry.lastEpisode / entry.episodesTotal!).clamp(0.0, 1.0)
+                                : null;
+
+                            return UnifiedAnimeCard(
+                              title: _toUnifiedAnimeTitle(entry),
                               onTap: () => _handleItemTap(context, entry),
                               onLongPress: () => _isSelectionMode
                                   ? _handleItemTap(context, entry)
                                   : _handleItemLongPress(entry),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Stack(
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            child: _buildPosterImage(
-                                              entry: entry,
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                        ),
-                                        // Бейдж статуса
-                                        if (!_isSelectionMode)
-                                          Positioned(
-                                            top: 6,
-                                            right: 6,
-                                            child: Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withValues(alpha: 0.65),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(color: entry.status.color, width: 1.5),
-                                              ),
-                                              child: Icon(entry.status.icon, size: 10, color: entry.status.color),
-                                            ),
-                                          ),
-                                        // Индикатор выбора в режиме массового управления
-                                        if (_isSelectionMode)
-                                          Positioned(
-                                            top: 6,
-                                            left: 6,
-                                            child: _buildSelectionIndicator(entry.animeId),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    entry.cleanTitleRu,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      height: 1.2,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              watchProgress: progressVal,
+                              statusBadgeText: badgeText,
+                              statusColor: entry.status.color,
+                              statusIcon: entry.status.icon,
+                              subtitleOverride: entry.episodesTotal != null && entry.episodesTotal! > 0
+                                  ? '${entry.status.labelRu} • ${entry.lastEpisode}/${entry.episodesTotal} эп.'
+                                  : (entry.lastEpisode > 0
+                                      ? '${entry.status.labelRu} • Серия ${entry.lastEpisode}'
+                                      : entry.status.labelRu),
+                              isSelectionMode: _isSelectionMode,
+                              isSelected: _selectedAnimeIds.contains(entry.animeId),
+                              heroTagPrefix: 'saved-anime-poster',
                             );
                           },
                           childCount: entries.length,
@@ -1764,7 +1722,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
               ),
             ),
           ),
-        );
+        ),
+      ),
+    );
       },
     );
   },

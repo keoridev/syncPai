@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../services/friends_service.dart';
+import '../../services/pending_invite_storage.dart';
 
 /// Диалог подтверждения добавления в друзья при сканировании QR-кода или переходе по Deep Link
 class FriendInviteConfirmationDialog extends StatefulWidget {
@@ -22,6 +24,16 @@ class FriendInviteConfirmationDialog extends StatefulWidget {
     VoidCallback? onAccepted,
   }) {
     final accent = accentColor ?? Theme.of(context).colorScheme.primary;
+    if (PaiChanAuthGate.isGuest(context)) {
+      PendingInviteStorage.savePendingInvite(inviteCode);
+      return PaiChanAuthGate.show(
+        context,
+        pendingInviteCode: inviteCode,
+        accentColor: accent,
+        customNotice: 'Почти готово! Войди в аккаунт, чтобы добавить этого друга',
+        onAuthenticated: onAccepted,
+      );
+    }
 
     return showDialog(
       context: context,

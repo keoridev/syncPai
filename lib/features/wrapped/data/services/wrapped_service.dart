@@ -264,7 +264,7 @@ class WrappedService {
       topPartnerName = partner['name']?.toString() ?? 'Аниме-напарник';
       topPartnerAvatar = partner['avatar']?.toString();
     } else if (watchParties > 0) {
-      topPartnerName = 'Сенпай';
+      topPartnerName = 'Ren';
     }
 
     // Низкая активность пользователя

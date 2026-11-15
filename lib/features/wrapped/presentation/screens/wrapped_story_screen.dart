@@ -710,7 +710,7 @@ class _WrappedStoryScreenState extends State<WrappedStoryScreen>
 
   // СЛАЙД 8: НАПАРНИК ГОДА
   Widget _buildPartnerSlide(WrappedData data) {
-    final partner = data.topWatchPartnerName ?? 'Сенпай';
+    final partner = data.topWatchPartnerName ?? 'Ren';
     return _buildSlideContainer(
       gradientColors: [const Color(0xFF4C0519), const Color(0xFF140207)],
       child: Column(

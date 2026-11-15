@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,10 +20,12 @@ import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../kodik/presentation/cubit/kodik_cubit.dart';
 import '../../../kodik/presentation/widgets/voiceover_selector_sheet.dart';
 import '../../../sync_room/domain/entities/sync_protocol.dart';
+import '../../../sync_room/presentation/widgets/in_room_anime_picker_sheet.dart';
 import '../../../sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import 'floating_pai_chan_reactions_overlay.dart';
 import 'player_progress_bar.dart';
 import 'player_settings_sheet.dart';
 
@@ -75,7 +78,13 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   // Оверлеи визуальной обратной связи клавиатурных шорткатов
   IconData? _flashIcon;
   String? _flashLabel;
+  bool _isFlashBlue = false;
   Timer? _flashTimer;
+
+  // Умная обработка клавиши Space (Tap < 250ms = Play/Pause, Hold >= 250ms = 2x Speed)
+  DateTime? _spaceKeyDownAt;
+  Timer? _spaceHoldTimer;
+  bool _isSpaceHold2xActive = false;
 
   // Предыдущая громкость для Mute/Unmute
   double _savedVolumeBeforeMute = 100.0;
@@ -85,6 +94,27 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     super.initState();
     _startHideTimer();
     _checkNativeFullScreen();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isDisposed && !_chatInputFocusNode.hasFocus) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant DesktopPlayerLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.state.chatMessages.length > oldWidget.state.chatMessages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isDisposed && _chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+    }
   }
 
   Future<void> _checkNativeFullScreen() async {
@@ -105,6 +135,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     _isDisposed = true;
     _hideControlsTimer?.cancel();
     _flashTimer?.cancel();
+    _spaceHoldTimer?.cancel();
     _focusNode.dispose();
     _chatInputFocusNode.dispose();
     _chatController.dispose();
@@ -121,18 +152,20 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     super.dispose();
   }
 
-  void _triggerFlash({required IconData icon, String? label}) {
+  void _triggerFlash({required IconData icon, String? label, bool isBlue = false}) {
     if (_isDisposed) return;
     _flashTimer?.cancel();
     setState(() {
       _flashIcon = icon;
       _flashLabel = label;
+      _isFlashBlue = isBlue;
     });
     _flashTimer = Timer(const Duration(milliseconds: 550), () {
       if (mounted && !_isDisposed) {
         setState(() {
           _flashIcon = null;
           _flashLabel = null;
+          _isFlashBlue = false;
         });
       }
     });
@@ -232,76 +265,105 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
       return KeyEventResult.ignored;
     }
 
-    if (event is KeyDownEvent) {
-      final key = event.logicalKey;
+    final key = event.logicalKey;
 
-      // Space: Play / Pause
-      if (key == LogicalKeyboardKey.space) {
-        if (widget.state.isSyncRoom && !widget.state.isHost) {
-          widget.cubit.requestPauseFromHost();
-          _triggerFlash(
-            icon: Icons.lock_clock_rounded,
-            label: 'Запрос на паузу отправлен хосту',
-          );
-          return KeyEventResult.handled;
+    // Умная обработка клавиши Space:
+    // Tap (< 250ms) = Play / Pause + Broadcast в комнату
+    // Hold (>= 250ms) = 2x Speed (player.setRate(2.0)) + плашка «2x ⏩ Ускорение», возврат 1.0x при KeyUpEvent
+    if (key == LogicalKeyboardKey.space) {
+      if (event is KeyDownEvent) {
+        if (_spaceKeyDownAt == null) {
+          _spaceKeyDownAt = DateTime.now();
+          _spaceHoldTimer?.cancel();
+          _spaceHoldTimer = Timer(const Duration(milliseconds: 250), () {
+            if (mounted && !_isDisposed && _spaceKeyDownAt != null) {
+              setState(() {
+                _isSpaceHold2xActive = true;
+              });
+              widget.cubit.start2xFastForward();
+            }
+          });
         }
-        widget.cubit.togglePlayPause();
-        _triggerFlash(
-          icon: widget.state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-        );
         return KeyEventResult.handled;
       }
 
-      // Стрелка вправо: +10 сек
+      if (event is KeyRepeatEvent) {
+        if (_spaceKeyDownAt != null && !_isSpaceHold2xActive) {
+          final elapsedMs = DateTime.now().difference(_spaceKeyDownAt!).inMilliseconds;
+          if (elapsedMs >= 250) {
+            _spaceHoldTimer?.cancel();
+            setState(() {
+              _isSpaceHold2xActive = true;
+            });
+            widget.cubit.start2xFastForward();
+          }
+        }
+        return KeyEventResult.handled;
+      }
+
+      if (event is KeyUpEvent) {
+        _spaceHoldTimer?.cancel();
+        _spaceHoldTimer = null;
+        final downAt = _spaceKeyDownAt;
+        _spaceKeyDownAt = null;
+
+        if (_isSpaceHold2xActive || widget.state.is2xFastForwarding) {
+          setState(() {
+            _isSpaceHold2xActive = false;
+          });
+          widget.cubit.stop2xFastForward();
+        } else if (downAt != null) {
+          final willPlay = !widget.state.isPlaying;
+          widget.cubit.togglePlayPause();
+          _triggerFlash(
+            icon: willPlay ? Icons.play_arrow_rounded : Icons.pause_rounded,
+          );
+        }
+        return KeyEventResult.handled;
+      }
+    }
+
+    if (event is KeyDownEvent || event is KeyRepeatEvent) {
+      // Стрелка вправо: +5 сек
       if (key == LogicalKeyboardKey.arrowRight) {
-        if (widget.state.isSyncRoom && !widget.state.isHost) {
-          _triggerFlash(
-            icon: Icons.lock_clock_rounded,
-            label: 'Хост управляет перемоткой',
-          );
-          return KeyEventResult.handled;
-        }
-        widget.cubit.seekRelative(10);
-        _triggerFlash(icon: Icons.forward_10_rounded, label: '+10 сек');
+        widget.cubit.seekRelative(5);
+        _triggerFlash(icon: Icons.forward_5_rounded, label: '+5 сек');
         return KeyEventResult.handled;
       }
 
-      // Стрелка влево: -10 сек
+      // Стрелка влево: -5 сек
       if (key == LogicalKeyboardKey.arrowLeft) {
-        if (widget.state.isSyncRoom && !widget.state.isHost) {
-          _triggerFlash(
-            icon: Icons.lock_clock_rounded,
-            label: 'Хост управляет перемоткой',
-          );
-          return KeyEventResult.handled;
-        }
-        widget.cubit.seekRelative(-10);
-        _triggerFlash(icon: Icons.replay_10_rounded, label: '-10 сек');
+        widget.cubit.seekRelative(-5);
+        _triggerFlash(icon: Icons.replay_5_rounded, label: '-5 сек');
         return KeyEventResult.handled;
       }
 
-      // Стрелка вверх: громкость +5%
+      // Стрелка вверх: громкость +5% (с голубым HUD громкости)
       if (key == LogicalKeyboardKey.arrowUp) {
         final newVol = (widget.state.volume + 5.0).clamp(0.0, 100.0);
         widget.cubit.setVolume(newVol);
         _triggerFlash(
           icon: newVol > 50 ? Icons.volume_up_rounded : Icons.volume_down_rounded,
           label: '${newVol.toInt()}%',
+          isBlue: true,
         );
         return KeyEventResult.handled;
       }
 
-      // Стрелка вниз: громкость -5%
+      // Стрелка вниз: громкость -5% (с голубым HUD громкости)
       if (key == LogicalKeyboardKey.arrowDown) {
         final newVol = (widget.state.volume - 5.0).clamp(0.0, 100.0);
         widget.cubit.setVolume(newVol);
         _triggerFlash(
           icon: newVol == 0 ? Icons.volume_off_rounded : Icons.volume_down_rounded,
           label: '${newVol.toInt()}%',
+          isBlue: true,
         );
         return KeyEventResult.handled;
       }
+    }
 
+    if (event is KeyDownEvent) {
       // KeyF: Полноэкранный режим
       if (key == LogicalKeyboardKey.keyF) {
         _toggleFullScreen();
@@ -458,7 +520,55 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             ],
           ),
         ),
-        if (widget.state.isSyncRoom)
+        if (widget.state.isSyncRoom) ...[
+          OutlinedButton.icon(
+            key: const ValueKey('desktop_player_switch_anime_btn'),
+            onPressed: () {
+              InRoomAnimePickerSheet.show(
+                context,
+                roomCode: widget.state.roomCode,
+                currentTitle: widget.state.title,
+                onAnimeSelected: (newTitle) =>
+                    widget.cubit.switchAnimeInRoom(newTitle),
+              );
+            },
+            icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+            label: const Text(
+              'Сменить аниме',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.16)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('desktop_player_minimize_room_btn'),
+            onPressed: widget.onBack,
+            icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 15),
+            label: const Text(
+              'Свернуть',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryLight,
+              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.4)),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
@@ -482,6 +592,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
               ],
             ),
           ),
+        ],
       ],
     );
   }
@@ -516,33 +627,112 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             ),
           ),
 
-          // 2. Прозрачный слой захвата мыши и жестов поверх нативного окна Video
+          // 2. Прозрачный слой захвата мыши, колесика и контекстного меню поверх нативного окна Video
           Positioned.fill(
-            child: MouseRegion(
-              opaque: true,
-              cursor: _isCursorVisible ? SystemMouseCursors.basic : SystemMouseCursors.none,
-              onHover: (_) => _showControls(),
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  if (widget.state.isSyncRoom && !widget.state.isHost) {
-                    widget.cubit.requestPauseFromHost();
+            child: Listener(
+              onPointerSignal: (pointerSignal) {
+                if (pointerSignal is PointerScrollEvent) {
+                  _showControls();
+                  // Прокрутка колесика мыши: регулировка громкости (шаг 5%)
+                  final delta = pointerSignal.scrollDelta.dy;
+                  if (delta != 0) {
+                    final currentVol = widget.state.volume;
+                    final step = delta < 0 ? 5.0 : -5.0; // Вверх - громче, вниз - тише
+                    final newVol = (currentVol + step).clamp(0.0, 100.0);
+                    widget.cubit.setVolume(newVol);
                     _triggerFlash(
-                      icon: Icons.lock_clock_rounded,
-                      label: 'Запрос на паузу отправлен хосту',
+                      icon: newVol == 0
+                          ? Icons.volume_off_rounded
+                          : (newVol < 50 ? Icons.volume_down_rounded : Icons.volume_up_rounded),
+                      label: '${newVol.toInt()}%',
                     );
-                    return;
                   }
-                  widget.cubit.togglePlayPause();
-                  _triggerFlash(
-                    icon: widget.state.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  );
-                },
-                onDoubleTap: _toggleFullScreen,
-                child: const SizedBox.expand(),
+                }
+              },
+              child: MouseRegion(
+                opaque: true,
+                cursor: _isCursorVisible ? SystemMouseCursors.basic : SystemMouseCursors.none,
+                onHover: (_) => _showControls(),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    if (_chatInputFocusNode.hasFocus) {
+                      _chatInputFocusNode.unfocus();
+                    }
+                    _focusNode.requestFocus();
+                    final willPlay = !widget.state.isPlaying;
+                    widget.cubit.togglePlayPause();
+                    _triggerFlash(
+                      icon: willPlay ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                    );
+                  },
+                  onDoubleTap: () {
+                    if (_chatInputFocusNode.hasFocus) {
+                      _chatInputFocusNode.unfocus();
+                    }
+                    _focusNode.requestFocus();
+                    _toggleFullScreen();
+                  },
+                  onSecondaryTap: () {
+                    // Правый клик мыши — переключение Play / Pause либо показ контролов
+                    if (_chatInputFocusNode.hasFocus) {
+                      _chatInputFocusNode.unfocus();
+                    }
+                    _focusNode.requestFocus();
+                    _showControls();
+                    widget.cubit.togglePlayPause();
+                  },
+                  child: const SizedBox.expand(),
+                ),
               ),
             ),
           ),
+
+          // 2.5. Слой парящих стикер-реакций Пай-чан поверх видео (Windowed + Fullscreen)
+          if (widget.state.isSyncRoom || widget.state.activeReactions.isNotEmpty)
+            FloatingPaiChanReactionsOverlay(
+              reactions: widget.state.activeReactions,
+            ),
+
+          // 2.6. Верхняя центральная HUD-плашка «2x ⏩ Ускорение» при зажатии Space
+          if (_isSpaceHold2xActive || widget.state.is2xFastForwarding)
+            Positioned(
+              top: isFullScreen ? 68 : 16,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: Center(
+                  child: Container(
+                    key: const ValueKey('desktop_hold_space_2x_pill'),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF141824).withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.55),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      '2x ⏩ Ускорение',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // 3. Индикатор буферизации
           if (widget.state.isBuffering && widget.state.errorMessage == null)
@@ -574,9 +764,15 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
+                    color: _isFlashBlue
+                        ? const Color(0xFF0E223D).withValues(alpha: 0.86)
+                        : Colors.black.withValues(alpha: 0.75),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: _isFlashBlue
+                          ? const Color(0xFF38BDF8).withValues(alpha: 0.55)
+                          : Colors.white.withValues(alpha: 0.2),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.5),
@@ -587,7 +783,11 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(_flashIcon, color: Colors.white, size: 44),
+                      Icon(
+                        _flashIcon,
+                        color: _isFlashBlue ? const Color(0xFF38BDF8) : Colors.white,
+                        size: 44,
+                      ),
                       if (_flashLabel != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -1048,40 +1248,42 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   // Кнопка «В закладки»
                   _buildBookmarkButton(title),
 
-                  // Кнопка «Смотреть вместе» с динамическим расчетом контраста текста
-                  Builder(
-                    builder: (context) {
-                      final onAccent = AppColors.onColor(AppColors.primary);
-                      return FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: onAccent,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: Icon(Icons.group_add_rounded, size: 18, color: onAccent),
-                        label: Text(
-                          'Смотреть вместе',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: onAccent,
+                  // Кнопка «Смотреть вместе» (скрывается, когда уже находимся внутри активной комнаты)
+                  if (!widget.state.isSyncRoom)
+                    Builder(
+                      builder: (context) {
+                        final onAccent = AppColors.onColor(AppColors.primary);
+                        return FilledButton.icon(
+                          key: const ValueKey('desktop_watch_together_metadata_btn'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: onAccent,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                        ),
-                        onPressed: () {
-                          SyncRoomLobbySheet.show(
-                            context,
-                            title: title,
-                            episode: ep,
-                            initialQuality: widget.state.selectedQuality,
-                            onStartPlayback: (room, isHost) {
-                              widget.cubit.attachRoomSession(room, isHost: isHost);
-                            },
-                          );
-                        },
-                      );
-                    },
-                  ),
+                          icon: Icon(Icons.group_add_rounded, size: 18, color: onAccent),
+                          label: Text(
+                            'Смотреть вместе',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: onAccent,
+                            ),
+                          ),
+                          onPressed: () {
+                            SyncRoomLobbySheet.show(
+                              context,
+                              title: title,
+                              episode: ep,
+                              initialQuality: widget.state.selectedQuality,
+                              onStartPlayback: (room, isHost) {
+                                widget.cubit.attachRoomSession(room, isHost: isHost);
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                 ],
               ),
             ],
@@ -1398,25 +1600,14 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                 ),
         ),
 
-        // Быстрые реакции
+        // Полоска стикер-реакций Пай-чан (6 эмоций вместо обычных Unicode эмодзи)
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.02),
             border: const Border(top: BorderSide(color: Colors.white10)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['🔥', '😂', '😱', '😭', '❤️'].map((emoji) {
-              return InkWell(
-                onTap: () => widget.cubit.sendReaction(emoji),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: Text(emoji, style: const TextStyle(fontSize: 18)),
-                ),
-              );
-            }).toList(),
+          child: PaiChanStickerReactionBar(
+            onStickerSelected: (sticker) => widget.cubit.sendReaction(sticker.id),
           ),
         ),
 
@@ -1429,24 +1620,48 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _chatController,
-                  focusNode: _chatInputFocusNode,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _sendRoomMessage(),
-                  decoration: InputDecoration(
-                    hintText: 'Написать сообщение... (Enter)',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.06),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                child: ListenableBuilder(
+                  listenable: _chatInputFocusNode,
+                  builder: (context, _) {
+                    final hasFocus = _chatInputFocusNode.hasFocus;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: hasFocus ? 0.08 : 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: hasFocus ? primary : Colors.white.withValues(alpha: 0.12),
+                          width: hasFocus ? 1.4 : 1.0,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _chatController,
+                        focusNode: _chatInputFocusNode,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _sendRoomMessage(),
+                        decoration: InputDecoration(
+                          hintText: 'Написать сообщение... (Enter)',
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          filled: false,
+                          hoverColor: Colors.transparent,
+                          focusColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          focusedErrorBorder: InputBorder.none,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 6),

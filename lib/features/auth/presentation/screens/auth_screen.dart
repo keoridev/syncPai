@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/sync_pai_logo.dart';
 import '../cubit/auth_cubit.dart';
 import '../cubit/auth_state.dart';
+import '../utils/auth_error_formatter.dart';
 
 /// Полноценный кинематографичный экран авторизации (AuthScreen)
 /// в тёмной аниме-эстетике с поддержкой Email/Password, Google Sign-In
@@ -70,8 +71,8 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
           username: username.isNotEmpty ? username : null,
         );
       } else {
-        await cubit.signInWithEmail(
-          email: email,
+        await cubit.signInWithIdentifier(
+          identifier: email,
           password: password,
         );
       }
@@ -83,7 +84,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+          _errorMessage = AuthErrorFormatter.format(e);
         });
       }
     } finally {
@@ -111,7 +112,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Ошибка Google Sign-In: $e';
+          _errorMessage = AuthErrorFormatter.format(e);
         });
       }
     } finally {
@@ -304,26 +305,54 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                       },
                                     ),
 
-                                    // Поле Email
-                                    TextFormField(
-                                      controller: _emailController,
-                                      keyboardType: TextInputType.emailAddress,
-                                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                                      cursorColor: accent,
-                                      decoration: _buildInputDecoration(
-                                        label: 'Email',
-                                        hint: 'you@example.com',
-                                        icon: Icons.alternate_email_rounded,
-                                        accent: accent,
-                                      ),
-                                      validator: (val) {
-                                        if (val == null || val.trim().isEmpty) {
-                                          return 'Введите email';
-                                        }
-                                        if (!val.contains('@') || !val.contains('.')) {
-                                          return 'Некорректный email';
-                                        }
-                                        return null;
+                                    // Поле Email или логин (на Входе) / Email (на Регистрации)
+                                    AnimatedBuilder(
+                                      animation: _tabController,
+                                      builder: (context, _) {
+                                        final isLogin = _tabController.index == 0;
+                                        return TextFormField(
+                                          controller: _emailController,
+                                          keyboardType: isLogin
+                                              ? TextInputType.text
+                                              : TextInputType.emailAddress,
+                                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                                          cursorColor: accent,
+                                          decoration: _buildInputDecoration(
+                                            label: isLogin ? 'Email или логин' : 'Email',
+                                            hint: isLogin
+                                                ? 'sync или name@gmail.com'
+                                                : 'you@example.com',
+                                            icon: isLogin
+                                                ? Icons.person_search_rounded
+                                                : Icons.alternate_email_rounded,
+                                            accent: accent,
+                                          ),
+                                          validator: (val) {
+                                            final trimmed = val?.trim() ?? '';
+                                            if (trimmed.isEmpty) {
+                                              return isLogin
+                                                  ? 'Введите email или логин'
+                                                  : 'Введите email';
+                                            }
+                                            if (isLogin) {
+                                              if (trimmed.contains('@') &&
+                                                  !trimmed.contains('.')) {
+                                                return 'Некорректный email';
+                                              }
+                                              if (!trimmed.contains('@') &&
+                                                  (trimmed.length < 2 ||
+                                                      trimmed.contains(' '))) {
+                                                return 'Логин должен быть без пробелов (мин. 2 символа)';
+                                              }
+                                              return null;
+                                            }
+                                            if (!trimmed.contains('@') ||
+                                                !trimmed.contains('.')) {
+                                              return 'Некорректный email';
+                                            }
+                                            return null;
+                                          },
+                                        );
                                       },
                                     ),
                                     const SizedBox(height: 12),
@@ -565,6 +594,8 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.black.withValues(alpha: 0.25),
+      hoverColor: Colors.transparent,
+      focusColor: Colors.transparent,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

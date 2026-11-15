@@ -20,6 +20,7 @@ import '../widgets/sync_room_lobby_sheet.dart';
 import '../../domain/repositories/sync_room_repository.dart';
 import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../../player/domain/entities/player_quality.dart';
+import '../../../profile/presentation/widgets/friend_invite_dialog.dart';
 import '../../../profile/presentation/widgets/friends_management_sheet.dart';
 import '../../../profile/services/friends_service.dart';
 
@@ -866,68 +867,109 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
                             style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                           ),
                           const SizedBox(height: 14),
-                          TextField(
-                            controller: _pinController,
-                            focusNode: _pinFocusNode,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18,
-                              letterSpacing: 2.0,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'PIN-код комнаты (напр. SP-4821)',
-                              hintStyle: TextStyle(
-                                color: AppColors.textMuted.withValues(alpha: 0.6),
-                                letterSpacing: 0,
-                                fontSize: 13,
-                                fontWeight: FontWeight.normal,
-                              ),
-                              filled: true,
-                              fillColor: AppColors.surface.withValues(alpha: 0.7),
-                              prefixIcon: const Icon(Icons.key_rounded, color: AppColors.textSecondary, size: 20),
-                              suffixIcon: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                                    tooltip: 'Сканировать QR камерой',
-                                    color: AppColors.syncActive,
-                                    onPressed: () {
-                                      QrScannerSheet.show(
-                                        context,
-                                        onCodeScanned: (code) {
-                                          _pinController.text = code;
-                                          _handleJoinRoom();
-                                        },
-                                      );
-                                    },
+                          ListenableBuilder(
+                            listenable: _pinFocusNode,
+                            builder: (context, _) {
+                              final hasFocus = _pinFocusNode.hasFocus;
+                              final scheme = Theme.of(context).colorScheme;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface.withValues(alpha: hasFocus ? 0.85 : 0.7),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: hasFocus
+                                        ? scheme.primary
+                                        : scheme.outlineVariant.withValues(alpha: 0.3),
+                                    width: hasFocus ? 1.4 : 1.0,
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.content_paste_rounded, size: 20),
-                                    tooltip: 'Вставить из буфера',
-                                    color: AppColors.primaryLight,
-                                    onPressed: () async {
-                                      final data = await Clipboard.getData('text/plain');
-                                      if (data?.text != null && data!.text!.isNotEmpty) {
-                                        _pinController.text = data.text!.trim();
-                                      }
-                                    },
+                                ),
+                                alignment: Alignment.center,
+                                child: TextField(
+                                  controller: _pinController,
+                                  focusNode: _pinFocusNode,
+                                  textAlignVertical: TextAlignVertical.center,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                    letterSpacing: 2.0,
                                   ),
-                                  const SizedBox(width: 4),
-                                ],
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: const BorderSide(color: AppColors.strokeMedium),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: const BorderSide(color: Color(0xFF555B6E), width: 1.2),
-                              ),
-                            ),
-                            onSubmitted: (_) => _handleJoinRoom(),
+                                  decoration: InputDecoration(
+                                    hintText: 'PIN-код комнаты (напр. SP-4821)',
+                                    hintStyle: TextStyle(
+                                      color: AppColors.textMuted.withValues(alpha: 0.6),
+                                      letterSpacing: 0,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.normal,
+                                    ),
+                                    filled: false,
+                                    isDense: true,
+                                    hoverColor: Colors.transparent,
+                                    focusColor: Colors.transparent,
+                                    prefixIcon: Icon(
+                                      Icons.key_rounded,
+                                      color: hasFocus ? scheme.primary : AppColors.textSecondary,
+                                      size: 20,
+                                    ),
+                                    suffixIcon: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                                          tooltip: 'Сканировать QR камерой',
+                                          color: AppColors.syncActive,
+                                          onPressed: () {
+                                            QrScannerSheet.show(
+                                              context,
+                                              onCodeScanned: (code) {
+                                                final trimmed = code.trim();
+                                                final isFriendInvite = trimmed.contains('/f/') ||
+                                                    trimmed.contains('/friend/') ||
+                                                    (trimmed.toUpperCase().startsWith('SP-') &&
+                                                        !RegExp(r'^SP-?\d{4,6}$').hasMatch(trimmed.toUpperCase()));
+                                                if (isFriendInvite) {
+                                                  FriendInviteConfirmationDialog.show(
+                                                    context,
+                                                    inviteCode: trimmed,
+                                                    onAccepted: _loadFriends,
+                                                  );
+                                                  return;
+                                                }
+                                                _pinController.text = trimmed;
+                                                _handleJoinRoom();
+                                              },
+                                            );
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.content_paste_rounded, size: 20),
+                                          tooltip: 'Вставить из буфера',
+                                          color: AppColors.primaryLight,
+                                          onPressed: () async {
+                                            final data = await Clipboard.getData('text/plain');
+                                            if (data?.text != null && data!.text!.isNotEmpty) {
+                                              _pinController.text = data.text!.trim();
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    disabledBorder: InputBorder.none,
+                                    errorBorder: InputBorder.none,
+                                    focusedErrorBorder: InputBorder.none,
+                                  ),
+                                  onSubmitted: (_) => _handleJoinRoom(),
+                                ),
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
                           SizedBox(

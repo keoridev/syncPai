@@ -180,6 +180,13 @@ class SteamAvatarFrame {
       animation: SteamFrameAnimation.pulse,
     ),
     SteamAvatarFrame(
+      id: 'frame_ramen_cyan',
+      name: 'Neon Cyan (Рамен 🍜)',
+      colors: [Color(0xFF22D3EE), Color(0xFF06B6D4), Color(0xFF67E8F9)],
+      previewIcon: Icons.ramen_dining_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
+    SteamAvatarFrame(
       id: 'demon_horns',
       name: 'Демонические рожки',
       colors: [Color(0xFFFF1744), Color(0xFFD50000), Color(0xFF880E4F)],
@@ -697,7 +704,7 @@ class SteamProfileThemeAccent {
 class SteamCustomTitle {
   static const List<String> titles = [
     '',
-    'Сенпай в сети',
+    'Мастер Синхрона',
     'Архимаг Синхрона',
     'Король Пиратов',
     'Тень Монарха',

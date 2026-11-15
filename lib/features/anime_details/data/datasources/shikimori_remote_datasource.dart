@@ -49,8 +49,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(seconds: 8),
-                receiveTimeout: const Duration(seconds: 10),
+                connectTimeout: const Duration(seconds: 4),
+                receiveTimeout: const Duration(seconds: 4),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',

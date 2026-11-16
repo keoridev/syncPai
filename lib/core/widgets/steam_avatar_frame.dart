@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../features/profile/domain/entities/steam_profile_customization.dart';
 import '../theme/app_colors.dart';
@@ -97,7 +96,6 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
         animation: _animController,
         builder: (context, _) {
           final t = _animController.value;
-          final pulse = (math.sin(t * 2 * math.pi) + 1.0) / 2.0;
 
           if (isSquare) {
             return SizedBox(
@@ -108,15 +106,15 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                 children: [
                   // 1. Внешнее свечение квадратной рамки
                   Container(
-                    width: frameOuterSize + (pulse * 4.0),
-                    height: frameOuterSize + (pulse * 4.0),
+                    width: frameOuterSize,
+                    height: frameOuterSize,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: primaryFrameColor.withValues(alpha: 0.35 + (pulse * 0.15)),
-                          blurRadius: 14 + (pulse * 6.0),
-                          spreadRadius: 1,
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
                         ),
                       ],
                     ),
@@ -167,20 +165,15 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
               children: [
                 // 1. Внешняя пульсирующая аура (излучение)
                 Container(
-                  width: frameOuterSize + (pulse * 8.0),
-                  height: frameOuterSize + (pulse * 8.0),
+                  width: frameOuterSize,
+                  height: frameOuterSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                      BoxShadow(
-                        color: primaryFrameColor.withValues(alpha: 0.12),
-                        blurRadius: 6,
-                        spreadRadius: 1,
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),

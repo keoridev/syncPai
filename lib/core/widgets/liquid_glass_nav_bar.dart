@@ -48,18 +48,10 @@ class LiquidGlassNavBar extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
-              // Глубокая объемная тень под стеклом
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.50),
-                blurRadius: 28,
-                spreadRadius: 2,
-                offset: const Offset(0, 10),
-              ),
-              // Легкое янтарно-акцентное свечение
-              BoxShadow(
-                color: themePrimary.withValues(alpha: 0.12),
-                blurRadius: 18,
-                offset: const Offset(0, 2),
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),

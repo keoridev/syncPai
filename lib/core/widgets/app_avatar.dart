@@ -85,8 +85,9 @@ class AppAvatar extends StatelessWidget {
           border: Border.all(color: effectiveBorderColor, width: borderWidth),
           boxShadow: [
             BoxShadow(
-              color: silhouette.eyeColor.withValues(alpha: 0.35),
-              blurRadius: 10,
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -98,7 +99,6 @@ class AppAvatar extends StatelessWidget {
               size: size * 0.58,
               color: Colors.white.withValues(alpha: 0.85),
             ),
-            // Неоновый акцент глаз/визора
             Positioned(
               top: size * 0.38,
               child: Container(
@@ -107,13 +107,6 @@ class AppAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: silhouette.eyeColor,
                   borderRadius: BorderRadius.circular(2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: silhouette.eyeColor,
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
                 ),
               ),
             ),

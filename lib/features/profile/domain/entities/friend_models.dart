@@ -16,6 +16,7 @@ class FriendProfile extends Equatable {
   final DateTime? lastSeenAt;
   final String? currentRoomCode;
   final String? currentAnimeTitle;
+  final String? supporterTier;
   final int streakDays;
 
   const FriendProfile({
@@ -28,6 +29,7 @@ class FriendProfile extends Equatable {
     this.lastSeenAt,
     this.currentRoomCode,
     this.currentAnimeTitle,
+    this.supporterTier,
     this.streakDays = 1,
   });
 
@@ -48,6 +50,7 @@ class FriendProfile extends Equatable {
     DateTime? lastSeenAt,
     String? currentRoomCode,
     String? currentAnimeTitle,
+    String? supporterTier,
     int? streakDays,
   }) {
     return FriendProfile(
@@ -60,6 +63,7 @@ class FriendProfile extends Equatable {
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       currentRoomCode: currentRoomCode ?? this.currentRoomCode,
       currentAnimeTitle: currentAnimeTitle ?? this.currentAnimeTitle,
+      supporterTier: supporterTier ?? this.supporterTier,
       streakDays: streakDays ?? this.streakDays,
     );
   }
@@ -70,7 +74,7 @@ class FriendProfile extends Equatable {
         'username': username,
         'tag': tag,
         'friend_code': friendCode,
-        'avatar': avatarUrl ?? 'cat',
+        'avatar': avatarUrl,
         'avatar_url': avatarUrl,
         'status': customStatus ?? (isOnline ? 'В сети' : 'Не в сети'),
         'statusText': customStatus ?? (isOnline ? 'В сети' : 'Не в сети'),
@@ -80,8 +84,15 @@ class FriendProfile extends Equatable {
         'roomCode': currentRoomCode,
         'isOnline': isOnline,
         'canJoin': currentRoomCode != null && currentRoomCode!.isNotEmpty,
+        'supporter_tier': supporterTier,
         'streakDays': streakDays,
       };
+
+  static String normalizeTag(String? rawTag) {
+    final cleaned = (rawTag ?? '').trim().replaceFirst(RegExp(r'^#+'), '');
+    if (cleaned.isEmpty) return '';
+    return '#$cleaned';
+  }
 
   factory FriendProfile.fromMap(Map<String, dynamic> map) {
     DateTime? lastSeen;
@@ -92,16 +103,22 @@ class FriendProfile extends Equatable {
       lastSeen = rawLast;
     }
 
+    final rawUsername = (map['username'] ?? map['name'] ?? '').toString().trim();
+    final resolvedUsername = rawUsername.isEmpty ? 'Пользователь' : rawUsername;
+    final normalizedTag = normalizeTag(map['tag']?.toString());
+    final rawAvatar = (map['avatar_url'] ?? map['avatar'])?.toString().trim();
+
     return FriendProfile(
       id: (map['id'] ?? map['user_id'] ?? '').toString(),
-      username: (map['username'] ?? map['name'] ?? 'Друг').toString().trim(),
-      tag: (map['tag'] ?? '#0001').toString(),
+      username: resolvedUsername,
+      tag: normalizedTag.isEmpty ? '#0001' : normalizedTag,
       friendCode: map['friend_code']?.toString(),
-      avatarUrl: (map['avatar_url'] ?? map['avatar'])?.toString(),
+      avatarUrl: (rawAvatar != null && rawAvatar.isNotEmpty) ? rawAvatar : null,
       customStatus: map['custom_status']?.toString() ?? map['status']?.toString(),
       lastSeenAt: lastSeen,
       currentRoomCode: (map['roomCode'] ?? map['room'])?.toString(),
       currentAnimeTitle: map['current_anime_title']?.toString(),
+      supporterTier: map['supporter_tier']?.toString(),
       streakDays: (map['streakDays'] as num?)?.toInt() ?? 1,
     );
   }

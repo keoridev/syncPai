@@ -24,6 +24,15 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
+  /// Мгновенное (0ms) оптимистичное обновление локального профиля в памяти.
+  void applyOptimisticProfile(UserProfile updated) {
+    if (isClosed || !state.isCurrentUser) return;
+    _safeEmit(state.copyWith(
+      status: ProfileStatus.loaded,
+      profile: updated,
+    ));
+  }
+
   /// Загрузка данных профиля пользователя (своего или профиля друга по ID)
   Future<void> loadProfile({String? targetUserId}) async {
     if (isClosed) return;

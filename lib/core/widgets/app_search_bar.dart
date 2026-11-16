@@ -98,15 +98,13 @@ class _AppSearchBarState extends State<AppSearchBar> {
                   : scheme.outlineVariant.withValues(alpha: 0.3),
               width: _hasFocus ? 1.4 : 1.0,
             ),
-            boxShadow: _hasFocus
-                ? [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.14),
-                      blurRadius: 10,
-                      spreadRadius: 0,
-                    ),
-                  ]
-                : null,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           padding: const EdgeInsets.only(left: AppDimensions.spacingMd, right: 6),
           alignment: Alignment.center,

@@ -1,3 +1,4 @@
+import html
 import logging
 from aiogram import Bot
 from db import supabase_client
@@ -22,9 +23,9 @@ async def check_expired_supporters(bot: Bot):
 
     for row in expired_list:
         profile_id = row["id"]
-        username = row.get("username", "Пользователь")
+        username = html.escape(str(row.get("username") or "Пользователь"))
         tg_id = row.get("telegram_id")
-        old_tier = row.get("supporter_tier", "supporter")
+        old_tier = html.escape(str(row.get("supporter_tier") or "supporter")).upper()
 
         ok = supabase_client.downgrade_to_free(profile_id)
         if ok:
@@ -34,15 +35,13 @@ async def check_expired_supporters(bot: Bot):
                     await bot.send_message(
                         chat_id=tg_id,
                         text=(
-                            f"👋 Здравствуйте, <b>{username}</b>!\n\n"
-                            f"Срок действия вашего уровня поддержки <b>{old_tier.upper()}</b> подошёл к концу.\n"
-                            f"Спасибо, что были с нами и поддерживали развитие SyncPai! 💖\n\n"
-                            f"Вы можете возобновить подписку в любой момент командой /support."
+                            f"Привет, <b>{username}</b>!\n\n"
+                            f"Срок действия твоего уровня поддержки <b>{old_tier}</b> подошёл к концу.\n"
+                            f"Спасибо, что поддерживал развитие SyncPai — возобновить статус можно в любой момент командой /support."
                         ),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
                     )
                 except Exception as e:
                     logger.warning(f"Could not send expiration notification to {tg_id}: {e}")
         else:
             logger.error(f"Failed to downgrade {profile_id}")
-

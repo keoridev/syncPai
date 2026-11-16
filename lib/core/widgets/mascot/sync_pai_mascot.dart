@@ -226,6 +226,27 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
       ),
     );
 
+    if (widget.allowSeasonalSkin &&
+        winterService.isWinterActive &&
+        winterService.isWinterMascotEnabled) {
+      imageContent = Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          imageContent,
+          Positioned(
+            top: -targetHeight * 0.14,
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: Size(targetWidth * 0.44, targetHeight * 0.24),
+                painter: _SantaHatPainter(),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     // Плавная левитация маскота
     if (widget.animated && !disableAnimations && _floatAnimation != null) {
       imageContent = AnimatedBuilder(
@@ -313,4 +334,39 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
       },
     );
   }
+}
+
+class _SantaHatPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final hatPath = Path()
+      ..moveTo(w * 0.12, h * 0.85)
+      ..quadraticBezierTo(w * 0.48, -h * 0.15, w * 0.88, h * 0.35)
+      ..quadraticBezierTo(w * 0.72, h * 0.65, w * 0.84, h * 0.85)
+      ..close();
+    canvas.drawPath(
+      hatPath,
+      Paint()..color = const Color(0xFFD9383A),
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.08, h * 0.72, w * 0.82, h * 0.26),
+        Radius.circular(h * 0.13),
+      ),
+      Paint()..color = const Color(0xFFF5F7FA),
+    );
+
+    canvas.drawCircle(
+      Offset(w * 0.90, h * 0.36),
+      h * 0.15,
+      Paint()..color = const Color(0xFFF5F7FA),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

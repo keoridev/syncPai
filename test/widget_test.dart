@@ -2785,10 +2785,9 @@ Title,Status,Episodes
       ),
     );
 
-    // Initial check: header and view mode switcher buttons
+    // Initial check: header and unified ViewModeToggle (Grid / List)
     expect(find.byIcon(Icons.view_list_rounded), findsOneWidget);
     expect(find.byIcon(Icons.grid_view_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.view_agenda_rounded), findsOneWidget);
 
     // Tap Grid mode
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
@@ -2806,10 +2805,6 @@ Title,Status,Episodes
     // Tap History tab
     expect(find.text('История'), findsOneWidget);
     await tester.tap(find.text('История'));
-    await tester.pump(const Duration(milliseconds: 300));
-
-    // Tap Card mode
-    await tester.tap(find.byIcon(Icons.view_agenda_rounded));
     await tester.pump(const Duration(milliseconds: 300));
 
     // Tap List mode

@@ -238,7 +238,7 @@ class _SupportScreenState extends State<SupportScreen> {
         : 'Гость';
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFF0B0E14),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

@@ -92,7 +92,7 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
 
   Future<void> voteCurrent(bool isLike) async {
     final current = state.currentTitle;
-    if (current == null) return;
+    if (current == null || state.isSuspenseReveal) return;
 
     final updatedMyVotes = Map<int, bool>.from(state.myVotes)..[current.id] = isLike;
     final nextIndex = state.currentIndex + 1;

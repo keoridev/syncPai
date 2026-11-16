@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../app/di/injection.dart';
+import '../../../../core/services/presence_service.dart';
+import '../../../profile/presentation/cubit/profile_cubit.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../utils/auth_error_formatter.dart';
@@ -18,6 +21,7 @@ class AuthCubit extends Cubit<AuthState> {
     try {
       final profile = await repository.getCurrentProfile();
       emit(Authenticated(profile));
+      unawaited(PresenceService.instance.startForUser(profile.id));
     } catch (e) {
       emit(AuthError(e.toString()));
     }
@@ -25,6 +29,7 @@ class AuthCubit extends Cubit<AuthState> {
     _authSubscription = repository.authStateChanges.listen((profile) {
       if (profile != null) {
         emit(Authenticated(profile));
+        unawaited(PresenceService.instance.startForUser(profile.id));
       }
     });
   }
@@ -49,6 +54,48 @@ class AuthCubit extends Cubit<AuthState> {
     String? countryName,
     String? avatarShape,
   }) async {
+    final previousProfile =
+        state is Authenticated ? (state as Authenticated).profile : null;
+
+    if (previousProfile != null) {
+      final optimistic = previousProfile.copyWith(
+        username: username,
+        avatarUrl: avatarUrl ?? previousProfile.avatarUrl,
+        frameId: frameId ?? previousProfile.frameId,
+        backgroundId: backgroundId ?? previousProfile.backgroundId,
+        customTitle: customTitle ?? previousProfile.customTitle,
+        customStatus: customStatus ?? previousProfile.customStatus,
+        bio: bio ?? previousProfile.bio,
+        badgeId: badgeId ?? previousProfile.badgeId,
+        favoriteAnimeTitle: favoriteAnimeTitle != null
+            ? (favoriteAnimeTitle.isEmpty ? null : favoriteAnimeTitle)
+            : previousProfile.favoriteAnimeTitle,
+        favoriteAnimeId: favoriteAnimeId != null
+            ? (favoriteAnimeId.isEmpty ? null : favoriteAnimeId)
+            : previousProfile.favoriteAnimeId,
+        favoriteAnimePoster: favoriteAnimePoster != null
+            ? (favoriteAnimePoster.isEmpty ? null : favoriteAnimePoster)
+            : previousProfile.favoriteAnimePoster,
+        artworkUrl: artworkUrl != null
+            ? (artworkUrl.isEmpty ? null : artworkUrl)
+            : previousProfile.artworkUrl,
+        artworkTitle: artworkTitle != null
+            ? (artworkTitle.isEmpty ? null : artworkTitle)
+            : previousProfile.artworkTitle,
+        accentColor: accentColor ?? previousProfile.accentColor,
+        showcaseType: showcaseType ?? previousProfile.showcaseType,
+        countryFlag: countryFlag ?? previousProfile.countryFlag,
+        countryName: countryName ?? previousProfile.countryName,
+        avatarShape: avatarShape ?? previousProfile.avatarShape,
+      );
+
+      // Мгновенное (0ms) оптимистичное обновление AuthCubit и ProfileCubit
+      emit(Authenticated(optimistic));
+      if (getIt.isRegistered<ProfileCubit>()) {
+        getIt<ProfileCubit>().applyOptimisticProfile(optimistic);
+      }
+    }
+
     try {
       final updated = await repository.updateProfile(
         username: username,
@@ -70,9 +117,23 @@ class AuthCubit extends Cubit<AuthState> {
         countryName: countryName,
         avatarShape: avatarShape,
       );
-      emit(Authenticated(updated));
+      if (!isClosed) {
+        emit(Authenticated(updated));
+        if (getIt.isRegistered<ProfileCubit>()) {
+          getIt<ProfileCubit>().applyOptimisticProfile(updated);
+        }
+      }
     } catch (e) {
-      emit(AuthError('Ошибка обновления профиля: $e'));
+      if (!isClosed) {
+        if (previousProfile != null) {
+          emit(Authenticated(previousProfile));
+          if (getIt.isRegistered<ProfileCubit>()) {
+            getIt<ProfileCubit>().applyOptimisticProfile(previousProfile);
+          }
+        } else {
+          emit(AuthError('Ошибка обновления профиля: $e'));
+        }
+      }
     }
   }
 
@@ -163,6 +224,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signOut() async {
+    await PresenceService.instance.stop();
     await repository.signOut();
     final guest = await repository.getCurrentProfile();
     emit(Authenticated(guest));

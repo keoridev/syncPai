@@ -1,10 +1,12 @@
-from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import html
+from aiogram import F, Router
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from db import supabase_client
+from services.card_renderer import send_or_edit_card
 
 router = Router(name="start_profile")
 
@@ -14,33 +16,50 @@ class LinkProfileState(StatesGroup):
 
 
 def get_profile_card_text(profile: dict) -> str:
-    username = profile.get("username", "Отаку")
-    tag = profile.get("tag", "#0001")
-    friend_code = profile.get("friend_code", "Не указан")
+    username = html.escape(str(profile.get("username") or "Пользователь"))
+    raw_tag = str(profile.get("tag") or "#0001")
+    tag = html.escape(raw_tag if raw_tag.startswith("#") else f"#{raw_tag}")
+    friend_code = html.escape(str(profile.get("friend_code") or "Не указан"))
     tier = profile.get("supporter_tier", "free")
     expires = profile.get("supporter_until")
-    bio = profile.get("bio") or "—"
-    status = profile.get("custom_status") or "—"
+    bio = html.escape(str(profile.get("bio") or "—"))
+    status = html.escape(str(profile.get("custom_status") or "—"))
 
     tier_labels = {
         "free": "Базовый (Free)",
-        "supporter": "⚡ SyncPai Plus",
-        "vip": "✨ SyncPai Pro",
-        "producer": "👑 Founders Club",
+        "supporter": "SyncPai Plus",
+        "vip": "SyncPai Pro",
+        "producer": "Founders Club",
     }
-    tier_title = tier_labels.get(tier, tier)
+    tier_title = tier_labels.get(tier, str(tier))
 
     text = (
-        f"🌸 <b>Профиль SyncPai</b>\n\n"
-        f"👤 <b>Никнейм:</b> {username}{tag}\n"
-        f"🔑 <b>Код дружбы:</b> <code>{friend_code}</code>\n"
-        f"💎 <b>Статус поддержки:</b> <b>{tier_title}</b>\n"
+        f"<b>Профиль SyncPai</b>\n\n"
+        f"• <b>Никнейм:</b> {username}{tag}\n"
+        f"• <b>Код дружбы:</b> <code>{friend_code}</code>\n"
+        f"• <b>Уровень поддержки:</b> <b>{tier_title}</b>\n"
     )
     if expires:
-        text += f"⏳ <b>Действует до:</b> {expires[:10]}\n"
-    text += f"💬 <b>Статус:</b> <i>{status}</i>\n"
-    text += f"📝 <b>О себе:</b> <i>{bio}</i>\n"
+        text += f"• <b>Действует до:</b> {str(expires)[:10]}\n"
+    text += f"• <b>Статус:</b> <i>{status}</i>\n"
+    text += f"• <b>О себе:</b> <i>{bio}</i>"
     return text
+
+
+def _linked_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Мой профиль", callback_data="view_profile")],
+        [InlineKeyboardButton(text="Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+    ])
+
+
+def _guest_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Привязать аккаунт", callback_data="link_account")],
+        [InlineKeyboardButton(text="Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+    ])
 
 
 @router.message(CommandStart())
@@ -50,11 +69,11 @@ async def cmd_start(message: Message, state: FSMContext):
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
     # Проверка deep link: /start link_SP123456
-    command_args = message.text.split(maxsplit=1)
+    command_args = (message.text or "").split(maxsplit=1)
     if len(command_args) > 1:
         payload = command_args[1].strip()
         if payload.startswith("link_"):
-            target_code = payload.replace("link_", "")
+            target_code = payload.removeprefix("link_")
             found = supabase_client.get_profile_by_code_or_tag(target_code)
             if found:
                 ok = supabase_client.link_profile_telegram(
@@ -63,75 +82,75 @@ async def cmd_start(message: Message, state: FSMContext):
                     tg_username=message.from_user.username,
                 )
                 if ok:
-                    await message.answer(
-                        f"✅ <b>Аккаунт успешно привязан!</b>\n\n"
-                        f"Добро пожаловать в SyncPai, <b>{found.get('username')}</b>!\n"
-                        f"Теперь вам доступны уведомления, продление подписок и загрузка актуальных сборок.",
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
-                            [InlineKeyboardButton(text="💎 Поддержать SyncPai", callback_data="show_tiers")],
-                            [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-                        ])
+                    uname = html.escape(str(found.get("username") or "Пользователь"))
+                    await send_or_edit_card(
+                        message,
+                        card_key="welcome",
+                        caption=(
+                            f"<b>Аккаунт привязан</b>\n\n"
+                            f"Привет, <b>{uname}</b>! Я Пай-тян — теперь твой Telegram связан с профилем SyncPai.\n"
+                            f"Здесь можно проверять статус, поддерживать проект и скачивать свежие сборки."
+                        ),
+                        reply_markup=_linked_menu_keyboard(),
                     )
                     return
 
     if profile:
-        await message.answer(
-            f"👋 С возвращением, <b>{profile.get('username', 'Друг')}</b>!\n"
-            f"Ваш Telegram уже привязан к профилю SyncPai.\n\n"
-            f"Чем могу помочь?",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
-                [InlineKeyboardButton(text="💎 Поддержать проект", callback_data="show_tiers")],
-                [InlineKeyboardButton(text="📥 Скачать SyncPai (.apk / .exe)", callback_data="download_app")],
-            ])
+        uname = html.escape(str(profile.get("username") or "Пользователь"))
+        await send_or_edit_card(
+            message,
+            card_key="welcome",
+            caption=(
+                f"<b>С возвращением, {uname}</b>\n\n"
+                f"Твой Telegram уже привязан к SyncPai. Выбирай, что откроем:"
+            ),
+            reply_markup=_linked_menu_keyboard(),
         )
     else:
-        await message.answer(
-            "👋 Привет! Я официальный бот <b>SyncPai</b> — приложения для совместного просмотра аниме.\n\n"
-            "Здесь вы можете:\n"
-            "• Привязать аккаунт SyncPai по коду дружбы (<code>SP-XXXXXX</code>) или <code>Никнейм#Тег</code>\n"
-            "• Оформить или продлить статус <b>SyncPai Plus / Pro / Founder</b>\n"
-            "• Скачать самые свежие версии для Windows и Android\n\n"
-            "Для начала работы привяжите ваш аккаунт:",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
-                [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-                [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
-            ])
+        await send_or_edit_card(
+            message,
+            card_key="welcome",
+            caption=(
+                "<b>Привет! Я Пай-тян — помощник SyncPai</b>\n\n"
+                "Здесь ты можешь:\n"
+                "• Привязать аккаунт по коду дружбы (<code>SP-XXXXXX</code>) или <code>Ник#Тег</code>\n"
+                "• Открыть уровни поддержки — <b>Plus</b>, <b>Pro</b> и <b>Founders Club</b>\n"
+                "• Скачать актуальные версии для Windows и Android"
+            ),
+            reply_markup=_guest_menu_keyboard(),
         )
 
 
 @router.callback_query(F.data == "link_account")
 async def cb_link_account(callback: CallbackQuery, state: FSMContext):
     await state.set_state(LinkProfileState.waiting_for_code)
-    await callback.message.edit_text(
-        "📝 Введите ваш <b>Код дружбы</b> из профиля SyncPai (например: <code>SP-ABC123</code>)\n"
-        "или ваш <code>Никнейм#1234</code>:",
-        parse_mode="HTML",
+    await send_or_edit_card(
+        callback,
+        card_key="link",
+        caption=(
+            "<b>Привязка аккаунта SyncPai</b>\n\n"
+            "Отправь в чат свой <b>Код дружбы</b> из профиля приложения "
+            "(например, <code>SP-XXXXXX</code>) или <code>Ник#Тег</code> (например, <code>keori#5727</code>)."
+        ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_action")]
-        ])
+            [InlineKeyboardButton(text="← Назад", callback_data="cancel_action")],
+        ]),
     )
-    await callback.answer()
 
 
-@router.message(LinkProfileState.waiting_for_code)
+@router.message(LinkProfileState.waiting_for_code, F.text, ~F.text.startswith("/"))
 async def process_profile_code(message: Message, state: FSMContext):
-    code = message.text.strip()
+    code = (message.text or "").strip()
     profile = supabase_client.get_profile_by_code_or_tag(code)
 
     if not profile:
         await message.answer(
-            "❌ Профиль с таким кодом или никнеймом не найден в базе SyncPai.\n"
-            "Пожалуйста, проверьте код во вкладке <b>Профиль</b> приложения и попробуйте снова:",
+            "Профиль с таким кодом или тегом не найден.\n"
+            "Проверь <code>SP-XXXXXX</code> или <code>Ник#Тег</code> во вкладке <b>Профиль</b> и попробуй ещё раз:",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_action")]
-            ])
+                [InlineKeyboardButton(text="Отмена", callback_data="cancel_action")],
+            ]),
         )
         return
 
@@ -143,45 +162,47 @@ async def process_profile_code(message: Message, state: FSMContext):
     await state.clear()
 
     if ok:
-        await message.answer(
-            f"🎉 <b>Профиль успешно привязан!</b>\n\n"
-            f"{get_profile_card_text(profile)}",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💎 Поддержать SyncPai", callback_data="show_tiers")],
-                [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-            ])
+        await send_or_edit_card(
+            message,
+            card_key="welcome",
+            caption=f"<b>Профиль успешно привязан</b>\n\n{get_profile_card_text(profile)}",
+            reply_markup=_linked_menu_keyboard(),
         )
     else:
-        await message.answer("⚠️ Не удалось связать профиль. Попробуйте позже или напишите администратору.")
+        await message.answer("Не удалось связать профиль. Попробуй чуть позже.")
 
 
 @router.message(Command("profile"))
 @router.callback_query(F.data == "view_profile")
-async def show_profile(event: Message | CallbackQuery):
+async def show_profile(event: Message | CallbackQuery, state: FSMContext):
+    await state.clear()
     tg_id = event.from_user.id
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
     if not profile:
-        text = (
-            "⚠️ Ваш Telegram пока не привязан к профилю SyncPai.\n\n"
-            "Нажмите кнопку ниже, чтобы привязать:"
+        await send_or_edit_card(
+            event,
+            card_key="link",
+            caption=(
+                "<b>Профиль ещё не привязан</b>\n\n"
+                "Нажми кнопку ниже и отправь свой <code>SP-XXXXXX</code> или <code>Ник#Тег</code>."
+            ),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Привязать аккаунт", callback_data="link_account")],
+                [InlineKeyboardButton(text="← Назад", callback_data="cancel_action")],
+            ]),
         )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")]
-        ])
     else:
-        text = get_profile_card_text(profile)
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Улучшить / Продлить подписку", callback_data="show_tiers")],
-            [InlineKeyboardButton(text="🔓 Отвязать аккаунт", callback_data="unlink_account")],
-        ])
-
-    if isinstance(event, CallbackQuery):
-        await event.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-        await event.answer()
-    else:
-        await event.answer(text, parse_mode="HTML", reply_markup=kb)
+        await send_or_edit_card(
+            event,
+            card_key="welcome",
+            caption=get_profile_card_text(profile),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Уровни поддержки", callback_data="show_tiers")],
+                [InlineKeyboardButton(text="Отвязать аккаунт", callback_data="unlink_account")],
+                [InlineKeyboardButton(text="← Назад", callback_data="cancel_action")],
+            ]),
+        )
 
 
 @router.callback_query(F.data == "unlink_account")
@@ -189,26 +210,39 @@ async def cb_unlink_account(callback: CallbackQuery):
     profile = supabase_client.get_profile_by_tg_id(callback.from_user.id)
     if profile:
         supabase_client.unlink_profile_telegram(profile["id"])
-    await callback.message.edit_text(
-        "👋 Аккаунт SyncPai отвязан от этого Telegram-чата.\n"
-        "Вы всегда можете привязать его заново командой /start.",
+    await send_or_edit_card(
+        callback,
+        card_key="link",
+        caption=(
+            "<b>Аккаунт отвязан</b>\n\n"
+            "Ты всегда можешь привязать его снова по коду <code>SP-XXXXXX</code> или <code>Ник#Тег</code>."
+        ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Привязать снова", callback_data="link_account")]
-        ])
+            [InlineKeyboardButton(text="Привязать аккаунт", callback_data="link_account")],
+            [InlineKeyboardButton(text="← Назад", callback_data="cancel_action")],
+        ]),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "cancel_action")
 async def cb_cancel_action(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
-        "Действие отменено. Главное меню:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
-            [InlineKeyboardButton(text="💎 Поддержать SyncPai", callback_data="show_tiers")],
-            [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-        ])
-    )
-    await callback.answer()
+    profile = supabase_client.get_profile_by_tg_id(callback.from_user.id)
+    if profile:
+        uname = html.escape(str(profile.get("username") or "Пользователь"))
+        caption = f"<b>Главное меню SyncPai</b>\n\nРада видеть тебя, <b>{uname}</b>. Выбирай раздел:"
+        kb = _linked_menu_keyboard()
+    else:
+        caption = (
+            "<b>Главное меню SyncPai</b>\n\n"
+            "Привяжи профиль по <code>SP-XXXXXX</code> или <code>Ник#Тег</code>, "
+            "посмотри уровни поддержки или скачай приложение."
+        )
+        kb = _guest_menu_keyboard()
 
+    await send_or_edit_card(
+        callback,
+        card_key="welcome",
+        caption=caption,
+        reply_markup=kb,
+    )

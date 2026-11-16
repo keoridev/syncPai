@@ -27,6 +27,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   final Map<String, List<void Function(double timeSec, bool isPlaying, int episodeIndex)>>
       _playbackSyncCallbacks = {};
   final Random _random = Random();
+  final Map<String, bool> _messageHostRoles = {};
 
   SupabaseClient? get _supabase {
     try {
@@ -320,6 +321,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         final newRecord = payload.newRecord;
         if (newRecord.isNotEmpty) {
           final msg = ChatMessage.fromRoomMessageRow(newRecord);
+          final resolvedIsHost =
+              (newRecord['is_host'] as bool?) ?? _messageHostRoles[msg.id] ?? false;
           final packet = SyncPacket(
             roomCode: pinKey,
             action: SyncActionTypes.chatMessage,
@@ -330,7 +333,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
               'text': msg.text,
               'sender_name': msg.sender,
               'user_id': newRecord['user_id']?.toString(),
-              'is_host': msg.isHost,
+              'is_host': resolvedIsHost,
               'type': msg.type,
             },
           );
@@ -481,6 +484,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
             '';
         final userId = payload['user_id'] as String?;
         final isHost = payload['is_host'] as bool? ?? false;
+        _messageHostRoles[msgId] = isHost;
 
         final packet = SyncPacket(
           roomCode: pinKey,
@@ -1274,6 +1278,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     final pinKey = extractPinCode(roomCode);
     final resolvedId = messageId ?? '${DateTime.now().microsecondsSinceEpoch}';
     final resolvedUserId = userId ?? _supabase?.auth.currentUser?.id;
+    _messageHostRoles[resolvedId] = isHost;
 
     // 1. Мгновенная доставка через Realtime Broadcast (chat_message + action)
     final channel = _supabaseChannels[pinKey] ?? _initSupabaseChannel(pinKey);

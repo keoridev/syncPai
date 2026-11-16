@@ -2,8 +2,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_decorations.dart';
 import '../theme/app_dimensions.dart';
 
 /// Элегантный скелетон (Shimmer) в палитре Nordic Dark.
@@ -44,21 +42,21 @@ class ShimmerPlaceholder extends StatelessWidget {
         width: width,
         height: height,
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: const Color(0xFF141822),
           borderRadius: borderRadius ?? AppDimensions.borderRadiusMedium,
         ),
       );
     }
 
     return Shimmer.fromColors(
-      baseColor: AppDecorations.shimmerBase,
-      highlightColor: AppDecorations.shimmerHighlight,
+      baseColor: const Color(0xFF141822),
+      highlightColor: const Color(0xFF1B202C),
       period: const Duration(milliseconds: 1500),
       child: Container(
         width: width,
         height: height,
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: const Color(0xFF141822),
           borderRadius: borderRadius ?? AppDimensions.borderRadiusMedium,
         ),
       ),

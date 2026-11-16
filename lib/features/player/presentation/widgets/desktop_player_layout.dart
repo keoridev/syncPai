@@ -692,6 +692,47 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
           ),
         ),
         if (widget.state.isSyncRoom) ...[
+          Container(
+            key: const ValueKey('desktop_player_role_pill'),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: widget.state.isHost
+                  ? AppColors.primary.withValues(alpha: 0.18)
+                  : Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: widget.state.isHost
+                    ? AppColors.primaryLight.withValues(alpha: 0.6)
+                    : Colors.white.withValues(alpha: 0.18),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.state.isHost
+                      ? Icons.verified_user_rounded
+                      : Icons.person_outline_rounded,
+                  size: 14,
+                  color: widget.state.isHost
+                      ? AppColors.primaryLight
+                      : Colors.white70,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  widget.state.isHost ? 'Хост комнаты' : 'Участник',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: widget.state.isHost
+                        ? AppColors.primaryLight
+                        : Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             key: const ValueKey('desktop_player_switch_anime_btn'),
             onPressed: () {

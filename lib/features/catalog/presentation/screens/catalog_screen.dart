@@ -14,6 +14,7 @@ import 'package:sync_pai/core/widgets/app_avatar.dart';
 import 'package:sync_pai/core/widgets/app_search_bar.dart';
 import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
+import 'package:sync_pai/core/widgets/view_mode_toggle.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
 import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
 import 'package:sync_pai/core/widgets/mascot/sync_pai_mascot.dart';
@@ -231,33 +232,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     },
                   ),
 
-                  // Переключатель вида каталога: 2 в ряд / 3 в ряд / Список
+                  // Единый переключатель вида (Сетка / Список)
                   BlocBuilder<CatalogCubit, CatalogState>(
                     buildWhen: (prev, curr) => curr is CatalogLoaded,
                     builder: (context, state) {
                       final cubit = context.read<CatalogCubit>();
                       final isList = state is CatalogLoaded && state.viewMode == CatalogViewMode.list;
-                      final is3Columns = state is CatalogLoaded &&
-                          state.viewMode == CatalogViewMode.grid &&
-                          state.gridDensity == CatalogGridDensity.compact;
-
-                      final IconData icon;
-                      final String tooltip;
-                      if (isList) {
-                        icon = Icons.view_agenda_outlined;
-                        tooltip = 'Вид: Список (тап для 2 в ряд)';
-                      } else if (is3Columns) {
-                        icon = Icons.apps_rounded;
-                        tooltip = 'Вид: 3 в ряд (тап для списка)';
-                      } else {
-                        icon = Icons.grid_view_rounded;
-                        tooltip = 'Вид: 2 в ряд (тап для 3 в ряд)';
-                      }
-
-                      return IconButton(
-                        icon: Icon(icon, color: AppColors.textPrimary, size: 21),
-                        tooltip: tooltip,
-                        onPressed: () => cubit.cycleDisplayMode(),
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: ViewModeToggle(
+                          isGrid: !isList,
+                          onChanged: (grid) {
+                            if (grid && isList) {
+                              cubit.cycleDisplayMode();
+                            } else if (!grid && !isList) {
+                              // Переключаем в list mode
+                              cubit.cycleDisplayMode();
+                              if (cubit.state is CatalogLoaded &&
+                                  (cubit.state as CatalogLoaded).viewMode != CatalogViewMode.list) {
+                                cubit.cycleDisplayMode();
+                              }
+                            }
+                          },
+                        ),
                       );
                     },
                   ),

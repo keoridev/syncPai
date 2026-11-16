@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
@@ -105,6 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     _loadBannerDismissed();
     _loadWatchHistory();
+    FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadRealFriends();
     _loadWallComments();
 
@@ -136,7 +138,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  void _onFriendsNotifierChanged() {
+    if (!mounted) return;
+    setState(() {
+      _onlineFriends = List<Map<String, dynamic>>.from(FriendsService.friendsNotifier.value);
+    });
+  }
+
   Future<void> _loadRealFriends() async {
+    FriendsService.subscribeRealtime();
     final loaded = await FriendsService.getFriends();
     if (mounted) {
       setState(() => _onlineFriends = loaded);
@@ -220,6 +230,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
+    FriendsService.friendsNotifier.removeListener(_onFriendsNotifierChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _commentController.dispose();
@@ -1212,13 +1223,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'ЛЮБИМЫЙ ТАЙТЛ // ИЗБРАННОЕ',
+                  'Любимое аниме',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                     color: scheme.onSurface,
                   ),
                 ),
@@ -1248,12 +1258,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
                   boxShadow: [
                     BoxShadow(
-                      color: accent.withValues(alpha: 0.25),
+                      color: Colors.black.withValues(alpha: 0.35),
                       blurRadius: 12,
-                      spreadRadius: 1,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
@@ -1276,39 +1286,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.favorite_rounded, size: 13, color: accent),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            'Главная рекомендация профиля',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: accent,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -1383,11 +1369,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ? scheme.surfaceContainerHighest.withValues(alpha: 0.5)
                           : scheme.surfaceContainerLowest.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.0),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.07), width: 1.0),
                       boxShadow: [
                         BoxShadow(
-                          color: accent.withValues(alpha: 0.10),
-                          blurRadius: 8,
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -1398,16 +1385,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(b.icon, color: accent, size: 24),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Ур. ${b.level}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: accent,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 6),
                           SizedBox(
                             width: 64,
                             child: Text(
@@ -1438,66 +1416,93 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildOnlineFriendsCard(BuildContext context, UserProfile profile, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final friends = _onlineFriends;
-    final onlineCount = friends.where((f) => f['isOnline'] == true).length;
 
-    return _GlassCard(
-      accentColor: accent,
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ListenableBuilder(
+      listenable: PresenceService.instance,
+      builder: (context, _) {
+        final presence = PresenceService.instance;
+        final friends = _onlineFriends.map((f) {
+          final fid = (f['id'] ?? '').toString();
+          final liveOnline = fid.isNotEmpty && presence.isUserOnline(fid);
+          final liveActivity = fid.isNotEmpty ? presence.activityForUser(fid) : null;
+          if (!liveOnline && liveActivity == null) return f;
+          return <String, dynamic>{
+            ...f,
+            'isOnline': liveOnline || f['isOnline'] == true,
+            if (liveActivity != null && liveActivity.isNotEmpty)
+              'custom_status': liveActivity,
+          };
+        }).toList();
+        final onlineCount = friends.where((f) => f['isOnline'] == true).length;
+
+        return _GlassCard(
+          accentColor: accent,
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.people_alt_rounded, size: 16, color: accent),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'ДРУЗЬЯ ОНЛАЙН',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    color: scheme.onSurface,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.people_alt_rounded, size: 16, color: accent),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'ДРУЗЬЯ ОНЛАЙН',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.person_add_rounded, size: 16, color: accent),
-                tooltip: 'Управление друзьями',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                onPressed: () => showFriendsManagementSheet(
-                  context,
-                  accentColor: accent,
-                  currentUserProfile: profile,
-                  onFriendsChanged: _loadRealFriends,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: accent.withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  '$onlineCount в сети',
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.person_add_rounded, size: 16, color: accent),
+                        tooltip: 'Управление друзьями',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                        onPressed: () => showFriendsManagementSheet(
+                          context,
+                          accentColor: accent,
+                          currentUserProfile: profile,
+                          onFriendsChanged: _loadRealFriends,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: accent.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          '$onlineCount в сети',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
           const SizedBox(height: 12),
           if (friends.isEmpty)
             Container(
@@ -1559,6 +1564,11 @@ class _ProfileScreenState extends State<ProfileScreen>
           else
             ...friends.map((f) {
               final room = f['room'] as String?;
+              final rawName = (f['username'] ?? f['name'] ?? '').toString().trim();
+              final displayName = rawName.isEmpty ? 'Пользователь' : rawName;
+              final tag = (f['tag'] ?? '').toString().trim();
+              final avatarUrl = (f['avatar_url'] ?? f['avatar'])?.toString();
+              final statusText = (f['custom_status'] ?? f['status'] ?? (f['isOnline'] == true ? 'В сети' : 'Не в сети')).toString();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
@@ -1575,8 +1585,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       Stack(
                         children: [
                           AppAvatar(
-                            avatarUrl: f['avatar'] as String?,
-                            username: f['name'] as String?,
+                            avatarUrl: avatarUrl,
+                            username: displayName,
                             size: 34,
                           ),
                           Positioned(
@@ -1599,16 +1609,35 @@ class _ProfileScreenState extends State<ProfileScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              f['name'] as String,
-                              style: TextStyle(
-                                color: scheme.onSurface,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: scheme.onSurface,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                if (tag.isNotEmpty) ...[
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    tag.startsWith('#') ? tag : '#$tag',
+                                    style: TextStyle(
+                                      color: scheme.onSurfaceVariant,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             Text(
-                              f['status'] as String,
+                              statusText,
                               style: TextStyle(
                                 color: room != null ? accent : scheme.onSurfaceVariant,
                                 fontSize: 10.5,
@@ -1638,6 +1667,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             }),
         ],
       ),
+    );
+      },
     );
   }
 
@@ -2077,23 +2108,29 @@ class _RecentHistoryCarousel extends StatelessWidget {
         children: [
           // Заголовок витрины
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(Icons.history_rounded, size: 15, color: currentAccentColor),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'НЕДАВНО ПРОСМОТРЕНО',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    color: scheme.onSurface,
-                  ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.history_rounded, size: 15, color: currentAccentColor),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'НЕДАВНО ПРОСМОТРЕНО',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
               InkWell(
                 onTap: () {
                   if (displayItems.isNotEmpty) {
@@ -2307,14 +2344,14 @@ class _GlassCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: isDark
-            ? scheme.surfaceContainer.withValues(alpha: 0.65)
+            ? const Color(0xFF12161F)
             : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
-              ? accentColor.withValues(alpha: 0.25)
+              ? Colors.white.withValues(alpha: 0.07)
               : scheme.outlineVariant.withValues(alpha: 0.35),
-          width: 1.2,
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
@@ -2322,7 +2359,7 @@ class _GlassCard extends StatelessWidget {
                 ? Colors.black.withValues(alpha: 0.35)
                 : Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 6),
           ),
         ],
       ),

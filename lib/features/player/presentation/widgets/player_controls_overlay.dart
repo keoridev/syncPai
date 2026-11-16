@@ -158,6 +158,48 @@ class PlayerControlsOverlay extends StatelessWidget {
                             children: [
                               // Онлайн-радар присутствия (Presence) или классический SyncBadge
                               if (state.isSyncRoom) ...[
+                                // Явный бейдж роли текущей сессии (строго по state.isHost)
+                                Container(
+                                  key: const ValueKey('player_overlay_role_pill'),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: state.isHost
+                                        ? AppColors.primary.withValues(alpha: 0.22)
+                                        : Colors.white.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: state.isHost
+                                          ? AppColors.primaryLight.withValues(alpha: 0.7)
+                                          : Colors.white.withValues(alpha: 0.22),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        state.isHost
+                                            ? Icons.verified_user_rounded
+                                            : Icons.person_outline_rounded,
+                                        size: 11,
+                                        color: state.isHost
+                                            ? AppColors.primaryLight
+                                            : Colors.white70,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        state.isHost ? 'Хост комнаты' : 'Участник',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: state.isHost
+                                              ? AppColors.primaryLight
+                                              : Colors.white70,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
                                 PresenceRadarBadge(
                                   presence: state.peerPresence,
                                   fallbackName: syncPeerName ?? 'Друг',

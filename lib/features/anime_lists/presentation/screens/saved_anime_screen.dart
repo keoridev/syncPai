@@ -16,6 +16,7 @@ import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
+import '../../../../core/widgets/view_mode_toggle.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../../core/widgets/mascot/mascot_state.dart';
 import '../../../../core/widgets/mascot/sync_pai_mascot.dart';
@@ -976,20 +977,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                 ),
                                 const SizedBox(width: 8),
                               ],
-                              Container(
-                                padding: const EdgeInsets.all(3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.strokeMedium),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildViewModeButton(SavedAnimeViewMode.list, Icons.view_list_rounded),
-                                    _buildViewModeButton(SavedAnimeViewMode.grid, Icons.grid_view_rounded),
-                                    _buildViewModeButton(SavedAnimeViewMode.card, Icons.view_agenda_rounded),
-                                  ],
+                              ViewModeToggle(
+                                isGrid: _viewMode != SavedAnimeViewMode.list,
+                                onChanged: (grid) => _setViewMode(
+                                  grid ? SavedAnimeViewMode.grid : SavedAnimeViewMode.list,
                                 ),
                               ),
                             ],
@@ -1803,109 +1794,20 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
     Widget contentSliver;
     if (_viewMode == SavedAnimeViewMode.grid) {
+      final viewportW = MediaQuery.of(context).size.width;
+      final historyColumns = viewportW >= 1200 ? 6 : (viewportW >= 700 ? 4 : 3);
       contentSliver = SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: _gridColumns,
-            childAspectRatio: _gridColumns == 1
-                ? 2.8
-                : (_gridColumns == 2
-                    ? 0.55
-                    : (_gridColumns == 3 ? 0.50 : 0.48)),
-            crossAxisSpacing: _gridColumns == 1 ? 0 : (_gridColumns == 4 ? 6 : 10),
-            mainAxisSpacing: _gridColumns == 1 ? 8 : (_gridColumns == 4 ? 8 : 12),
+            crossAxisCount: historyColumns,
+            childAspectRatio: 0.68,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 14,
           ),
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final item = historyItems[index];
-
-              if (_gridColumns == 1) {
-                return InkWell(
-                  onTap: () => _openDetailsForHistory(context, item),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.stroke),
-                    ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: SizedBox(
-                            width: 70,
-                            height: 100,
-                            child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
-                                ? CachedNetworkImage(
-                                    imageUrl: item.posterUrl,
-                                    memCacheWidth: 360,
-                                    maxWidthDiskCache: 480,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => Container(
-                                      color: AppColors.background,
-                                      child: const Icon(Icons.movie_outlined, size: 28, color: Colors.white24),
-                                    ),
-                                  )
-                                : Container(
-                                    color: AppColors.background,
-                                    child: const Icon(Icons.movie_outlined, size: 28, color: Colors.white24),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                item.titleName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(Icons.play_circle_outline, size: 13, color: AppColors.primaryLight),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Эпизод ${item.episode}',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  if (item.formattedPosition.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      item.formattedPosition,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: AppColors.primaryLight,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 20),
-                      ],
-                    ),
-                  ),
-                );
-              }
 
               return InkWell(
                 onTap: () => _openDetailsForHistory(context, item),
@@ -1947,13 +1849,32 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             bottom: 0,
                             left: 0,
                             right: 0,
+                            height: 44,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.72),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
                             child: ClipRRect(
                               borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
                               child: LinearProgressIndicator(
                                 value: item.progress,
-                                minHeight: 4,
-                                backgroundColor: Colors.black.withValues(alpha: 0.6),
-                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                                minHeight: 3,
+                                backgroundColor: Colors.black.withValues(alpha: 0.55),
+                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             ),
                           ),
@@ -2235,25 +2156,5 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     }
 
     return [headerSliver, contentSliver];
-  }
-
-  Widget _buildViewModeButton(SavedAnimeViewMode mode, IconData icon) {
-    final isSelected = _viewMode == mode;
-    return InkWell(
-      onTap: () => _setViewMode(mode),
-      borderRadius: BorderRadius.circular(9),
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Icon(
-          icon,
-          size: 16,
-          color: isSelected ? Colors.white : AppColors.textSecondary,
-        ),
-      ),
-    );
   }
 }

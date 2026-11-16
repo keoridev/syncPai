@@ -113,7 +113,9 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     _tabController = TabController(length: 3, vsync: this);
     _subscribeAuthChanges();
     _loadProfileIfNull();
+    FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     if (!_isGuest) {
+      FriendsService.subscribeRealtime();
       _loadFriends();
       _loadRequests();
     } else {
@@ -121,6 +123,13 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
       _isLoadingRequests = false;
     }
     _checkClipboardForInvite();
+  }
+
+  void _onFriendsNotifierChanged() {
+    if (!mounted) return;
+    setState(() {
+      _friends = List<Map<String, dynamic>>.from(FriendsService.friendsNotifier.value);
+    });
   }
 
   void _subscribeAuthChanges() {
@@ -147,6 +156,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
 
   @override
   void dispose() {
+    FriendsService.friendsNotifier.removeListener(_onFriendsNotifierChanged);
     _authSub?.cancel();
     _debounceTimer?.cancel();
     _tabController.dispose();
@@ -254,21 +264,24 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     final success = await FriendsService.addFriend(user);
     if (!mounted) return;
 
+    final displayName = (user['username'] ?? user['name'] ?? 'Пользователь').toString().trim();
     if (success) {
+      setState(() {
+        _friends = List<Map<String, dynamic>>.from(FriendsService.friendsNotifier.value);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('«${user['name'] ?? user['username']}» добавлен в список друзей!'),
+          content: Text('Друг $displayName добавлен'),
           backgroundColor: const Color(0xFF00FF66).withValues(alpha: 0.9),
           behavior: SnackBarBehavior.floating,
         ),
       );
-      await _loadFriends();
       await _loadRequests();
       widget.onFriendsChanged?.call();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('«${user['name'] ?? user['username']}» уже в списке друзей или запрос отправлен'),
+          content: Text('«$displayName» уже в списке друзей или запрос отправлен'),
           backgroundColor: Colors.orangeAccent,
           behavior: SnackBarBehavior.floating,
         ),
@@ -295,16 +308,18 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   Future<void> _removeFriend(Map<String, dynamic> friend) async {
-    final name = friend['name'] ?? friend['username'] ?? '';
+    final name = (friend['username'] ?? friend['name'] ?? 'Пользователь').toString().trim();
     final id = friend['id']?.toString() ?? name;
-    await FriendsService.removeFriend(id);
+    // Мгновенное оптимистичное удаление в UI (0ms)
+    setState(() {
+      _friends.removeWhere((f) => (f['id']?.toString() ?? '') == id);
+    });
+    final ok = await FriendsService.removeFriend(id);
     if (!mounted) return;
-    await _loadFriends();
     widget.onFriendsChanged?.call();
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('«$name» удален из друзей'),
+        content: Text(ok ? '«$name» удален из друзей' : 'Не удалось удалить «$name»'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -623,9 +638,15 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
         final friend = _friends[index];
         final isOnline = friend['isOnline'] == true;
         final roomCode = friend['room'] ?? friend['roomCode'];
-        final friendName = friend['name'] ?? friend['username'] ?? 'Друг';
-        final tag = friend['tag'] != null ? friend['tag'].toString() : '';
-        final status = friend['status'] ?? friend['statusText'] ?? (isOnline ? 'В сети' : 'Не в сети');
+        final rawName = (friend['username'] ?? friend['name'] ?? '').toString().trim();
+        final friendName = rawName.isEmpty ? 'Пользователь' : rawName;
+        final tag = FriendProfile.normalizeTag(friend['tag']?.toString());
+        final friendCode = friend['friend_code']?.toString();
+        final avatarUrl = (friend['avatar_url'] ?? friend['avatar'])?.toString();
+        final baseStatus = friend['custom_status'] ?? friend['status'] ?? friend['statusText'] ?? (isOnline ? 'В сети' : 'Не в сети');
+        final status = (friendCode != null && friendCode.isNotEmpty)
+            ? '$friendCode • $baseStatus'
+            : baseStatus.toString();
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -640,7 +661,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
               Stack(
                 children: [
                   AppAvatar(
-                    avatarUrl: friend['avatar'] as String?,
+                    avatarUrl: avatarUrl,
                     username: friendName,
                     size: 40,
                   ),

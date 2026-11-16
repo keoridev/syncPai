@@ -11,6 +11,13 @@ import '../domain/entities/friend_models.dart';
 
 class FriendsService {
   static const String _storageKey = 'saved_friends_list_v2';
+  static final ValueNotifier<List<Map<String, dynamic>>> friendsNotifier =
+      ValueNotifier<List<Map<String, dynamic>>>(const []);
+  static RealtimeChannel? _realtimeChannel;
+  static String? _subscribedUid;
+
+  static const String _profileSelectColumns =
+      'id, username, tag, friend_code, avatar_url, custom_status, last_seen_at, supporter_tier';
 
   static SupabaseClient? get _supabaseClient {
     try {
@@ -204,6 +211,70 @@ class FriendsService {
     return trimmed.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
   }
 
+  /// Определяет UUID собеседников (другой стороны) из строк таблицы friendships.
+  static List<String> resolveOtherUserIds(
+    Iterable<dynamic> friendshipRows,
+    String currentUid,
+  ) {
+    final friendUids = <String>{};
+    for (final row in friendshipRows) {
+      if (row is! Map) continue;
+      final userId = row['user_id']?.toString().trim() ?? '';
+      final friendId = row['friend_id']?.toString().trim() ?? '';
+      final otherUserId = (userId == currentUid) ? friendId : userId;
+      if (otherUserId.isNotEmpty && otherUserId != currentUid) {
+        friendUids.add(otherUserId);
+      }
+    }
+    return friendUids.toList();
+  }
+
+  /// Подписаться на изменения таблицы friendships в реальном времени.
+  static void subscribeRealtime() {
+    if (!isCurrentUserPermanent) return;
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null || currentUid == null) return;
+    if (_realtimeChannel != null && _subscribedUid == currentUid) return;
+
+    unsubscribeRealtime();
+    _subscribedUid = currentUid;
+    try {
+      _realtimeChannel = client
+          .channel('friendships_live_$currentUid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'friendships',
+            callback: (payload) {
+              final newRec = payload.newRecord;
+              final oldRec = payload.oldRecord;
+              final involvesMe =
+                  newRec['user_id'] == currentUid ||
+                  newRec['friend_id'] == currentUid ||
+                  oldRec['user_id'] == currentUid ||
+                  oldRec['friend_id'] == currentUid;
+              if (involvesMe) {
+                unawaited(getFriends());
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('FriendsService subscribeRealtime error: $e');
+    }
+  }
+
+  static void unsubscribeRealtime() {
+    try {
+      if (_realtimeChannel != null) {
+        _supabaseClient?.removeChannel(_realtimeChannel!);
+      }
+    } catch (_) {}
+    _realtimeChannel = null;
+    _subscribedUid = null;
+  }
+
   /// Получить сохраненный список друзей (локально + Supabase friendships)
   static Future<List<Map<String, dynamic>>> getFriends() async {
     final list = <Map<String, dynamic>>[];
@@ -216,13 +287,17 @@ class FriendsService {
           final decoded = jsonDecode(raw) as List<dynamic>;
           for (final item in decoded) {
             if (item is Map) {
-              list.add(Map<String, dynamic>.from(item));
+              list.add(FriendProfile.fromMap(Map<String, dynamic>.from(item)).toMap());
             }
           }
         }
       } catch (e) {
         debugPrint('FriendsService getFriends cache error: $e');
       }
+    }
+
+    if (list.isNotEmpty && friendsNotifier.value.isEmpty) {
+      friendsNotifier.value = List<Map<String, dynamic>>.from(list);
     }
 
     // 2. Синхронизируем с Supabase friendships (только для зарегистрированных пользователей, без PostgrestException у гостей)
@@ -241,33 +316,28 @@ class FriendsService {
             .eq('status', 'accepted')
             .limit(50);
 
-        if (friendships is Iterable && friendships.isNotEmpty) {
-          final friendUids = <String>{};
-          for (final f in friendships) {
-            if (f is! Map) continue;
-            final uId = f['user_id']?.toString();
-            final fId = f['friend_id']?.toString();
-            if (uId != null && uId != currentUid) friendUids.add(uId);
-            if (fId != null && fId != currentUid) friendUids.add(fId);
+        if (friendships is Iterable) {
+          final otherUserIds = resolveOtherUserIds(friendships, currentUid);
+          if (otherUserIds.isEmpty) {
+            await saveFriends(const []);
+            friendsNotifier.value = const [];
+            return const [];
           }
 
-          if (friendUids.isNotEmpty) {
-            final friendProfiles = await client
-                .from('profiles')
-                .select('id, username, tag, friend_code, avatar_url, custom_status, last_seen_at')
-                .filter('id', 'in', friendUids.toList());
+          final friendProfiles = await client
+              .from('profiles')
+              .select(_profileSelectColumns)
+              .inFilter('id', otherUserIds);
 
-            final remoteList = <Map<String, dynamic>>[];
-            for (final row in friendProfiles) {
-              final profile = FriendProfile.fromMap(row);
-              remoteList.add(profile.toMap());
-            }
-
-            if (remoteList.isNotEmpty) {
-              await saveFriends(remoteList);
-              return remoteList;
-            }
+          final remoteList = <Map<String, dynamic>>[];
+          for (final row in friendProfiles) {
+            final profile = FriendProfile.fromMap(Map<String, dynamic>.from(row));
+            remoteList.add(profile.toMap());
           }
+
+          await saveFriends(remoteList);
+          friendsNotifier.value = List<Map<String, dynamic>>.from(remoteList);
+          return remoteList;
         }
       }
     } catch (e) {
@@ -373,44 +443,55 @@ class FriendsService {
     }
   }
 
-  /// Добавить нового друга локально и в облако
+  /// Добавить нового друга (мгновенное оптимистичное обновление + облако)
   static Future<bool> addFriend(Map<String, dynamic> newFriend) async {
-    final list = await getFriends();
-    final friendId = newFriend['id']?.toString();
-    final nameLower = (newFriend['name'] ?? newFriend['username'] ?? '').toString().trim().toLowerCase();
-    if (nameLower.isEmpty && (friendId == null || friendId.isEmpty)) return false;
+    final currentList = friendsNotifier.value.isNotEmpty
+        ? List<Map<String, dynamic>>.from(friendsNotifier.value)
+        : await getFriends();
 
-    final exists = list.any((f) =>
-        (friendId != null && f['id']?.toString() == friendId) ||
-        (f['name'] ?? '').toString().toLowerCase() == nameLower);
+    final friendId = newFriend['id']?.toString().trim();
+    final currentUid = _supabaseClient?.auth.currentUser?.id;
+    if (friendId != null && friendId.isNotEmpty && friendId == currentUid) {
+      return false;
+    }
+
+    final resolvedProfile = FriendProfile.fromMap(newFriend);
+    if (resolvedProfile.username.isEmpty && (friendId == null || friendId.isEmpty)) {
+      return false;
+    }
+
+    final exists = currentList.any((f) {
+      final fId = f['id']?.toString().trim();
+      if (friendId != null && friendId.isNotEmpty && fId != null && fId.isNotEmpty) {
+        return fId == friendId;
+      }
+      return (f['username'] ?? f['name'] ?? '').toString().trim().toLowerCase() ==
+          resolvedProfile.username.toLowerCase();
+    });
     if (exists) return false;
 
-    final normalized = {
-      'id': friendId ?? 'fr_${DateTime.now().millisecondsSinceEpoch}',
-      'name': (newFriend['name'] ?? newFriend['username'] ?? '').toString().trim(),
-      'username': (newFriend['username'] ?? newFriend['name'] ?? '').toString().trim(),
-      'tag': (newFriend['tag'] ?? '#0001').toString(),
-      'friend_code': newFriend['friend_code']?.toString(),
-      'avatar': (newFriend['avatar'] ?? newFriend['avatar_url'] ?? 'cat').toString(),
-      'avatar_url': (newFriend['avatar_url'] ?? newFriend['avatar'] ?? 'cat').toString(),
-      'status': (newFriend['status'] ?? newFriend['custom_status'] ?? 'В сети').toString(),
-      'statusText': (newFriend['statusText'] ?? newFriend['status'] ?? 'В сети').toString(),
-      'custom_status': (newFriend['custom_status'] ?? newFriend['status'] ?? 'В сети').toString(),
-      'room': newFriend['room']?.toString() ?? newFriend['roomCode']?.toString(),
-      'roomCode': newFriend['roomCode']?.toString() ?? newFriend['room']?.toString(),
-      'isOnline': newFriend['isOnline'] == true,
-      'canJoin': newFriend['canJoin'] == true,
-      'streakDays': newFriend['streakDays'] ?? 1,
-    };
+    final normalized = resolvedProfile
+        .copyWith(
+          id: (friendId != null && friendId.isNotEmpty)
+              ? friendId
+              : 'fr_${DateTime.now().millisecondsSinceEpoch}',
+        )
+        .toMap();
 
-    list.insert(0, normalized);
-    await saveFriends(list);
+    final updatedList = [normalized, ...currentList];
+    // 0ms оптимистичное обновление UI и локального кэша
+    friendsNotifier.value = updatedList;
+    await saveFriends(updatedList);
 
     // Синхронизируем с Supabase
     try {
       final client = _supabaseClient;
-      final currentUid = client?.auth.currentUser?.id;
-      if (client != null && currentUid != null && friendId != null && friendId != currentUid && !friendId.startsWith('fr_')) {
+      if (client != null &&
+          currentUid != null &&
+          friendId != null &&
+          friendId.isNotEmpty &&
+          friendId != currentUid &&
+          !friendId.startsWith('fr_')) {
         await client.from('friendships').upsert({
           'user_id': currentUid,
           'friend_id': friendId,
@@ -418,33 +499,145 @@ class FriendsService {
           'created_at': DateTime.now().toUtc().toIso8601String(),
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('FriendsService addFriend cloud upsert error: $e');
+    }
 
     return true;
   }
 
-  /// Удалить друга по ID
-  static Future<void> removeFriend(String idOrName) async {
-    final list = await getFriends();
-    final target = idOrName.toLowerCase();
-    list.removeWhere((f) =>
-        f['id']?.toString().toLowerCase() == target ||
-        f['name']?.toString().toLowerCase() == target);
-    await saveFriends(list);
+  /// Добавить друга по friend_code, username#tag или UUID с мгновенным обновлением UI
+  static Future<Map<String, dynamic>> addFriendByCodeOrTag(String rawInput) async {
+    final trimmed = rawInput.trim();
+    if (trimmed.isEmpty) {
+      return {'success': false, 'message': 'Введите код друга или Ник#тег'};
+    }
+
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null || currentUid == null) {
+      return {'success': false, 'message': 'Войдите в аккаунт для добавления друзей'};
+    }
+
+    try {
+      final target = await _lookupProfileByCodeOrTag(client, trimmed);
+      if (target == null) {
+        return {'success': false, 'message': 'Пользователь не найден'};
+      }
+      if (target.id == currentUid) {
+        return {'success': false, 'message': 'Нельзя добавить самого себя'};
+      }
+
+      final added = await addFriend(target.toMap());
+      if (!added) {
+        return {
+          'success': false,
+          'message': '${target.username} уже в списке друзей',
+        };
+      }
+      return {
+        'success': true,
+        'friend': target.toMap(),
+        'message': 'Друг ${target.username} добавлен',
+      };
+    } catch (e) {
+      debugPrint('FriendsService addFriendByCodeOrTag error: $e');
+      return {'success': false, 'message': 'Ошибка добавления: $e'};
+    }
+  }
+
+  static Future<FriendProfile?> _lookupProfileByCodeOrTag(
+    SupabaseClient client,
+    String rawInput,
+  ) async {
+    final trimmed = rawInput.trim();
+    final uuidRegex = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+
+    if (uuidRegex.hasMatch(trimmed)) {
+      final row = await client
+          .from('profiles')
+          .select(_profileSelectColumns)
+          .eq('id', trimmed)
+          .maybeSingle();
+      return row != null ? FriendProfile.fromMap(row) : null;
+    }
+
+    if (trimmed.contains('#')) {
+      final parts = trimmed.split('#');
+      final uName = parts.first.trim();
+      final cleanTag = parts.last.trim().replaceFirst(RegExp(r'^#+'), '');
+      if (uName.isNotEmpty && cleanTag.isNotEmpty) {
+        final rows = await client
+            .from('profiles')
+            .select(_profileSelectColumns)
+            .ilike('username', uName)
+            .inFilter('tag', [cleanTag, '#$cleanTag'])
+            .limit(1);
+        if (rows.isNotEmpty) {
+          return FriendProfile.fromMap(rows.first);
+        }
+      }
+    }
+
+    final noHash = trimmed.replaceFirst(RegExp(r'^#+'), '');
+    final upperCode = noHash.toUpperCase();
+    final normalizedCode = upperCode.startsWith('SP-')
+        ? upperCode
+        : (upperCode.startsWith('SP') && upperCode.length > 2
+            ? 'SP-${upperCode.substring(2)}'
+            : upperCode);
+
+    final byCode = await client
+        .from('profiles')
+        .select(_profileSelectColumns)
+        .ilike('friend_code', normalizedCode)
+        .limit(1);
+    if (byCode.isNotEmpty) {
+      return FriendProfile.fromMap(byCode.first);
+    }
+
+    return null;
+  }
+
+  /// Удалить друга по ID (мгновенный 0ms UI + откат при ошибке Supabase)
+  static Future<bool> removeFriend(String idOrName) async {
+    final previousList = friendsNotifier.value.isNotEmpty
+        ? List<Map<String, dynamic>>.from(friendsNotifier.value)
+        : await getFriends();
+
+    final target = idOrName.trim().toLowerCase();
+    final nextList = previousList
+        .where((f) =>
+            f['id']?.toString().toLowerCase() != target &&
+            f['name']?.toString().toLowerCase() != target &&
+            f['username']?.toString().toLowerCase() != target)
+        .toList();
+
+    // 0ms оптимистичное обновление UI и локального кэша
+    friendsNotifier.value = nextList;
+    await saveFriends(nextList);
 
     try {
       final client = _supabaseClient;
       final currentUid = client?.auth.currentUser?.id;
-      if (client != null && currentUid != null) {
+      if (client != null && currentUid != null && !idOrName.startsWith('fr_')) {
         await client
             .from('friendships')
             .delete()
             .or('and(user_id.eq.$currentUid,friend_id.eq.$idOrName),and(user_id.eq.$idOrName,friend_id.eq.$currentUid)');
       }
-    } catch (_) {}
+      return true;
+    } catch (e) {
+      debugPrint('FriendsService removeFriend rollback on error: $e');
+      friendsNotifier.value = previousList;
+      await saveFriends(previousList);
+      return false;
+    }
   }
 
-  /// Мгновенный поиск по username, username#tag или friend_code
+  /// Мгновенный поиск по friend_code, username#tag, UUID или префиксу username
   static Future<List<FriendProfile>> searchUsers(String query) async {
     final raw = query.trim();
     if (raw.isEmpty) return [];
@@ -454,26 +647,42 @@ class FriendsService {
       final currentUid = client?.auth.currentUser?.id;
       if (client == null) return [];
 
-      var q = client.from('profiles').select('id, username, tag, friend_code, avatar_url, custom_status, last_seen_at');
+      final q = client.from('profiles').select(_profileSelectColumns);
 
-      // 1. Поиск по точному Friend Code (SP-XXXXXX)
-      if (raw.toUpperCase().startsWith('SP-') || raw.toUpperCase().startsWith('SP')) {
-        final code = raw.toUpperCase().startsWith('SP-') ? raw.toUpperCase() : 'SP-${raw.substring(2).toUpperCase()}';
-        final rows = await q.eq('friend_code', code).limit(5);
+      // 1. Точный UUID
+      final uuidRegex = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      );
+      if (uuidRegex.hasMatch(raw)) {
+        final rows = await q.eq('id', raw).limit(5);
         return rows.map((r) => FriendProfile.fromMap(r)).where((p) => p.id != currentUid).toList();
       }
 
-      // 2. Поиск по Username#Tag (например, "Keori#0421")
+      // 2. Поиск по точному Friend Code (SP-XXXXXX, без учёта регистра)
+      final noHash = raw.replaceFirst(RegExp(r'^#+'), '');
+      final upper = noHash.toUpperCase();
+      if (upper.startsWith('SP-') || (upper.startsWith('SP') && upper.length >= 6)) {
+        final code = upper.startsWith('SP-') ? upper : 'SP-${upper.substring(2)}';
+        final rows = await q.ilike('friend_code', code).limit(5);
+        return rows.map((r) => FriendProfile.fromMap(r)).where((p) => p.id != currentUid).toList();
+      }
+
+      // 3. Поиск по Username#Tag (например, "keori#5727" — поддержка tag с # и без #)
       if (raw.contains('#')) {
         final parts = raw.split('#');
         final uName = parts.first.trim();
-        final tagPart = '#${parts.last.trim()}';
-        final rows = await q.ilike('username', uName).eq('tag', tagPart).limit(5);
-        return rows.map((r) => FriendProfile.fromMap(r)).where((p) => p.id != currentUid).toList();
+        final cleanTag = parts.last.trim().replaceFirst(RegExp(r'^#+'), '');
+        if (uName.isNotEmpty && cleanTag.isNotEmpty) {
+          final rows = await q
+              .ilike('username', uName)
+              .inFilter('tag', [cleanTag, '#$cleanTag'])
+              .limit(5);
+          return rows.map((r) => FriendProfile.fromMap(r)).where((p) => p.id != currentUid).toList();
+        }
       }
 
-      // 3. Общий поиск по префиксу username
-      final clean = raw.replaceAll('@', '');
+      // 4. Общий поиск по префиксу username
+      final clean = noHash.replaceAll('@', '');
       final rows = await q.ilike('username', '%$clean%').limit(15);
       return rows.map((r) => FriendProfile.fromMap(r)).where((p) => p.id != currentUid).toList();
     } catch (e) {

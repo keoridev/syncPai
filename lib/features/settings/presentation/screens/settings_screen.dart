@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/services/app_updater_service.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -738,7 +739,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                     subtitle: const Text(
-                      'Блюр BackdropFilter и блики интерфейса',
+                      'Полупрозрачные панели и мягкое размытие',
                       style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                     ),
                     value: _liquidGlassEffects,
@@ -746,6 +747,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (val) {
                       setState(() => _liquidGlassEffects = val);
                       _saveBool('settings_liquid_glass', val);
+                    },
+                  ),
+                  _buildDivider(),
+                  ListenableBuilder(
+                    listenable: PresenceService.instance,
+                    builder: (context, _) {
+                      final isIncognito = PresenceService.instance.isIncognito;
+                      return SwitchListTile(
+                        key: const ValueKey('settings_incognito_switch'),
+                        secondary: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            isIncognito
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_outlined,
+                            color: isIncognito ? Colors.white : AppColors.textSecondary,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Режим инкогнито',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        subtitle: const Text(
+                          'Скрыть статус «В сети» и текущее аниме от друзей',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                        value: isIncognito,
+                        activeThumbColor: themePrimary,
+                        onChanged: (val) => PresenceService.instance.setIncognito(val),
+                      );
                     },
                   ),
                 ]),

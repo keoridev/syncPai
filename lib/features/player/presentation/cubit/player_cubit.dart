@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
+import 'package:sync_pai/core/services/presence_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -210,6 +211,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     currentUserId = (resolvedUid != null && resolvedUid.isNotEmpty)
         ? resolvedUid
         : '${isHost ? "host" : "guest"}_${_random.nextInt(999999)}';
+    unawaited(PresenceService.instance.setWatchingActivity(title.russianTitle, episode.episode));
 
     _initPlayer();
     if (state.isSyncRoom) {
@@ -2027,6 +2029,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   Future<void> close() async {
     if (_isDisposing) return;
     _isDisposing = true;
+    unawaited(PresenceService.instance.clearWatchingActivity());
 
     // 1. Сначала отменяем все подписки на стримы
     for (final s in _subscriptions) {

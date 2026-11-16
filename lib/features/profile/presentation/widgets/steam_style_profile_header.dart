@@ -12,6 +12,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
@@ -205,9 +206,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   String _resolveArtworkTitle() {
     final title = widget.profile.artworkTitle;
     if (title != null && title.trim().isNotEmpty) {
-      return title.trim().toUpperCase();
+      return title.trim();
     }
-    return curatedPresets.first.title;
+    return '';
   }
 
   void _handleShowcaseTap() {
@@ -341,15 +342,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           ),
           boxShadow: [
             BoxShadow(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.7)
-                  : Colors.black.withValues(alpha: 0.08),
-              blurRadius: 28,
-              offset: const Offset(0, 10),
-            ),
-            BoxShadow(
-              color: accent.withValues(alpha: 0.08),
-              blurRadius: 20,
+              color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -973,30 +968,15 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
               const SizedBox(height: 8),
 
-              // Под флагом: кастомная плашка статуса со стилизованными разделителями
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
-                      : scheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: accent.withValues(alpha: 0.35),
-                    width: 0.9,
-                  ),
-                ),
-                child: Text(
-                  '— ❖ — $statusText — ❖ —',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
-                  ),
+              // Под флагом: чистая строка статуса
+              Text(
+                statusText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
 
@@ -1150,48 +1130,59 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             ],
           ],
 
-          // 4. Индикатор онлайн-статуса Steam (В сети / Online)
+          // 4. Индикатор онлайн-статуса / Инкогнито (переключение в 1 тап для своего профиля)
           Positioned(
             bottom: -2,
             right: -2,
-            child: Builder(
-              builder: (context) {
+            child: ListenableBuilder(
+              listenable: PresenceService.instance,
+              builder: (context, _) {
                 final scheme = Theme.of(context).colorScheme;
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: accent, width: 1.0),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.35),
-                        blurRadius: 6,
+                final isIncognito =
+                    widget.isCurrentUser && PresenceService.instance.isIncognito;
+                final pillColor =
+                    isIncognito ? const Color(0xFF94A3B8) : accent;
+
+                return GestureDetector(
+                  key: const ValueKey('profile_status_pill'),
+                  onTap: widget.isCurrentUser
+                      ? () => PresenceService.instance.toggleIncognito()
+                      : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isIncognito
+                          ? const Color(0xFF1E2430)
+                          : scheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: pillColor.withValues(alpha: isIncognito ? 0.45 : 0.8),
+                        width: 1.0,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: accent,
-                          shape: BoxShape.circle,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: pillColor,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        'ONLINE',
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
+                        const SizedBox(width: 3),
+                        Text(
+                          isIncognito ? 'ИНКОГНИТО' : 'ONLINE',
+                          style: TextStyle(
+                            color: pillColor,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
@@ -1306,15 +1297,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: isDark
-                        ? Colors.black.withValues(alpha: 0.8)
-                        : Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  ),
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.15),
-                    blurRadius: 18,
+                    color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -1522,32 +1507,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         ),
 
         // Элементы оформления Steam Artwork
-        if (isMain) ...[
-          // Верхний левый стилизованный бейдж
-          Positioned(
-            top: 10,
-            left: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              ),
-              child: const Text(
-                'ARTWORK',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 8.5,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.4,
-                ),
-              ),
-            ),
-          ),
-        ],
-
         // Тонкий внутренний контур панели
         Positioned.fill(
           child: DecoratedBox(
@@ -1575,21 +1534,24 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         ),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Название тайтла
-          Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
+          if (title.isNotEmpty)
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
               ),
-            ),
-          ),
+            )
+          else
+            const Spacer(),
           // Быстрая кнопка смены иллюстрации
           if (widget.isCurrentUser)
             InkWell(

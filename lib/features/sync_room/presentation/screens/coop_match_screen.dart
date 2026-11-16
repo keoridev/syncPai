@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -102,6 +103,16 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
     });
   }
 
+  void _openAnimeDetails(BuildContext context, AnimeTitle anime) {
+    context.push('/anime/${anime.id}', extra: anime);
+  }
+
+  void _openCurrentCardDetails(BuildContext context) {
+    final activeAnime = widget.cubit.state.currentTitle;
+    if (activeAnime == null) return;
+    _openAnimeDetails(context, activeAnime);
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider.value(
@@ -125,7 +136,28 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
           }
         },
         builder: (context, state) {
-          return Scaffold(
+          return Focus(
+            autofocus: true,
+            onKeyEvent: (_, event) {
+              if (event is! KeyDownEvent || state.hasFinishedDeck) {
+                return KeyEventResult.ignored;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                widget.cubit.voteCurrent(false);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                widget.cubit.voteCurrent(true);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.space) {
+                _openCurrentCardDetails(context);
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Scaffold(
             backgroundColor: AppColors.background,
             appBar: AppBar(
               backgroundColor: Colors.transparent,
@@ -231,7 +263,8 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                         ),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -246,6 +279,8 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
 
     return Center(
       child: GestureDetector(
+        key: ValueKey('coop_match_active_card_${title.id}'),
+        onTap: () => _openCurrentCardDetails(context),
         onPanUpdate: _onPanUpdate,
         onPanEnd: _onPanEnd,
         child: Transform.translate(
@@ -449,6 +484,25 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                 border: Border.all(color: AppColors.syncError.withValues(alpha: 0.4), width: 1.5),
               ),
               child: const Icon(Icons.close_rounded, color: AppColors.syncError, size: 34),
+            ),
+          ),
+
+          // Кнопка Подробнее (открывает именно текущую активную карточку)
+          TvFocusable(
+            borderRadius: BorderRadius.circular(28),
+            scaleFactor: 1.08,
+            glowColor: AppColors.primary,
+            onPressed: () => _openCurrentCardDetails(context),
+            child: Container(
+              key: const ValueKey('coop_match_open_details_btn'),
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.45), width: 1.5),
+              ),
+              child: Icon(Icons.info_outline_rounded, color: AppColors.primaryLight, size: 24),
             ),
           ),
 

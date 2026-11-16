@@ -18,10 +18,10 @@ logger = logging.getLogger("syncpai_bot")
 
 async def set_bot_commands(bot: Bot):
     commands = [
-        BotCommand(command="start", description="🌸 Главное меню и привязка аккаунта"),
-        BotCommand(command="profile", description="👤 Мой профиль SyncPai"),
-        BotCommand(command="support", description="💎 Поддержать проект и подписки"),
-        BotCommand(command="download", description="📥 Скачать приложение (.apk / .exe)"),
+        BotCommand(command="start", description="Главное меню и привязка аккаунта"),
+        BotCommand(command="profile", description="Мой профиль SyncPai"),
+        BotCommand(command="support", description="Поддержать проект и подписки"),
+        BotCommand(command="download", description="Скачать приложение (.apk / .exe)"),
     ]
     await bot.set_my_commands(commands)
 

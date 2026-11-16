@@ -11,7 +11,6 @@ import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../../sync_room/presentation/screens/watch_together_screen.dart';
 import '../../../sync_room/presentation/widgets/floating_room_overlay.dart';
-import '../../../winter_theme/presentation/widgets/winter_snowfall_overlay.dart';
 
 /// Главный экран приложения со связкой 5 разделов:
 /// 1. Каталог (Релизы, поиск, просмотр аниме)
@@ -138,9 +137,6 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 )
               : bodyContent,
-          const Positioned.fill(
-            child: WinterSnowfallOverlay(),
-          ),
           const Positioned.fill(
             child: FloatingRoomOverlay(mobileBottomInset: 92),
           ),

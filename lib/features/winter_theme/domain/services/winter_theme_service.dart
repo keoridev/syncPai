@@ -35,18 +35,29 @@ class WinterThemeService extends ChangeNotifier {
 
   static const String _prefWinterThemeKey = 'syncpai_winter_theme_enabled';
   static const String _prefSnowfallKey = 'syncpai_snowfall_enabled';
+  static const String _prefSnowInPlayerKey = 'syncpai_snow_in_player_enabled';
   static const String _prefWinterMascotKey = 'syncpai_winter_mascot_enabled';
   static const String _prefManualOverrideKey = 'syncpai_winter_manual_override';
 
   bool _isWinterThemeEnabled = true;
   bool _isSnowfallEnabled = true;
+  bool _isSnowInPlayerEnabled = false;
   bool _isWinterMascotEnabled = true;
   bool _isManualOverride = true; // По умолчанию включено в рамках релиза Winter Update 2026
+  int _activeVideoPlayerCount = 0;
 
   bool get isWinterThemeEnabled => _isWinterThemeEnabled;
   bool get isSnowfallEnabled => _isSnowfallEnabled;
+  bool get isSnowInPlayerEnabled => _isSnowInPlayerEnabled;
   bool get isWinterMascotEnabled => _isWinterMascotEnabled;
   bool get isManualOverride => _isManualOverride;
+  bool get isVideoPlayerActive => _activeVideoPlayerCount > 0;
+
+  /// Должен ли сейчас отображаться снегопад с учётом активного видеоплеера.
+  bool get shouldRenderSnowfall =>
+      isWinterActive &&
+      _isSnowfallEnabled &&
+      (!isVideoPlayerActive || _isSnowInPlayerEnabled);
 
   /// Активна ли зимняя тема прямо сейчас (с учетом сезонного окна или ручного переключателя)
   bool get isWinterActive {
@@ -76,6 +87,7 @@ class WinterThemeService extends ChangeNotifier {
       // По умолчанию для Winter Update 2026 включаем зимнюю сказку
       _isWinterThemeEnabled = prefs.getBool(_prefWinterThemeKey) ?? true;
       _isSnowfallEnabled = prefs.getBool(_prefSnowfallKey) ?? true;
+      _isSnowInPlayerEnabled = prefs.getBool(_prefSnowInPlayerKey) ?? false;
       _isWinterMascotEnabled = prefs.getBool(_prefWinterMascotKey) ?? true;
       _isManualOverride = prefs.getBool(_prefManualOverrideKey) ?? true;
       notifyListeners();
@@ -109,6 +121,24 @@ class WinterThemeService extends ChangeNotifier {
     _isSnowfallEnabled = value;
     notifyListeners();
     await _saveBool(_prefSnowfallKey, value);
+  }
+
+  Future<void> setSnowInPlayer(bool value) async {
+    _isSnowInPlayerEnabled = value;
+    notifyListeners();
+    await _saveBool(_prefSnowInPlayerKey, value);
+  }
+
+  void enterVideoPlayer() {
+    _activeVideoPlayerCount++;
+    notifyListeners();
+  }
+
+  void exitVideoPlayer() {
+    if (_activeVideoPlayerCount > 0) {
+      _activeVideoPlayerCount--;
+      notifyListeners();
+    }
   }
 
   Future<void> setWinterMascot(bool value) async {

@@ -18,6 +18,7 @@ import 'features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'features/player/services/global_mini_player_service.dart';
 import 'features/support/presentation/widgets/support_prompt_overlay.dart';
 import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
+import 'features/winter_theme/presentation/widgets/winter_snowfall_overlay.dart';
 import 'core/services/app_updater_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
@@ -158,6 +159,9 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
                           child ?? const SizedBox.shrink(),
                           const GlobalMiniPlayerOverlay(),
                           const SupportPromptOverlay(),
+                          const Positioned.fill(
+                            child: WinterSnowfallOverlay(),
+                          ),
                         ],
                       ),
                     ),

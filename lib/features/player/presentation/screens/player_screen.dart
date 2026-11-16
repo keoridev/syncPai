@@ -19,6 +19,7 @@ import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:sync_pai/features/sync_room/services/active_room_service.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
+import 'package:sync_pai/features/winter_theme/domain/services/winter_theme_service.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -163,6 +164,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    WinterThemeService.instance.enterVideoPlayer();
     WidgetsBinding.instance.addObserver(this);
 
     // Полноэкранный режим без системных панелей
@@ -448,6 +450,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     _isDisposed = true;
+    WinterThemeService.instance.exitVideoPlayer();
     WidgetsBinding.instance.removeObserver(this);
     _pipSubscription?.cancel();
     PipService.instance.setAutoPip(false);

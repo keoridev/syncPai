@@ -672,6 +672,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               // 2. Падающий снег
               SwitchListTile(
+                key: const ValueKey('settings_snowfall_switch'),
                 secondary: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -685,7 +686,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                 ),
                 subtitle: const Text(
-                  'Плавная легкая анимация хлопьев снега на экранах',
+                  'Плотный снегопад на всех экранах приложения',
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                 ),
                 value: winter.isSnowfallEnabled,
@@ -693,6 +694,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   HapticFeedback.lightImpact();
                   winter.setSnowfall(val);
                 },
+              ),
+              _buildDivider(),
+
+              // 2.1. Снег во время просмотра аниме
+              SwitchListTile(
+                key: const ValueKey('settings_snow_in_player_switch'),
+                secondary: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: winter.isSnowfallEnabled ? 0.08 : 0.04),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.movie_filter_rounded,
+                    color: winter.isSnowfallEnabled
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : AppColors.textSecondary.withValues(alpha: 0.4),
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  'Снег во время просмотра аниме',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: winter.isSnowfallEnabled
+                        ? null
+                        : AppColors.textSecondary.withValues(alpha: 0.5),
+                  ),
+                ),
+                subtitle: Text(
+                  'Показывать падающий снег поверх видеоплеера',
+                  style: TextStyle(
+                    color: winter.isSnowfallEnabled
+                        ? AppColors.textSecondary
+                        : AppColors.textSecondary.withValues(alpha: 0.45),
+                    fontSize: 12,
+                  ),
+                ),
+                value: winter.isSnowInPlayerEnabled,
+                onChanged: winter.isSnowfallEnabled
+                    ? (val) {
+                        HapticFeedback.lightImpact();
+                        winter.setSnowInPlayer(val);
+                      }
+                    : null,
               ),
               _buildDivider(),
 

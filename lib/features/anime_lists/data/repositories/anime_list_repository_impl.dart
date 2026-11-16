@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,13 +75,43 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     }
     await _saveLocal(all);
 
-    // Фоновая синхронизация с Supabase
+    // Неблокирующая фоновая синхронизация с Supabase (fire-and-forget)
     final client = _supabase;
     if (client != null && client.auth.currentUser != null) {
-      await ListsSyncService.upsertEntry(
-        client,
-        userId: client.auth.currentUser!.id,
-        entry: entry,
+      unawaited(
+        ListsSyncService.upsertEntry(
+          client,
+          userId: client.auth.currentUser!.id,
+          entry: entry,
+        ).catchError((e) {
+          debugPrint('[AnimeListRepository] Background upsert error: $e');
+        }),
+      );
+    }
+  }
+
+  @override
+  Future<void> upsertEntries(List<UserAnimeEntry> entries) async {
+    if (entries.isEmpty) return;
+    final all = await getAllEntries();
+    final map = {for (final e in all) e.animeId: e};
+    for (final e in entries) {
+      map[e.animeId] = e;
+    }
+    final merged = map.values.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await _saveLocal(merged);
+
+    final client = _supabase;
+    if (client != null && client.auth.currentUser != null) {
+      unawaited(
+        ListsSyncService.upsertEntries(
+          client,
+          userId: client.auth.currentUser!.id,
+          entries: entries,
+        ).catchError((e) {
+          debugPrint('[AnimeListRepository] Background batch upsert error: $e');
+        }),
       );
     }
   }
@@ -91,17 +122,20 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
     all.removeWhere((e) => e.animeId == animeId);
     await _saveLocal(all);
 
+    // Неблокирующее фоновое удаление из Supabase (fire-and-forget)
     final client = _supabase;
     if (client != null && client.auth.currentUser != null) {
-      try {
-        await client
-            .from('user_anime_lists')
-            .delete()
-            .eq('user_id', client.auth.currentUser!.id)
-            .eq('anime_id', animeId);
-      } catch (e) {
-        debugPrint('Supabase delete error: $e');
-      }
+      unawaited(() async {
+        try {
+          await client
+              .from('user_anime_lists')
+              .delete()
+              .eq('user_id', client.auth.currentUser!.id)
+              .eq('anime_id', animeId);
+        } catch (e) {
+          debugPrint('Supabase delete error: $e');
+        }
+      }());
     }
   }
 

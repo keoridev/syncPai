@@ -100,6 +100,15 @@ class GlassContainer extends StatelessWidget {
 
     final effectiveSigma = blurSigma.clamp(0.0, 8.0);
 
+    // Если блюр равен 0 (или отключен для экономии GPU), рендерим легковесную
+    // полупрозрачную панель без затратного вызова BackdropFilter
+    if (effectiveSigma <= 0.0) {
+      if (margin != null) {
+        return Padding(padding: margin!, child: content);
+      }
+      return content;
+    }
+
     Widget glass = RepaintBoundary(
       child: ClipRRect(
         borderRadius: effectiveRadius ?? BorderRadius.zero,

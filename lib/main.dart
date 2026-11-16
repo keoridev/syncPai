@@ -26,7 +26,6 @@ import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Игнорируем известный баг Flutter Engine на Windows при нажатии Alt (Alt Left assertion в raw_keyboard.dart)
   final defaultOnError = FlutterError.onError;
   FlutterError.onError = (details) {
     final msg = details.exceptionAsString();
@@ -174,3 +173,33 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

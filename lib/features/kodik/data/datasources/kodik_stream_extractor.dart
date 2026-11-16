@@ -59,7 +59,8 @@ class KodikStreamExtractor {
         }
       }
       final rotString = buffer.toString();
-      final decoded = utf8.decode(base64.decode(rotString));
+      final normalized = base64.normalize(rotString);
+      final decoded = utf8.decode(base64.decode(normalized));
       return decoded.startsWith('//') ? 'https:$decoded' : decoded;
     } catch (_) {
       return encoded;
@@ -78,7 +79,9 @@ class KodikStreamExtractor {
         options: Options(
           responseType: ResponseType.plain,
           headers: {
-            'Referer': domain,
+            'Referer': 'https://kodik-api.com/',
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           },
         ),
       );
@@ -96,7 +99,15 @@ class KodikStreamExtractor {
         return rawLink;
       }
 
-      // 2. Извлекаем параметры для запроса к /ftor шлюзу Kodik
+      // 2. Извлекаем urlParams и vInfo для защищенного шлюза /ftor
+      Map<String, dynamic> urlParams = {};
+      final urlParamsMatch = RegExp(r'''var\s+urlParams\s*=\s*['"](\{.*?\})['"]''').firstMatch(html);
+      if (urlParamsMatch != null) {
+        try {
+          urlParams = jsonDecode(urlParamsMatch.group(1)!) as Map<String, dynamic>;
+        } catch (_) {}
+      }
+
       final domainMatch = RegExp(r'var\s+domain\s*=\s*"([^"]+)";').firstMatch(html);
       final dSignMatch = RegExp(r'var\s+d_sign\s*=\s*"([^"]+)";').firstMatch(html);
       final pdMatch = RegExp(r'var\s+pd\s*=\s*"([^"]+)";').firstMatch(html);
@@ -108,13 +119,17 @@ class KodikStreamExtractor {
       final vIdMatch = RegExp(r"vInfo\.id\s*=\s*'([^']+)';").firstMatch(html);
 
       if (vHashMatch != null && vIdMatch != null) {
+        final effectiveRef = urlParams['ref'] != null
+            ? Uri.decodeComponent(urlParams['ref'].toString())
+            : 'https://kodik-api.com/';
+
         final postData = {
-          'd': domainMatch?.group(1) ?? uri.host,
-          'd_sign': dSignMatch?.group(1) ?? '',
-          'pd': pdMatch?.group(1) ?? uri.host,
-          'pd_sign': pdSignMatch?.group(1) ?? '',
-          'ref': '',
-          'ref_sign': refSignMatch?.group(1) ?? '',
+          'd': urlParams['d'] ?? domainMatch?.group(1) ?? 'kodik-api.com',
+          'd_sign': urlParams['d_sign'] ?? dSignMatch?.group(1) ?? '',
+          'pd': urlParams['pd'] ?? pdMatch?.group(1) ?? uri.host,
+          'pd_sign': urlParams['pd_sign'] ?? pdSignMatch?.group(1) ?? '',
+          'ref': effectiveRef,
+          'ref_sign': urlParams['ref_sign'] ?? refSignMatch?.group(1) ?? '',
           'bad_user': 'false',
           'cdn_is_working': 'true',
           'type': vTypeMatch?.group(1) ?? 'seria',
@@ -128,7 +143,8 @@ class KodikStreamExtractor {
           options: Options(
             contentType: Headers.formUrlEncodedContentType,
             headers: {
-              'Referer': safeUrl,
+              'Referer': effectiveRef.isNotEmpty ? effectiveRef : 'https://kodik-api.com/',
+              'Origin': domain,
               'X-Requested-With': 'XMLHttpRequest',
               'User-Agent':
                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',

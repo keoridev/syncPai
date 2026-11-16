@@ -21,7 +21,8 @@ class AuthErrorFormatter {
     }
     final raw = error.toString().toLowerCase();
     return raw.contains('provider is not enabled') ||
-        raw.contains('unsupported provider');
+        raw.contains('unsupported provider') ||
+        (raw.contains('validation_failed') && raw.contains('unsupported'));
   }
 
   static bool isEmailNotConfirmedError(Object error) {

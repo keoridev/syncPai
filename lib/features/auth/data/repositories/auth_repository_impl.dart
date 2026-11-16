@@ -43,9 +43,28 @@ class AuthRepositoryImpl implements AuthRepository {
       client.auth.onAuthStateChange.listen((data) async {
         final session = data.session;
         if (session != null) {
-          final profile = await _fetchAndMigrateCloudProfile(session.user);
-          await _saveLocalProfile(profile);
-          _authController.add(profile);
+          // 1. Мгновенная оптимистичная эмиссия сессии:
+          // Если пользователь вошел, сразу создаем и эмитим профиль в поток (0ms UI unlock)
+          final local = _loadLocalProfile();
+          final fastProfile = local.copyWith(
+            id: session.user.id,
+            email: session.user.email ?? local.email,
+            isAnonymous: session.user.isAnonymous,
+            provider: session.user.appMetadata['provider'] as String? ?? local.provider ?? 'google',
+          );
+          await _saveLocalProfile(fastProfile);
+          _authController.add(fastProfile);
+
+          // 2. Фоновая миграция данных и синхронизация списков (fire-and-forget в фоне)
+          unawaited(() async {
+            try {
+              final fullProfile = await _fetchAndMigrateCloudProfile(session.user);
+              await _saveLocalProfile(fullProfile);
+              _authController.add(fullProfile);
+            } catch (e) {
+              debugPrint('Background cloud profile migration error: $e');
+            }
+          }());
         } else {
           final local = _loadLocalProfile();
           _authController.add(local);

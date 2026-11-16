@@ -3,8 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/player_navigation_guard.dart';
+import '../../../../core/widgets/pai_chan_offline_view.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
@@ -324,25 +325,11 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.movie_filter_outlined, size: 64, color: Colors.white30),
-              const SizedBox(height: 16),
-              Text(
-                'В ленте пока нет моментов',
-                style: AppTypography.bodyMedium.copyWith(color: Colors.white70),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadClips,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Обновить'),
-              ),
-            ],
+          child: PaiChanOfflineView(
+            title: 'Лента недоступна без сети',
+            subtitle: 'Пай-тян не может загрузить моменты без подключения к интернету.',
+            onRetry: _loadClips,
+            onOpenSaved: () => context.push('/lists'),
           ),
         ),
       );

@@ -28,7 +28,6 @@ import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
-import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
@@ -640,60 +639,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildSyncedAccountBanner(BuildContext context, UserProfile profile, Color accent) {
-    final scheme = Theme.of(context).colorScheme;
-    final isGoogle = profile.provider == 'google' || (profile.email?.contains('@gmail.com') ?? false);
-    return _GlassCard(
-      accentColor: accent,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00E676).withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.cloud_done_rounded, color: Color(0xFF00E676), size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isGoogle ? 'Синхронизировано с Google' : 'Облачная синхронизация активна',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13.5,
-                  ),
-                ),
-                if (profile.email != null && profile.email!.isNotEmpty)
-                  Text(
-                    '${profile.email!} • ${profile.tag}',
-                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11.5),
-                  ),
-              ],
-            ),
-          ),
-          TextButton.icon(
-            style: TextButton.styleFrom(
-              foregroundColor: scheme.error,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: () => context.read<AuthCubit>().signOut(),
-            icon: const Icon(Icons.logout_rounded, size: 16),
-            label: const Text('Выйти', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildGuestSyncBanner(BuildContext context, UserProfile profile, Color themePrimary, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     return _GlassCard(
@@ -824,230 +769,218 @@ class _ProfileScreenState extends State<ProfileScreen>
           final currentAccentColor = _resolveDynamicAccent(profile, themePrimary);
           final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
-          return Stack(
-            children: [
-              // СЛОЙ 1: Анимированный / Живой / Видео фон на весь экран
-              if (profile.backgroundId != 'none')
+          return Container(
+            color: isDark ? const Color(0xFF0B0E14) : scheme.surface,
+            child: Stack(
+              children: [
+                // СЛОЙ 1: Анимированный / Живой фон только если выбран пользователем (не none)
+                if (profile.backgroundId != 'none')
+                  Positioned.fill(
+                    child: RepaintBoundary(
+                      child: Opacity(
+                        opacity: 0.70,
+                        child: LiveBackgroundWidget(
+                          backgroundId: profile.backgroundId,
+                          assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
+                          fallbackGradient: bgTheme.gradient,
+                          isPaused: _isBgPaused,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // СЛОЙ 2: Плавный глубокий градиент затемнения
                 Positioned.fill(
-                  child: RepaintBoundary(
-                    child: Opacity(
-                      opacity: 0.75,
-                      child: LiveBackgroundWidget(
-                        backgroundId: profile.backgroundId,
-                        assetOrUrl: bgTheme.assetOrUrl ?? profile.backgroundId,
-                        fallbackGradient: bgTheme.gradient,
-                        isPaused: _isBgPaused,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            (isDark ? const Color(0xFF0B0E14) : Colors.white).withValues(alpha: 0.35),
+                            Colors.transparent,
+                            (isDark ? const Color(0xFF0B0E14) : scheme.surface).withValues(alpha: isDark ? 0.75 : 0.60),
+                            (isDark ? const Color(0xFF0B0E14) : scheme.surface).withValues(alpha: isDark ? 0.98 : 0.95),
+                          ],
+                          stops: const [0.0, 0.20, 0.60, 1.0],
+                        ),
                       ),
                     ),
                   ),
                 ),
 
-              // СЛОЙ 2: Киберпанк-виньетка для глубокого контраста и читаемости текста
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          (isDark ? Colors.black : Colors.white).withValues(alpha: 0.15),
-                          Colors.transparent,
-                          scheme.surface.withValues(alpha: isDark ? 0.70 : 0.60),
-                          scheme.surface.withValues(alpha: isDark ? 0.96 : 0.92),
-                        ],
-                        stops: const [0.0, 0.20, 0.65, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // СЛОЙ 3: Безопасный отступ для мобилок (на десктопе notch отсутствует)
-              SafeArea(
-                top: !isDesktopOS,
-                bottom: false,
-                left: !isDesktopOS,
-                right: !isDesktopOS,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktopOS ? 1440 : 860),
-                    child: isDesktopOS
-                        ? CustomScrollView(
-                            controller: _scrollController,
-                            physics: const BouncingScrollPhysics(),
-                            slivers: [
-                              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // ЛЕВАЯ КОЛОНКА (flex: 60)
-                                      Expanded(
-                                        flex: 60,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(bottom: 48),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                                            children: [
-                                              SteamStyleProfileHeader(
-                                                profile: profile,
-                                                isCurrentUser: isCurrentUser,
-                                                showBackButton: widget.showBackButton,
-                                                onBackTap: widget.onBack,
-                                                onEditProfileTap: () => _showEditProfileSheet(context, profile),
-                                                onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                                                onSettingsTap: () => context.push('/settings'),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              const WrappedPromoBanner(),
-                                              if (isCurrentUser &&
-                                                  !_nicknamePromptDismissed &&
-                                                  UserProfile.isDefaultGeneratedNickname(profile.username)) ...[
-                                                const SizedBox(height: 8),
-                                                _buildQuickNicknamePrompt(context, profile, currentAccentColor),
-                                              ],
-                                              if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
-                                                const SizedBox(height: 8),
-                                                _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
-                                              ] else if (isCurrentUser && !isGuest) ...[
-                                                const SizedBox(height: 8),
-                                                _buildSyncedAccountBanner(context, profile, currentAccentColor),
-                                              ],
-                                              if (isCurrentUser) ...[
-                                                const SizedBox(height: 8),
-                                                _buildOwnerSupportPill(context, profile, currentAccentColor),
-                                              ],
-                                              const SizedBox(height: 8),
-                                              _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
-                                              const SizedBox(height: 8),
-                                              _RecentHistoryCarousel(
-                                                items: _watchHistory,
-                                                currentAccentColor: currentAccentColor,
-                                                onItemTap: (item) => _openDetailsForHistory(context, item),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 24),
-                                      // ПРАВАЯ КОЛОНКА (flex: 40)
-                                      Expanded(
-                                        flex: 40,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(bottom: 48),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                                            children: [
-                                              _StatsCard(
-                                                stats: stats,
-                                                currentAccentColor: currentAccentColor,
-                                                showActivityCharts: _showActivityCharts,
-                                                onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
-                                              ),
-                                              const SizedBox(height: 14),
-                                              _buildBadgesShowcaseCard(context, currentAccentColor),
-                                              const SizedBox(height: 14),
-                                              _buildOnlineFriendsCard(context, profile, currentAccentColor),
-                                              const SizedBox(height: 14),
-                                              _buildCommentsWallCard(context, profile, currentAccentColor),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                            ],
-                          )
-                        : CustomScrollView(
-                            controller: _scrollController,
-                            physics: const BouncingScrollPhysics(),
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: SteamStyleProfileHeader(
-                                  profile: profile,
-                                  isCurrentUser: isCurrentUser,
-                                  showBackButton: widget.showBackButton,
-                                  onBackTap: widget.onBack,
-                                  onEditProfileTap: () => _showEditProfileSheet(context, profile),
-                                  onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
-                                  onSettingsTap: () => context.push('/settings'),
-                                ),
-                              ),
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  child: WrappedPromoBanner(),
-                                ),
-                              ),
-                              if (isCurrentUser &&
-                                  !_nicknamePromptDismissed &&
-                                  UserProfile.isDefaultGeneratedNickname(profile.username))
-                                SliverToBoxAdapter(
-                                  child: _buildQuickNicknamePrompt(context, profile, currentAccentColor),
-                                ),
-                              if (isCurrentUser && isGuest && !_guestBannerDismissed)
-                                SliverToBoxAdapter(
-                                  child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
-                                )
-                              else if (isCurrentUser && !isGuest)
-                                SliverToBoxAdapter(
-                                  child: _buildSyncedAccountBanner(context, profile, currentAccentColor),
-                                ),
-                              if (isCurrentUser)
+                // СЛОЙ 3: Безопасный отступ для мобилок (на десктопе notch отсутствует)
+                SafeArea(
+                  top: !isDesktopOS,
+                  bottom: false,
+                  left: !isDesktopOS,
+                  right: !isDesktopOS,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: isDesktopOS ? 1440 : 860),
+                      child: isDesktopOS
+                          ? CustomScrollView(
+                              controller: _scrollController,
+                              physics: const BouncingScrollPhysics(),
+                              slivers: [
+                                const SliverToBoxAdapter(child: SizedBox(height: 16)),
                                 SliverToBoxAdapter(
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                    child: _buildOwnerSupportPill(context, profile, currentAccentColor),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // ЛЕВАЯ КОЛОНКА (flex: 60)
+                                        Expanded(
+                                          flex: 60,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(bottom: 48),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                SteamStyleProfileHeader(
+                                                  profile: profile,
+                                                  isCurrentUser: isCurrentUser,
+                                                  showBackButton: widget.showBackButton,
+                                                  onBackTap: widget.onBack,
+                                                  onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                                                  onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                                                  onSettingsTap: () => context.push('/settings'),
+                                                ),
+                                                if (isCurrentUser &&
+                                                    !_nicknamePromptDismissed &&
+                                                    UserProfile.isDefaultGeneratedNickname(profile.username)) ...[
+                                                  const SizedBox(height: 8),
+                                                  _buildQuickNicknamePrompt(context, profile, currentAccentColor),
+                                                ],
+                                                if (isCurrentUser && isGuest && !_guestBannerDismissed) ...[
+                                                  const SizedBox(height: 8),
+                                                  _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                                ],
+                                                if (isCurrentUser) ...[
+                                                  const SizedBox(height: 8),
+                                                  _buildOwnerSupportPill(context, profile, currentAccentColor),
+                                                ],
+                                                const SizedBox(height: 8),
+                                                _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                                const SizedBox(height: 8),
+                                                _RecentHistoryCarousel(
+                                                  items: _watchHistory,
+                                                  currentAccentColor: currentAccentColor,
+                                                  onItemTap: (item) => _openDetailsForHistory(context, item),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 24),
+                                        // ПРАВАЯ КОЛОНКА (flex: 40)
+                                        Expanded(
+                                          flex: 40,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(bottom: 48),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                _StatsCard(
+                                                  stats: stats,
+                                                  currentAccentColor: currentAccentColor,
+                                                  showActivityCharts: _showActivityCharts,
+                                                  onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                                                ),
+                                                const SizedBox(height: 14),
+                                                _buildBadgesShowcaseCard(context, currentAccentColor),
+                                                const SizedBox(height: 14),
+                                                _buildOnlineFriendsCard(context, profile, currentAccentColor),
+                                                const SizedBox(height: 14),
+                                                _buildCommentsWallCard(context, profile, currentAccentColor),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
-                              SliverToBoxAdapter(
-                                child: _buildMobileSegmentedTabs(currentAccentColor),
-                              ),
-                              if (_selectedMobileTab == 0) ...[
-                                SliverToBoxAdapter(
-                                  child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
-                                ),
-                                SliverToBoxAdapter(
-                                  child: _RecentHistoryCarousel(
-                                    items: _watchHistory,
-                                    currentAccentColor: currentAccentColor,
-                                    onItemTap: (item) => _openDetailsForHistory(context, item),
-                                  ),
-                                ),
-                                SliverToBoxAdapter(
-                                  child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
-                                ),
-                              ] else if (_selectedMobileTab == 1) ...[
-                                SliverToBoxAdapter(
-                                  child: _StatsCard(
-                                    stats: stats,
-                                    currentAccentColor: currentAccentColor,
-                                    showActivityCharts: _showActivityCharts,
-                                    onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
-                                  ),
-                                ),
-                                SliverToBoxAdapter(
-                                  child: _buildBadgesShowcaseCard(context, currentAccentColor),
-                                ),
-                              ] else ...[
-                                SliverToBoxAdapter(
-                                  child: _buildCommentsWallCard(context, profile, currentAccentColor),
-                                ),
+                                const SliverToBoxAdapter(child: SizedBox(height: 100)),
                               ],
-                              const SliverToBoxAdapter(child: SizedBox(height: 110)),
-                            ],
-                          ),
+                            )
+                          : CustomScrollView(
+                              controller: _scrollController,
+                              physics: const BouncingScrollPhysics(),
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: SteamStyleProfileHeader(
+                                    profile: profile,
+                                    isCurrentUser: isCurrentUser,
+                                    showBackButton: widget.showBackButton,
+                                    onBackTap: widget.onBack,
+                                    onEditProfileTap: () => _showEditProfileSheet(context, profile),
+                                    onCustomizerTap: () => SteamProfileCustomizerSheet.show(context, profile),
+                                    onSettingsTap: () => context.push('/settings'),
+                                  ),
+                                ),
+                                if (isCurrentUser &&
+                                    !_nicknamePromptDismissed &&
+                                    UserProfile.isDefaultGeneratedNickname(profile.username))
+                                  SliverToBoxAdapter(
+                                    child: _buildQuickNicknamePrompt(context, profile, currentAccentColor),
+                                  ),
+                                if (isCurrentUser && isGuest && !_guestBannerDismissed)
+                                  SliverToBoxAdapter(
+                                    child: _buildGuestSyncBanner(context, profile, themePrimary, currentAccentColor),
+                                  ),
+                                if (isCurrentUser)
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                      child: _buildOwnerSupportPill(context, profile, currentAccentColor),
+                                    ),
+                                  ),
+                                // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
+                                SliverToBoxAdapter(
+                                  child: _buildMobileSegmentedTabs(currentAccentColor),
+                                ),
+                                if (_selectedMobileTab == 0) ...[
+                                  SliverToBoxAdapter(
+                                    child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _RecentHistoryCarousel(
+                                      items: _watchHistory,
+                                      currentAccentColor: currentAccentColor,
+                                      onItemTap: (item) => _openDetailsForHistory(context, item),
+                                    ),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
+                                  ),
+                                ] else if (_selectedMobileTab == 1) ...[
+                                  SliverToBoxAdapter(
+                                    child: _StatsCard(
+                                      stats: stats,
+                                      currentAccentColor: currentAccentColor,
+                                      showActivityCharts: _showActivityCharts,
+                                      onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                                    ),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _buildBadgesShowcaseCard(context, currentAccentColor),
+                                  ),
+                                ] else ...[
+                                  SliverToBoxAdapter(
+                                    child: _buildCommentsWallCard(context, profile, currentAccentColor),
+                                  ),
+                                ],
+                                const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                              ],
+                            ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -1312,18 +1245,31 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 12),
           Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 56,
-                  height: 80,
-                  child: CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(poster),
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: scheme.surfaceContainer),
-                    errorWidget: (_, __, ___) => Container(
-                      color: scheme.surfaceContainer,
-                      child: Icon(Icons.movie_rounded, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: SizedBox(
+                    width: 56,
+                    height: 80,
+                    child: CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(poster),
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: scheme.surfaceContainer),
+                      errorWidget: (_, __, ___) => Container(
+                        color: scheme.surfaceContainer,
+                        child: Icon(Icons.movie_rounded, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                      ),
                     ),
                   ),
                 ),
@@ -1341,14 +1287,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                         color: scheme.onSurface,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Все сезоны просмотрены в SyncPai',
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 11.5,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1383,7 +1321,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildBadgesShowcaseCard(BuildContext context, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final badges = SteamBadge.all.take(8).toList();
+    final badges = SteamBadge.all.take(4).toList();
 
     return _GlassCard(
       accentColor: accent,
@@ -1987,7 +1925,7 @@ class _StatsCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               _buildCategoryPill(
-                label: 'В процессе: ${stats.watchingTitles > 0 ? stats.watchingTitles : 1}',
+                label: 'Смотрю: ${stats.watchingTitles > 0 ? stats.watchingTitles : 1}',
                 color: currentAccentColor,
               ),
               _buildCategoryPill(

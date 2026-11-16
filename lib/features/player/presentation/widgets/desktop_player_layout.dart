@@ -23,6 +23,7 @@ import '../../../sync_room/domain/entities/sync_protocol.dart';
 import '../../../sync_room/presentation/widgets/in_room_anime_picker_sheet.dart';
 import '../../../sync_room/presentation/widgets/sync_room_lobby_sheet.dart';
 import '../../domain/entities/player_quality.dart';
+import '../../services/global_mini_player_service.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import 'floating_pai_chan_reactions_overlay.dart';
@@ -254,6 +255,108 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     }
   }
 
+  void _minimizeToMiniPlayer() {
+    widget.onSaveProgress();
+    GlobalMiniPlayerService.instance.minimize(
+      cubit: widget.cubit,
+      videoController: widget.videoController,
+      onSaveProgress: widget.onSaveProgress,
+    );
+    _triggerFlash(
+      icon: Icons.picture_in_picture_alt_rounded,
+      label: 'Плавающее окно (PiP)',
+    );
+    widget.onBack();
+  }
+
+  void _showHotkeysDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14161F),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.keyboard_outlined, color: AppColors.primary, size: 22),
+            const SizedBox(width: 10),
+            const Text(
+              'Горячие клавиши плеера',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHotkeyRow('Пробел (Space)', 'Пауза / Старт (удержание: 2x ускорение)'),
+                _buildHotkeyRow('← / →', 'Перемотка на ±5 секунд'),
+                _buildHotkeyRow('↑ / ↓', 'Громкость ±5%'),
+                _buildHotkeyRow('F', 'Полноэкранный режим'),
+                _buildHotkeyRow('M', 'Включить / Выключить звук'),
+                _buildHotkeyRow('P', 'Плавающее окно (Картинка в картинке)'),
+                _buildHotkeyRow('N', 'Следующая серия'),
+                _buildHotkeyRow('S', 'Пропуск опенинга / эндинга'),
+                _buildHotkeyRow('T', 'Театральный режим (скрыть сайдбар)'),
+                _buildHotkeyRow('0 - 9', 'Перейти на 0% - 90% таймлайна'),
+                _buildHotkeyRow('Esc', 'Выход из полноэкранного режима / Назад'),
+                _buildHotkeyRow('? / H', 'Справка по горячим клавишам'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Понятно', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHotkeyRow(String keyName, String description) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: Text(
+              keyName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'monospace',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
     // Если поле ввода сообщений активно, горячие клавиши плеера не перехватывают ввод
     if (_chatInputFocusNode.hasFocus) {
@@ -373,6 +476,74 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
       // KeyM: Mute / Unmute
       if (key == LogicalKeyboardKey.keyM) {
         _toggleMute();
+        return KeyEventResult.handled;
+      }
+
+      // KeyP: Плавающее окно (Picture-in-Picture / Mini-player)
+      if (key == LogicalKeyboardKey.keyP) {
+        _minimizeToMiniPlayer();
+        return KeyEventResult.handled;
+      }
+
+      // KeyN: Следующая серия
+      if (key == LogicalKeyboardKey.keyN) {
+        final allEpisodes = widget.state.title.episodes;
+        final curIdx = allEpisodes.indexWhere((e) => e.episode == widget.state.episode.episode);
+        if (curIdx >= 0 && curIdx < allEpisodes.length - 1) {
+          final nextEp = allEpisodes[curIdx + 1];
+          widget.cubit.switchEpisode(nextEp);
+          _triggerFlash(
+            icon: Icons.skip_next_rounded,
+            label: 'Серия ${nextEp.episode}',
+          );
+        } else {
+          _triggerFlash(
+            icon: Icons.skip_next_rounded,
+            label: 'Последняя серия',
+          );
+        }
+        return KeyEventResult.handled;
+      }
+
+      // KeyS: Пропуск опенинга / эндинга
+      if (key == LogicalKeyboardKey.keyS) {
+        widget.cubit.skipOpening();
+        _triggerFlash(
+          icon: Icons.fast_forward_rounded,
+          label: 'Пропуск опенинга',
+        );
+        return KeyEventResult.handled;
+      }
+
+      // KeyT: Театральный режим
+      if (key == LogicalKeyboardKey.keyT) {
+        setState(() => _isTheaterMode = !_isTheaterMode);
+        _triggerFlash(
+          icon: _isTheaterMode ? Icons.crop_16_9_rounded : Icons.crop_landscape_rounded,
+          label: _isTheaterMode ? 'Режим Кинотеатр' : 'Стандартный вид',
+        );
+        return KeyEventResult.handled;
+      }
+
+      // KeyH или Slash / Question: Подсказка по горячим клавишам
+      if (key == LogicalKeyboardKey.keyH ||
+          key == LogicalKeyboardKey.slash ||
+          key == LogicalKeyboardKey.question) {
+        _showHotkeysDialog(context);
+        return KeyEventResult.handled;
+      }
+
+      // Цифры 0-9: Быстрый переход по таймлайну (0% - 90%)
+      if (key.keyId >= LogicalKeyboardKey.digit0.keyId &&
+          key.keyId <= LogicalKeyboardKey.digit9.keyId) {
+        final digit = key.keyId - LogicalKeyboardKey.digit0.keyId;
+        final fraction = digit * 0.1;
+        final target = widget.state.duration * fraction;
+        widget.cubit.seek(target);
+        _triggerFlash(
+          icon: Icons.timelapse_rounded,
+          label: '${digit * 10}%',
+        );
         return KeyEventResult.handled;
       }
 
@@ -940,10 +1111,10 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             onSeek: (pos) => widget.cubit.seek(pos),
             isLocked: state.isSyncRoom && !state.isHost,
             onLockedTap: () {
-              widget.cubit.requestPauseFromHost();
+              widget.cubit.showGuestPlaybackLockedNotice();
               _triggerFlash(
                 icon: Icons.lock_clock_rounded,
-                label: 'Хост управляет просмотром',
+                label: 'Воспроизведением управляет хост',
               );
             },
             opening: state.effectiveOpening,
@@ -1141,6 +1312,20 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   cubit: widget.cubit,
                   state: widget.state,
                 ),
+              ),
+
+              // Кнопка «Плавающее окно (PiP)»
+              IconButton(
+                tooltip: 'Плавающее окно (P)',
+                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 21),
+                onPressed: _minimizeToMiniPlayer,
+              ),
+
+              // Кнопка Горячие клавиши
+              IconButton(
+                tooltip: 'Горячие клавиши (?)',
+                icon: const Icon(Icons.keyboard_outlined, color: Colors.white, size: 21),
+                onPressed: () => _showHotkeysDialog(context),
               ),
 
               // Кнопка «Кинотеатр» (скрывает сайдбар серий)

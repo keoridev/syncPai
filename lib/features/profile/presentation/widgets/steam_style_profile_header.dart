@@ -68,9 +68,9 @@ class SteamStyleProfileHeader extends StatefulWidget {
   // Курированные готовые пресеты артворков в стиле Steam Artwork Showcase (статичные + живые аниме-сцены)
   static const List<SteamArtworkPreset> curatedPresets = [
     SteamArtworkPreset(
-      title: 'CYBERPUNK // 侍 SAMURAI',
+      title: 'Самурай',
       kanji: '侍',
-      tagline: 'NEO KYOTO 2077 // EDITION',
+      tagline: 'Киберпанк коллекция',
       imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
     ),
     SteamArtworkPreset(
@@ -129,8 +129,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   double _targetTiltX = 0.0;
   double _targetTiltY = 0.0;
   AnimationController? _idleController;
-  int _likesCount = 1337;
-  bool _isLiked = false;
 
   static List<SteamArtworkPreset> get curatedPresets =>
       SteamStyleProfileHeader.curatedPresets;
@@ -518,7 +516,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.0),
+                    border: Border.all(color: accent.withValues(alpha: 0.6), width: 1.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.15 + ((_idleController?.value ?? 0.5) * 0.25)),
+                        blurRadius: 8 + ((_idleController?.value ?? 0.5) * 6),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1057,8 +1061,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: accent.withValues(alpha: 0.35),
-                      blurRadius: 16,
+                      color: accent.withValues(alpha: 0.25 + ((_idleController?.value ?? 0.5) * 0.35)),
+                      blurRadius: 12.0 + ((_idleController?.value ?? 0.5) * 8.0),
                       spreadRadius: 1,
                     ),
                   ],
@@ -1103,8 +1107,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: accent.withValues(alpha: 0.35),
-                      blurRadius: 16,
+                      color: accent.withValues(alpha: 0.25 + ((_idleController?.value ?? 0.5) * 0.35)),
+                      blurRadius: 12.0 + ((_idleController?.value ?? 0.5) * 8.0),
                       spreadRadius: 1,
                     ),
                   ],
@@ -1531,7 +1535,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
               child: const Text(
-                'STEAM // ARTWORK_01',
+                'ARTWORK',
                 style: TextStyle(
                   color: Colors.white70,
                   fontSize: 8.5,
@@ -1539,79 +1543,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.4,
                 ),
-              ),
-            ),
-          ),
-
-          // Водяной знак Кандзи в верхнем правом углу
-          Positioned(
-            top: 12,
-            right: 12,
-            child: Text(
-              '侍', // Самурай
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.28),
-                fontSize: 48,
-                fontWeight: FontWeight.w900,
-                shadows: [
-                  Shadow(color: accent.withValues(alpha: 0.5), blurRadius: 18),
-                ],
-              ),
-            ),
-          ),
-
-          // Никнейм в киберпанк стиле внизу слева
-          Positioned(
-            bottom: 42,
-            left: 12,
-            child: Text(
-              '// ${widget.profile.username.toUpperCase()}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 12,
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-                shadows: const [
-                  Shadow(color: Colors.black, blurRadius: 8),
-                ],
-              ),
-            ),
-          ),
-        ] else ...[
-          // Правая полоска: индекс среза // 02
-          Positioned(
-            top: 10,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              ),
-              child: const Text(
-                '// 02',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 8.5,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 42,
-            right: 8,
-            child: Text(
-              'ART',
-              style: TextStyle(
-                color: accent,
-                fontSize: 10.5,
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
               ),
             ),
           ),
@@ -1645,58 +1576,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       ),
       child: Row(
         children: [
-          // Лайк (Steam Hearts)
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() {
-                _isLiked = !_isLiked;
-                _likesCount += _isLiked ? 1 : -1;
-              });
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                  size: 15,
-                  color: _isLiked ? accent : scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '$_likesCount',
-                  style: TextStyle(
-                    color: _isLiked ? accent : scheme.onSurfaceVariant,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 14),
-
-          // Комментарии
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.chat_bubble_outline_rounded, size: 14, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text(
-                '42',
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-
-          const SizedBox(width: 12),
-
-          // Разделитель
-          Container(width: 1, height: 12, color: scheme.outlineVariant.withValues(alpha: 0.4)),
-
-          const SizedBox(width: 12),
-
           // Название тайтла
           Expanded(
             child: Text(
@@ -1711,6 +1590,26 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               ),
             ),
           ),
+          // Быстрая кнопка смены иллюстрации
+          if (widget.isCurrentUser)
+            InkWell(
+              onTap: _handleShowcaseTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.palette_outlined, size: 13, color: accent),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Сменить',
+                      style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           const SizedBox(width: 6),
           Icon(Icons.open_in_new_rounded, size: 13, color: scheme.onSurfaceVariant),

@@ -50,7 +50,8 @@ class AnimeListTileCard extends StatelessWidget {
                       if (posterUrl.isNotEmpty)
                         CachedNetworkImage(
                           imageUrl: wrapCorsSafeUrl(posterUrl),
-                          memCacheWidth: 420,
+                          memCacheWidth: 360,
+                          maxWidthDiskCache: 480,
                           fit: BoxFit.cover,
                           httpHeaders: const {
                             'User-Agent': 'SyncPai-App/1.0',
@@ -60,7 +61,8 @@ class AnimeListTileCard extends StatelessWidget {
                               const ColoredBox(color: Colors.black26),
                           errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
                             imageUrl: wrapCorsSafeUrl(fallbackPoster),
-                            memCacheWidth: 420,
+                            memCacheWidth: 360,
+                            maxWidthDiskCache: 480,
                             fit: BoxFit.cover,
                             placeholder: (context, url) =>
                                 const ColoredBox(color: Colors.black26),

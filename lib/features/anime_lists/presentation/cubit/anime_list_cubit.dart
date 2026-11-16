@@ -88,22 +88,74 @@ class AnimeListCubit extends Cubit<AnimeListState> {
             updatedAt: DateTime.now(),
           );
 
-    await repository.upsertEntry(entry);
-    await loadLists();
+    // 1. ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ UI (0ms): мгновенно пересчитываем состояние и статистику
+    final previousEntries = state.allEntries;
+    final updatedList = List<UserAnimeEntry>.from(previousEntries);
+    final idx = updatedList.indexWhere((e) => e.animeId == animeId);
+    if (idx >= 0) {
+      updatedList[idx] = entry;
+    } else {
+      updatedList.insert(0, entry);
+    }
+    emit(state.copyWith(
+      allEntries: updatedList,
+      stats: UserAnimeStats.compute(updatedList),
+      errorMessage: null,
+      isLoading: false,
+    ));
+
+    // 2. Сохранение на диск и неблокирующая синхронизация с облаком
+    try {
+      await repository.upsertEntry(entry);
+      final persistedEntries = await repository.getAllEntries();
+      if (!isClosed) {
+        emit(state.copyWith(
+          allEntries: persistedEntries,
+          stats: UserAnimeStats.compute(persistedEntries),
+          isLoading: false,
+        ));
+      }
+    } catch (e) {
+      // Откатываем оптимистичное состояние только при реальной ошибке сохранения
+      if (!isClosed) {
+        emit(state.copyWith(
+          allEntries: previousEntries,
+          stats: UserAnimeStats.compute(previousEntries),
+          errorMessage: 'Ошибка обновления статуса: $e',
+          isLoading: false,
+        ));
+      }
+    }
   }
 
   Future<void> removeAnime(int animeId) async {
-    await repository.removeEntry(animeId);
-    await loadLists();
+    final previousEntries = state.allEntries;
+    final updatedList = List<UserAnimeEntry>.from(previousEntries)
+      ..removeWhere((e) => e.animeId == animeId);
+
+    // Оптимистичное удаление (0ms)
+    emit(state.copyWith(
+      allEntries: updatedList,
+      stats: UserAnimeStats.compute(updatedList),
+      errorMessage: null,
+    ));
+
+    try {
+      await repository.removeEntry(animeId);
+    } catch (e) {
+      emit(state.copyWith(
+        allEntries: previousEntries,
+        stats: UserAnimeStats.compute(previousEntries),
+        errorMessage: 'Ошибка удаления из списков: $e',
+      ));
+    }
   }
 
   Future<void> importBatch(List<UserAnimeEntry> entries) async {
     if (entries.isEmpty) return;
     emit(state.copyWith(isLoading: true));
     try {
-      for (final entry in entries) {
-        await repository.upsertEntry(entry);
-      }
+      await repository.upsertEntries(entries);
       final all = await repository.getAllEntries();
       final stats = UserAnimeStats.compute(all);
       final importResult = AnixartImportResult(

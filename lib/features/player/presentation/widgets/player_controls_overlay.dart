@@ -664,15 +664,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                         isBuffering: state.isBuffering,
                         onSeek: (pos) => cubit.seek(pos),
                         isLocked: isGuestInSync,
-                        onLockedTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Таймлайном управляет хост комнаты'),
-                              duration: Duration(seconds: 1),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                        onLockedTap: () => cubit.showGuestPlaybackLockedNotice(),
                       ),
                       const SizedBox(height: AppDimensions.spacingSm),
 
@@ -764,15 +756,7 @@ class PlayerControlsOverlay extends StatelessWidget {
             isBuffering: state.isBuffering,
             onSeek: (pos) => cubit.seek(pos),
             isLocked: isGuestInSync,
-            onLockedTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Таймлайном управляет хост комнаты'),
-                  duration: Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onLockedTap: () => cubit.showGuestPlaybackLockedNotice(),
           ),
           const SizedBox(height: 2),
 

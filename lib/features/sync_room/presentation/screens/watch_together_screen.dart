@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/network/network_status_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/glass_container.dart';
+import '../../../../core/widgets/pai_chan_offline_view.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
@@ -115,10 +117,40 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     );
   }
 
+  void _showOfflineSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: PaiChanOfflineView(
+            title: 'Нет подключения к интернету',
+            subtitle: 'Для совместного просмотра нужен интернет. Подключись к сети, чтобы создать комнату или войти по коду.',
+            showSavedButton: false,
+            onRetry: () {
+              Navigator.of(sheetCtx).pop();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleJoinRoom() async {
     if (_isJoiningRoom) return;
 
     FocusScope.of(context).unfocus();
+
+    final hasNet = await NetworkStatusHelper.hasInternet();
+    if (!hasNet) {
+      if (mounted) {
+        _showOfflineSheet(context);
+      }
+      return;
+    }
+
     String raw = _pinController.text.trim();
     if (raw.isEmpty) {
       setState(() => _pinError = 'Введите код комнаты');
@@ -177,7 +209,16 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     status: 'Свободный выбор',
   );
 
-  void _showCreateRoomSheet(BuildContext context) {
+  void _showCreateRoomSheet(BuildContext context) async {
+    final hasNet = await NetworkStatusHelper.hasInternet();
+    if (!hasNet) {
+      if (context.mounted) {
+        _showOfflineSheet(context);
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
     List<AnimeTitle> availableTitles = [];
     try {
       final catalogState = context.read<CatalogCubit>().state;

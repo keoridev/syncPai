@@ -1268,7 +1268,29 @@ class PlayerCubit extends Cubit<PlayerState> {
     ));
   }
 
+  /// Показ аккуратного всплывающего тоста гостю при попытке управлять воспроизведением
+  void showGuestPlaybackLockedNotice() {
+    final notice = QuickPhraseToast(
+      id: 'guest_locked_${DateTime.now().microsecondsSinceEpoch}',
+      sender: 'Комната',
+      phrase: 'Воспроизведением управляет хост комнаты',
+      emoji: '👑',
+      timestamp: DateTime.now(),
+    );
+    emit(state.copyWith(activeQuickPhrase: () => notice));
+    _quickPhraseTimer?.cancel();
+    _quickPhraseTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!isClosed && state.activeQuickPhrase?.id.startsWith('guest_locked_') == true) {
+        emit(state.copyWith(activeQuickPhrase: () => null));
+      }
+    });
+  }
+
   void playOrPause() {
+    if (state.isSyncRoom && !state.isHost) {
+      showGuestPlaybackLockedNotice();
+      return;
+    }
     final willPlay = !state.isPlaying;
     if (willPlay && state.errorMessage != null) {
       emit(state.copyWith(errorMessage: () => null));
@@ -1281,6 +1303,10 @@ class PlayerCubit extends Cubit<PlayerState> {
   void togglePlayPause() => playOrPause();
 
   void play() {
+    if (state.isSyncRoom && !state.isHost) {
+      showGuestPlaybackLockedNotice();
+      return;
+    }
     if (state.errorMessage != null) {
       emit(state.copyWith(errorMessage: () => null));
     }
@@ -1290,6 +1316,10 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void pause() {
+    if (state.isSyncRoom && !state.isHost) {
+      showGuestPlaybackLockedNotice();
+      return;
+    }
     player.pause();
     emit(state.copyWith(pauseCount: state.pauseCount + 1));
     _broadcastControlAction('pause');
@@ -1297,6 +1327,10 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void seek(Duration position) {
+    if (state.isSyncRoom && !state.isHost) {
+      showGuestPlaybackLockedNotice();
+      return;
+    }
     player.seek(position);
     emit(state.copyWith(position: position));
     _broadcastControlAction('seek', targetPosition: position);
@@ -1304,6 +1338,10 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void seekRelative(int seconds) {
+    if (state.isSyncRoom && !state.isHost) {
+      showGuestPlaybackLockedNotice();
+      return;
+    }
     final current = state.position.inSeconds;
     final maxSec = state.duration.inSeconds > 0 ? state.duration.inSeconds : 36000;
     final target = (current + seconds).clamp(0, maxSec);

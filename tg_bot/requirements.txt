@@ -1,0 +1,7 @@
+aiogram>=3.13.0
+supabase>=2.10.0
+pydantic-settings>=2.5.0
+python-dotenv>=1.0.1
+apscheduler>=3.10.4
+aiohttp>=3.10.0
+

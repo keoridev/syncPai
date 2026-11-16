@@ -1434,7 +1434,7 @@ Title,Status,Episodes
     expect(find.text('Мой профиль'), findsOneWidget);
     expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsOneWidget);
     expect(find.byIcon(Icons.settings), findsOneWidget);
-    expect(find.textContaining('Смотрю'), findsOneWidget);
+    expect(find.text('Смотрю: 1'), findsOneWidget);
   });
 
   testWidgets('ProfileScreen with friend userId hides settings, auth banner and renders friend header', (tester) async {
@@ -3206,6 +3206,7 @@ Title,Status,Episodes
     });
 
     test('AnimeListCubit batchChangeStatus, updatePosterUrl and batchDelete work correctly', () async {
+      SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final repo = AnimeListRepositoryImpl(prefs);
       final cubit = AnimeListCubit(repository: repo);

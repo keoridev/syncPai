@@ -7,10 +7,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
+import 'package:sync_pai/core/network/network_status_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/app_avatar.dart';
 import 'package:sync_pai/core/widgets/app_search_bar.dart';
+import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
 import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
@@ -672,6 +674,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: AnimeListTileCard(
+                                  key: ValueKey(title.id),
                                   title: title,
                                   onTap: () => widget.onTitleSelected?.call(title),
                                 ),
@@ -716,6 +719,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           (context, index) {
                             final title = titles[index];
                             return AnimePosterCard(
+                              key: ValueKey(title.id),
                               title: title,
                               onTap: () => widget.onTitleSelected?.call(title),
                             );
@@ -808,11 +812,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildErrorState(BuildContext context, String message) {
+    if (NetworkStatusHelper.isConnectionError(message)) {
+      return PaiChanOfflineView(
+        onRetry: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+        onOpenSaved: () => context.push('/lists'),
+      );
+    }
+
     return Center(
       child: SyncPaiMascot(
-        state: message.toLowerCase().contains('connect') || message.toLowerCase().contains('сеть')
-            ? MascotState.networkError
-            : MascotState.serverError,
+        state: MascotState.serverError,
         message: 'Не удалось загрузить каталог',
         description: message,
         action: Row(

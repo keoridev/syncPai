@@ -94,7 +94,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                                 tag: '${heroTagPrefix ?? 'anime-poster'}-${title.id}',
                                 child: CachedNetworkImage(
                                   imageUrl: wrapCorsSafeUrl(posterUrl),
-                                  memCacheWidth: 420,
+                                  memCacheWidth: 360,
+                                  maxWidthDiskCache: 480,
                                   fit: BoxFit.cover,
                                   alignment: Alignment.topCenter,
                                   httpHeaders: const {
@@ -106,7 +107,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                                     if (fallbackPoster.isNotEmpty && fallbackPoster != posterUrl) {
                                       return CachedNetworkImage(
                                         imageUrl: wrapCorsSafeUrl(fallbackPoster),
-                                        memCacheWidth: 420,
+                                        memCacheWidth: 360,
+                                        maxWidthDiskCache: 480,
                                         fit: BoxFit.cover,
                                         alignment: Alignment.topCenter,
                                         httpHeaders: const {

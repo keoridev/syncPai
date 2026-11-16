@@ -9,8 +9,10 @@ import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/network_status_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
+import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
@@ -521,6 +523,29 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         case LogicalKeyboardKey.arrowDown:
           _cubit.toggleControls();
           return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyP:
+          _minimizePlayer();
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyM:
+          final cur = _cubit.state.volume;
+          _cubit.setVolume(cur > 0.01 ? 0.0 : 100.0);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyF:
+          _toggleScreenOrientation();
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyN:
+          final allEpisodes = _cubit.state.title.episodes;
+          final curIdx = allEpisodes.indexWhere((e) => e.episode == _cubit.state.episode.episode);
+          if (curIdx >= 0 && curIdx < allEpisodes.length - 1) {
+            _cubit.switchEpisode(allEpisodes[curIdx + 1]);
+          }
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.keyS:
+          _cubit.skipOpening();
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.escape:
+          _handleExit();
+          return KeyEventResult.handled;
       }
     }
     return KeyEventResult.ignored;
@@ -990,73 +1015,80 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   // Ошибка воспроизведения потока (рендерится ПОВЕРХ оверлея управления, чтобы кнопки всегда реагировали на нажатия)
                   if (state.errorMessage != null)
                     Material(
-                      color: Colors.black.withValues(alpha: 0.8),
+                      color: Colors.black.withValues(alpha: 0.85),
                       child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                          margin: const EdgeInsets.all(24),
-                          constraints: const BoxConstraints(maxWidth: 420),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceElevated,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.strokeMedium),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.6),
-                                blurRadius: 24,
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 44),
-                              const SizedBox(height: 12),
-                              Text(
-                                state.errorMessage!,
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
-                              ),
-                              const SizedBox(height: 18),
-                              Wrap(
-                                alignment: WrapAlignment.center,
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: [
-                                  ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Theme.of(context).colorScheme.primary,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: NetworkStatusHelper.isConnectionError(state.errorMessage)
+                            ? PaiChanOfflineView(
+                                title: 'Ошибка загрузки видеопотока',
+                                subtitle: 'Нет подключения к сети для воспроизведения серии. Проверьте интернет или выберите скачанную серию.',
+                                onRetry: () => _cubit.switchEpisode(state.episode),
+                                onOpenSaved: () => context.push('/downloads'),
+                              )
+                            : Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                                margin: const EdgeInsets.all(24),
+                                constraints: const BoxConstraints(maxWidth: 420),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceElevated,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppColors.strokeMedium),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.6),
+                                      blurRadius: 24,
                                     ),
-                                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                                    label: const Text('Повторить'),
-                                    onPressed: () {
-                                      _cubit.switchEpisode(state.episode);
-                                    },
-                                  ),
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: AppColors.textPrimary,
-                                      side: const BorderSide(color: AppColors.strokeMedium),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 44),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      state.errorMessage!,
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
                                     ),
-                                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                                    label: const Text('Выйти'),
-                                    onPressed: _handleExit,
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Повернуть экран',
-                                    icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textSecondary, size: 22),
-                                    onPressed: _toggleScreenOrientation,
-                                  ),
-                                ],
+                                    const SizedBox(height: 18),
+                                    Wrap(
+                                      alignment: WrapAlignment.center,
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Theme.of(context).colorScheme.primary,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          ),
+                                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                                          label: const Text('Повторить'),
+                                          onPressed: () {
+                                            _cubit.switchEpisode(state.episode);
+                                          },
+                                        ),
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppColors.textPrimary,
+                                            side: const BorderSide(color: AppColors.strokeMedium),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          ),
+                                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                                          label: const Text('Выйти'),
+                                          onPressed: _handleExit,
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Повернуть экран',
+                                          icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textSecondary, size: 22),
+                                          onPressed: _toggleScreenOrientation,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
                       ),
                     ),
                 ],

@@ -321,6 +321,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       imageUrl: wrapCorsSafeUrl(posterUrl),
       width: width,
       height: height,
+      memCacheWidth: 360,
+      maxWidthDiskCache: 480,
       fit: BoxFit.cover,
       alignment: Alignment.topCenter,
       filterQuality: FilterQuality.high,
@@ -1507,6 +1509,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                 : null;
 
                             return UnifiedAnimeCard(
+                              key: ValueKey(entry.animeId),
                               title: _toUnifiedAnimeTitle(entry),
                               onTap: () => _handleItemTap(context, entry),
                               onLongPress: () => _isSelectionMode
@@ -1542,8 +1545,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               padding: const EdgeInsets.only(bottom: 12),
                               child: GlassContainer(
                                 borderRadius: BorderRadius.circular(18),
-                                blurSigma: 14,
-                                backgroundOpacity: 0.08,
+                                blurSigma: 0,
+                                backgroundOpacity: 0.92,
+                                tintColor: const Color(0xFF11151E),
                                 padding: const EdgeInsets.all(12),
                                 onTap: () => _handleItemTap(context, entry),
                                 child: Row(
@@ -1630,8 +1634,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               padding: const EdgeInsets.only(bottom: 10),
                               child: GlassContainer(
                                 borderRadius: BorderRadius.circular(16),
-                                blurSigma: 12,
-                                backgroundOpacity: 0.06,
+                                blurSigma: 0,
+                                backgroundOpacity: 0.92,
+                                tintColor: const Color(0xFF11151E),
                                 padding: const EdgeInsets.all(10),
                                 onTap: () => _handleItemTap(context, entry),
                                 child: Row(
@@ -1836,6 +1841,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
                                 ? CachedNetworkImage(
                                     imageUrl: item.posterUrl,
+                                    memCacheWidth: 360,
+                                    maxWidthDiskCache: 480,
                                     fit: BoxFit.cover,
                                     errorWidget: (_, __, ___) => Container(
                                       color: AppColors.background,
@@ -1917,6 +1924,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
                                   ? CachedNetworkImage(
                                       imageUrl: item.posterUrl,
+                                      memCacheWidth: 360,
+                                      maxWidthDiskCache: 480,
                                       fit: BoxFit.cover,
                                       placeholder: (_, __) => ShimmerPlaceholder(
                                         width: double.infinity,
@@ -2024,8 +2033,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GlassContainer(
                   borderRadius: BorderRadius.circular(18),
-                  blurSigma: 14,
-                  backgroundOpacity: 0.08,
+                  blurSigma: 0,
+                  backgroundOpacity: 0.92,
+                  tintColor: const Color(0xFF11151E),
                   padding: const EdgeInsets.all(12),
                   onTap: () => _openDetailsForHistory(context, item),
                   child: Row(
@@ -2040,6 +2050,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
                                   ? CachedNetworkImage(
                                       imageUrl: item.posterUrl,
+                                      memCacheWidth: 360,
+                                      maxWidthDiskCache: 480,
                                       fit: BoxFit.cover,
                                       placeholder: (_, __) => ShimmerPlaceholder(
                                         width: 72,
@@ -2129,8 +2141,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: GlassContainer(
                   borderRadius: BorderRadius.circular(16),
-                  blurSigma: 12,
-                  backgroundOpacity: 0.06,
+                  blurSigma: 0,
+                  backgroundOpacity: 0.92,
+                  tintColor: const Color(0xFF11151E),
                   padding: const EdgeInsets.all(10),
                   onTap: () => _openDetailsForHistory(context, item),
                   child: Row(
@@ -2145,6 +2158,8 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
                                   ? CachedNetworkImage(
                                       imageUrl: item.posterUrl,
+                                      memCacheWidth: 360,
+                                      maxWidthDiskCache: 480,
                                       fit: BoxFit.cover,
                                       placeholder: (_, __) => ShimmerPlaceholder(
                                         width: 52,

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../../../../core/network/network_status_helper.dart';
 import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../domain/entities/sync_event.dart';
 import '../../domain/entities/sync_protocol.dart';
@@ -43,6 +44,15 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     PlayerQuality quality = PlayerQuality.hd,
   }) async {
     if (isClosed) return;
+
+    final hasNet = await NetworkStatusHelper.hasInternet();
+    if (!hasNet) {
+      _safeEmit(const SyncRoomError(
+        'Нет подключения к интернету. Для совместного просмотра подключись к сети.',
+      ));
+      return;
+    }
+
     _safeEmit(const SyncRoomCreating());
     try {
       final room = await repository.createRoom(
@@ -144,6 +154,14 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
       return;
     }
 
+    final hasNet = await NetworkStatusHelper.hasInternet();
+    if (!hasNet) {
+      _safeEmit(const SyncRoomError(
+        'Нет подключения к интернету. Для совместного просмотра подключись к сети.',
+      ));
+      return;
+    }
+
     _safeEmit(const SyncRoomJoining());
     try {
       final room = await repository.joinRoom(code: cleanCode, peerName: peerName);
@@ -157,7 +175,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         if (isClosed) return;
         final s = state;
         if (s is SyncRoomJoined) {
-          _safeEmit(s.copyWith(participants: presences));
+          _safeEmit(s.copyWith(participants: presences, isHost: false));
         }
       });
 
@@ -180,6 +198,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
           if (s is SyncRoomJoined) {
             _safeEmit(s.copyWith(
               room: s.room.copyWith(title: event.newTitle, episode: ep),
+              isHost: false,
             ));
           }
         }
@@ -320,7 +339,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
         await repository.startPlayback(code);
       } catch (_) {}
       if (isClosed) return;
-      _safeEmit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: s.isHost));
+      _safeEmit(SyncRoomPlaybackStarting(room: updatedRoom, isHost: false));
     }
   }
 

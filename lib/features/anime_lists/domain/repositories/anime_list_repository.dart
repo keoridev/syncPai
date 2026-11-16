@@ -11,6 +11,9 @@ abstract class AnimeListRepository {
   /// Сохранить или обновить статус/прогресс тайтла
   Future<void> upsertEntry(UserAnimeEntry entry);
 
+  /// Сохранить или обновить пачку записей за одну операцию
+  Future<void> upsertEntries(List<UserAnimeEntry> entries);
+
   /// Удалить тайтл из списков
   Future<void> removeEntry(int animeId);
 

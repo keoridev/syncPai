@@ -103,7 +103,6 @@ class KodikRemoteDataSourceImpl implements KodikRemoteDataSource {
     String? title,
   }) async {
     final endpoints = [
-      'https://kodikapi.com/search',
       '$baseUrl/search',
     ];
     final queryParams = <String, dynamic>{
@@ -179,14 +178,26 @@ class KodikRemoteDataSourceImpl implements KodikRemoteDataSource {
     final translations = <KodikTranslation>[];
     final seenTitles = <String>{};
 
-    // 1. Ищем выпадающий список всех студий озвучки в <div class="serial-translations-box">
+    // 1. Ищем выпадающий список всех студий озвучки в <div class="serial-translations-box"> или опции по атрибутам
+    String optionsHtml = '';
     final selectMatch = RegExp(
       r'<div class="serial-translations-box"[^>]*>[\s\S]*?<select[^>]*>([\s\S]*?)<\/select>',
       caseSensitive: false,
     ).firstMatch(html);
 
     if (selectMatch != null) {
-      final optionsHtml = selectMatch.group(1)!;
+      optionsHtml = selectMatch.group(1)!;
+    } else {
+      // Запасной поиск: любой select с опциями озвучек
+      final altMatch = RegExp(r'<select[^>]*>([\s\S]*?)<\/select>', caseSensitive: false).firstMatch(html);
+      if (altMatch != null && altMatch.group(1)!.contains('data-translation-type')) {
+        optionsHtml = altMatch.group(1)!;
+      } else {
+        optionsHtml = html;
+      }
+    }
+
+    if (optionsHtml.contains('data-translation-type') || optionsHtml.contains('data-media-hash')) {
       final optionRegex = RegExp(r'<option\s+([^>]+)>([\s\S]*?)<\/option>', caseSensitive: false);
 
       for (final match in optionRegex.allMatches(optionsHtml)) {

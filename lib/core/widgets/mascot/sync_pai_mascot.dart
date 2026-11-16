@@ -228,7 +228,9 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
 
     if (widget.allowSeasonalSkin &&
         winterService.isWinterActive &&
-        winterService.isWinterMascotEnabled) {
+        winterService.isWinterMascotEnabled &&
+        effectiveState == widget.state &&
+        effectiveState.category != MascotCategory.winter) {
       imageContent = Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.topCenter,

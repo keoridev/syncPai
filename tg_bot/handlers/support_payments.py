@@ -73,9 +73,9 @@ async def show_tiers_menu(event: Message | CallbackQuery, state: FSMContext):
     )
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="SyncPai Plus — 149 ₽ / 100 Stars", callback_data="tier_supporter")],
-        [InlineKeyboardButton(text="SyncPai Pro — 349 ₽ / 250 Stars", callback_data="tier_vip")],
-        [InlineKeyboardButton(text="Founders Club — 990 ₽ / 700 Stars", callback_data="tier_producer")],
+        [InlineKeyboardButton(text="⚡ SyncPai Plus — 149 ₽ / 100 ⭐", callback_data="tier_supporter")],
+        [InlineKeyboardButton(text="🔥 SyncPai Pro — 349 ₽ / 250 ⭐", callback_data="tier_vip")],
+        [InlineKeyboardButton(text="👑 Founders Club — 990 ₽ / 700 ⭐", callback_data="tier_producer")],
         [InlineKeyboardButton(text="← Назад", callback_data="cancel_action")],
     ])
 
@@ -114,8 +114,8 @@ async def cb_select_tier(callback: CallbackQuery):
     )
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Оплатить {info['stars']} Stars", callback_data=f"pay_stars_{tier_id}")],
-        [InlineKeyboardButton(text="Перевод / Boosty / Crypto", callback_data=f"pay_manual_{tier_id}")],
+        [InlineKeyboardButton(text=f"⭐ Оплатить {info['stars']} Stars", callback_data=f"pay_stars_{tier_id}")],
+        [InlineKeyboardButton(text="💳 Перевод / Boosty / Crypto", callback_data=f"pay_manual_{tier_id}")],
         [InlineKeyboardButton(text="← Назад к тарифам", callback_data="show_tiers")],
     ])
 

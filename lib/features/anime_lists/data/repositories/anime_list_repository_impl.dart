@@ -91,6 +91,26 @@ class AnimeListRepositoryImpl implements AnimeListRepository {
   }
 
   @override
+  Future<void> clearAllEntries({String? userId}) async {
+    await _prefs.remove(_storageKey);
+
+    final client = _supabase;
+    final uid = client?.auth.currentUser?.id ?? userId;
+    if (client != null && client.auth.currentUser != null && uid != null && uid.isNotEmpty) {
+      unawaited(
+        client
+            .from('user_anime_lists')
+            .delete()
+            .eq('user_id', uid)
+            .then((_) {})
+            .catchError((Object e) {
+          debugPrint('[AnimeListRepository] clearAllEntries cloud delete error: $e');
+        }),
+      );
+    }
+  }
+
+  @override
   Future<void> upsertEntries(List<UserAnimeEntry> entries) async {
     if (entries.isEmpty) return;
     final all = await getAllEntries();

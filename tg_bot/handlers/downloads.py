@@ -35,14 +35,14 @@ async def show_downloads(event: Message | CallbackQuery, state: FSMContext):
 
     buttons = []
     if apk_url:
-        buttons.append([InlineKeyboardButton(text="Скачать для Android (.apk)", url=apk_url)])
+        buttons.append([InlineKeyboardButton(text="📱 Скачать для Android (.apk)", url=apk_url)])
     else:
-        buttons.append([InlineKeyboardButton(text="Android (.apk) — скоро", callback_data="no_download_link")])
+        buttons.append([InlineKeyboardButton(text="📱 Android (.apk) — скоро", callback_data="no_download_link")])
 
     if exe_url:
-        buttons.append([InlineKeyboardButton(text="Скачать для Windows (.exe)", url=exe_url)])
+        buttons.append([InlineKeyboardButton(text="💻 Скачать для Windows (.exe)", url=exe_url)])
     else:
-        buttons.append([InlineKeyboardButton(text="Windows (.exe) — скоро", callback_data="no_download_link")])
+        buttons.append([InlineKeyboardButton(text="💻 Windows (.exe) — скоро", callback_data="no_download_link")])
 
     buttons.append([InlineKeyboardButton(text="← Назад", callback_data="cancel_action")])
 

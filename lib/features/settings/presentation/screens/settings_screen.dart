@@ -26,6 +26,7 @@ import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
+import '../../../watch_history/presentation/cubit/watch_history_cubit.dart';
 import '../../../winter_theme/domain/services/winter_theme_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -468,6 +469,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _showResetDataDialog(BuildContext context, String userId) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        Future<void> performReset({
+          required bool clearLists,
+          required bool clearHistory,
+        }) async {
+          final messenger = ScaffoldMessenger.of(this.context);
+          AnimeListCubit? listCubit;
+          WatchHistoryCubit? historyCubit;
+          if (getIt.isRegistered<AnimeListCubit>()) {
+            listCubit = getIt<AnimeListCubit>();
+          } else {
+            try {
+              listCubit = this.context.read<AnimeListCubit>();
+            } catch (_) {}
+          }
+          if (getIt.isRegistered<WatchHistoryCubit>()) {
+            historyCubit = getIt<WatchHistoryCubit>();
+          } else {
+            try {
+              historyCubit = this.context.read<WatchHistoryCubit>();
+            } catch (_) {}
+          }
+
+          Navigator.of(dialogCtx).pop();
+          if (clearLists && listCubit != null) {
+            await listCubit.clearAllLists(userId: userId);
+          }
+          if (clearHistory && historyCubit != null) {
+            await historyCubit.clearAllHistory();
+          }
+          if (mounted) {
+            messenger.showSnackBar(
+              const SnackBar(
+                content: Text('Данные успешно сброшены'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF12161F),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Сброс данных',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Выбери, какие данные удалить. Это действие нельзя отменить.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    key: const ValueKey('reset_only_lists_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => performReset(clearLists: true, clearHistory: false),
+                    child: const Text('Очистить все списки закладок'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    key: const ValueKey('reset_only_history_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => performReset(clearLists: false, clearHistory: true),
+                    child: const Text('Очистить только историю просмотров'),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    key: const ValueKey('reset_all_data_btn'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFEF5350),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => performReset(clearLists: true, clearHistory: true),
+                    child: const Text(
+                      'Сбросить всё (списки и историю)',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
+                    child: const Text(
+                      'Отмена',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
@@ -871,6 +1010,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
                     onTap: () => _pickAndImportAnixart(context, profile.id),
+                  ),
+                  _buildDivider(),
+                  ListTile(
+                    key: const ValueKey('settings_reset_lists_history_tile'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF5350).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFEF5350), size: 20),
+                    ),
+                    title: const Text(
+                      'Сбросить списки и историю',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Удалить все закладки («В планах», «Просмотрено» и др.) и историю просмотров',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                    onTap: () => _showResetDataDialog(context, profile.id),
                   ),
                 ]),
 

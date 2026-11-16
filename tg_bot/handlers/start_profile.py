@@ -48,17 +48,17 @@ def get_profile_card_text(profile: dict) -> str:
 
 def _linked_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Мой профиль", callback_data="view_profile")],
-        [InlineKeyboardButton(text="Уровни поддержки", callback_data="show_tiers")],
-        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
+        [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
     ])
 
 
 def _guest_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Привязать аккаунт", callback_data="link_account")],
-        [InlineKeyboardButton(text="Уровни поддержки", callback_data="show_tiers")],
-        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
+        [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
     ])
 
 
@@ -121,11 +121,12 @@ async def cmd_start(message: Message, state: FSMContext):
         )
 
 
+@router.message(Command("link"))
 @router.callback_query(F.data == "link_account")
-async def cb_link_account(callback: CallbackQuery, state: FSMContext):
+async def cb_link_account(event: Message | CallbackQuery, state: FSMContext):
     await state.set_state(LinkProfileState.waiting_for_code)
     await send_or_edit_card(
-        callback,
+        event,
         card_key="link",
         caption=(
             "<b>Привязка аккаунта SyncPai</b>\n\n"

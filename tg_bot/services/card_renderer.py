@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import math
+from collections import deque
 from pathlib import Path
 from typing import Dict, Optional
 
 from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardMarkup, InputMediaPhoto, Message
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -97,65 +99,143 @@ def _wrap_text(
     return lines
 
 
+def _cutout_sticker_background(img: Image.Image, tolerance: float = 38.0) -> Image.Image:
+    """
+    Удаляет однородный светло-серый фон вокруг стикера Пай-тян через BFS flood-fill
+    от границ (с допуском Euclidean RGB <= 38) и сглаживает край альфа-канала (1px).
+    """
+    rgba = img.convert("RGBA")
+    w, h = rgba.size
+    px = rgba.load()
+
+    # Берём эталонный цвет фона с углов
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    bg_samples = [px[x, y][:3] for x, y in corners]
+    bg_r = sum(c[0] for c in bg_samples) / 4.0
+    bg_g = sum(c[1] for c in bg_samples) / 4.0
+    bg_b = sum(c[2] for c in bg_samples) / 4.0
+
+    tol_sq = tolerance * tolerance
+    visited = bytearray(w * h)
+    queue: deque[tuple[int, int]] = deque()
+
+    def matches_bg(x: int, y: int) -> bool:
+        r, g, b, a = px[x, y]
+        if a < 10:
+            return True
+        dr = r - bg_r
+        dg = g - bg_g
+        db = b - bg_b
+        return (dr * dr + dg * dg + db * db) <= tol_sq
+
+    for x in range(w):
+        for y in (0, h - 1):
+            idx = y * w + x
+            if not visited[idx] and matches_bg(x, y):
+                visited[idx] = 1
+                queue.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            idx = y * w + x
+            if not visited[idx] and matches_bg(x, y):
+                visited[idx] = 1
+                queue.append((x, y))
+
+    while queue:
+        cx, cy = queue.popleft()
+        px[cx, cy] = (0, 0, 0, 0)
+        for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
+            if 0 <= nx < w and 0 <= ny < h:
+                nidx = ny * w + nx
+                if not visited[nidx] and matches_bg(nx, ny):
+                    visited[nidx] = 1
+                    queue.append((nx, ny))
+
+    # Лёгкое 1px размытие края альфа-канала для чистого контура без лесенок
+    r_ch, g_ch, b_ch, a_ch = rgba.split()
+    blurred_a = a_ch.filter(ImageFilter.GaussianBlur(radius=1.0))
+    # Сохраняем внутреннюю непрозрачность, смягчая только внешний край
+    a_px = a_ch.load()
+    ba_px = blurred_a.load()
+    for y in range(h):
+        for x in range(w):
+            if a_px[x, y] == 0:
+                ba_px[x, y] = 0
+            elif a_px[x, y] == 255 and ba_px[x, y] < 245:
+                # краевой пиксель — оставляем сглаженным
+                pass
+            elif a_px[x, y] == 255:
+                ba_px[x, y] = 255
+
+    return Image.merge("RGBA", (r_ch, g_ch, b_ch, blurred_a))
+
+
+def _create_radial_glow(size: int, rgb: tuple[int, int, int], max_alpha: int = 25) -> Image.Image:
+    glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    gpx = glow.load()
+    half = size / 2.0
+    for y in range(size):
+        dy = (y - half) / half
+        for x in range(size):
+            dx = (x - half) / half
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < 1.0:
+                falloff = (1.0 - dist) ** 2.2
+                alpha = int(max_alpha * falloff)
+                if alpha > 0:
+                    gpx[x, y] = (rgb[0], rgb[1], rgb[2], alpha)
+    return glow
+
+
 def get_card_path(card_key: str) -> Path:
-    """Рендерит (при первом обращении) и возвращает путь к PNG-баннеру 1200x500."""
+    """Рендерит и возвращает путь к минималистичному PNG-баннеру 1200x480."""
     spec = _CARD_SPECS.get(card_key, _CARD_SPECS["welcome"])
     _RENDERED_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = _RENDERED_DIR / f"{card_key}.png"
+    out_path = _RENDERED_DIR / f"{card_key}_v2.png"
     if out_path.exists():
         return out_path
 
-    width, height = 1200, 500
+    width, height = 1200, 480
     bg = Image.new("RGBA", (width, height), (11, 14, 20, 255))
     draw = ImageDraw.Draw(bg)
 
-    # Внутренняя тёмная карточка (#141923) с тонкой рамкой
-    pad = 28
-    draw.rounded_rectangle(
-        [pad, pad, width - pad, height - pad],
-        radius=28,
-        fill=(20, 25, 35, 255),
-        outline=(255, 255, 255, 22),
-        width=2,
-    )
-
     accent_rgb = _hex_to_rgb(spec["accent"])
-    # Тонкая акцентная полоса слева
-    draw.rounded_rectangle(
-        [pad + 34, pad + 56, pad + 42, height - pad - 56],
-        radius=4,
-        fill=(*accent_rgb, 255),
-    )
 
-    # Текстовый блок
-    text_x = pad + 72
+    # Мягкое радиальное свечение за Пай-тян справа (alpha ~ 25, без рамок и полос)
+    glow_size = 560
+    glow = _create_radial_glow(glow_size, accent_rgb, max_alpha=25)
+    bg.alpha_composite(glow, dest=(width - glow_size + 40, (height - glow_size) // 2))
+
+    # Крупная и чистая типографика слева
+    text_x = 76
     max_text_w = 640
 
     font_eyebrow = _load_font(22, bold=True)
-    font_title = _load_font(54, bold=True)
+    font_title = _load_font(56, bold=True)
     font_sub = _load_font(27, bold=False)
 
-    draw.text((text_x, pad + 74), spec["eyebrow"], font=font_eyebrow, fill=(*accent_rgb, 255))
-    draw.text((text_x, pad + 118), spec["title"], font=font_title, fill=(245, 247, 252, 255))
+    draw.text((text_x, 96), spec["eyebrow"], font=font_eyebrow, fill=(*accent_rgb, 255))
+    draw.text((text_x, 142), spec["title"], font=font_title, fill=(245, 247, 252, 255))
 
     sub_lines = _wrap_text(draw, spec["subtitle"], font_sub, max_text_w)
-    y_sub = pad + 206
+    y_sub = 232
     for line in sub_lines[:3]:
         draw.text((text_x, y_sub), line, font=font_sub, fill=(168, 178, 196, 255))
-        y_sub += 38
+        y_sub += 40
 
-    # Персонаж Пай-тян справа
+    # Персонаж Пай-тян справа с прозрачным вырезом фона
     sticker_path = _ASSETS_DIR / spec["sticker"]
     if sticker_path.exists():
         try:
-            sticker = Image.open(sticker_path).convert("RGBA")
-            target_h = 410
-            ratio = target_h / sticker.height
-            target_w = int(sticker.width * ratio)
-            sticker = sticker.resize((target_w, target_h), Image.Resampling.LANCZOS)
-            pos_x = width - pad - target_w - 28
+            raw_sticker = Image.open(sticker_path)
+            cutout = _cutout_sticker_background(raw_sticker, tolerance=38.0)
+            target_h = 416
+            ratio = target_h / cutout.height
+            target_w = int(cutout.width * ratio)
+            cutout = cutout.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            pos_x = width - target_w - 56
             pos_y = (height - target_h) // 2
-            bg.alpha_composite(sticker, dest=(pos_x, pos_y))
+            bg.alpha_composite(cutout, dest=(pos_x, pos_y))
         except Exception as e:
             logger.warning(f"Failed to composite sticker {sticker_path}: {e}")
 
@@ -220,4 +300,3 @@ async def send_or_edit_card(
         )
         if sent.photo:
             _FILE_ID_CACHE[card_key] = sent.photo[-1].file_id
-

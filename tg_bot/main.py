@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
 from handlers import start_profile, support_payments, downloads, admin
+from services.card_renderer import invalidate_card_cache
 from services.expiration_worker import check_expired_supporters
 
 logging.basicConfig(
@@ -19,6 +20,7 @@ logger = logging.getLogger("syncpai_bot")
 async def set_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Главное меню и привязка аккаунта"),
+        BotCommand(command="link", description="Привязать профиль SyncPai"),
         BotCommand(command="profile", description="Мой профиль SyncPai"),
         BotCommand(command="support", description="Поддержать проект и подписки"),
         BotCommand(command="download", description="Скачать приложение (.apk / .exe)"),
@@ -28,6 +30,7 @@ async def set_bot_commands(bot: Bot):
 
 async def main():
     logger.info("Starting SyncPai Telegram Bot...")
+    invalidate_card_cache()
 
     bot = Bot(token=settings.bot_token)
     dp = Dispatcher(storage=MemoryStorage())

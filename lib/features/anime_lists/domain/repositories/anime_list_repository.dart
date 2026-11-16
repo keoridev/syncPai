@@ -26,6 +26,9 @@ abstract class AnimeListRepository {
   /// Массово удалить группу тайтлов из списков
   Future<void> batchDelete(List<int> animeIds);
 
+  /// Полностью очистить все списки закладок локально и в облаке
+  Future<void> clearAllEntries({String? userId});
+
   /// Импортировать закладки из файла бэкапа Anixart
   Future<AnixartImportResult> importAnixartBackup(String jsonContent, {required String userId});
 

@@ -128,6 +128,17 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     }
   }
 
+  /// Мгновенно (0ms) очищает все списки закладок локально и запускает удаление в Supabase.
+  Future<void> clearAllLists({String? userId}) async {
+    emit(state.copyWith(
+      allEntries: const [],
+      stats: UserAnimeStats.compute(const []),
+      isLoading: false,
+      errorMessage: null,
+    ));
+    await repository.clearAllEntries(userId: userId);
+  }
+
   Future<void> removeAnime(int animeId) async {
     final previousEntries = state.allEntries;
     final updatedList = List<UserAnimeEntry>.from(previousEntries)

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/theme/app_theme.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/shikimori_remote_datasource.dart';
+import 'package:sync_pai/features/anime_details/domain/entities/anime_video_item.dart';
 import 'package:sync_pai/features/anime_details/presentation/screens/anime_details_screen.dart';
 import 'package:sync_pai/features/auth/data/repositories/auth_repository_impl.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
@@ -53,6 +54,12 @@ class _SlowShikimoriDataSource implements ShikimoriRemoteDataSource {
       reviews: [],
     );
   }
+
+  @override
+  Future<List<AnimeVideoItem>> getVideos({int? shikimoriId, String? query, String? fallbackPoster}) async => const [];
+
+  @override
+  Future<List<String>> getScreenshots(int shikimoriId) async => const [];
 }
 
 class _FakeAnimeRepo implements CatalogRepository {

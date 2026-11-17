@@ -21,6 +21,7 @@ import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'features/winter_theme/presentation/widgets/winter_snowfall_overlay.dart';
 import 'core/services/app_updater_service.dart';
 import 'core/services/deep_link_service.dart';
+import 'core/services/device_performance_service.dart';
 import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
 
 void main() async {
@@ -78,6 +79,9 @@ void main() async {
   }
 
   await configureDependencies();
+
+  // Адаптивная авто-оптимизация под объем ОЗУ и бюджет кэша изображений
+  await DevicePerformanceService.instance.init();
 
   runApp(const SyncPaiApp());
 }

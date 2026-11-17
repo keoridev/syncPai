@@ -9,21 +9,21 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/api_constants.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
+import '../../../profile/domain/entities/steam_profile_customization.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../presentation/utils/auth_error_formatter.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final SharedPreferences _prefs;
-  final StreamController<UserProfile?> _authController = StreamController<UserProfile?>.broadcast();
+  final StreamController<UserProfile?> _authController =
+      StreamController<UserProfile?>.broadcast();
 
   static const String _profileKey = 'sync_pai_user_profile';
   static const String _localGuestUuidKey = 'sync_pai_local_guest_uuid';
 
-  /// Флаг: если в Supabase отключён Anonymous Sign-In (422 anonymous_provider_disabled),
-  /// не повторяем сетевые запросы signInAnonymously и работаем в режиме LocalGuestUser.
-  static bool _anonymousProviderDisabled = false;
-  static bool get isAnonymousProviderDisabled => _anonymousProviderDisabled;
+  /// В SyncPai гостевой режим работает исключительно локально без анонимных строк в Supabase.
+  static const bool isAnonymousProviderDisabled = true;
 
   AuthRepositoryImpl(this._prefs) {
     _initSupabaseListener();
@@ -50,7 +50,9 @@ class AuthRepositoryImpl implements AuthRepository {
             id: session.user.id,
             email: session.user.email ?? local.email,
             isAnonymous: session.user.isAnonymous,
-            provider: session.user.appMetadata['provider'] as String? ?? local.provider ?? 'google',
+            provider: session.user.appMetadata['provider'] as String? ??
+                local.provider ??
+                'google',
           );
           await _saveLocalProfile(fastProfile);
           _authController.add(fastProfile);
@@ -58,7 +60,8 @@ class AuthRepositoryImpl implements AuthRepository {
           // 2. Фоновая миграция данных и синхронизация списков (fire-and-forget в фоне)
           unawaited(() async {
             try {
-              final fullProfile = await _fetchAndMigrateCloudProfile(session.user);
+              final fullProfile =
+                  await _fetchAndMigrateCloudProfile(session.user);
               await _saveLocalProfile(fullProfile);
               _authController.add(fullProfile);
             } catch (e) {
@@ -79,7 +82,8 @@ class AuthRepositoryImpl implements AuthRepository {
       return existing;
     }
     final rnd = Random();
-    String hex(int len) => List.generate(len, (_) => rnd.nextInt(16).toRadixString(16)).join();
+    String hex(int len) =>
+        List.generate(len, (_) => rnd.nextInt(16).toRadixString(16)).join();
     final uuid = '${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}';
     _prefs.setString(_localGuestUuidKey, uuid);
     return uuid;
@@ -125,7 +129,8 @@ class AuthRepositoryImpl implements AuthRepository {
     final googleName = metadata['full_name'] as String? ??
         metadata['name'] as String? ??
         (emailPrefix != null && emailPrefix.isNotEmpty ? emailPrefix : null);
-    final googleAvatar = metadata['avatar_url'] as String? ?? metadata['picture'] as String?;
+    final googleAvatar =
+        metadata['avatar_url'] as String? ?? metadata['picture'] as String?;
 
     // Считываем текущий локальный профиль (настройки гостя)
     final local = _loadLocalProfile();
@@ -144,9 +149,11 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     // 1. Имя пользователя (без хардкода "Сенпай")
-    final localHasCustomName = !UserProfile.isDefaultGeneratedNickname(local.username);
+    final localHasCustomName =
+        !UserProfile.isDefaultGeneratedNickname(local.username);
     final cloudUsername = cloudRow?['username'] as String?;
-    final cloudHasCustomName = !UserProfile.isDefaultGeneratedNickname(cloudUsername);
+    final cloudHasCustomName =
+        !UserProfile.isDefaultGeneratedNickname(cloudUsername);
 
     String effectiveUsername;
     if (explicitUsername != null && explicitUsername.trim().isNotEmpty) {
@@ -163,8 +170,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
     // 2. Аватарка
     String? effectiveAvatar = cloudRow?['avatar_url'] as String?;
-    if (effectiveAvatar == null || effectiveAvatar == 'cat' || effectiveAvatar.isEmpty) {
-      if (local.avatarUrl != null && local.avatarUrl != 'cat' && local.avatarUrl!.isNotEmpty) {
+    if (effectiveAvatar == null ||
+        effectiveAvatar == 'cat' ||
+        effectiveAvatar.isEmpty) {
+      if (local.avatarUrl != null &&
+          local.avatarUrl != 'cat' &&
+          local.avatarUrl!.isNotEmpty) {
         effectiveAvatar = local.avatarUrl;
       } else {
         effectiveAvatar = googleAvatar ?? local.avatarUrl ?? 'cat';
@@ -175,7 +186,9 @@ class AuthRepositoryImpl implements AuthRepository {
     String effectiveFrame = (cloudRow?['avatar_frame_id'] as String?) ??
         (cloudRow?['frame_id'] as String?) ??
         'none';
-    if (effectiveFrame == 'none' && local.frameId != null && local.frameId != 'none') {
+    if (effectiveFrame == 'none' &&
+        local.frameId != null &&
+        local.frameId != 'none') {
       effectiveFrame = local.frameId!;
     }
 
@@ -183,7 +196,9 @@ class AuthRepositoryImpl implements AuthRepository {
     String effectiveBg = (cloudRow?['background_url'] as String?) ??
         (cloudRow?['background_id'] as String?) ??
         'none';
-    if (effectiveBg == 'none' && local.backgroundId != null && local.backgroundId != 'none') {
+    if (effectiveBg == 'none' &&
+        local.backgroundId != null &&
+        local.backgroundId != 'none') {
       effectiveBg = local.backgroundId!;
     }
 
@@ -196,7 +211,8 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     // 6. Кастомный статус
-    String effectiveStatus = (cloudRow?['custom_status'] as String?) ?? 'Смотрю аниме...';
+    String effectiveStatus =
+        (cloudRow?['custom_status'] as String?) ?? 'Смотрю аниме...';
     if ((effectiveStatus == 'Смотрю аниме...' || effectiveStatus.isEmpty) &&
         local.customStatus != null &&
         local.customStatus != 'Смотрю аниме...' &&
@@ -214,25 +230,29 @@ class AuthRepositoryImpl implements AuthRepository {
 
     // 8. Значок Steam (Badge)
     String? effectiveBadge = cloudRow?['badge_id'] as String?;
-    if ((effectiveBadge == null || effectiveBadge.isEmpty) && local.badgeId != null) {
+    if ((effectiveBadge == null || effectiveBadge.isEmpty) &&
+        local.badgeId != null) {
       effectiveBadge = local.badgeId;
     }
 
     // 9. Любимый тайтл витрины
     String? effectiveFavAnimeTitle =
-        cloudRow?['favorite_anime_title'] as String? ?? local.favoriteAnimeTitle;
+        cloudRow?['favorite_anime_title'] as String? ??
+            local.favoriteAnimeTitle;
     String? effectiveFavAnimeId =
         cloudRow?['favorite_anime_id'] as String? ?? local.favoriteAnimeId;
     String? effectiveFavAnimePoster =
-        cloudRow?['favorite_anime_poster'] as String? ?? local.favoriteAnimePoster;
+        cloudRow?['favorite_anime_poster'] as String? ??
+            local.favoriteAnimePoster;
     String? effectiveArtworkUrl =
         cloudRow?['artwork_url'] as String? ?? local.artworkUrl;
     String? effectiveArtworkTitle =
         cloudRow?['artwork_title'] as String? ?? local.artworkTitle;
 
     // 10. Акцентный цвет, провайдер, email и тег
-    String effectiveAccent =
-        (cloudRow?['accent_color'] as String?) ?? local.accentColor ?? '#E06C53';
+    String effectiveAccent = (cloudRow?['accent_color'] as String?) ??
+        local.accentColor ??
+        '#E06C53';
     final rawTag = (cloudRow?['tag'] as String?) ?? local.tag;
     final effectiveTag = (rawTag.isNotEmpty && rawTag != '#0001')
         ? rawTag
@@ -265,11 +285,16 @@ class AuthRepositoryImpl implements AuthRepository {
       friendCode: (cloudRow?['friend_code'] as String?) ??
           local.friendCode ??
           'SP-${user.id.length >= 6 ? user.id.substring(0, 6).toUpperCase() : '777AAA'}',
-      createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ??
+          DateTime.now(),
     );
 
     // Сохраняем объединенный профиль в Supabase и локальный кэш
-    await _upsertCloudProfile(merged);
+    if (cloudRow != null) {
+      await _updateCloudProfile(merged);
+    } else {
+      await _insertInitialCloudProfile(merged);
+    }
     await _saveLocalProfile(merged);
 
     // Фоновая синхронизация закладок/списков с новым аккаунтом
@@ -284,48 +309,105 @@ class AuthRepositoryImpl implements AuthRepository {
     return merged;
   }
 
-  Future<void> _upsertCloudProfile(UserProfile profile) async {
+  /// Строгое обновление СУЩЕСТВУЮЩЕГО профиля в public.profiles по auth.currentUser.id.
+  /// НИКОГДА не генерирует новые UUID, tag или friend_code.
+  /// Исключает создание дублирующих строк (использует .update(), а не .upsert()).
+  Future<void> _updateCloudProfile(UserProfile profile) async {
     final client = _supabase;
     if (client == null) return;
 
-    // Повторно используем только уже существующую сессию; НЕ создаём нового анонимного пользователя при каждом обновлении
-    final activeUser = client.auth.currentSession?.user ?? client.auth.currentUser;
+    final activeUser =
+        client.auth.currentSession?.user ?? client.auth.currentUser;
     if (activeUser == null) {
+      // Гостевой режим: данные хранятся исключительно локально!
       return;
     }
 
     final cloudUserId = activeUser.id;
-    final effectiveEmail = (activeUser.email != null && activeUser.email!.trim().isNotEmpty)
-        ? activeUser.email!.trim()
-        : (profile.email != null && profile.email!.trim().isNotEmpty
-            ? profile.email!.trim()
-            : null);
+    final payload = <String, dynamic>{
+      'username': profile.username,
+      'avatar_url': profile.avatarUrl,
+      'avatar_frame_id': profile.frameId ?? 'none',
+      'background_url': profile.backgroundId ?? 'none',
+      'custom_title': profile.customTitle,
+      'custom_status': profile.customStatus,
+      'bio': profile.bio,
+      'badge_id': profile.badgeId,
+      'favorite_anime_title': profile.favoriteAnimeTitle,
+      'favorite_anime_id': profile.favoriteAnimeId,
+      'favorite_anime_poster': profile.favoriteAnimePoster,
+      'artwork_url': profile.artworkUrl,
+      'artwork_title': profile.artworkTitle,
+      'accent_color': profile.accentColor,
+      'showcase_type': profile.showcaseType,
+      'customization': profile.customization.toJson(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
 
     try {
-      await client.from('profiles').upsert({
-        'id': cloudUserId,
-        'username': profile.username,
-        if (effectiveEmail != null) 'email': effectiveEmail,
-        'avatar_url': profile.avatarUrl,
-        'avatar_frame_id': profile.frameId ?? 'none',
-        'background_url': profile.backgroundId ?? 'none',
-        'custom_title': profile.customTitle,
-        'custom_status': profile.customStatus,
-        'bio': profile.bio,
-        'badge_id': profile.badgeId,
-        'favorite_anime_title': profile.favoriteAnimeTitle,
-        'favorite_anime_id': profile.favoriteAnimeId,
-        'favorite_anime_poster': profile.favoriteAnimePoster,
-        'artwork_url': profile.artworkUrl,
-        'artwork_title': profile.artworkTitle,
-        'accent_color': profile.accentColor,
-        'showcase_type': profile.showcaseType,
-        'customization': profile.customization.toJson(),
-        'created_at': profile.createdAt.toIso8601String(),
-      });
+      await client.from('profiles').update(payload).eq('id', cloudUserId);
     } catch (e) {
-      debugPrint('Error upserting cloud profile: $e');
-      // Fallback 1: базовые поля + avatar_frame_id + background_url (+ email если есть)
+      debugPrint('[Auth] Error updating profile: $e');
+      try {
+        await client.from('profiles').update({
+          'username': profile.username,
+          'avatar_url': profile.avatarUrl,
+          'avatar_frame_id': profile.frameId ?? 'none',
+          'background_url': profile.backgroundId ?? 'none',
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', cloudUserId);
+      } catch (e2) {
+        debugPrint('[Auth] Error in fallback profile update: $e2');
+      }
+    }
+  }
+
+  /// Начальное создание профиля нового пользователя в Supabase при первой регистрации
+  Future<void> _insertInitialCloudProfile(UserProfile profile) async {
+    final client = _supabase;
+    if (client == null) return;
+
+    final activeUser =
+        client.auth.currentSession?.user ?? client.auth.currentUser;
+    if (activeUser == null) return;
+
+    final cloudUserId = activeUser.id;
+    final effectiveEmail =
+        (activeUser.email != null && activeUser.email!.trim().isNotEmpty)
+            ? activeUser.email!.trim()
+            : (profile.email != null && profile.email!.trim().isNotEmpty
+                ? profile.email!.trim()
+                : null);
+
+    final payload = <String, dynamic>{
+      'id': cloudUserId,
+      'username': profile.username,
+      if (effectiveEmail != null) 'email': effectiveEmail,
+      'avatar_url': profile.avatarUrl,
+      'avatar_frame_id': profile.frameId ?? 'none',
+      'background_url': profile.backgroundId ?? 'none',
+      'custom_title': profile.customTitle,
+      'custom_status': profile.customStatus,
+      'bio': profile.bio,
+      'badge_id': profile.badgeId,
+      'favorite_anime_title': profile.favoriteAnimeTitle,
+      'favorite_anime_id': profile.favoriteAnimeId,
+      'favorite_anime_poster': profile.favoriteAnimePoster,
+      'artwork_url': profile.artworkUrl,
+      'artwork_title': profile.artworkTitle,
+      'accent_color': profile.accentColor,
+      'showcase_type': profile.showcaseType,
+      'customization': profile.customization.toJson(),
+      'tag': profile.tag,
+      if (profile.friendCode != null) 'friend_code': profile.friendCode,
+      'created_at': profile.createdAt.toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    try {
+      await client.from('profiles').upsert(payload);
+    } catch (e) {
+      debugPrint('[Auth] Error inserting initial cloud profile: $e');
       try {
         await client.from('profiles').upsert({
           'id': cloudUserId,
@@ -337,17 +419,7 @@ class AuthRepositoryImpl implements AuthRepository {
           'created_at': profile.createdAt.toIso8601String(),
         });
       } catch (e2) {
-        // Fallback 2: минимальный набор без опциональных колонок
-        try {
-          await client.from('profiles').upsert({
-            'id': cloudUserId,
-            'username': profile.username,
-            'avatar_url': profile.avatarUrl ?? '🐱',
-            'created_at': profile.createdAt.toIso8601String(),
-          });
-        } catch (e3) {
-          debugPrint('Error upserting minimal cloud profile: $e3');
-        }
+        debugPrint('[Auth] Minimal initial cloud profile error: $e2');
       }
     }
   }
@@ -372,9 +444,15 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  UserProfile? getCachedProfile() {
+    return _loadLocalProfile();
+  }
+
+  @override
   Future<UserProfile> getCurrentProfile() async {
     final client = _supabase;
-    final activeUser = client?.auth.currentSession?.user ?? client?.auth.currentUser;
+    final activeUser =
+        client?.auth.currentSession?.user ?? client?.auth.currentUser;
     if (activeUser != null) {
       return _fetchAndMigrateCloudProfile(activeUser);
     }
@@ -385,11 +463,11 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserProfile> signInAnonymously() async {
-    final local = _loadLocalProfile();
     final client = _supabase;
 
-    // Если сессия уже существует — переиспользуем её без создания дубликата
-    final existingUser = client?.auth.currentSession?.user ?? client?.auth.currentUser;
+    // Если реальная сессия уже существует — переиспользуем её без создания анонимных дубликатов
+    final existingUser =
+        client?.auth.currentSession?.user ?? client?.auth.currentUser;
     if (existingUser != null) {
       final profile = await _fetchAndMigrateCloudProfile(existingUser);
       await _saveLocalProfile(profile);
@@ -397,39 +475,9 @@ class AuthRepositoryImpl implements AuthRepository {
       return profile;
     }
 
-    if (_anonymousProviderDisabled) {
-      _authController.add(local);
-      return local;
-    }
-
-    if (client != null) {
-      try {
-        final res = await client.auth.signInAnonymously();
-        if (res.user != null) {
-          final profile = await _fetchAndMigrateCloudProfile(res.user!);
-          await _saveLocalProfile(profile);
-          _authController.add(profile);
-          return profile;
-        }
-      } on AuthException catch (authErr) {
-        final isAnonDisabled = authErr.statusCode == '422' ||
-            (authErr.code?.toLowerCase().contains('anonymous_provider_disabled') ?? false) ||
-            authErr.message.toLowerCase().contains('anonymous');
-        if (isAnonDisabled) {
-          _anonymousProviderDisabled = true;
-          debugPrint(
-            '⚠️ [SyncPai Auth] Анонимная авторизация отключена на сервере Supabase (422: anonymous_provider_disabled).\n'
-            '👉 Чтобы включить облачные сессии гостей, откройте Supabase Dashboard -> Authentication -> Providers -> Anonymous и включите тумблер "Allow anonymous sign-ins".\n'
-            '✅ Приложение переключено в локальный гостевой режим (LocalGuestUser UUID: ${local.id}). Комнаты, списки и профиль работают штатно.',
-          );
-        } else {
-          debugPrint('⚠️ [SyncPai Auth] Supabase AuthException (${authErr.statusCode}): ${authErr.message}. Используется LocalGuestUser (${local.id}).');
-        }
-      } catch (e) {
-        debugPrint('⚠️ [SyncPai Auth] Сеть недоступна при анонимном входе ($e). Используется LocalGuestUser (${local.id}).');
-      }
-    }
-
+    // Zero Anonymous Auth Rows: гостевой режим строго локальный (SharedPreferences/Hive).
+    // Никаких вызовов signInAnonymously() на сервере Supabase, чтобы не плодить пустые строки в profiles!
+    final local = _loadLocalProfile();
     await _saveLocalProfile(local);
     _authController.add(local);
     return local;
@@ -438,12 +486,98 @@ class AuthRepositoryImpl implements AuthRepository {
   static const String _desktopOAuthSuccessHtml = '''
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>SyncPai Auth</title></head>
-<body style="margin:0;background:#0F1118;color:#F3F4F6;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
-  <div style="text-align:center;padding:32px 40px;border-radius:16px;background:#171A24;border:1px solid rgba(255,255,255,0.1);box-shadow:0 16px 40px rgba(0,0,0,0.45);">
-    <h2 style="margin:0 0 8px;color:#38BDF8;">Вход выполнен!</h2>
-    <p style="margin:0;color:#9CA3AF;font-size:15px;">Вернитесь в SyncPai — эту вкладку можно закрыть.</p>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SyncPai — Авторизация</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0B0E14;
+      color: #F3F4F6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: #12161F;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 36px 32px;
+      text-align: center;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.55);
+    }
+    .badge {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 20px;
+      border-radius: 16px;
+      background: rgba(34, 211, 238, 0.12);
+      border: 1px solid rgba(34, 211, 238, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #22D3EE;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: #F9FAFB;
+    }
+    p {
+      margin: 0 0 24px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #9CA3AF;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      background: #22D3EE;
+      color: #090D16;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.12s ease, background 0.15s ease;
+    }
+    .btn:hover { background: #38E1FB; }
+    .btn:active { transform: scale(0.98); }
+    .hint {
+      margin-top: 14px;
+      font-size: 12px;
+      color: #6B7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1>Вход выполнен</h1>
+    <p>Аккаунт успешно привязан. Нажмите кнопку ниже, чтобы вернуться в SyncPai.</p>
+    <a class="btn" href="syncpai://auth-success" id="openAppBtn">Вернуться в SyncPai</a>
+    <div class="hint">После перехода эту вкладку можно закрыть</div>
   </div>
+  <script>
+    setTimeout(function () {
+      window.location.href = 'syncpai://auth-success';
+    }, 350);
+  </script>
 </body>
 </html>
 ''';
@@ -464,7 +598,8 @@ class AuthRepositoryImpl implements AuthRepository {
       await request.response.close();
       return callbackUri;
     }
-    throw TimeoutException('OAuth callback server closed before receiving redirect');
+    throw TimeoutException(
+        'OAuth callback server closed before receiving redirect');
   }
 
   /// Возвращает платформенно-зависимый OAuth redirect URL:
@@ -485,9 +620,11 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<UserProfile?> signInWithGoogle() async {
     try {
       final client = _supabase;
-      final oldAnonId =
-          (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
-      final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+      final oldAnonId = (client?.auth.currentUser?.isAnonymous == true)
+          ? client?.auth.currentUser?.id
+          : null;
+      final bool isDesktopOS = !kIsWeb &&
+          (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
       final bool isMobileOS = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
       final String? oauthRedirectTo = resolveOAuthRedirectTo(
         isWeb: kIsWeb,
@@ -501,7 +638,8 @@ class AuthRepositoryImpl implements AuthRepository {
         try {
           if (isDesktopOS) {
             try {
-              server = await HttpServer.bind(InternetAddress.loopbackIPv4, 3000);
+              server =
+                  await HttpServer.bind(InternetAddress.loopbackIPv4, 3000);
             } catch (_) {
               server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
             }
@@ -514,9 +652,10 @@ class AuthRepositoryImpl implements AuthRepository {
             );
             final callbackUri = await callbackFuture;
             if (callbackUri.queryParameters.containsKey('error')) {
-              final errDesc = callbackUri.queryParameters['error_description'] ??
-                  callbackUri.queryParameters['error'] ??
-                  'OAuth error';
+              final errDesc =
+                  callbackUri.queryParameters['error_description'] ??
+                      callbackUri.queryParameters['error'] ??
+                      'OAuth error';
               throw AuthException(errDesc);
             }
             await client.auth.getSessionFromUrl(callbackUri);
@@ -566,7 +705,8 @@ class AuthRepositoryImpl implements AuthRepository {
         );
         googleUser = await googleSignIn.signIn();
       } catch (nativeErr) {
-        debugPrint('[Auth] Native GoogleSignIn unavailable ($nativeErr). Falling back to Supabase OAuth...');
+        debugPrint(
+            '[Auth] Native GoogleSignIn unavailable ($nativeErr). Falling back to Supabase OAuth...');
         return await launchSupabaseGoogleOAuth();
       }
 
@@ -580,7 +720,8 @@ class AuthRepositoryImpl implements AuthRepository {
       final accessToken = googleAuth.accessToken;
 
       if (idToken == null) {
-        debugPrint('[Auth] Google idToken is null. Falling back to Supabase OAuth...');
+        debugPrint(
+            '[Auth] Google idToken is null. Falling back to Supabase OAuth...');
         return await launchSupabaseGoogleOAuth();
       }
 
@@ -607,7 +748,8 @@ class AuthRepositoryImpl implements AuthRepository {
               code: 'validation_failed',
             );
           }
-          debugPrint('Supabase signInWithIdToken warning ($supabaseErr). Falling back to OAuth...');
+          debugPrint(
+              'Supabase signInWithIdToken warning ($supabaseErr). Falling back to OAuth...');
           final oauthProfile = await launchSupabaseGoogleOAuth();
           if (oauthProfile != null) return oauthProfile;
         }
@@ -636,8 +778,10 @@ class AuthRepositoryImpl implements AuthRepository {
     final client = _supabase;
 
     // Ни в коем случае не затираем кастомный арт, ник или оформление!
-    final localHasCustomName = !UserProfile.isDefaultGeneratedNickname(local.username);
-    final emailPrefix = email.contains('@') ? email.split('@').first.trim() : email.trim();
+    final localHasCustomName =
+        !UserProfile.isDefaultGeneratedNickname(local.username);
+    final emailPrefix =
+        email.contains('@') ? email.split('@').first.trim() : email.trim();
 
     final effectiveName = localHasCustomName
         ? local.username
@@ -651,7 +795,9 @@ class AuthRepositoryImpl implements AuthRepository {
             local.avatarUrl != 'cat' &&
             local.avatarUrl!.isNotEmpty)
         ? local.avatarUrl
-        : (photoUrl != null && photoUrl.isNotEmpty ? photoUrl : local.avatarUrl);
+        : (photoUrl != null && photoUrl.isNotEmpty
+            ? photoUrl
+            : local.avatarUrl);
 
     final effectiveTag = (local.tag.isNotEmpty && local.tag != '#0001')
         ? local.tag
@@ -672,14 +818,15 @@ class AuthRepositoryImpl implements AuthRepository {
       final profileToSync = currentUid != null && currentUid.isNotEmpty
           ? updated.copyWith(id: currentUid)
           : updated;
-      await _upsertCloudProfile(profileToSync);
+      await _updateCloudProfile(profileToSync);
     }
     _authController.add(updated);
 
     // Фоновая синхронизация списков
     try {
       if (getIt.isRegistered<AnimeListRepository>()) {
-        unawaited(getIt<AnimeListRepository>().syncWithCloud(userId: updated.id));
+        unawaited(
+            getIt<AnimeListRepository>().syncWithCloud(userId: updated.id));
       }
     } catch (e) {
       debugPrint('Background anime list sync error on linkGoogleAccount: $e');
@@ -695,8 +842,9 @@ class AuthRepositoryImpl implements AuthRepository {
     String? username,
   }) async {
     final client = _supabase;
-    final oldAnonId =
-        (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
+    final oldAnonId = (client?.auth.currentUser?.isAnonymous == true)
+        ? client?.auth.currentUser?.id
+        : null;
     if (client != null) {
       try {
         final res = await client.auth.signUp(
@@ -726,7 +874,9 @@ class AuthRepositoryImpl implements AuthRepository {
     // Офлайн/локальный фолбек для среды без Supabase
     final local = _loadLocalProfile();
     final migrated = local.copyWith(
-      username: username != null && username.isNotEmpty ? username.trim() : local.username,
+      username: username != null && username.isNotEmpty
+          ? username.trim()
+          : local.username,
       isAnonymous: false,
     );
     await _saveLocalProfile(migrated);
@@ -741,8 +891,9 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     final trimmed = identifier.trim();
     final client = _supabase;
-    final oldAnonId =
-        (client?.auth.currentUser?.isAnonymous == true) ? client?.auth.currentUser?.id : null;
+    final oldAnonId = (client?.auth.currentUser?.isAnonymous == true)
+        ? client?.auth.currentUser?.id
+        : null;
     if (client != null) {
       try {
         String resolvedEmail = trimmed;
@@ -846,7 +997,27 @@ class AuthRepositoryImpl implements AuthRepository {
     );
 
     await _saveLocalProfile(updated);
-    await _upsertCloudProfile(updated);
+    await _updateCloudProfile(updated);
+    _authController.add(updated);
+    return updated;
+  }
+
+  @override
+  Future<UserProfile> updateCustomization(ProfileCustomization customization) async {
+    final current = await getCurrentProfile();
+    final updated = current.copyWith(
+      backgroundId: customization.backgroundUrl,
+      frameId: customization.avatarFrameUrl,
+      accentColor: customization.themeColorHex,
+      showcaseType: customization.showcaseType,
+      bio: customization.customBio,
+      countryFlag: customization.countryFlag,
+      countryName: customization.countryName,
+      avatarShape: customization.avatarShape,
+    );
+
+    await _saveLocalProfile(updated);
+    await _updateCloudProfile(updated);
     _authController.add(updated);
     return updated;
   }

@@ -453,9 +453,6 @@ void main() {
     await tester.tap(find.byIcon(Icons.group_outlined));
     await tester.pump();
     expect(syncEpisode?.episode, 1);
-    // Закрываем открывшийся SyncRoomConfigSheet
-    final navKey = tester.element(find.byType(AnimeDetailsScreen));
-    Navigator.of(navKey).pop();
     await tester.pumpAndSettle();
 
     // Tap primary watch button -> Quality sheet appears

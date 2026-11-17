@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import '../../../../core/services/device_performance_service.dart';
 import '../../domain/services/winter_theme_service.dart';
 
 /// Высокопроизводительный оверлей плотного падающего снега (110 частиц на Desktop, 75 на Mobile).
@@ -18,7 +20,9 @@ class WinterSnowfallOverlay extends StatefulWidget {
     final isDesktop = defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.linux;
-    return isDesktop ? 110 : 75;
+    final baseCount = isDesktop ? 110 : 75;
+    final multiplier = DevicePerformanceService.instance.snowDensityMultiplier;
+    return (baseCount * multiplier).round().clamp(10, 150);
   }
 
   @override
@@ -65,6 +69,19 @@ class _WinterSnowfallOverlayState extends State<WinterSnowfallOverlay>
 
   void _syncAnimation() {
     if (!mounted) return;
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase != SchedulerPhase.idle) {
+      binding.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final active = _winterService.shouldRenderSnowfall;
+        if (active && !_controller.isAnimating) {
+          _controller.repeat();
+        } else if (!active && _controller.isAnimating) {
+          _controller.stop();
+        }
+      });
+      return;
+    }
     final active = _winterService.shouldRenderSnowfall;
     if (active && !_controller.isAnimating) {
       _controller.repeat();

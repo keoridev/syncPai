@@ -548,7 +548,7 @@ class SteamBackgroundTheme {
       id: 'sakura_shrine',
       name: 'Sakura Shrine',
       gradient: [Color(0xFF3B152B), Color(0xFF261228), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=1200&q=80',
+      assetOrUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&q=80',
       icon: Icons.local_florist_rounded,
     ),
     SteamBackgroundTheme(

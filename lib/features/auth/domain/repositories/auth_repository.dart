@@ -1,8 +1,12 @@
+import '../../../profile/domain/entities/steam_profile_customization.dart';
 import '../entities/user_profile.dart';
 
 abstract class AuthRepository {
   /// Текущий профиль пользователя
   Future<UserProfile> getCurrentProfile();
+
+  /// Мгновенное (0ms) чтение кэшированного профиля из локального дискового хранилища
+  UserProfile? getCachedProfile() => null;
 
   /// Автоматический анонимный вход (при первом запуске без ввода паролей)
   Future<UserProfile> signInAnonymously();
@@ -57,6 +61,9 @@ abstract class AuthRepository {
     String? countryName,
     String? avatarShape,
   });
+
+  /// Обновление объекта кастомизации Steam Profile Customization
+  Future<UserProfile> updateCustomization(ProfileCustomization customization);
 
   /// Выход из аккаунта
   Future<void> signOut();

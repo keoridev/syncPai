@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -84,7 +85,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     if (isDesktopOS) {
       try {
-        DesktopTitleBar.isFullScreenNotifier.value = false;
+        Future.microtask(() {
+          DesktopTitleBar.isFullScreenNotifier.value = false;
+        });
         windowManager.setFullScreen(false);
       } catch (_) {}
     } else {
@@ -146,8 +149,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       );
     }
 
-    if (mounted) {
-      setState(() {});
+    if (!alreadyPopping && mounted) {
+      final binding = WidgetsBinding.instance;
+      if (binding.schedulerPhase == SchedulerPhase.idle) {
+        setState(() {});
+      } else {
+        binding.addPostFrameCallback((_) {
+          if (!alreadyPopping && mounted) {
+            setState(() {});
+          }
+        });
+      }
     }
 
     if (!alreadyPopping && mounted) {
@@ -164,7 +176,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    WinterThemeService.instance.enterVideoPlayer();
     WidgetsBinding.instance.addObserver(this);
 
     // Полноэкранный режим без системных панелей
@@ -180,9 +191,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     PipService.instance.setAutoPip(true);
     _pipSubscription = PipService.instance.pipModeStream.listen((inPip) {
       if (mounted) {
-        setState(() {
-          _isInPip = inPip;
-        });
+        final binding = WidgetsBinding.instance;
+        if (binding.schedulerPhase != SchedulerPhase.idle) {
+          binding.addPostFrameCallback((_) {
+            if (mounted) setState(() => _isInPip = inPip);
+          });
+        } else {
+          setState(() => _isInPip = inPip);
+        }
       }
     });
 
@@ -220,27 +236,31 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       );
     }
 
-    // Фиксируем открытие серии в истории просмотров (не затрагивая вкладку «Смотрю»)
-    _recordInitialWatchHistory();
-    _recordPlaybackInAnimeList();
+    // Откладываем уведомления Cubit и ChangeNotifier до завершения первого кадра
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WinterThemeService.instance.enterVideoPlayer();
+      _recordInitialWatchHistory();
+      _recordPlaybackInAnimeList();
 
-    if (widget.roomCode != null && widget.roomCode!.isNotEmpty) {
-      ActiveRoomService.instance.registerActiveRoom(
-        room: SyncRoom(
-          code: widget.roomCode!,
-          title: widget.title,
-          episode: widget.initialEpisode,
-          quality: widget.initialQuality,
-          hostName: widget.isHost ? 'Хост (Вы)' : 'Хост',
-          status: SyncRoomStatus.connected,
-          createdAt: DateTime.now(),
-        ),
-        isHost: widget.isHost,
-        isInPlayer: true,
-        onSwitchAnime: (newTitle, {episode}) =>
-            _cubit.switchAnimeInRoom(newTitle, episode: episode),
-      );
-    }
+      if (widget.roomCode != null && widget.roomCode!.isNotEmpty) {
+        ActiveRoomService.instance.registerActiveRoom(
+          room: SyncRoom(
+            code: widget.roomCode!,
+            title: widget.title,
+            episode: widget.initialEpisode,
+            quality: widget.initialQuality,
+            hostName: widget.isHost ? 'Хост (Вы)' : 'Хост',
+            status: SyncRoomStatus.connected,
+            createdAt: DateTime.now(),
+          ),
+          isHost: widget.isHost,
+          isInPlayer: true,
+          onSwitchAnime: (newTitle, {episode}) =>
+              _cubit.switchAnimeInRoom(newTitle, episode: episode),
+        );
+      }
+    });
 
     if (resolvedPos != null && resolvedPos > const Duration(seconds: 3)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -276,58 +296,62 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _recordInitialWatchHistory() {
     if (widget.title.id <= 0 || widget.title.code == 'free_sync_room') return;
     if (!getIt.isRegistered<WatchHistoryCubit>()) return;
-    try {
-      final hist = getIt<WatchHistoryCubit>();
-      final existing = hist.state.historyMap[widget.title.id];
-      final initialPos = widget.initialPosition ??
-          (existing != null && existing.episode == widget.initialEpisode.episode
-              ? Duration(milliseconds: existing.positionMs)
-              : const Duration(seconds: 5));
-      final initialDur = existing != null && existing.durationMs > 0
-          ? Duration(milliseconds: existing.durationMs)
-          : const Duration(minutes: 24);
-      final poster = widget.title.posterMedium.isNotEmpty
-          ? widget.title.posterMedium
-          : widget.title.posterSmall;
+    Future.microtask(() {
+      try {
+        final hist = getIt<WatchHistoryCubit>();
+        final existing = hist.state.historyMap[widget.title.id];
+        final initialPos = widget.initialPosition ??
+            (existing != null && existing.episode == widget.initialEpisode.episode
+                ? Duration(milliseconds: existing.positionMs)
+                : const Duration(seconds: 5));
+        final initialDur = existing != null && existing.durationMs > 0
+            ? Duration(milliseconds: existing.durationMs)
+            : const Duration(minutes: 24);
+        final poster = widget.title.posterMedium.isNotEmpty
+            ? widget.title.posterMedium
+            : widget.title.posterSmall;
 
-      hist.saveProgress(
-        titleId: widget.title.id,
-        titleName: widget.title.displayTitle,
-        posterUrl: poster,
-        episode: widget.initialEpisode.episode,
-        episodeName: widget.initialEpisode.name,
-        position: initialPos,
-        duration: initialDur,
-      );
-    } catch (_) {}
+        hist.saveProgress(
+          titleId: widget.title.id,
+          titleName: widget.title.displayTitle,
+          posterUrl: poster,
+          episode: widget.initialEpisode.episode,
+          episodeName: widget.initialEpisode.name,
+          position: initialPos,
+          duration: initialDur,
+        );
+      } catch (_) {}
+    });
   }
 
   void _recordPlaybackInAnimeList({int? episodeNum, Duration? position}) {
     // Не сохраняем в список «Смотрю» виртуальные/свободные комнаты без реального тайтла
     if (widget.title.id <= 0 || widget.title.code == 'free_sync_room') return;
     if (!getIt.isRegistered<AnimeListCubit>()) return;
-    try {
-      final listCubit = getIt<AnimeListCubit>();
-      final existing = listCubit.state.getEntryFor(widget.title.id);
-      if (existing == null) {
-        // Тайтл не в закладках — не захламляем пользовательские списки
-        return;
-      }
-      final currentEp = episodeNum ?? widget.initialEpisode.episode;
-      final currentPos = position ?? widget.initialPosition ?? Duration.zero;
+    Future.microtask(() {
+      try {
+        final listCubit = getIt<AnimeListCubit>();
+        final existing = listCubit.state.getEntryFor(widget.title.id);
+        if (existing == null) {
+          // Тайтл не в закладках — не захламляем пользовательские списки
+          return;
+        }
+        final currentEp = episodeNum ?? widget.initialEpisode.episode;
+        final currentPos = position ?? widget.initialPosition ?? Duration.zero;
 
-      listCubit.setAnimeStatus(
-        animeId: widget.title.id,
-        titleRu: widget.title.displayTitle,
-        posterUrl: widget.title.posterMedium.isNotEmpty
-            ? widget.title.posterMedium
-            : widget.title.posterSmall,
-        status: existing.status,
-        lastEpisode: currentEp,
-        positionMs: currentPos.inMilliseconds,
-        episodesTotal: widget.title.episodesTotal,
-      );
-    } catch (_) {}
+        listCubit.setAnimeStatus(
+          animeId: widget.title.id,
+          titleRu: widget.title.displayTitle,
+          posterUrl: widget.title.posterMedium.isNotEmpty
+              ? widget.title.posterMedium
+              : widget.title.posterSmall,
+          status: existing.status,
+          lastEpisode: currentEp,
+          positionMs: currentPos.inMilliseconds,
+          episodesTotal: widget.title.episodesTotal,
+        );
+      } catch (_) {}
+    });
   }
 
   Future<void> _toggleScreenOrientation() async {
@@ -354,7 +378,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
     if (isDesktopOS) {
       try {
-        DesktopTitleBar.isFullScreenNotifier.value = false;
+        Future.microtask(() {
+          DesktopTitleBar.isFullScreenNotifier.value = false;
+        });
         windowManager.setFullScreen(false);
       } catch (_) {}
     }
@@ -380,14 +406,30 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _saveWatchProgress() {
-    final pos = _cubit.state.position;
-    final dur = _cubit.state.duration;
-    final ep = _cubit.state.episode.episode;
+    _saveWatchProgressExplicit(
+      title: widget.title,
+      episodeNum: _cubit.state.episode.episode,
+      episodeName: _cubit.state.episode.name,
+      position: _cubit.state.position,
+      duration: _cubit.state.duration,
+    );
+  }
+
+  void _saveWatchProgressExplicit({
+    required AnimeTitle title,
+    required int episodeNum,
+    String? episodeName,
+    required Duration position,
+    required Duration duration,
+  }) {
+    final pos = position;
+    final dur = duration;
+    final ep = episodeNum;
 
     if (pos.inSeconds >= 5 && dur.inSeconds > 0) {
       if (getIt.isRegistered<SharedPreferences>()) {
         final prefs = getIt<SharedPreferences>();
-        final key = '${widget.title.id}_$ep';
+        final key = '${title.id}_$ep';
         if ((dur - pos).inSeconds <= 30) {
           prefs.remove(key);
         } else {
@@ -395,62 +437,67 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         }
       }
       if (getIt.isRegistered<WatchHistoryCubit>()) {
-        final hist = getIt<WatchHistoryCubit>();
-        hist.saveProgress(
-          titleId: widget.title.id,
-          titleName: widget.title.displayTitle,
-          posterUrl: widget.title.posterMedium.isNotEmpty
-              ? widget.title.posterMedium
-              : widget.title.posterSmall,
-          episode: ep,
-          episodeName: _cubit.state.episode.name,
-          position: pos,
-          duration: dur,
-        );
+        Future.microtask(() {
+          try {
+            final hist = getIt<WatchHistoryCubit>();
+            hist.saveProgress(
+              titleId: title.id,
+              titleName: title.displayTitle,
+              posterUrl: title.posterMedium.isNotEmpty
+                  ? title.posterMedium
+                  : title.posterSmall,
+              episode: ep,
+              episodeName: episodeName,
+              position: pos,
+              duration: dur,
+            );
+          } catch (_) {}
+        });
       }
     }
 
     if (getIt.isRegistered<AnimeListCubit>()) {
-      try {
-        final listCubit = getIt<AnimeListCubit>();
-        var existing = listCubit.state.getEntryFor(widget.title.id);
-        if (existing == null &&
-            widget.title.shikimoriId != null &&
-            widget.title.shikimoriId! > 0) {
-          existing = listCubit.state.getEntryFor(widget.title.shikimoriId!);
-        }
-        if (existing != null) {
-          final isEpDone = dur.inSeconds > 0 &&
-              (pos.inSeconds >= (dur.inSeconds - 60) ||
-               pos.inMilliseconds / dur.inMilliseconds >= 0.90);
-
-          final totalEps = widget.title.episodesTotal;
-          final isSeriesDone = isEpDone && totalEps != null && ep >= totalEps;
-          var status = existing.status;
-          if (isSeriesDone) {
-            status = AnimeListStatus.completed;
+      Future.microtask(() {
+        try {
+          final listCubit = getIt<AnimeListCubit>();
+          var existing = listCubit.state.getEntryFor(title.id);
+          if (existing == null &&
+              title.shikimoriId != null &&
+              title.shikimoriId! > 0) {
+            existing = listCubit.state.getEntryFor(title.shikimoriId!);
           }
+          if (existing != null) {
+            final isEpDone = dur.inSeconds > 0 &&
+                (pos.inSeconds >= (dur.inSeconds - 60) ||
+                 pos.inMilliseconds / dur.inMilliseconds >= 0.90);
 
-          listCubit.setAnimeStatus(
-            animeId: widget.title.id,
-            titleRu: widget.title.displayTitle,
-            posterUrl: widget.title.posterMedium.isNotEmpty
-                ? widget.title.posterMedium
-                : widget.title.posterSmall,
-            status: status,
-            lastEpisode: ep,
-            positionMs: pos.inMilliseconds,
-            episodesTotal: totalEps,
-          );
-        }
-      } catch (_) {}
+            final totalEps = title.episodesTotal;
+            final isSeriesDone = isEpDone && totalEps != null && ep >= totalEps;
+            var status = existing.status;
+            if (isSeriesDone) {
+              status = AnimeListStatus.completed;
+            }
+
+            listCubit.setAnimeStatus(
+              animeId: title.id,
+              titleRu: title.displayTitle,
+              posterUrl: title.posterMedium.isNotEmpty
+                  ? title.posterMedium
+                  : title.posterSmall,
+              status: status,
+              lastEpisode: ep,
+              positionMs: pos.inMilliseconds,
+              episodesTotal: totalEps,
+            );
+          }
+        } catch (_) {}
+      });
     }
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    WinterThemeService.instance.exitVideoPlayer();
     WidgetsBinding.instance.removeObserver(this);
     _pipSubscription?.cancel();
     PipService.instance.setAutoPip(false);
@@ -460,13 +507,31 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
     if (isDesktopOS) {
       try {
-        DesktopTitleBar.isFullScreenNotifier.value = false;
         windowManager.setFullScreen(false);
       } catch (_) {}
     }
 
-    // Сохраняем прогресс просмотра перед уничтожением плеера
-    _saveWatchProgress();
+    // Сохраняем прогресс просмотра и сбрасываем тему в microtask,
+    // чтобы BlocBuilder / ListenableBuilder не вызывали markNeedsBuild во время unmount/сборки кадра
+    final posToSave = _cubit.state.position;
+    final durToSave = _cubit.state.duration;
+    final epToSave = _cubit.state.episode.episode;
+    final epNameToSave = _cubit.state.episode.name;
+    final titleToSave = widget.title;
+
+    Future.microtask(() {
+      WinterThemeService.instance.exitVideoPlayer();
+      if (isDesktopOS) {
+        DesktopTitleBar.isFullScreenNotifier.value = false;
+      }
+      _saveWatchProgressExplicit(
+        title: titleToSave,
+        episodeNum: epToSave,
+        episodeName: epNameToSave,
+        position: posToSave,
+        duration: durToSave,
+      );
+    });
 
     // Освобождаем wakelock, восстанавливаем ориентацию и системные панели
     if (!kIsWeb) {

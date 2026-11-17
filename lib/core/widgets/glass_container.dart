@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../services/device_performance_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimensions.dart';
 
@@ -98,7 +99,8 @@ class GlassContainer extends StatelessWidget {
       );
     }
 
-    final effectiveSigma = blurSigma.clamp(0.0, 8.0);
+    final isBlurGloballyEnabled = DevicePerformanceService.instance.isLiquidGlassBlurEnabled;
+    final effectiveSigma = isBlurGloballyEnabled ? blurSigma.clamp(0.0, 8.0) : 0.0;
 
     // Если блюр равен 0 (или отключен для экономии GPU), рендерим легковесную
     // полупрозрачную панель без затратного вызова BackdropFilter

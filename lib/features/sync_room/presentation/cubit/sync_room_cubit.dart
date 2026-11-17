@@ -20,6 +20,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
   StreamSubscription<SyncEvent>? _eventSubscription;
   StreamSubscription<List<PeerPresence>>? _presenceSubscription;
   String? _currentRoomCode;
+  bool _isCreatingOrJoiningRoom = false;
 
   SyncRoomCubit({required this.repository}) : super(const SyncRoomInitial());
 
@@ -43,10 +44,12 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     required EpisodeItem episode,
     PlayerQuality quality = PlayerQuality.hd,
   }) async {
-    if (isClosed) return;
+    if (isClosed || _isCreatingOrJoiningRoom) return;
+    _isCreatingOrJoiningRoom = true;
 
     final hasNet = await NetworkStatusHelper.hasInternet();
     if (!hasNet) {
+      _isCreatingOrJoiningRoom = false;
       _safeEmit(const SyncRoomError(
         'Нет подключения к интернету. Для совместного просмотра подключись к сети.',
       ));
@@ -119,6 +122,8 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
               room: s.room.copyWith(title: event.newTitle, episode: ep),
             ));
           }
+        } else if (event.type == SyncEventType.roomClosed) {
+          _safeEmit(const SyncRoomClosedByHost('Хост закрыл комнату для всех'));
         }
       });
 
@@ -142,20 +147,25 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
       } else {
         _safeEmit(SyncRoomError('Не удалось создать комнату: $e'));
       }
+    } finally {
+      _isCreatingOrJoiningRoom = false;
     }
   }
 
   /// 2. Режим гостя: валидация и подключение к лобби по коду
   Future<void> joinRoom(String rawCode, {String peerName = 'Друг'}) async {
-    if (isClosed) return;
+    if (isClosed || _isCreatingOrJoiningRoom) return;
+    _isCreatingOrJoiningRoom = true;
     final cleanCode = rawCode.trim();
     if (cleanCode.isEmpty) {
+      _isCreatingOrJoiningRoom = false;
       _safeEmit(const SyncRoomError('Введите код комнаты'));
       return;
     }
 
     final hasNet = await NetworkStatusHelper.hasInternet();
     if (!hasNet) {
+      _isCreatingOrJoiningRoom = false;
       _safeEmit(const SyncRoomError(
         'Нет подключения к интернету. Для совместного просмотра подключись к сети.',
       ));
@@ -201,6 +211,8 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
               isHost: false,
             ));
           }
+        } else if (event.type == SyncEventType.roomClosed) {
+          _safeEmit(const SyncRoomClosedByHost('Хост закрыл комнату для всех'));
         }
       });
 
@@ -229,6 +241,8 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     } catch (e) {
       if (isClosed) return;
       _safeEmit(SyncRoomError(e.toString().replaceAll('Exception: ', '')));
+    } finally {
+      _isCreatingOrJoiningRoom = false;
     }
   }
 
@@ -385,6 +399,20 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
     final code = _currentRoomCode;
     if (code != null) {
       await repository.leaveRoom(code);
+    }
+    await _eventSubscription?.cancel();
+    await _presenceSubscription?.cancel();
+    _currentRoomCode = null;
+    if (!isClosed) {
+      _safeEmit(const SyncRoomInitial());
+    }
+  }
+
+  /// Полное закрытие и удаление комнаты хостом для всех участников
+  Future<void> closeRoomForAll() async {
+    final code = _currentRoomCode;
+    if (code != null) {
+      await repository.closeRoomForAll(code);
     }
     await _eventSubscription?.cancel();
     await _presenceSubscription?.cancel();

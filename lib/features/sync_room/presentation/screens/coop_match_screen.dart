@@ -16,6 +16,9 @@ import '../cubit/coop_match_cubit.dart';
 import '../cubit/coop_match_state.dart';
 import '../widgets/match_confetti_blast_widget.dart';
 
+/// Псевдоним для экрана свайпов аниме-матчинга
+typedef AnimeMatchScreen = CoopMatchScreen;
+
 class CoopMatchScreen extends StatefulWidget {
   final CoopMatchCubit cubit;
   final Function(AnimeTitle matched)? onStartWatching;
@@ -188,36 +191,45 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
               ),
             ),
             body: SafeArea(
-              child: Stack(
-                children: [
-                  Column(
+              child: Builder(
+                builder: (context) {
+                  final isDesktop = MediaQuery.of(context).size.width >= 900;
+                  return Stack(
                     children: [
-                      // Подзаголовок режима
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                        child: Text(
-                          state.peerName != null
-                              ? 'Свайпайте вдвоем с ${state.peerName}. При совпадении серия запустится!'
-                              : 'Свайпайте вправо — хочу смотреть, влево — скип',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                      Column(
+                        children: [
+                          // Подзаголовок режима
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+                            child: Text(
+                              state.peerName != null
+                                  ? 'Свайпайте вдвоем с ${state.peerName}. При совпадении серия запустится!'
+                                  : (isDesktop
+                                      ? 'Выбирайте интересные тайтлы клавишами ← (Скип) и → (В планы)'
+                                      : 'Свайпайте вправо — хочу смотреть, влево — скип'),
+                              textAlign: TextAlign.center,
+                              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
 
-                      // Центральная колода карточек
-                      Expanded(
-                        child: state.hasFinishedDeck
-                            ? _buildEmptyDeckView(context)
-                            : _buildCardStack(context, state),
-                      ),
+                          // Центральная колода карточек (Сплит-карточка на Desktop, свайп-колода на Mobile)
+                          Expanded(
+                            child: state.hasFinishedDeck
+                                ? _buildEmptyDeckView(context)
+                                : (isDesktop
+                                    ? _buildDesktopSplitCard(context, state)
+                                    : _buildCardStack(context, state)),
+                          ),
 
-                      // Панель кнопок (Скип, Лайк)
-                      if (!state.hasFinishedDeck)
-                        _buildActionButtons(context),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
+                          // Панель кнопок (Скип, Лайк) — только для мобильного режима
+                          if (!state.hasFinishedDeck && !isDesktop) ...[
+                            _buildActionButtons(context),
+                            const SizedBox(height: 24),
+                          ] else
+                            const SizedBox(height: 20),
+                        ],
+                      ),
 
                   // Эффект интриги игрового автомата (Variable Reward Suspense)
                   if (state.isSuspenseReveal)
@@ -264,11 +276,267 @@ class _CoopMatchScreenState extends State<CoopMatchScreen>
                       ),
                     ),
                   ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    },
+  ),
+);
+}
+
+  Widget _buildDesktopSplitCard(BuildContext context, CoopMatchState state) {
+    final title = state.currentTitle!;
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 880, maxHeight: 540),
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF12161F),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 32,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Left: 360px vertical poster (2:3) with badges
+            SizedBox(
+              width: 360,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (title.posterUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(title.posterUrl),
+                      alignment: Alignment.topCenter,
+                      fit: BoxFit.cover,
+                      httpHeaders: const {
+                        'User-Agent': 'SyncPai-App/1.0',
+                        'Referer': 'https://shikimori.io/',
+                      },
+                      placeholder: (_, __) => const ColoredBox(color: Color(0xFF181D27)),
+                      errorWidget: (_, __, ___) => title.effectiveFallbackPoster.isNotEmpty &&
+                              title.effectiveFallbackPoster != title.posterUrl
+                          ? CachedNetworkImage(
+                              imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
+                              alignment: Alignment.topCenter,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              color: const Color(0xFF181D27),
+                              child: const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 48),
+                            ),
+                    )
+                  else
+                    Container(
+                      color: const Color(0xFF181D27),
+                      child: const Icon(Icons.movie_rounded, color: Colors.white24, size: 48),
+                    ),
+                  // Gradient overlay on bottom of poster
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.6),
+                          ],
+                          stops: const [0.7, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Badges top
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    right: 16,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (title.episodesBadgeText.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                            ),
+                            child: Text(
+                              title.episodesBadgeText,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        if (title.year != null && title.year! > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                            ),
+                            child: Text(
+                              '${title.year}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Right: Info and Action Buttons
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(28.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title.displayTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
+                    ),
+                    if (title.englishTitle.isNotEmpty && title.englishTitle != title.displayTitle) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        title.englishTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    // Genre chips
+                    if (title.genres.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: title.genres.take(5).map((genre) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Text(
+                              genre,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    const SizedBox(height: 16),
+                    // Synopsis (scrollable)
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Text(
+                          title.description.isNotEmpty
+                              ? title.description
+                              : 'Описание отсутствует.',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // 3 Action buttons
+                    Row(
+                      children: [
+                        // Skip button
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white60,
+                              side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () => widget.cubit.voteCurrent(false),
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            label: const Text('Пропустить', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Details button
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primaryLight,
+                              side: BorderSide(color: AppColors.primaryLight.withValues(alpha: 0.3)),
+                              backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () => _openCurrentCardDetails(context),
+                            icon: const Icon(Icons.info_outline_rounded, size: 20),
+                            label: const Text('Подробнее', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Like / Add button
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () => widget.cubit.voteCurrent(true),
+                            icon: const Icon(Icons.bookmark_add_rounded, size: 20),
+                            label: const Text('В планы', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }

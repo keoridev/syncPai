@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/services/app_updater_service.dart';
+import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -62,7 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (_prefs != null) {
           _autoSkipOpenings = _prefs!.getBool('settings_auto_skip_openings') ?? true;
           _autoPauseOnLeave = _prefs!.getBool('settings_auto_pause_on_leave') ?? true;
-          _liquidGlassEffects = _prefs!.getBool('settings_liquid_glass') ?? true;
+          _liquidGlassEffects = _prefs!.getBool('settings_liquid_glass') ?? DevicePerformanceService.instance.isLiquidGlassBlurEnabled;
           _defaultQuality = _prefs!.getString('settings_default_quality') ?? '1080p FHD';
         }
       });
@@ -933,6 +934,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (val) {
                       setState(() => _liquidGlassEffects = val);
                       _saveBool('settings_liquid_glass', val);
+                      DevicePerformanceService.instance.setLiquidGlassBlurEnabled(val, persist: true);
                     },
                   ),
                   _buildDivider(),
@@ -967,6 +969,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         value: isIncognito,
                         activeThumbColor: themePrimary,
                         onChanged: (val) => PresenceService.instance.setIncognito(val),
+                      );
+                    },
+                  ),
+                  _buildDivider(),
+                  ListenableBuilder(
+                    listenable: DevicePerformanceService.instance,
+                    builder: (context, _) {
+                      final service = DevicePerformanceService.instance;
+                      final tier = service.tier;
+                      final ramStr = service.totalRamMb != null ? ' (${service.totalRamMb} МБ ОЗУ)' : '';
+                      final cacheMb = PaintingBinding.instance.imageCache.maximumSizeBytes >> 20;
+
+                      return ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: themePrimary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.speed_rounded, color: themePrimary, size: 20),
+                        ),
+                        title: Row(
+                          children: [
+                            const Text(
+                              'Режим производительности: ',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            Text(
+                              tier.shortLabelRu,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: tier == DeviceTier.low
+                                    ? const Color(0xFFFFB74D)
+                                    : (tier == DeviceTier.mid ? Colors.lightBlueAccent : const Color(0xFF66BB6A)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Авто-оптимизация рендеринга$ramStr. Буфер постеров: $cacheMb МБ.',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            await service.resetToRecommendedDefaults();
+                            setState(() {
+                              _liquidGlassEffects = service.isLiquidGlassBlurEnabled;
+                            });
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Сброшено на рекомендуемые настройки (${tier.shortLabelRu})'),
+                                  behavior: SnackBarBehavior.floating,
+                                  backgroundColor: AppColors.surfaceElevated,
+                                ),
+                              );
+                            }
+                          },
+                          child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
+                        ),
                       );
                     },
                   ),

@@ -55,7 +55,7 @@ class CachedReviewsBundle {
 class ReviewsCacheManager {
   static const int _maxMemoryEntries = 50;
   static const String _prefPrefix = 'reviews_cache_';
-  static const Duration ttl = Duration(hours: 6);
+  static const Duration ttl = Duration(hours: 24);
 
   final SharedPreferences? _prefs;
 

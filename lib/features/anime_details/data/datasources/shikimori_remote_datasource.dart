@@ -10,6 +10,7 @@ import '../../domain/entities/score_distribution_item.dart';
 import '../../domain/entities/user_lists_stats.dart';
 import '../../domain/repositories/anime_reviews_repository.dart';
 import 'anime_reviews_provider.dart';
+import 'jikan_remote_datasource.dart';
 
 /// Модель рейтингов с нескольких аниме-порталов, рецензий, связанных релизов и видеоматериалов.
 class ShikimoriRatingAndReviews {
@@ -36,6 +37,8 @@ class ShikimoriRatingAndReviews {
 
 abstract class ShikimoriRemoteDataSource {
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title);
+  Future<List<AnimeVideoItem>> getVideos({int? shikimoriId, String? query, String? fallbackPoster});
+  Future<List<String>> getScreenshots(int shikimoriId);
 }
 
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
@@ -49,8 +52,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(seconds: 4),
-                receiveTimeout: const Duration(seconds: 4),
+                connectTimeout: const Duration(milliseconds: 2500),
+                receiveTimeout: const Duration(milliseconds: 2500),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',
@@ -654,6 +657,100 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       stats: _generateFallbackStats(title),
       scores: _generateFallbackScoreDistribution(8.8),
     );
+  }
+
+  @override
+  Future<List<AnimeVideoItem>> getVideos({
+    int? shikimoriId,
+    String? query,
+    String? fallbackPoster,
+  }) async {
+    int? resolvedId = shikimoriId;
+    if ((resolvedId == null || resolvedId <= 0) && query != null && query.trim().isNotEmpty) {
+      try {
+        final searchRes = await _dio.get('/animes', queryParameters: {'search': query, 'limit': 1});
+        if (searchRes.statusCode == 200 && searchRes.data is List && (searchRes.data as List).isNotEmpty) {
+          resolvedId = (searchRes.data as List).first['id'] as int?;
+        }
+      } catch (_) {}
+    }
+
+    final videos = <AnimeVideoItem>[];
+    if (resolvedId != null && resolvedId > 0) {
+      try {
+        final res = await _dio.get('/animes/$resolvedId/videos');
+        if (res.statusCode == 200 && res.data is List && (res.data as List).isNotEmpty) {
+          for (final v in res.data as List) {
+            if (v is! Map<String, dynamic>) continue;
+            final id = '${v['id'] ?? ''}';
+            final url = v['url'] as String? ?? '';
+            var imageUrl = v['image_url'] as String? ?? '';
+            final name = v['name'] as String? ?? '';
+            final kind = v['kind'] as String? ?? 'pv';
+            final hosting = v['hosting'] as String? ?? 'youtube';
+
+            if (url.isNotEmpty) {
+              if (imageUrl.isEmpty && (url.contains('youtu.be') || url.contains('youtube.com'))) {
+                final ytMatch = RegExp(r'(?:youtu\.be\/|v=)([\w-]{11})').firstMatch(url);
+                if (ytMatch != null) {
+                  imageUrl = 'https://img.youtube.com/vi/${ytMatch.group(1)}/hqdefault.jpg';
+                }
+              }
+              final displayTitle = name.isNotEmpty
+                  ? name
+                  : (kind == 'pv' ? 'PV ${videos.length + 1}' : (kind == 'op' ? 'Опенинг' : 'Эндинг'));
+              videos.add(AnimeVideoItem(
+                id: id.isNotEmpty ? id : 'shiki_vid_${videos.length}',
+                title: displayTitle,
+                url: url,
+                imageUrl: imageUrl.isNotEmpty ? imageUrl : (fallbackPoster ?? ''),
+                playerUrl: v['player_url'] as String?,
+                kind: kind,
+                hosting: hosting,
+                source: hosting.toLowerCase().contains('youtube') ? 'YouTube' : 'AniLibria',
+              ));
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Fallback к Jikan если на Shikimori 0 видео
+      if (videos.isEmpty) {
+        try {
+          final jikan = JikanRemoteDataSourceImpl();
+          final jikanVideos = await jikan.getVideos(resolvedId).timeout(const Duration(milliseconds: 2500));
+          if (jikanVideos.isNotEmpty) {
+            videos.addAll(jikanVideos);
+          }
+        } catch (_) {}
+      }
+    }
+
+    return videos;
+  }
+
+  @override
+  Future<List<String>> getScreenshots(int shikimoriId) async {
+    if (shikimoriId <= 0) return const [];
+    try {
+      final res = await _dio.get('/animes/$shikimoriId/screenshots');
+      if (res.statusCode == 200 && res.data is List) {
+        final list = <String>[];
+        for (final item in res.data as List) {
+          if (item is Map) {
+            final original = item['original'] as String? ?? item['preview'] as String? ?? '';
+            if (original.isNotEmpty) {
+              final fullUrl = original.startsWith('http') ? original : 'https://shikimori.io$original';
+              list.add(fullUrl);
+            }
+          }
+        }
+        return list;
+      }
+    } catch (e) {
+      debugPrint('[ShikimoriDS] Error fetching screenshots: $e');
+    }
+    return const [];
   }
 
   static List<ScoreDistributionItem> _generateFallbackScoreDistribution(double avgScore) {

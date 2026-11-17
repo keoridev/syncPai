@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/services/presence_service.dart';
+import '../../../profile/domain/entities/steam_profile_customization.dart';
 import '../../../profile/presentation/cubit/profile_cubit.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -133,6 +134,42 @@ class AuthCubit extends Cubit<AuthState> {
         } else {
           emit(AuthError('Ошибка обновления профиля: $e'));
         }
+      }
+    }
+  }
+
+  Future<void> updateCustomization(ProfileCustomization customization) async {
+    final s = state;
+    final previousProfile = s is Authenticated ? s.profile : null;
+
+    if (previousProfile != null) {
+      final optimistic = previousProfile.copyWith(
+        backgroundId: customization.backgroundUrl,
+        frameId: customization.avatarFrameUrl,
+        accentColor: customization.themeColorHex,
+        showcaseType: customization.showcaseType,
+        bio: customization.customBio,
+        countryFlag: customization.countryFlag,
+        countryName: customization.countryName,
+        avatarShape: customization.avatarShape,
+      );
+      emit(Authenticated(optimistic));
+      if (getIt.isRegistered<ProfileCubit>()) {
+        getIt<ProfileCubit>().applyOptimisticProfile(optimistic);
+      }
+    }
+
+    try {
+      final updated = await repository.updateCustomization(customization);
+      if (!isClosed) {
+        emit(Authenticated(updated));
+        if (getIt.isRegistered<ProfileCubit>()) {
+          getIt<ProfileCubit>().applyOptimisticProfile(updated);
+        }
+      }
+    } catch (e) {
+      if (!isClosed && previousProfile != null) {
+        emit(Authenticated(previousProfile));
       }
     }
   }

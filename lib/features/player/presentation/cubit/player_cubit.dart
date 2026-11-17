@@ -24,6 +24,7 @@ import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
+import 'package:sync_pai/features/player/services/episode_prefetch_service.dart';
 import 'package:sync_pai/features/profile/presentation/cubit/profile_cubit.dart';
 import 'package:sync_pai/features/profile/presentation/cubit/profile_state.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
@@ -67,6 +68,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   String? _loadedMediaKey;
 
   DateTime? _lastPosSavedAt;
+  String? _prefetchedEpisodeKey;
 
   void _savePlaybackPosition(Duration pos, Duration dur) {
     if (pos.inSeconds < 2) return;
@@ -264,6 +266,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (isClosed || _isDisposing) return;
         _checkAutoNextEpisode(pos);
         _checkAutoSkipOpening(pos);
+        _checkNextEpisodePrefetch(pos);
         final now = DateTime.now();
         if (_lastPosSavedAt == null || now.difference(_lastPosSavedAt!).inSeconds >= 3) {
           _lastPosSavedAt = now;
@@ -439,6 +442,17 @@ class PlayerCubit extends Cubit<PlayerState> {
 
     // 1.1. История чата комнаты из public.room_messages (для опоздавших участников)
     _loadChatHistory(code);
+
+    // 1.2. Бесшовное восстановление сохраненного таймкода комнаты (24h Rejoin)
+    syncRepository!.getRoomData(code).then((roomData) {
+      if (!isClosed && roomData != null) {
+        final posMs = (roomData['current_position_ms'] as num?)?.toInt() ??
+            (((roomData['current_time_sec'] as num?)?.toDouble() ?? 0.0) * 1000).toInt();
+        if (posMs > 1000 && state.position.inMilliseconds < 1000) {
+          player.seek(Duration(milliseconds: posMs));
+        }
+      }
+    }).catchError((_) {});
 
     // 2. Регистрация собственного присутствия (Presence)
     final myPresence = PeerPresence(
@@ -831,6 +845,15 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
         break;
 
+      // Хост закрыл комнату для всех
+      case SyncActionTypes.roomClosed:
+        _addSystemChatMessage('Хост закрыл комнату для всех');
+        emit(state.copyWith(
+          errorMessage: () => 'Хост закрыл комнату для всех',
+        ));
+        leaveRoom();
+        break;
+
       // Обновление присутствия участника (Presence)
       case SyncActionTypes.presenceUpdate:
         final presence = PeerPresence.fromJson(packet.payload);
@@ -1039,6 +1062,19 @@ class PlayerCubit extends Cubit<PlayerState> {
     } catch (_) {}
 
     String? streamUrl = localFilePath;
+
+    // 0. Проверяем предзагруженный кэш следующей серии для мгновенного старта (<200ms)
+    if (streamUrl == null) {
+      final prefetchedUrl = EpisodePrefetchService.instance.getPrefetchedStreamUrl(
+        state.title.id,
+        state.episode.episode,
+        state.selectedQuality,
+      );
+      if (prefetchedUrl != null && prefetchedUrl.isNotEmpty && !prefetchedUrl.contains('sample.com')) {
+        streamUrl = prefetchedUrl;
+        debugPrint('[PlayerCubit] Мгновенный запуск из предзагруженного кэша для серии ${state.episode.episode}: $streamUrl');
+      }
+    }
 
     // Если активна сторонняя озвучка (Kodik, StudioBand, AniDUB и др.), загружаем её поток
     if (streamUrl == null && getIt.isRegistered<KodikCubit>()) {
@@ -1709,6 +1745,29 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
+  /// Полное закрытие комнаты хостом для всех участников
+  Future<void> closeRoomForAll() async {
+    final code = state.roomCode;
+    _heartbeatTimer?.cancel();
+    _presenceSubscription?.cancel();
+    _packetSubscription?.cancel();
+
+    if (code != null && syncRepository != null) {
+      try {
+        await syncRepository!.closeRoomForAll(code);
+      } catch (_) {}
+    }
+
+    if (!isClosed) {
+      emit(state.copyWith(
+        clearRoom: true,
+        syncStatus: SyncStatus.disconnected,
+        peerPresence: () => null,
+        bufferNotice: () => null,
+      ));
+    }
+  }
+
   /// Запрос паузы от ведомого гостя
   void requestPauseFromHost() {
     if (state.isSyncRoom && !state.isHost) {
@@ -1742,6 +1801,44 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   int? _autoNextCancelledForEpisode;
+
+  /// Упреждающая предзагрузка следующей серии (Smart Next-Episode Prefetch)
+  /// Запускается перед финальными титрами (ending.start или duration - 120s)
+  void _checkNextEpisodePrefetch(Duration pos) {
+    final dur = state.duration;
+    if (dur <= const Duration(seconds: 30)) return;
+
+    final all = state.title.episodes;
+    final curIdx = all.indexWhere((e) => e.episode == state.episode.episode);
+    if (curIdx < 0 || curIdx + 1 >= all.length) return;
+
+    final nextEp = all[curIdx + 1];
+    final currentKey = '${state.title.id}_${state.episode.episode}_${nextEp.episode}_${state.selectedQuality.name}';
+    if (_prefetchedEpisodeKey == currentKey) return;
+
+    // Условие триггера: ending.start таймкод (или duration - const Duration(seconds: 120), если ending отсутствует)
+    final ending = state.effectiveEnding;
+    final Duration triggerPoint;
+    if (ending != null && ending.start > 0) {
+      triggerPoint = Duration(seconds: ending.start);
+    } else if (dur > const Duration(seconds: 120)) {
+      triggerPoint = dur - const Duration(seconds: 120);
+    } else {
+      triggerPoint = dur - const Duration(seconds: 30);
+    }
+
+    if (pos >= triggerPoint) {
+      _prefetchedEpisodeKey = currentKey;
+      unawaited(
+        EpisodePrefetchService.instance.prefetchNext(
+          title: state.title,
+          currentEpisode: state.episode,
+          nextEpisode: nextEp,
+          quality: state.selectedQuality,
+        ),
+      );
+    }
+  }
 
   /// Проверка окончания серии для авто-перехода (Auto Next Episode)
   void _checkAutoNextEpisode(Duration pos) {
@@ -1853,6 +1950,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _savePlaybackPosition(state.position, state.duration);
     _pendingInitialSeek = Duration.zero;
     _autoNextCancelledForEpisode = null;
+    _prefetchedEpisodeKey = null;
     cancelAutoNextCountdown(markCancelledForEpisode: false);
 
     AnimeTitle resolvedTitle = newTitle;
@@ -1931,6 +2029,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _savePlaybackPosition(state.position, state.duration);
     _pendingInitialSeek = loadSavedPosition(state.title, nextEpisode.episode);
     _autoNextCancelledForEpisode = null;
+    _prefetchedEpisodeKey = null;
     cancelAutoNextCountdown(markCancelledForEpisode: false);
 
     final prevEpisode = state.episode.episode;

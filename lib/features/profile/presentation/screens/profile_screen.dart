@@ -106,6 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     _loadBannerDismissed();
     _loadWatchHistory();
+    _onlineFriends = FriendsService.getCachedFriends();
     FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadRealFriends();
     _loadWallComments();

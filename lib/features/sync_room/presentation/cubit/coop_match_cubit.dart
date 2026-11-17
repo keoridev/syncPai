@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../domain/entities/sync_protocol.dart';
 import '../../domain/repositories/sync_room_repository.dart';
+import '../../domain/services/match_recommendation_scorer.dart';
 import 'coop_match_state.dart';
 
 class CoopMatchCubit extends Cubit<CoopMatchState> {
@@ -18,7 +20,15 @@ class CoopMatchCubit extends Cubit<CoopMatchState> {
     this.userName = 'Я',
     this.syncRepository,
     this.suspenseDuration = const Duration(milliseconds: 1200),
-  }) : super(CoopMatchState(deck: initialDeck)) {
+    List<UserAnimeEntry>? userEntries,
+  }) : super(CoopMatchState(
+          deck: userEntries != null
+              ? MatchRecommendationScorer.rankDeck(
+                  candidateTitles: initialDeck,
+                  userEntries: userEntries,
+                )
+              : MatchRecommendationScorer.rankDeckAuto(initialDeck),
+        )) {
     _initNetwork();
   }
 

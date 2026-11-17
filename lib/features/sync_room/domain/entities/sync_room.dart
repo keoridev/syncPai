@@ -19,6 +19,7 @@ class SyncRoom extends Equatable {
   final String? peerName;
   final SyncRoomStatus status;
   final DateTime createdAt;
+  final int initialPositionMs;
 
   const SyncRoom({
     required this.code,
@@ -29,6 +30,7 @@ class SyncRoom extends Equatable {
     this.peerName,
     this.status = SyncRoomStatus.waiting,
     required this.createdAt,
+    this.initialPositionMs = 0,
   });
 
   /// Универсальная ссылка быстрого подключения: https://syncpai.app/room/SP4821
@@ -46,6 +48,7 @@ class SyncRoom extends Equatable {
     String? peerName,
     SyncRoomStatus? status,
     DateTime? createdAt,
+    int? initialPositionMs,
   }) {
     return SyncRoom(
       code: code ?? this.code,
@@ -56,6 +59,7 @@ class SyncRoom extends Equatable {
       peerName: peerName ?? this.peerName,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      initialPositionMs: initialPositionMs ?? this.initialPositionMs,
     );
   }
 
@@ -69,6 +73,7 @@ class SyncRoom extends Equatable {
         peerName,
         status,
         createdAt,
+        initialPositionMs,
       ];
 }
 

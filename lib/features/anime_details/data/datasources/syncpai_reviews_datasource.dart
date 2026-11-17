@@ -159,17 +159,19 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
               comment: trimmedContent,
               likesCount: 1,
               createdAt: now,
+              isSpoiler: containsSpoiler,
             );
             try {
               await client.from('anime_reviews').upsert(row);
             } on PostgrestException catch (e) {
               if (e.code == 'PGRST204') {
-                // Fallback для legacy-схемы (score/content/contains_spoiler)
+                // Fallback для legacy-схемы (score/content/contains_spoiler/is_spoiler)
                 await client.from('anime_reviews').upsert({
                   'user_id': effectiveUserId,
                   'anime_id': parsedAnimeId,
                   'score': intScore,
                   'content': trimmedContent,
+                  'is_spoiler': containsSpoiler,
                   'contains_spoiler': containsSpoiler,
                   'created_at': now.toUtc().toIso8601String(),
                 });
@@ -196,6 +198,7 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
     required String comment,
     int likesCount = 1,
     required DateTime createdAt,
+    bool isSpoiler = false,
   }) {
     return {
       'anime_id': animeId,
@@ -206,6 +209,8 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
       'comment': comment,
       'likes_count': likesCount,
       'created_at': createdAt.toUtc().toIso8601String(),
+      'is_spoiler': isSpoiler,
+      'contains_spoiler': isSpoiler,
     };
   }
 
@@ -239,7 +244,7 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
       score: parsedScore,
       sentiment: ReviewSentiment.fromScore(parsedScore),
       content: comment,
-      containsSpoiler: row['contains_spoiler'] as bool? ?? false,
+      containsSpoiler: row['is_spoiler'] as bool? ?? row['contains_spoiler'] as bool? ?? false,
       createdAt: createdAt,
       likes: likesCount,
     );

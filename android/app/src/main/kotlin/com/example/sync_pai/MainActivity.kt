@@ -1,6 +1,8 @@
 package com.example.sync_pai
 
+import android.app.ActivityManager
 import android.app.PictureInPictureParams
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
@@ -11,11 +13,31 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val PIP_CHANNEL = "com.syncpai.app/pip"
+    private val PERF_CHANNEL = "com.syncpai/device_perf"
     private var pipChannel: MethodChannel? = null
     private var autoPipEnabled: Boolean = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PERF_CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getTotalRamMb" -> {
+                        try {
+                            val actManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                            val memInfo = ActivityManager.MemoryInfo()
+                            actManager.getMemoryInfo(memInfo)
+                            val totalMemMb = (memInfo.totalMem / (1024L * 1024L)).toInt()
+                            result.success(totalMemMb)
+                        } catch (e: Exception) {
+                            result.error("PERF_ERROR", e.localizedMessage, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
 
         pipChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL).apply {
             setMethodCallHandler { call, result ->

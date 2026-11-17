@@ -418,15 +418,15 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                   Checkbox(
                     value: _containsSpoiler,
                     onChanged: (v) => setState(() => _containsSpoiler = v ?? false),
-                    activeColor: AppColors.accentCoral,
+                    activeColor: AppColors.primary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                   ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'Отзыв содержит спойлеры к сюжету (будет скрыт за щитом)',
+                      'Содержит спойлеры',
                       style: AppTypography.bodySmall.copyWith(
-                        color: _containsSpoiler ? AppColors.accentCoral : AppColors.textSecondary,
+                        color: _containsSpoiler ? AppColors.textPrimary : AppColors.textSecondary,
                         fontWeight: _containsSpoiler ? FontWeight.w600 : FontWeight.w400,
                       ),
                     ),

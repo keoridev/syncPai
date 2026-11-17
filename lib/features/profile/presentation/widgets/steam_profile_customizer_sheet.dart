@@ -1238,7 +1238,7 @@ class _SteamProfileCustomizerSheetState
             _buildCharacterAvatarTile(
               name: 'Mitsuha',
               anime: 'Your Name',
-              url: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=400&auto=format&fit=crop&q=80',
+              url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80',
               accent: accent,
             ),
           ],
@@ -1698,6 +1698,11 @@ class _SteamProfileCustomizerSheetState
                             CachedNetworkImage(
                               imageUrl: wrapCorsSafeUrl(preset.imageUrl),
                               fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(color: const Color(0xFF14161F)),
+                              errorWidget: (_, __, ___) => Container(
+                                color: const Color(0xFF14161F),
+                                child: const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 28),
+                              ),
                             ),
                           DecoratedBox(
                             decoration: BoxDecoration(

@@ -20,6 +20,9 @@ abstract class SyncRoomRepository {
   /// Валидация существования комнаты перед входом (предотвращение входа в призрачные комнаты)
   Future<bool> validateRoomExists(String code);
 
+  /// Получение данных комнаты из public.rooms (для восстановления прогресса 24h сессии)
+  Future<Map<String, dynamic>?> getRoomData(String roomCode);
+
   /// Присоединиться к существующей комнате (Я гость)
   Future<SyncRoom> joinRoom({
     required String code,
@@ -159,8 +162,11 @@ abstract class SyncRoomRepository {
   /// Отправка команды немедленного одновременного старта воспроизведения для всех участников лобби
   Future<void> startPlayback(String roomCode);
 
-  /// Выход из комнаты / закрытие
+  /// Выход из комнаты (сохраняет комнату активной до 24ч)
   Future<void> leaveRoom(String roomCode);
+
+  /// Полное закрытие и удаление комнаты хостом для всех участников
+  Future<void> closeRoomForAll(String roomCode);
 
   /// Симуляция подключения друга (для быстрого тестирования)
   void simulatePeerJoin(String roomCode, {String peerName = 'Ren'});

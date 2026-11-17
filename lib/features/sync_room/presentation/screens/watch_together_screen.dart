@@ -51,7 +51,15 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   @override
   void initState() {
     super.initState();
+    _friends = FriendsService.getCachedFriends();
+    FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadFriends();
+  }
+
+  void _onFriendsNotifierChanged() {
+    if (mounted) {
+      setState(() => _friends = List<Map<String, dynamic>>.from(FriendsService.friendsNotifier.value));
+    }
   }
 
   Future<void> _loadFriends() async {
@@ -63,6 +71,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
   @override
   void dispose() {
+    FriendsService.friendsNotifier.removeListener(_onFriendsNotifierChanged);
     _pinController.dispose();
     _pinFocusNode.dispose();
     super.dispose();

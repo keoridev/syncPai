@@ -12,6 +12,7 @@ enum SyncEventType {
   syncReady,
   startPlayback,
   animeChanged,
+  roomClosed,
 }
 
 /// Событие реального времени в канале совместной комнаты.

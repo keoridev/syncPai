@@ -910,6 +910,50 @@ class _SyncRoomLobbySheetState extends State<SyncRoomLobbySheet> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 4),
+
+            // Кнопка явного закрытия комнаты для всех участников
+            TextButton.icon(
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (dlgCtx) => AlertDialog(
+                    backgroundColor: const Color(0xFF181D27),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Закрыть комнату?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    content: const Text(
+                      'Комната будет полностью закрыта и удалена для всех участников.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dlgCtx, false),
+                        child: const Text('Отмена', style: TextStyle(color: Colors.white60)),
+                      ),
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF2A68)),
+                        onPressed: () => Navigator.pop(dlgCtx, true),
+                        child: const Text('Закрыть для всех', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true && context.mounted) {
+                  await context.read<SyncRoomCubit>().closeRoomForAll();
+                  if (context.mounted) Navigator.of(context).pop();
+                }
+              },
+              icon: const Icon(Icons.delete_sweep_rounded, color: Color(0xFFFF4D4D), size: 16),
+              label: const Text(
+                'Закрыть комнату для всех',
+                style: TextStyle(
+                  color: Color(0xFFFF4D4D),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         );
       },

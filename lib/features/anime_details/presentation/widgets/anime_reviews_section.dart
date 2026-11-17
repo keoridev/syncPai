@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -541,7 +540,7 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
   Widget _buildReviewCard(AnimeReview rev) {
     final isExpanded = _expandedReviewIds.contains(rev.id);
     final isSpoilerRevealed = _revealedSpoilerIds.contains(rev.id);
-    final hasSpoiler = rev.containsSpoiler;
+    final hasSpoiler = rev.containsSpoiler || rev.isSpoiler;
 
     // Определяем цвет плашки источника
     Color sourceColor;
@@ -690,46 +689,35 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
 
           const SizedBox(height: 12),
 
-          // Тело отзыва (с защитным щитом от спойлеров)
+          // Тело отзыва (с защитной маской от спойлеров)
           if (hasSpoiler && !isSpoilerRevealed)
             InkWell(
               onTap: () {
                 setState(() => _revealedSpoilerIds.add(rev.id));
               },
               borderRadius: BorderRadius.circular(10),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Stack(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF151923),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
-                      child: Text(
-                        rev.content,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.textMuted,
-                          height: 1.45,
-                        ),
-                      ),
+                    Icon(
+                      Icons.visibility_off_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.7),
                     ),
-                    Positioned.fill(
-                      child: Container(
-                        color: AppColors.surface.withValues(alpha: 0.75),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.visibility_off_rounded, size: 16, color: AppColors.accentCoral),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Содержит спойлер. Нажмите, чтобы открыть',
-                              style: AppTypography.bodySmall.copyWith(
-                                color: AppColors.accentCoral,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Спойлер — нажми, чтобы открыть',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],

@@ -22,10 +22,12 @@ class AnimeTitle extends Equatable {
   final String? trailerUrl;
   final String? shikimoriUrl;
   final int? shikimoriId;
+  final double? score;
 
   const AnimeTitle({
     required this.id,
     this.shikimoriId,
+    this.score,
     required this.code,
     required this.russianTitle,
     required this.englishTitle,
@@ -83,6 +85,7 @@ class AnimeTitle extends Equatable {
   AnimeTitle copyWith({
     int? id,
     int? shikimoriId,
+    double? score,
     String? code,
     String? russianTitle,
     String? englishTitle,
@@ -105,6 +108,7 @@ class AnimeTitle extends Equatable {
     return AnimeTitle(
       id: id ?? this.id,
       shikimoriId: shikimoriId ?? this.shikimoriId,
+      score: score ?? this.score,
       code: code ?? this.code,
       russianTitle: russianTitle ?? this.russianTitle,
       englishTitle: englishTitle ?? this.englishTitle,
@@ -148,5 +152,6 @@ class AnimeTitle extends Equatable {
         episodes,
         trailerUrl,
         shikimoriUrl,
+        score,
       ];
 }

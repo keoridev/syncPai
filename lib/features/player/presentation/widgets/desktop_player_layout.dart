@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -123,9 +124,20 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
       try {
         final isFs = await windowManager.isFullScreen();
         if (mounted && !_isDisposed) {
-          setState(() {
-            _isFullScreen = isFs || DesktopTitleBar.isFullScreenNotifier.value;
-          });
+          final binding = WidgetsBinding.instance;
+          if (binding.schedulerPhase != SchedulerPhase.idle) {
+            binding.addPostFrameCallback((_) {
+              if (mounted && !_isDisposed) {
+                setState(() {
+                  _isFullScreen = isFs || DesktopTitleBar.isFullScreenNotifier.value;
+                });
+              }
+            });
+          } else {
+            setState(() {
+              _isFullScreen = isFs || DesktopTitleBar.isFullScreenNotifier.value;
+            });
+          }
         }
       } catch (_) {}
     }
@@ -142,7 +154,9 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     _chatController.dispose();
     _chatScrollController.dispose();
     if (_isFullScreen) {
-      DesktopTitleBar.isFullScreenNotifier.value = false;
+      Future.microtask(() {
+        DesktopTitleBar.isFullScreenNotifier.value = false;
+      });
       if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
         try {
           windowManager.setFullScreen(false).catchError((_) {});
@@ -1743,17 +1757,79 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                 },
               ),
               const Spacer(),
-              // Кнопка покинуть комнату
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFFF5252),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  visualDensity: VisualDensity.compact,
+              // Кнопка покинуть / закрыть комнату
+              if (isHost)
+                PopupMenuButton<String>(
+                  tooltip: 'Управление комнатой',
+                  color: const Color(0xFF181D27),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 18),
+                  onSelected: (choice) async {
+                    if (choice == 'leave') {
+                      widget.cubit.leaveRoom();
+                    } else if (choice == 'close_all') {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (dlgCtx) => AlertDialog(
+                          backgroundColor: const Color(0xFF181D27),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Закрыть комнату?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                          content: const Text(
+                            'Комната будет закрыта и удалена для всех участников.',
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dlgCtx, false),
+                              child: const Text('Отмена', style: TextStyle(color: Colors.white60)),
+                            ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF2A68)),
+                              onPressed: () => Navigator.pop(dlgCtx, true),
+                              child: const Text('Закрыть для всех', style: TextStyle(fontWeight: FontWeight.w700)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await widget.cubit.closeRoomForAll();
+                      }
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(
+                      value: 'leave',
+                      child: Row(
+                        children: [
+                          Icon(Icons.exit_to_app_rounded, color: Colors.white70, size: 18),
+                          SizedBox(width: 8),
+                          Text('Выйти (комната 24ч)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'close_all',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_sweep_rounded, color: Color(0xFFFF5252), size: 18),
+                          SizedBox(width: 8),
+                          Text('Закрыть для всех', style: TextStyle(color: Color(0xFFFF5252), fontSize: 13, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              else
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF5252),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.exit_to_app_rounded, size: 15),
+                  label: const Text('Выйти', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  onPressed: () => widget.cubit.leaveRoom(),
                 ),
-                icon: const Icon(Icons.exit_to_app_rounded, size: 15),
-                label: const Text('Выйти', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                onPressed: () => widget.cubit.leaveRoom(),
-              ),
             ],
           ),
           const SizedBox(height: 8),

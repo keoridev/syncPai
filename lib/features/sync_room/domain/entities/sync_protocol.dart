@@ -26,6 +26,7 @@ abstract final class SyncActionTypes {
   static const String pokeNudge = 'POKE_NUDGE';
   static const String coopSkipVote = 'COOP_SKIP_VOTE';
   static const String changeAnime = 'CHANGE_ANIME';
+  static const String roomClosed = 'ROOM_CLOSED';
 }
 
 /// 6 круговых стикер-эмоций Пай-чан для совместного просмотра (Watch-Together)

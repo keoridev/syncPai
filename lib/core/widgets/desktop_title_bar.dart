@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 import '../theme/app_colors.dart';
 
@@ -38,7 +39,17 @@ class _DesktopTitleBarState extends State<DesktopTitleBar> with WindowListener {
   }
 
   void _onFullScreenNotifierChanged() {
-    if (mounted) {
+    if (!mounted) return;
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase != SchedulerPhase.idle) {
+      binding.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _isFullScreen = DesktopTitleBar.isFullScreenNotifier.value;
+          });
+        }
+      });
+    } else {
       setState(() {
         _isFullScreen = DesktopTitleBar.isFullScreenNotifier.value;
       });

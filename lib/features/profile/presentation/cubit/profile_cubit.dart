@@ -36,7 +36,6 @@ class ProfileCubit extends Cubit<ProfileState> {
   /// Загрузка данных профиля пользователя (своего или профиля друга по ID)
   Future<void> loadProfile({String? targetUserId}) async {
     if (isClosed) return;
-    _safeEmit(state.copyWith(status: ProfileStatus.loading));
 
     String? currentUserId;
     try {
@@ -44,21 +43,33 @@ class ProfileCubit extends Cubit<ProfileState> {
     } catch (_) {}
 
     if (currentUserId == null && authRepository != null) {
-      try {
-        final current = await authRepository!.getCurrentProfile();
-        if (isClosed) return;
-        currentUserId = current.id;
-      } catch (_) {}
+      final cached = authRepository!.getCachedProfile();
+      if (cached != null) {
+        currentUserId = cached.id;
+      }
     }
-
-    if (isClosed) return;
 
     final bool isCurrent = targetUserId == null ||
         targetUserId.trim().isEmpty ||
         targetUserId == currentUserId;
 
     if (isCurrent) {
-      UserProfile profile = UserProfile.guest();
+      // 0ms SWR Disk Cache: если уже есть кэш или сохраненный локальный профиль —
+      // мгновенно эмитим Loaded-состояние без мерцания и спиннеров!
+      final cachedProfile = state.status == ProfileStatus.loaded
+          ? state.profile
+          : (authRepository?.getCachedProfile() ?? state.profile);
+
+      if (state.status != ProfileStatus.loaded) {
+        _safeEmit(state.copyWith(
+          status: ProfileStatus.loaded,
+          profile: cachedProfile,
+          isCurrentUser: true,
+        ));
+      }
+
+      // Фоновое обновление профиля и статистики из Supabase / репозитория
+      UserProfile profile = cachedProfile;
       if (authRepository != null) {
         try {
           profile = await authRepository!.getCurrentProfile();
@@ -68,16 +79,7 @@ class ProfileCubit extends Cubit<ProfileState> {
       }
       if (isClosed) return;
 
-      UserAnimeStats stats = const UserAnimeStats(
-        totalTitles: 0,
-        completedTitles: 0,
-        watchingTitles: 0,
-        plannedTitles: 0,
-        droppedTitles: 0,
-        totalEpisodesCompleted: 0,
-        totalMinutesWatched: 0,
-      );
-
+      UserAnimeStats stats = state.stats;
       if (animeListRepository != null) {
         try {
           final entries = await animeListRepository!.getAllEntries();
@@ -104,6 +106,7 @@ class ProfileCubit extends Cubit<ProfileState> {
         });
       }
     } else {
+      _safeEmit(state.copyWith(status: ProfileStatus.loading));
       try {
         SupabaseClient? client;
         try {
@@ -226,8 +229,8 @@ class ProfileCubit extends Cubit<ProfileState> {
         accentColor: '#FF2A68',
         countryFlag: '🇯🇵',
         countryName: 'Japan',
-        favoriteAnimeTitle: 'SAKURA BLADE // 桜刀 Твое Имя',
-        favoriteAnimePoster: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=1200&auto=format&fit=crop&q=80',
+        favoriteAnimeTitle: 'Твое Имя',
+        favoriteAnimePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
         showcaseType: 'favorite_anime',
         avatarShape: 'circle',
         createdAt: DateTime.now().subtract(const Duration(days: 120)),
@@ -246,7 +249,7 @@ class ProfileCubit extends Cubit<ProfileState> {
         accentColor: '#00E5FF',
         countryFlag: '🇰🇷',
         countryName: 'South Korea',
-        favoriteAnimeTitle: 'SHADOW MONARCH // Мастера Меча Онлайн',
+        favoriteAnimeTitle: 'Мастера Меча Онлайн',
         favoriteAnimePoster: 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=1200&auto=format&fit=crop&q=80',
         showcaseType: 'favorite_anime',
         avatarShape: 'square',

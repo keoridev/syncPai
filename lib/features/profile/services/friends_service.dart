@@ -275,35 +275,55 @@ class FriendsService {
     _subscribedUid = null;
   }
 
-  /// Получить сохраненный список друзей (локально + Supabase friendships)
-  static Future<List<Map<String, dynamic>>> getFriends() async {
-    final list = <Map<String, dynamic>>[];
-
-    // 1. Читаем локальный кэш
+  /// Мгновенное (0ms) чтение кэшированного списка друзей из дискового хранилища (SharedPreferences)
+  static List<Map<String, dynamic>> getCachedFriends() {
+    if (friendsNotifier.value.isNotEmpty) {
+      return List<Map<String, dynamic>>.from(friendsNotifier.value);
+    }
     if (getIt.isRegistered<SharedPreferences>()) {
       try {
         final raw = getIt<SharedPreferences>().getString(_storageKey);
         if (raw != null && raw.isNotEmpty) {
           final decoded = jsonDecode(raw) as List<dynamic>;
+          final list = <Map<String, dynamic>>[];
           for (final item in decoded) {
             if (item is Map) {
               list.add(FriendProfile.fromMap(Map<String, dynamic>.from(item)).toMap());
             }
           }
+          if (list.isNotEmpty) {
+            friendsNotifier.value = List<Map<String, dynamic>>.from(list);
+            return list;
+          }
         }
       } catch (e) {
-        debugPrint('FriendsService getFriends cache error: $e');
+        debugPrint('FriendsService getCachedFriends error: $e');
       }
     }
+    return const [];
+  }
 
-    if (list.isNotEmpty && friendsNotifier.value.isEmpty) {
-      friendsNotifier.value = List<Map<String, dynamic>>.from(list);
+  /// SWR: Получить список друзей (мгновенно возвращает кэш 0ms + фоновая валидация с Supabase)
+  static Future<List<Map<String, dynamic>>> getFriends({bool forceRefresh = false}) async {
+    final cached = getCachedFriends();
+
+    // Если есть локальный кэш и не запрошен принудительный сброс — отдаем его мгновенно (0ms),
+    // а синхронизацию с облаком запускаем асинхронно в фоне (Stale-While-Revalidate).
+    if (cached.isNotEmpty && !forceRefresh) {
+      unawaited(_syncCloudFriends());
+      return cached;
     }
 
-    // 2. Синхронизируем с Supabase friendships (только для зарегистрированных пользователей, без PostgrestException у гостей)
+    return await _syncCloudFriends();
+  }
+
+  /// Фоновая синхронизация с Supabase friendships: сохраняет на диск и обновляет UI только при изменении
+  static Future<List<Map<String, dynamic>>> _syncCloudFriends() async {
+    final cached = getCachedFriends();
     if (!isCurrentUserPermanent) {
-      return list;
+      return cached;
     }
+
     try {
       final client = _supabaseClient;
       final currentUid = client?.auth.currentUser?.id;
@@ -319,8 +339,10 @@ class FriendsService {
         if (friendships is Iterable) {
           final otherUserIds = resolveOtherUserIds(friendships, currentUid);
           if (otherUserIds.isEmpty) {
-            await saveFriends(const []);
-            friendsNotifier.value = const [];
+            if (cached.isNotEmpty) {
+              await saveFriends(const []);
+              friendsNotifier.value = const [];
+            }
             return const [];
           }
 
@@ -335,16 +357,21 @@ class FriendsService {
             remoteList.add(profile.toMap());
           }
 
-          await saveFriends(remoteList);
-          friendsNotifier.value = List<Map<String, dynamic>>.from(remoteList);
+          // Проверяем, изменились ли данные по сравнению с текущим кэшем
+          final currentJson = jsonEncode(friendsNotifier.value);
+          final remoteJson = jsonEncode(remoteList);
+          if (currentJson != remoteJson) {
+            await saveFriends(remoteList);
+            friendsNotifier.value = List<Map<String, dynamic>>.from(remoteList);
+          }
           return remoteList;
         }
       }
     } catch (e) {
-      debugPrint('FriendsService getFriends cloud fetch error: $e');
+      debugPrint('FriendsService _syncCloudFriends cloud fetch error: $e');
     }
 
-    return list;
+    return cached;
   }
 
   /// Получить входящие и исходящие заявки в друзья (Pending requests)

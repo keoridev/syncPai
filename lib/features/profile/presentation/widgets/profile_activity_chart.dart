@@ -203,7 +203,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Flexible(
+            Expanded(
               child: Text(
                 'АКТИВНОСТЬ ПРОСМОТРА',
                 maxLines: 1,
@@ -217,18 +217,22 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
               ),
             ),
             const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                '$totalWeekHours ч. за 7 дней',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: accent,
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$totalWeekHours ч. за 7 дней',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
                 ),
               ),
             ),

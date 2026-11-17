@@ -99,6 +99,14 @@ class SyncRoomPlaybackStarting extends SyncRoomState {
   List<Object?> get props => [room, isHost];
 }
 
+class SyncRoomClosedByHost extends SyncRoomState {
+  final String message;
+  const SyncRoomClosedByHost([this.message = 'Хост закрыл комнату для всех']);
+
+  @override
+  List<Object?> get props => [message];
+}
+
 class SyncRoomError extends SyncRoomState {
   final String message;
 

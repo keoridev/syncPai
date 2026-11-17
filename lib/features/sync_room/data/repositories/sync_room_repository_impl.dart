@@ -12,7 +12,6 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../player/domain/entities/player_quality.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/utils/qr_payload_router.dart';
-import '../../../auth/data/repositories/auth_repository_impl.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 
@@ -213,6 +212,16 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
           timestamp: DateTime.now(),
           newTitle: newTitle,
           newEpisode: newEpisode,
+        ));
+      }
+    } else if (packet.action == SyncActionTypes.roomClosed) {
+      final roomController = _roomControllers[roomKey];
+      if (roomController != null && !roomController.isClosed) {
+        roomController.add(SyncEvent(
+          roomCode: roomKey,
+          type: SyncEventType.roomClosed,
+          senderName: packet.sender,
+          timestamp: DateTime.now(),
         ));
       }
     }
@@ -538,17 +547,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   }) async {
     try {
       final client = Supabase.instance.client;
-      var currentUser = client.auth.currentSession?.user ?? client.auth.currentUser;
-      if (currentUser == null &&
-          client.auth.currentSession == null &&
-          !AuthRepositoryImpl.isAnonymousProviderDisabled) {
-        try {
-          final authRes = await client.auth.signInAnonymously();
-          currentUser = authRes.user;
-        } catch (authErr) {
-          debugPrint('[WatchTogether] Анонимная авторизация пропущена: $authErr');
-        }
-      }
+      final currentUser = client.auth.currentSession?.user ?? client.auth.currentUser;
 
       final pinCode = customPinCode ?? (100000 + _random.nextInt(900000)).toString();
       int resolvedMaxParticipants = maxParticipants ?? 5;
@@ -559,6 +558,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         }
       }
 
+      final nowIso = DateTime.now().toUtc().toIso8601String();
       final payload = <String, dynamic>{
         'id': pinCode,
         'anime_id': animeId,
@@ -570,6 +570,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         'is_playing': false,
         'max_participants': resolvedMaxParticipants,
         if (currentUser != null && !currentUser.isAnonymous) 'host_id': currentUser.id,
+        'created_at': nowIso,
+        'updated_at': nowIso,
       };
 
       _inMemoryRooms[pinCode] = payload;
@@ -610,6 +612,9 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   }
 
   static final Map<String, Map<String, dynamic>> _inMemoryRooms = {};
+
+  @override
+  Future<Map<String, dynamic>?> getRoomData(String roomCode) => joinRoomByPin(roomCode);
 
   /// Прямое чтение комнаты по чистому 6-значному ID из `public.rooms`
   Future<Map<String, dynamic>?> joinRoomByPin(String pinCode) async {
@@ -900,23 +905,30 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
               name: 'Эпизод $targetEpNum',
             ));
 
+      final posMs = (roomData?['current_position_ms'] as num?)?.toInt() ??
+          (((roomData?['current_time_sec'] as num?)?.toDouble() ?? 0.0) * 1000).toInt();
+
       room = SyncRoom(
         code: 'SP-$cleanPin',
         title: safeTitle,
         episode: safeEpisode,
         quality: PlayerQuality.hd,
-        hostName: 'Хост',
+        hostName: (roomData?['host_name'] as String?) ?? 'Хост',
         peerName: peerName,
         status: SyncRoomStatus.connected,
         createdAt: DateTime.now(),
+        initialPositionMs: posMs,
       );
       _rooms[cleanPin] = room;
       _rooms[normKey] = room;
       _rooms['SP-$cleanPin'] = room;
     } else {
+      final posMs = (roomData?['current_position_ms'] as num?)?.toInt() ??
+          (((roomData?['current_time_sec'] as num?)?.toDouble() ?? 0.0) * 1000).toInt();
       room = room.copyWith(
         peerName: peerName,
         status: SyncRoomStatus.connected,
+        initialPositionMs: posMs > 0 ? posMs : room.initialPositionMs,
       );
       _rooms[cleanPin] = room;
       _rooms[normKey] = room;
@@ -1152,9 +1164,11 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     if (client != null) {
       final baseUpdate = <String, dynamic>{
         'current_time_sec': time,
+        'current_position_ms': (time * 1000).toInt(),
         'is_playing': isPlaying,
         if (episode > 0) 'episode_index': episode,
         if (resolvedAnimeId != null && resolvedAnimeId.isNotEmpty) 'anime_id': resolvedAnimeId,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       try {
         await client.from('rooms').update({
@@ -1360,6 +1374,13 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
         debugPrint('[WatchTogether] room_messages insert skipped: $e');
       }
     }
+
+    // Touch updated_at на строке public.rooms для поддержания активности 24h сессии
+    try {
+      await client.from('rooms').update({
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', cleanRoomId);
+    } catch (_) {}
   }
 
   @override
@@ -1495,6 +1516,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
           'current_time_sec': 0.0,
           'current_position_ms': 0,
           'is_playing': true,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', pinKey);
       } catch (e) {
         debugPrint('[WatchTogether] changeRoomAnime DB update warning: $e');
@@ -1576,6 +1598,7 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       try {
         await client.from('rooms').update({
           'is_playing': true,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', pinKey);
       } catch (_) {}
     }
@@ -1605,12 +1628,13 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       timestamp: DateTime.now(),
     ));
 
-    // Обновляем is_playing в таблице public.rooms
+    // Обновляем is_playing и updated_at в public.rooms БЕЗ удаления комнаты (24h persistence)
     final client = _supabase;
     if (client != null) {
       try {
         await client.from('rooms').update({
           'is_playing': false,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', pinKey);
       } catch (_) {}
     }
@@ -1629,8 +1653,66 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     _presences.remove(pinKey);
     final presenceController = _presenceControllers.remove(pinKey);
     await presenceController?.close();
+  }
 
+  @override
+  Future<void> closeRoomForAll(String roomCode) async {
+    final pinKey = extractPinCode(roomCode);
+
+    // 1. Уведомляем участников через сетевой пакет
+    try {
+      await sendPacket(SyncPacket(
+        action: SyncActionTypes.roomClosed,
+        sender: 'Host',
+        roomCode: pinKey,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        payload: {
+          'reason': 'host_closed',
+          'message': 'Хост закрыл комнату для всех',
+        },
+      ));
+    } catch (_) {}
+
+    emitEvent(SyncEvent(
+      roomCode: pinKey,
+      type: SyncEventType.roomClosed,
+      senderName: 'Хост',
+      timestamp: DateTime.now(),
+    ));
+
+    // 2. Полное удаление комнаты из public.rooms (каскадно удаляет сообщения)
+    final client = _supabase;
+    if (client != null) {
+      try {
+        await client.from('rooms').delete().eq('id', pinKey);
+      } catch (e) {
+        debugPrint('[WatchTogether] Ошибка удаления комнаты $pinKey: $e');
+      }
+      try {
+        await client.from('rooms').delete().eq('id', 'SP-$pinKey');
+      } catch (_) {}
+    }
+
+    // 3. Отписка и полная очистка локального состояния
+    final sbChannel = _supabaseChannels.remove(pinKey);
+    if (sbChannel != null && _supabase != null) {
+      try {
+        await sbChannel.untrack();
+      } catch (_) {}
+      try {
+        await _supabase!.removeChannel(sbChannel);
+      } catch (_) {}
+    }
+
+    _playbackSyncCallbacks.remove(pinKey);
+    _presences.remove(pinKey);
+    final presenceController = _presenceControllers.remove(pinKey);
+    await presenceController?.close();
+
+    _inMemoryRooms.remove(pinKey);
+    _inMemoryRooms.remove('SP-$pinKey');
     _rooms.remove(pinKey);
+    _rooms.remove('SP-$pinKey');
     final controller = _roomControllers.remove(pinKey);
     await controller?.close();
 

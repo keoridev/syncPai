@@ -81,9 +81,9 @@ class SteamStyleProfileHeader extends StatefulWidget {
       imageUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200&auto=format&fit=crop&q=80',
     ),
     SteamArtworkPreset(
-      title: 'SHADOW MONARCH // 影の君主',
+      title: 'Поднятие уровня в одиночку',
       kanji: '影',
-      tagline: 'ARISE // SOLO LEVELING',
+      tagline: 'SOLO LEVELING // ARISE',
       imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1200&auto=format&fit=crop&q=80',
     ),
     SteamArtworkPreset(
@@ -114,7 +114,7 @@ class SteamStyleProfileHeader extends StatefulWidget {
       title: 'SAKURA BLADE // 桜刀',
       kanji: '桜',
       tagline: 'CHERRY BLOSSOM RONIN',
-      imageUrl: 'https://images.unsplash.com/photo-1528164344705-475426879c0d?w=1200&auto=format&fit=crop&q=80',
+      imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
     ),
   ];
 
@@ -1031,19 +1031,20 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               )
             else
               Container(
-                width: avatarSize + 8,
-                height: avatarSize + 8,
+                width: avatarSize + 6,
+                height: avatarSize + 6,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
+                  color: const Color(0xFF181D27),
                   border: Border.all(
-                    color: accent.withValues(alpha: 0.65),
-                    width: 2.0,
+                    color: Colors.white.withValues(alpha: 0.08),
+                    width: 1.0,
                   ),
-                  boxShadow: [
+                  boxShadow: const [
                     BoxShadow(
-                      color: accent.withValues(alpha: 0.25 + ((_idleController?.value ?? 0.5) * 0.35)),
-                      blurRadius: 12.0 + ((_idleController?.value ?? 0.5) * 8.0),
-                      spreadRadius: 1,
+                      color: Colors.black38,
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
                     ),
                   ],
                 ),
@@ -1053,8 +1054,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     username: widget.profile.username,
                     size: avatarSize,
                     shape: BoxShape.circle,
-                    borderColor: Colors.black,
-                    borderWidth: 2.0,
+                    borderColor: Colors.transparent,
+                    borderWidth: 0,
                   ),
                 ),
               ),
@@ -1077,19 +1078,20 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               )
             else ...[
               Container(
-                width: avatarSize + 12,
-                height: avatarSize + 12,
+                width: avatarSize + 8,
+                height: avatarSize + 8,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
+                  color: const Color(0xFF181D27),
                   border: Border.all(
-                    color: accent.withValues(alpha: 0.65),
-                    width: 1.5,
+                    color: Colors.white.withValues(alpha: 0.08),
+                    width: 1.0,
                   ),
-                  boxShadow: [
+                  boxShadow: const [
                     BoxShadow(
-                      color: accent.withValues(alpha: 0.25 + ((_idleController?.value ?? 0.5) * 0.35)),
-                      blurRadius: 12.0 + ((_idleController?.value ?? 0.5) * 8.0),
-                      spreadRadius: 1,
+                      color: Colors.black38,
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
                     ),
                   ],
                 ),
@@ -1306,59 +1308,22 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // РАЗРЕЗАННАЯ ВИТРИНА STEAM: Единый бесшовный арт на две части (Основная 74% + Боковая 26%)
+                  // ЕДИНАЯ ВИТРИНА АРТА: Единое бесшовное изображение во всю ширину без вертикальной разделительной полосы
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final totalWidth = constraints.maxWidth;
-                      const gap = 4.0;
-                      final leftWidth = (totalWidth - gap) * 0.74;
-                      final rightWidth = totalWidth - gap - leftWidth;
-
-                      return Row(
-                        children: [
-                          // 1. ОСНОВНАЯ ЧАСТЬ (MAIN SLICE 74%)
-                          SizedBox(
-                            width: leftWidth,
-                            height: showcaseHeight,
-                            child: ClipRect(
-                              child: _buildArtworkSlice(
-                                imageUrl: artworkUrl,
-                                totalWidth: totalWidth,
-                                showcaseHeight: showcaseHeight,
-                                bgShiftX: bgShiftX * 0.012 * totalWidth,
-                                bgShiftY: bgShiftY * 0.012 * showcaseHeight,
-                                isMain: true,
-                                accent: accent,
-                                artworkTitle: artworkTitle,
-                              ),
-                            ),
-                          ),
-
-                          // Тонкий зазор между разрезами витрины Steam (4dp)
-                          Container(
-                            width: gap,
-                            height: showcaseHeight,
-                            color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
-                          ),
-
-                          // 2. БОКОВАЯ ПОЛОСКА (SIDE SLICE 26%)
-                          SizedBox(
-                            width: rightWidth,
-                            height: showcaseHeight,
-                            child: ClipRect(
-                              child: _buildArtworkSlice(
-                                imageUrl: artworkUrl,
-                                totalWidth: totalWidth,
-                                showcaseHeight: showcaseHeight,
-                                bgShiftX: bgShiftX * 0.012 * totalWidth,
-                                bgShiftY: bgShiftY * 0.012 * showcaseHeight,
-                                isMain: false,
-                                accent: accent,
-                                artworkTitle: artworkTitle,
-                              ),
-                            ),
-                          ),
-                        ],
+                      return SizedBox(
+                        width: totalWidth,
+                        height: showcaseHeight,
+                        child: _buildArtworkSlice(
+                          imageUrl: artworkUrl,
+                          totalWidth: totalWidth,
+                          showcaseHeight: showcaseHeight,
+                          bgShiftX: bgShiftX * 0.012 * totalWidth,
+                          bgShiftY: bgShiftY * 0.012 * showcaseHeight,
+                          accent: accent,
+                          artworkTitle: artworkTitle,
+                        ),
                       );
                     },
                   ),
@@ -1453,7 +1418,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required double showcaseHeight,
     required double bgShiftX,
     required double bgShiftY,
-    required bool isMain,
     required Color accent,
     required String artworkTitle,
   }) {
@@ -1466,14 +1430,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Единое бесшовное изображение: левая часть (74%) с Alignment.centerLeft,
-        // правая узкая полоска (26%) с Alignment.centerRight как продолжение без дублирования
+        // Единое центрированное изображение без разрывов
         OverflowBox(
           minWidth: bleedWidth,
           maxWidth: bleedWidth,
           minHeight: bleedHeight,
           maxHeight: bleedHeight,
-          alignment: isMain ? Alignment.centerLeft : Alignment.centerRight,
+          alignment: Alignment.center,
           child: Transform.translate(
             offset: Offset(bgShiftX, bgShiftY),
             child: SizedBox(
@@ -1776,6 +1739,11 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
                     CachedNetworkImage(
                       imageUrl: wrapCorsSafeUrl(preset.imageUrl),
                       fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: const Color(0xFF14161F)),
+                      errorWidget: (_, __, ___) => Container(
+                        color: const Color(0xFF14161F),
+                        child: const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 28),
+                      ),
                     ),
                   Container(
                     decoration: BoxDecoration(
@@ -1863,6 +1831,11 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
                   child: CachedNetworkImage(
                     imageUrl: wrapCorsSafeUrl(poster),
                     fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(color: const Color(0xFF14161F)),
+                    errorWidget: (_, __, ___) => Container(
+                      color: const Color(0xFF14161F),
+                      child: const Icon(Icons.movie_rounded, color: Colors.white24, size: 20),
+                    ),
                   ),
                 ),
               ),

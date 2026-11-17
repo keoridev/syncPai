@@ -27,8 +27,8 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
             Dio(
               BaseOptions(
                 baseUrl: _shikimoriBaseUrl,
-                connectTimeout: const Duration(seconds: 8),
-                receiveTimeout: const Duration(seconds: 8),
+                connectTimeout: const Duration(milliseconds: 2500),
+                receiveTimeout: const Duration(milliseconds: 2500),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',
@@ -49,10 +49,10 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
   Future<ReviewsAggregateResult> getReviewsAndRatings(AnimeTitle title) async {
     final animeKey = _getAnimeKey(title);
 
-    // 1. Проверяем двухуровневый кэш (TTL 6 часов)
+    // 1. Проверяем двухуровневый кэш (TTL 24 часа)
     final cached = _cacheManager.get(animeKey);
     if (cached != null) {
-      debugPrint('[ReviewsRepo] Serving cached reviews for $animeKey (TTL 6h active)');
+      debugPrint('[ReviewsRepo] Serving cached reviews for $animeKey (TTL 24h active)');
       return ReviewsAggregateResult(
         reviews: cached.reviews,
         aggregate: cached.aggregate,
@@ -73,11 +73,16 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
           '/animes',
           queryParameters: {'search': query, 'limit': 3},
         );
-        if (searchRes.statusCode == 200 && searchRes.data is List && (searchRes.data as List).isNotEmpty) {
-          final first = (searchRes.data as List).first as Map<String, dynamic>;
-          shikimoriId = first['id'] as int?;
-          if (first['score'] != null) {
-            shikimoriScore = double.tryParse('${first['score']}');
+        if (searchRes.statusCode == 200 &&
+            searchRes.data != null &&
+            searchRes.data.toString().trim().isNotEmpty) {
+          final sData = searchRes.data;
+          if (sData is List && sData.isNotEmpty) {
+            final first = sData.first as Map<String, dynamic>;
+            shikimoriId = first['id'] as int?;
+            if (first['score'] != null) {
+              shikimoriScore = double.tryParse('${first['score']}');
+            }
           }
         }
       } catch (e) {
@@ -184,7 +189,10 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
     try {
       // Запрос детальной информации о тайтле (score, rates_scores_stats, topic_id, myanimelist_id)
       final detailRes = await _dio.get('/animes/$shikimoriId');
-      if (detailRes.statusCode == 200 && detailRes.data is Map) {
+      if (detailRes.statusCode == 200 &&
+          detailRes.data != null &&
+          detailRes.data.toString().trim().isNotEmpty &&
+          detailRes.data is Map) {
         final d = detailRes.data as Map<String, dynamic>;
         if (d['score'] != null) {
           score = double.tryParse('${d['score']}');
@@ -215,7 +223,10 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
           },
         );
 
-        if (commentsRes.statusCode == 200 && commentsRes.data is List) {
+        if (commentsRes.statusCode == 200 &&
+            commentsRes.data != null &&
+            commentsRes.data.toString().trim().isNotEmpty &&
+            commentsRes.data is List) {
           for (final c in commentsRes.data as List) {
             if (c is! Map) continue;
 

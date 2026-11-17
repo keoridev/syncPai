@@ -203,6 +203,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   bool _isDescriptionExpanded = false;
   bool _isLoadingDetails = false;
   bool _isOpeningEpisode = false;
+  bool _isStartingWatchTogether = false;
   late final ScrollController _scrollController;
   bool _showAppBarTitle = false;
 
@@ -1052,6 +1053,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     AnimeTitle title,
     EpisodeItem? currentEpisode,
   ) async {
+    if (_isStartingWatchTogether) return;
+    _isStartingWatchTogether = true;
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) _isStartingWatchTogether = false;
+    });
+
     final ep = currentEpisode ?? const EpisodeItem(episode: 1, name: 'Серия 1');
     final roomService = ActiveRoomService.instance;
 
@@ -1072,18 +1079,21 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       return;
     }
 
-    widget.onStartSyncRoom?.call(title, ep);
-    SyncRoomConfigSheet.show(
-      context,
-      title: title,
-      episode: ep,
-      onConfirm: ({
-        required int maxPeers,
-        required bool isHostControlOnly,
-        required PlayerQuality quality,
-        required String roomCode,
-      }) {},
-    );
+    if (widget.onStartSyncRoom != null) {
+      widget.onStartSyncRoom!(title, ep);
+    } else {
+      SyncRoomConfigSheet.show(
+        context,
+        title: title,
+        episode: ep,
+        onConfirm: ({
+          required int maxPeers,
+          required bool isHostControlOnly,
+          required PlayerQuality quality,
+          required String roomCode,
+        }) {},
+      );
+    }
   }
 
   Widget _buildSecondaryActionsRow(

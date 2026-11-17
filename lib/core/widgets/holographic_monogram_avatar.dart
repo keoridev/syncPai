@@ -1,11 +1,8 @@
-import 'dart:io';
-import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// Генеративный голографический аватар-монограмма из матового стекла (Glassmorphism)
-/// с инициалами/символом клана и анимированным радужным градиентным переливом.
-class HolographicMonogramAvatar extends StatefulWidget {
+/// Элегантный чистый аватар-монограмма по умолчанию на темной поверхности
+/// без навязчивого радужного неонового кольца (Nordic Dark).
+class HolographicMonogramAvatar extends StatelessWidget {
   final String text;
   final double size;
   final Color? accentColor;
@@ -16,134 +13,41 @@ class HolographicMonogramAvatar extends StatefulWidget {
     required this.text,
     required this.size,
     this.accentColor,
-    this.animate = true,
+    this.animate = false,
   });
 
   @override
-  State<HolographicMonogramAvatar> createState() => _HolographicMonogramAvatarState();
-}
-
-class _HolographicMonogramAvatarState extends State<HolographicMonogramAvatar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    );
-    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
-    if (widget.animate && !isTest) {
-      _animController.repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant HolographicMonogramAvatar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
-    if (widget.animate && !isTest) {
-      if (!_animController.isAnimating) _animController.repeat();
-    } else {
-      if (_animController.isAnimating) _animController.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final initial = widget.text.isNotEmpty
-        ? widget.text.trim()[0].toUpperCase()
-        : 'S';
-    final primary = widget.accentColor ?? const Color(0xFF00E5FF);
+    final initial = text.isNotEmpty ? text.trim()[0].toUpperCase() : 'S';
 
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _animController,
-        builder: (context, _) {
-          final t = _animController.value;
-          final angle = t * 2 * math.pi;
-
-          return Container(
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: SweepGradient(
-                colors: [
-                  primary,
-                  const Color(0xFFE040FB),
-                  const Color(0xFFFF5252),
-                  const Color(0xFF00E5FF),
-                  primary,
-                ],
-                transform: GradientRotation(angle),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: primary.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(2.5),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      primary.withValues(alpha: 0.35),
-                      const Color(0xFF1E212B),
-                      const Color(0xFF13151D),
-                    ],
-                    stops: const [0.0, 0.65, 1.0],
-                  ),
-                  border: Border.all(
-                    color: primary.withValues(alpha: 0.45),
-                    width: 1.0,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: widget.size * 0.44,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                    foreground: Paint()
-                      ..shader = LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: const [
-                          Colors.white,
-                          Color(0xFFE0E0E0),
-                          Color(0xFFB0BEC5),
-                        ],
-                        transform: GradientRotation(angle),
-                      ).createShader(Rect.fromLTWH(0, 0, widget.size, widget.size)),
-                    shadows: [
-                      Shadow(
-                        color: primary.withValues(alpha: 0.6),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFF181D27),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1.0,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black38,
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.92),
+          fontSize: size * 0.44,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+        ),
       ),
     );
   }
 }
-

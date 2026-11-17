@@ -97,6 +97,7 @@ class AnimeReview extends Equatable {
   String get text => content;
   double get scoreOrZero => score ?? 0.0;
   String get sourceName => source.displayName;
+  bool get isSpoiler => containsSpoiler;
 
   /// Относительный формат даты публикации
   String get date {
@@ -134,6 +135,7 @@ class AnimeReview extends Equatable {
       'sentiment': sentiment.name,
       'content': content,
       'contains_spoiler': containsSpoiler,
+      'is_spoiler': containsSpoiler,
       'created_at': createdAt.toIso8601String(),
       'original_url': originalUrl,
       'likes': likes,
@@ -162,7 +164,7 @@ class AnimeReview extends Equatable {
       score: parsedScore,
       sentiment: sentiment,
       content: json['content'] as String? ?? json['text'] as String? ?? '',
-      containsSpoiler: json['contains_spoiler'] as bool? ?? false,
+      containsSpoiler: json['is_spoiler'] as bool? ?? json['contains_spoiler'] as bool? ?? false,
       createdAt: parsedDate,
       originalUrl: json['original_url'] as String?,
       likes: json['likes'] as int? ?? 0,

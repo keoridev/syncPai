@@ -35,6 +35,19 @@ class AuthCubit extends Cubit<AuthState> {
     });
   }
 
+  /// Тихое обновление профиля из Supabase (например, после возврата из Telegram-бота).
+  Future<void> refreshProfile() async {
+    try {
+      final profile = await repository.getCurrentProfile();
+      if (!isClosed) {
+        emit(Authenticated(profile));
+      }
+      if (getIt.isRegistered<ProfileCubit>()) {
+        getIt<ProfileCubit>().applyOptimisticProfile(profile);
+      }
+    } catch (_) {}
+  }
+
   Future<void> updateProfile({
     required String username,
     String? avatarUrl,

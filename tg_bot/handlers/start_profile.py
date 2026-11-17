@@ -1,6 +1,6 @@
 import html
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -63,18 +63,17 @@ def _guest_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, command: CommandObject, state: FSMContext):
     await state.clear()
     tg_id = message.from_user.id
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
-    # Проверка deep link: /start link_SP123456
-    command_args = (message.text or "").split(maxsplit=1)
-    if len(command_args) > 1:
-        payload = command_args[1].strip()
-        if payload.startswith("link_"):
-            target_code = payload.removeprefix("link_")
-            found = supabase_client.get_profile_by_code_or_tag(target_code)
+    # Проверка deep link: /start link_SP-XXXXXX
+    args = (command.args or "").strip()
+    if args.startswith("link_"):
+        link_token = args.removeprefix("link_").strip()
+        if link_token:
+            found = supabase_client.get_profile_by_code_or_tag(link_token)
             if found:
                 ok = supabase_client.link_profile_telegram(
                     profile_id=found["id"],
@@ -83,13 +82,14 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
                 if ok:
                     uname = html.escape(str(found.get("username") or "Пользователь"))
+                    raw_tag = str(found.get("tag") or "#0001")
+                    tag = html.escape(raw_tag if raw_tag.startswith("#") else f"#{raw_tag}")
                     await send_or_edit_card(
                         message,
                         card_key="welcome",
                         caption=(
-                            f"<b>Аккаунт привязан</b>\n\n"
-                            f"Привет, <b>{uname}</b>! Я Пай-тян — теперь твой Telegram связан с профилем SyncPai.\n"
-                            f"Здесь можно проверять статус, поддерживать проект и скачивать свежие сборки."
+                            f"Аккаунт <b>{uname}{tag}</b> успешно привязан! "
+                            f"Теперь можно оформлять подписку или управлять профилем прямо здесь."
                         ),
                         reply_markup=_linked_menu_keyboard(),
                     )

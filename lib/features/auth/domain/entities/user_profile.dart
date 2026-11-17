@@ -32,6 +32,8 @@ class UserProfile extends Equatable {
   final String? friendCode; // 'SP-8F3K9A'
   final bool autoAcceptInvites;
   final SupporterTier supporterTier;
+  final int? telegramId;
+  final String? telegramUsername;
   final DateTime createdAt;
 
   const UserProfile({
@@ -61,6 +63,8 @@ class UserProfile extends Equatable {
     this.friendCode,
     this.autoAcceptInvites = true,
     this.supporterTier = SupporterTier.free,
+    this.telegramId,
+    this.telegramUsername,
     required this.createdAt,
   });
 
@@ -193,6 +197,8 @@ class UserProfile extends Equatable {
     String? friendCode,
     bool? autoAcceptInvites,
     SupporterTier? supporterTier,
+    int? telegramId,
+    String? telegramUsername,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -222,6 +228,8 @@ class UserProfile extends Equatable {
       friendCode: friendCode ?? this.friendCode,
       autoAcceptInvites: autoAcceptInvites ?? this.autoAcceptInvites,
       supporterTier: supporterTier ?? this.supporterTier,
+      telegramId: telegramId ?? this.telegramId,
+      telegramUsername: telegramUsername ?? this.telegramUsername,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -255,6 +263,8 @@ class UserProfile extends Equatable {
         'friend_code': friendCode,
         'auto_accept_invites': autoAcceptInvites,
         'supporter_tier': supporterTier.id,
+        'telegram_id': telegramId,
+        'telegram_username': telegramUsername,
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -330,6 +340,8 @@ class UserProfile extends Equatable {
       friendCode: json['friend_code'] as String?,
       autoAcceptInvites: json['auto_accept_invites'] as bool? ?? true,
       supporterTier: SupporterTier.fromId(json['supporter_tier'] as String?),
+      telegramId: (json['telegram_id'] as num?)?.toInt(),
+      telegramUsername: json['telegram_username'] as String?,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -362,6 +374,8 @@ class UserProfile extends Equatable {
         friendCode,
         autoAcceptInvites,
         supporterTier,
+        telegramId,
+        telegramUsername,
         createdAt,
       ];
 }

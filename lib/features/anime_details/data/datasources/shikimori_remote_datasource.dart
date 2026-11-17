@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -9,8 +10,10 @@ import '../../domain/entities/related_anime_release.dart';
 import '../../domain/entities/score_distribution_item.dart';
 import '../../domain/entities/user_lists_stats.dart';
 import '../../domain/repositories/anime_reviews_repository.dart';
+import '../services/anime_meta_cache_service.dart';
 import 'anime_reviews_provider.dart';
 import 'jikan_remote_datasource.dart';
+import 'syncpai_reviews_datasource.dart';
 
 /// Модель рейтингов с нескольких аниме-порталов, рецензий, связанных релизов и видеоматериалов.
 class ShikimoriRatingAndReviews {
@@ -52,8 +55,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(milliseconds: 2500),
-                receiveTimeout: const Duration(milliseconds: 2500),
+                connectTimeout: const Duration(seconds: 2),
+                receiveTimeout: const Duration(seconds: 2),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',
@@ -64,21 +67,54 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
   @override
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title) async {
-    ReviewsAggregateResult? aggResult;
-    if (_reviewsRepository != null) {
-      try {
-        aggResult = await _reviewsRepository.getReviewsAndRatings(title);
-      } catch (e) {
-        debugPrint('[ShikimoriDS] Reviews repository fetch error: $e');
-      }
+    // Tier 2: Общий Supabase Edge Cache (public.anime_meta_cache, TTL 24 ч) + свои отзывы SyncPai параллельно
+    final animeKey = title.id > 0
+        ? 'id_${title.id}'
+        : (title.code.isNotEmpty
+            ? 'code_${title.code}'
+            : 'title_${title.displayTitle.hashCode.abs()}');
+    final syncPaiFuture = SyncPaiReviewsDataSourceImpl()
+        .getReviews(animeKey)
+        .catchError((_) => <AnimeReview>[]);
+    final edgeCacheFuture = AnimeMetaCacheService.instance.getFresh(title);
+
+    final preResults = await Future.wait<dynamic>([edgeCacheFuture, syncPaiFuture]);
+    final edgeHit = preResults[0] as AnimeMetaCacheEntry?;
+    final syncPaiReviews = preResults[1] as List<AnimeReview>;
+
+    if (edgeHit != null && edgeHit.userStats.total > 0) {
+      final combinedReviews = <AnimeReview>[
+        ...syncPaiReviews,
+        ...edgeHit.externalReviews,
+      ];
+      return ShikimoriRatingAndReviews(
+        portalScores: edgeHit.portalScores,
+        reviews: combinedReviews.isNotEmpty
+            ? combinedReviews
+            : AnimeReviewsProvider.getReviewsForTitle(title),
+        aggregate: edgeHit.aggregate,
+        shikimoriId: edgeHit.shikimoriId ?? title.shikimoriId,
+        relatedReleases: edgeHit.relatedReleases,
+        videos: edgeHit.videos,
+        userStats: edgeHit.userStats,
+        scoreDistribution: edgeHit.scoreDistribution,
+      );
     }
 
+    ReviewsAggregateResult? aggResult;
     try {
-      int? shikimoriId = aggResult?.resolvedShikimoriId ?? title.shikimoriId;
-      double rawScore = aggResult?.aggregate.shikimoriScore ?? 8.8;
+      int? shikimoriId = title.shikimoriId;
+      double rawScore = 8.8;
+
+      // Запускаем агрегатор отзывов параллельно с поиском Shikimori ID
+      final aggFuture = _reviewsRepository != null
+          ? _reviewsRepository
+              .getReviewsAndRatings(title)
+              .then<ReviewsAggregateResult?>((v) => v)
+              .catchError((_) => null)
+          : Future<ReviewsAggregateResult?>.value(null);
 
       if (shikimoriId == null || shikimoriId <= 0) {
-        // 1. Поиск тайтла на Shikimori по названию
         final searchQuery = title.displayTitle.isNotEmpty
             ? title.displayTitle
             : title.code;
@@ -91,7 +127,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           },
         );
 
-        if (searchResponse.statusCode == 200 && searchResponse.data is List) {
+        if (searchResponse.statusCode == 200 &&
+            searchResponse.data != null &&
+            searchResponse.data.toString().trim().isNotEmpty &&
+            searchResponse.data is List) {
           final list = searchResponse.data as List;
           if (list.isNotEmpty) {
             final first = list.first as Map<String, dynamic>;
@@ -101,28 +140,72 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         }
       }
 
-      // Рассчитываем реальные рейтинги на порталах
-      final portalScores = <String, double>{
-        'Shikimori': aggResult?.aggregate.shikimoriScore ?? rawScore,
-        'MyAnimeList': aggResult?.aggregate.malScore ??
-            double.parse((rawScore > 0.3 ? rawScore - 0.08 : rawScore).toStringAsFixed(1)),
-        if (aggResult?.aggregate.syncpaiScore != null && aggResult!.aggregate.syncpaiScore! > 0)
-          'SyncPai': aggResult.aggregate.syncpaiScore!,
-        'AniLibria': double.parse(((rawScore + 0.35).clamp(1.0, 9.9)).toStringAsFixed(1)),
-        'World Art': double.parse(((rawScore - 0.15).clamp(1.0, 9.8)).toStringAsFixed(1)),
-      };
+      if (shikimoriId != null && shikimoriId > 0) {
+        // Все независимые запросы выполняются строго параллельно!
+        final results = await Future.wait<dynamic>([
+          aggFuture,
+          _fetchTopicsForAnime(shikimoriId, rawScore, title),
+          _fetchRelatedReleases(shikimoriId, title, rawScore),
+          _fetchVideosAndStats(shikimoriId, title),
+          getScreenshots(shikimoriId).catchError((_) => <String>[]),
+        ]);
 
-      // 2. Получение отзывов, связанных релизов и видеоматериалов
-      if (shikimoriId != null) {
-        final reviews = aggResult != null && aggResult.reviews.isNotEmpty
+        aggResult = results[0] as ReviewsAggregateResult?;
+        final topicReviews = results[1] as List<AnimeReview>;
+        final related = results[2] as List<RelatedAnimeRelease>;
+        final media = results[3] as ({
+          List<AnimeVideoItem> videos,
+          UserListsStats stats,
+          List<ScoreDistributionItem> scores,
+        });
+        final screenshots = results[4] as List<String>;
+
+        final effectiveScore = aggResult?.aggregate.shikimoriScore ?? rawScore;
+        final portalScores = <String, double>{
+          'Shikimori': effectiveScore,
+          'MyAnimeList': aggResult?.aggregate.malScore ??
+              double.parse((effectiveScore > 0.3 ? effectiveScore - 0.08 : effectiveScore).toStringAsFixed(1)),
+          if (aggResult?.aggregate.syncpaiScore != null && aggResult!.aggregate.syncpaiScore! > 0)
+            'SyncPai': aggResult.aggregate.syncpaiScore!,
+          'AniLibria': double.parse(((effectiveScore + 0.35).clamp(1.0, 9.9)).toStringAsFixed(1)),
+          'World Art': double.parse(((effectiveScore - 0.15).clamp(1.0, 9.8)).toStringAsFixed(1)),
+        };
+
+        final externalReviews = (aggResult != null && aggResult.reviews.isNotEmpty)
             ? aggResult.reviews
-            : await _fetchTopicsForAnime(shikimoriId, rawScore, title);
-        final related = await _fetchRelatedReleases(shikimoriId, title, rawScore);
-        final media = await _fetchVideosAndStats(shikimoriId, title);
+            : topicReviews;
+        final combinedReviews = <AnimeReview>[
+          ...syncPaiReviews,
+          ...externalReviews.where((r) => !syncPaiReviews.any((s) => s.id == r.id)),
+        ];
+
+        // Фоновое сохранение в общий кэш Supabase (public.anime_meta_cache)
+        if (media.stats.total > 0) {
+          unawaited(
+            AnimeMetaCacheService.instance.upsert(
+              title,
+              AnimeMetaCacheEntry(
+                animeKey: AnimeMetaCacheService.buildAnimeKey(title),
+                shikimoriId: shikimoriId,
+                userStats: media.stats,
+                screenshots: screenshots,
+                videos: media.videos,
+                relatedReleases: related,
+                scoreDistribution: media.scores,
+                portalScores: portalScores,
+                externalReviews: externalReviews,
+                aggregate: aggResult?.aggregate,
+                updatedAt: DateTime.now(),
+              ),
+            ),
+          );
+        }
 
         return ShikimoriRatingAndReviews(
           portalScores: portalScores,
-          reviews: reviews.isNotEmpty ? reviews : AnimeReviewsProvider.getReviewsForTitle(title),
+          reviews: combinedReviews.isNotEmpty
+              ? combinedReviews
+              : AnimeReviewsProvider.getReviewsForTitle(title),
           aggregate: aggResult?.aggregate,
           shikimoriId: shikimoriId,
           relatedReleases: related,
@@ -130,12 +213,18 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           userStats: media.stats,
           scoreDistribution: media.scores,
         );
+      } else {
+        aggResult = await aggFuture;
       }
     } catch (e) {
       debugPrint('Shikimori API fetch failed (graceful fallback): $e');
     }
 
-    // Fallback: при ошибке сети или отсутствии совпадений возвращаем надежные оффлайн-данные
+    // Fallback: собственные отзывы SyncPai (если есть) + надёжные оффлайн-данные
+    final fallbackReviews = <AnimeReview>[
+      ...syncPaiReviews,
+      ...(aggResult?.reviews ?? AnimeReviewsProvider.getReviewsForTitle(title)),
+    ];
     return ShikimoriRatingAndReviews(
       portalScores: const {
         'Shikimori': 8.9,
@@ -143,7 +232,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         'AniLibria': 9.4,
         'World Art': 8.7,
       },
-      reviews: aggResult?.reviews ?? AnimeReviewsProvider.getReviewsForTitle(title),
+      reviews: fallbackReviews,
       aggregate: aggResult?.aggregate,
       relatedReleases: _generateFallbackFranchise(title, 8.8),
       videos: _generateFallbackVideos(title),

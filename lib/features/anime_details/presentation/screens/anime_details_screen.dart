@@ -599,14 +599,22 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     final releaseId = _currentTitle.id;
     final titleRu = _currentTitle.russianTitle;
     final titleEn = _currentTitle.englishTitle;
-    final displayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
+    final rawDisplayTitle = titleRu.isNotEmpty ? titleRu : titleEn;
+    final displayTitle = rawDisplayTitle.startsWith('search:')
+        ? rawDisplayTitle.substring('search:'.length).trim()
+        : rawDisplayTitle;
+    final isExternalSourceId = _currentTitle.code.startsWith('search:') ||
+        _currentTitle.code.startsWith('shikimori_') ||
+        (_currentTitle.shikimoriId != null &&
+            _currentTitle.shikimoriId == releaseId);
+    final playerReleaseId = isExternalSourceId ? 0 : releaseId;
 
     // 1. Независимая быстрая загрузка серий/потоков AniLibria (не ждёт метаданные)
     if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
       unawaited(Future<void>(() async {
         try {
           final translations = await getIt<GetPlayerLinksUseCase>().call(
-            releaseId,
+            playerReleaseId,
             title: displayTitle,
           );
           if (translations.isNotEmpty) {
@@ -2642,7 +2650,10 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        UserListsDistributionWidget(stats: _userStats),
+                        UserListsDistributionWidget(
+                          stats: _userStats,
+                          isLoading: _isLoadingReviews && _userStats.total == 0,
+                        ),
                         const SizedBox(height: 24),
                         if (_relatedReleases.isNotEmpty)
                           RelatedReleasesSection(
@@ -2667,6 +2678,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       onReleaseSelected: _onRelatedReleaseSelected,
                       videos: _videos,
                       userStats: _userStats,
+                      isLoadingStats: _isLoadingReviews && _userStats.total == 0,
                       onOpenAllVideos: () {
                         context.pushNamed('anime-videos', extra: {
                           'title': _currentTitle.displayTitle,

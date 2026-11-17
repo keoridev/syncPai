@@ -258,37 +258,66 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     }
   }
 
+  static final Map<int, String> _externalIdToReleaseIdCache = {};
+  static final Map<String, String> _titleToReleaseIdCache = {};
+
   @override
   Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title}) async {
     try {
       Response? res;
-      try {
-        res = await _dio.get('$_releaseUrl/$releaseId');
-      } catch (_) {
-        if (title != null && title.trim().isNotEmpty) {
-          try {
-            final sRes = await _dio.get(
-              _searchUrl,
-              queryParameters: {'query': title.trim()},
-            );
-            final items = _parseReleases(sRes.data);
-            if (items.isNotEmpty) {
-              final relId = items.first.id;
-              res = await _dio.get('$_releaseUrl/$relId');
-            }
-          } catch (_) {}
+      final rawTitle = title?.trim() ?? '';
+      final cleanTitle = rawTitle.startsWith('search:')
+          ? rawTitle.substring('search:'.length).trim()
+          : rawTitle;
+      final normalizedTitleKey = cleanTitle.toLowerCase();
+
+      final mappedId = _externalIdToReleaseIdCache[releaseId] ??
+          (normalizedTitleKey.isNotEmpty ? _titleToReleaseIdCache[normalizedTitleKey] : null);
+
+      // Если есть закэшированный маппинг или обычный AniLibria ID (> 0 и без search:), пробуем прямой запрос
+      final effectiveId = mappedId ?? '$releaseId';
+      final skipDirectIdLookup =
+          (mappedId == null && releaseId <= 0) || rawTitle.startsWith('search:');
+
+      if (!skipDirectIdLookup) {
+        try {
+          res = await _dio.get('$_releaseUrl/$effectiveId');
+        } catch (_) {
+          res = null;
         }
       }
 
-      if (res == null && title != null && title.trim().isNotEmpty) {
+      if (res == null && cleanTitle.isNotEmpty) {
+        try {
+          final sRes = await _dio.get(
+            _searchUrl,
+            queryParameters: {'query': cleanTitle},
+          );
+          final items = _parseReleases(sRes.data);
+          if (items.isNotEmpty) {
+            final relId = items.first.id;
+            if (releaseId > 0) _externalIdToReleaseIdCache[releaseId] = relId;
+            if (normalizedTitleKey.isNotEmpty) {
+              _titleToReleaseIdCache[normalizedTitleKey] = relId;
+            }
+            res = await _dio.get('$_releaseUrl/$relId');
+          }
+        } catch (_) {}
+      }
+
+      if (res == null && cleanTitle.isNotEmpty) {
         try {
           final fallbackSRes = await _dio.get(
             _fallbackSearchUrl,
-            queryParameters: {'query': title.trim()},
+            queryParameters: {'query': cleanTitle},
           );
           final items = _parseReleases(fallbackSRes.data);
           if (items.isNotEmpty) {
             final relId = items.first.id;
+            if (releaseId > 0) _externalIdToReleaseIdCache[releaseId] = relId;
+            if (normalizedTitleKey.isNotEmpty) {
+              _titleToReleaseIdCache[normalizedTitleKey] = relId;
+            }
             res = await _dio.get('$_fallbackReleaseUrl/$relId');
           }
         } catch (_) {}

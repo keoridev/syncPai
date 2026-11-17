@@ -27,8 +27,8 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
             Dio(
               BaseOptions(
                 baseUrl: _shikimoriBaseUrl,
-                connectTimeout: const Duration(milliseconds: 2500),
-                receiveTimeout: const Duration(milliseconds: 2500),
+                connectTimeout: const Duration(seconds: 2),
+                receiveTimeout: const Duration(seconds: 2),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',
@@ -65,6 +65,9 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
     double? shikimoriScore;
     int shikimoriVotes = 0;
 
+    // Запускаем собственные отзывы SyncPai сразу параллельно, не дожидаясь внешнего поиска
+    final syncPaiReviewsFuture = _syncPaiDataSource.getReviews(animeKey);
+
     // 2. Разрешаем shikimoriId, если он отсутствует у тайтла
     if (shikimoriId == null || shikimoriId <= 0) {
       try {
@@ -90,11 +93,9 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
       }
     }
 
-    // 3. Параллельные запросы к источникам (Shikimori, Jikan MAL, SyncPai)
+    // 3. Параллельные запросы к внешним источникам (Shikimori + Jikan MAL)
     final shikimoriReviewsFuture = _fetchShikimoriData(shikimoriId);
-    final syncPaiReviewsFuture = _syncPaiDataSource.getReviews(animeKey);
 
-    // Запускаем первые два параллельно, чтобы быстро получить myanimelist_id для Jikan
     final shikiData = await shikimoriReviewsFuture;
     shikimoriScore = shikiData.score ?? shikimoriScore;
     shikimoriVotes = shikiData.votesCount;

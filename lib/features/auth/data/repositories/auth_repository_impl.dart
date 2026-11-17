@@ -285,6 +285,13 @@ class AuthRepositoryImpl implements AuthRepository {
       friendCode: (cloudRow?['friend_code'] as String?) ??
           local.friendCode ??
           'SP-${user.id.length >= 6 ? user.id.substring(0, 6).toUpperCase() : '777AAA'}',
+      telegramId: (cloudRow?['telegram_id'] as num?)?.toInt() ?? local.telegramId,
+      telegramUsername: (cloudRow?['telegram_username'] as String?)
+                  ?.trim()
+                  .isNotEmpty ==
+              true
+          ? cloudRow!['telegram_username'] as String
+          : local.telegramUsername,
       createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ??
           DateTime.now(),
     );
@@ -339,7 +346,6 @@ class AuthRepositoryImpl implements AuthRepository {
       'artwork_url': profile.artworkUrl,
       'artwork_title': profile.artworkTitle,
       'accent_color': profile.accentColor,
-      'showcase_type': profile.showcaseType,
       'customization': profile.customization.toJson(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
@@ -396,7 +402,6 @@ class AuthRepositoryImpl implements AuthRepository {
       'artwork_url': profile.artworkUrl,
       'artwork_title': profile.artworkTitle,
       'accent_color': profile.accentColor,
-      'showcase_type': profile.showcaseType,
       'customization': profile.customization.toJson(),
       'tag': profile.tag,
       if (profile.friendCode != null) 'friend_code': profile.friendCode,

@@ -30,14 +30,36 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
 
   // Ограничение частоты запросов к Jikan API: максимум 3 запроса в секунду (~350ms между запросами)
   static DateTime _lastRequestTime = DateTime.fromMillisecondsSinceEpoch(0);
+  // Сессионный негативный кэш и backoff при таймаутах/429, чтобы не спамить повторными запросами
+  static final Set<int> _failedMalIds = {};
+  static DateTime? _globalBackoffUntil;
+
+  static bool _shouldSkip(int malId) {
+    if (_failedMalIds.contains(malId)) return true;
+    final until = _globalBackoffUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  static void _recordFailure(int malId, Object error) {
+    _failedMalIds.add(malId);
+    if (error is DioException &&
+        (error.type == DioExceptionType.connectionTimeout ||
+            error.type == DioExceptionType.receiveTimeout ||
+            error.type == DioExceptionType.sendTimeout ||
+            error.response?.statusCode == 429)) {
+      _globalBackoffUntil = DateTime.now().add(const Duration(minutes: 2));
+      return; // Тихий выход без шумных логов таймаута
+    }
+    debugPrint('[Jikan API] request failed ($malId): $error');
+  }
 
   JikanRemoteDataSourceImpl({Dio? customDio})
       : _dio = customDio ??
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(milliseconds: 2500),
-                receiveTimeout: const Duration(milliseconds: 2500),
+                connectTimeout: const Duration(seconds: 2),
+                receiveTimeout: const Duration(seconds: 2),
                 headers: {
                   if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
                   'Accept': 'application/json',
@@ -56,7 +78,7 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
 
   @override
   Future<JikanAnimeScoreAndReviews> getReviewsAndScore(int malId) async {
-    if (malId <= 0) {
+    if (malId <= 0 || _shouldSkip(malId)) {
       return const JikanAnimeScoreAndReviews();
     }
 
@@ -127,13 +149,17 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
         }
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode == 429) {
-        debugPrint('[Jikan API] Rate limit hit (429), backing off gracefully.');
-      } else {
-        debugPrint('[Jikan API] Reviews fetch failed (graceful): ${e.message}');
-      }
+      _recordFailure(malId, e);
     } catch (e) {
-      debugPrint('[Jikan API] Unexpected error: $e');
+      _recordFailure(malId, e);
+    }
+
+    if (_shouldSkip(malId)) {
+      return JikanAnimeScoreAndReviews(
+        malScore: malScore,
+        malVotesCount: malVotesCount,
+        reviews: reviews,
+      );
     }
 
     // 2. Получение общего рейтинга и количества голосов на MyAnimeList
@@ -178,7 +204,7 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
 
   @override
   Future<List<AnimeVideoItem>> getVideos(int malId) async {
-    if (malId <= 0) return const [];
+    if (malId <= 0 || _shouldSkip(malId)) return const [];
     final list = <AnimeVideoItem>[];
     try {
       await _throttle();
@@ -256,7 +282,7 @@ class JikanRemoteDataSourceImpl implements JikanRemoteDataSource {
         }
       }
     } catch (e) {
-      debugPrint('[Jikan API] getVideos error: $e');
+      _recordFailure(malId, e);
     }
     return list;
   }

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/telegram_link_tile.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
@@ -23,7 +24,8 @@ class SupportScreen extends StatefulWidget {
   State<SupportScreen> createState() => _SupportScreenState();
 }
 
-class _SupportScreenState extends State<SupportScreen> {
+class _SupportScreenState extends State<SupportScreen>
+    with WidgetsBindingObserver {
   SupportConfig _config = SupportConfig.fallback;
   bool _isLoadingConfig = true;
   SupporterTier _selectedTier = SupporterTier.supporter;
@@ -33,7 +35,23 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadConfig();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      try {
+        context.read<AuthCubit>().refreshProfile();
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadConfig() async {
@@ -271,7 +289,13 @@ class _SupportScreenState extends State<SupportScreen> {
                 ),
                 const SizedBox(height: 10),
                 _buildTierCards(isDesktop),
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
+                TelegramLinkTile(
+                  profile: currentProfile,
+                  themePrimary: themePrimary,
+                  asCard: true,
+                ),
+                const SizedBox(height: 14),
                 Container(
                   key: _paymentSectionKey,
                   child: _buildPaymentSection(themePrimary, userHandle, isDesktop),

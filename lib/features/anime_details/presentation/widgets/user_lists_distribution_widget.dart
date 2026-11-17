@@ -8,11 +8,13 @@ import '../../domain/entities/user_lists_stats.dart';
 class UserListsDistributionWidget extends StatelessWidget {
   final UserListsStats stats;
   final bool showCard;
+  final bool isLoading;
 
   const UserListsDistributionWidget({
     super.key,
     required this.stats,
     this.showCard = false,
+    this.isLoading = false,
   });
 
   // Аутентичная палитра Anixart
@@ -31,6 +33,74 @@ class UserListsDistributionWidget extends StatelessWidget {
     final onHoldFlex = (stats.onHold / total * 100).clamp(1.0, 100.0).round();
     final droppedFlex = (stats.dropped / total * 100).clamp(1.0, 100.0).round();
 
+    final showSkeleton = isLoading && stats.total == 0;
+
+    final barAndLegend = showSkeleton
+        ? Column(
+            key: const ValueKey('user_lists_skeleton'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 15,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181D27),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: List.generate(
+                  4,
+                  (_) => Container(
+                    width: 84,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF181D27),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : ClipRRect(
+            key: const ValueKey('user_lists_data'),
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 15,
+              child: Row(
+                children: [
+                  // 1. Смотрю (зеленый)
+                  Flexible(
+                    flex: watchingFlex,
+                    child: Container(color: colorWatching),
+                  ),
+                  const SizedBox(width: 2),
+                  // 2. В планах (фиолетовый)
+                  Flexible(
+                    flex: plannedFlex,
+                    child: Container(color: colorPlanned),
+                  ),
+                  const SizedBox(width: 2),
+                  // 3. Отложено (янтарный)
+                  Flexible(
+                    flex: onHoldFlex,
+                    child: Container(color: colorOnHold),
+                  ),
+                  const SizedBox(width: 2),
+                  // 4. Брошено (красный)
+                  Flexible(
+                    flex: droppedFlex,
+                    child: Container(color: colorDropped),
+                  ),
+                ],
+              ),
+            ),
+          );
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -43,81 +113,55 @@ class UserListsDistributionWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-
-        // Сегментированный горизонтальный индикатор со скруглением
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            height: 15,
-            child: Row(
-              children: [
-                // 1. Смотрю (зеленый)
-                Flexible(
-                  flex: watchingFlex,
-                  child: Container(color: colorWatching),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: showSkeleton
+              ? barAndLegend
+              : Column(
+                  key: const ValueKey('user_lists_full'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    barAndLegend,
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildLegendItem(
+                            color: colorWatching,
+                            label: 'Смотрю',
+                            count: stats.watching,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildLegendItem(
+                            color: colorOnHold,
+                            label: 'Отложено',
+                            count: stats.onHold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildLegendItem(
+                            color: colorPlanned,
+                            label: 'В планах',
+                            count: stats.planned,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildLegendItem(
+                            color: colorDropped,
+                            label: 'Брошено',
+                            count: stats.dropped,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 2),
-                // 2. В планах (фиолетовый)
-                Flexible(
-                  flex: plannedFlex,
-                  child: Container(color: colorPlanned),
-                ),
-                const SizedBox(width: 2),
-                // 3. Отложено (янтарный)
-                Flexible(
-                  flex: onHoldFlex,
-                  child: Container(color: colorOnHold),
-                ),
-                const SizedBox(width: 2),
-                // 4. Брошено (красный)
-                Flexible(
-                  flex: droppedFlex,
-                  child: Container(color: colorDropped),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // Легенда: 2 строки x 2 колонки (Скриншот 1)
-        Row(
-          children: [
-            Expanded(
-              child: _buildLegendItem(
-                color: colorWatching,
-                label: 'Смотрю',
-                count: stats.watching,
-              ),
-            ),
-            Expanded(
-              child: _buildLegendItem(
-                color: colorOnHold,
-                label: 'Отложено',
-                count: stats.onHold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildLegendItem(
-                color: colorPlanned,
-                label: 'В планах',
-                count: stats.planned,
-              ),
-            ),
-            Expanded(
-              child: _buildLegendItem(
-                color: colorDropped,
-                label: 'Брошено',
-                count: stats.dropped,
-              ),
-            ),
-          ],
         ),
       ],
     );

@@ -20,6 +20,7 @@ class AnimeMediaInfoSection extends StatelessWidget {
   final ValueChanged<RelatedAnimeRelease>? onReleaseSelected;
   final List<AnimeVideoItem> videos;
   final UserListsStats userStats;
+  final bool isLoadingStats;
 
   const AnimeMediaInfoSection({
     super.key,
@@ -31,6 +32,7 @@ class AnimeMediaInfoSection extends StatelessWidget {
     this.onReleaseSelected,
     this.videos = const [],
     this.userStats = const UserListsStats(),
+    this.isLoadingStats = false,
   });
 
   @override
@@ -43,7 +45,10 @@ class AnimeMediaInfoSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. «В списках у людей» (Anixart / Shikimori статус-бар)
-        UserListsDistributionWidget(stats: userStats),
+        UserListsDistributionWidget(
+          stats: userStats,
+          isLoading: isLoadingStats,
+        ),
         const SizedBox(height: 20),
 
         // 2. «Связанные релизы» (Сезоны, Фильмы, Спин-оффы)

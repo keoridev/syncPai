@@ -68,26 +68,57 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     }
   }
 
+  static final Map<int, int> _shikimoriToAnilibriaIdCache = {};
+
   @override
   Future<AnimeTitleDto> getTitleDetails({int? id, String? code}) async {
     try {
-      final hasValidCode = code != null && code.trim().isNotEmpty && !code.startsWith('saved_');
-      final target = id != null ? '$id' : (code ?? '');
+      final rawCode = code?.trim() ?? '';
+      // 1. Если передан search:-токен — сразу снимаем префикс и идём в поиск без 404 по /releases/search:...
+      if (rawCode.startsWith('search:')) {
+        final cleanQuery = rawCode.substring('search:'.length).trim();
+        if (cleanQuery.isNotEmpty) {
+          final searchResults = await searchTitles(cleanQuery);
+          if (searchResults.isNotEmpty) {
+            if (id != null && id > 0) {
+              _shikimoriToAnilibriaIdCache[id] = searchResults.first.id;
+            }
+            return searchResults.first;
+          }
+        }
+        return _buildFallbackShikimoriDto(id: id, code: cleanQuery);
+      }
+
+      final isShikimoriCode = rawCode.startsWith('shikimori_');
+      final resolvedId = (id != null && _shikimoriToAnilibriaIdCache.containsKey(id))
+          ? _shikimoriToAnilibriaIdCache[id]
+          : id;
+
+      // Если код вида shikimori_<id> ещё не сопоставлен с AniLibria ID — не делаем заведомый 404-запрос
+      if (isShikimoriCode &&
+          (id == null || !_shikimoriToAnilibriaIdCache.containsKey(id))) {
+        return _buildFallbackShikimoriDto(id: id, code: rawCode);
+      }
+
+      final hasValidCode =
+          rawCode.isNotEmpty && !rawCode.startsWith('saved_') && !isShikimoriCode;
+      final target = resolvedId != null ? '$resolvedId' : rawCode;
       final path = '${ApiConstants.releaseDetails}/$target';
 
       dynamic response;
       try {
         response = await client.get(path);
       } catch (err) {
-        // Если по ID вернулась 404 ошибка (например, ID из Anixart/Shikimori не совпадает с AniLibria),
-        // пробуем запросить по коду/slug тайтла (если он есть)
-        if (hasValidCode && target != code) {
+        if (hasValidCode && target != rawCode) {
           try {
-            response = await client.get('${ApiConstants.releaseDetails}/$code');
+            response = await client.get('${ApiConstants.releaseDetails}/$rawCode');
           } catch (_) {
             try {
-              final searchResults = await searchTitles(code);
+              final searchResults = await searchTitles(rawCode);
               if (searchResults.isNotEmpty) {
+                if (id != null && id > 0) {
+                  _shikimoriToAnilibriaIdCache[id] = searchResults.first.id;
+                }
                 return searchResults.first;
               }
             } catch (_) {}
@@ -95,26 +126,7 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         }
 
         if (response == null) {
-          // Безопасный fallback DTO для Shikimori тайтлов без релиза в AniLibria
-          final poster = (id != null && id > 0)
-              ? 'https://shikimori.io/system/animes/original/$id.jpg'
-              : '';
-          final fallback = (id != null && id > 0)
-              ? 'https://shikimori.io/system/animes/original/$id.jpg'
-              : '';
-          return AnimeTitleDto(
-            id: id ?? 0,
-            code: code ?? 'shikimori_${id ?? 0}',
-            russianTitle: code ?? 'Аниме #${id ?? 0}',
-            englishTitle: code ?? '',
-            posterSmall: poster,
-            posterMedium: poster,
-            posterOriginal: poster,
-            fallbackPosterUrl: fallback,
-            genres: const [],
-            description: '',
-            status: 'В эфире',
-          );
+          return _buildFallbackShikimoriDto(id: id, code: rawCode);
         }
       }
 
@@ -131,5 +143,27 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       if (e is ServerException || e is NetworkException) rethrow;
       throw ParsingException('Не удалось загрузить данные тайтла: $e');
     }
+  }
+
+  AnimeTitleDto _buildFallbackShikimoriDto({int? id, String? code}) {
+    final poster = (id != null && id > 0)
+        ? 'https://shikimori.io/system/animes/original/$id.jpg'
+        : '';
+    final cleanCode = (code != null && code.isNotEmpty) ? code : 'shikimori_${id ?? 0}';
+    return AnimeTitleDto(
+      id: id ?? 0,
+      code: cleanCode,
+      russianTitle: (code != null && code.isNotEmpty && !code.startsWith('shikimori_'))
+          ? code
+          : 'Аниме #${id ?? 0}',
+      englishTitle: '',
+      posterSmall: poster,
+      posterMedium: poster,
+      posterOriginal: poster,
+      fallbackPosterUrl: poster,
+      genres: const [],
+      description: '',
+      status: 'В эфире',
+    );
   }
 }

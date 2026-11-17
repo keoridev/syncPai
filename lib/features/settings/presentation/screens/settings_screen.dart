@@ -19,6 +19,7 @@ import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/theme/widgets/theme_selector_sheet.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/mascot/mascot_gallery_widget.dart';
+import '../../../../core/widgets/telegram_link_tile.dart';
 import '../../../anime_lists/data/datasources/anixart_csv_parser.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../anime_lists/presentation/widgets/import_progress_dialog.dart';
@@ -37,7 +38,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   bool _autoSkipOpenings = true;
   bool _autoPauseOnLeave = true;
   bool _liquidGlassEffects = true;
@@ -49,7 +51,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      try {
+        context.read<AuthCubit>().refreshProfile();
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -1306,6 +1324,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                       ),
                       trailing: const Icon(Icons.check_circle_rounded, color: AppColors.syncActive, size: 20),
+                    ),
+                    _buildDivider(),
+                    TelegramLinkTile(
+                      profile: profile,
+                      themePrimary: themePrimary,
                     ),
                     _buildDivider(),
                     ListTile(

@@ -28,6 +28,8 @@ import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
+import '../../../settings/presentation/cubit/settings_cubit.dart';
+import '../../../settings/presentation/cubit/settings_state.dart';
 import '../../../watch_history/presentation/cubit/watch_history_cubit.dart';
 import '../../../winter_theme/domain/services/winter_theme_service.dart';
 
@@ -40,6 +42,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  PlayerHudPreset _playerHudPreset = PlayerHudPreset.standard;
   bool _autoSkipOpenings = true;
   bool _autoPauseOnLeave = true;
   bool _liquidGlassEffects = true;
@@ -78,7 +81,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (mounted) {
       setState(() {
         _appVersion = ver;
-        if (_prefs != null) {
+        if (getIt.isRegistered<SettingsCubit>()) {
+          final s = getIt<SettingsCubit>().state;
+          _playerHudPreset = s.playerHudPreset;
+          _autoSkipOpenings = s.autoSkipOpenings;
+          _autoPauseOnLeave = s.autoPauseOnLeave;
+          _liquidGlassEffects = s.liquidGlassEffects;
+          _defaultQuality = s.defaultQuality;
+        } else if (_prefs != null) {
+          _playerHudPreset = PlayerHudPreset.fromString(_prefs!.getString('settings_player_hud_preset'));
           _autoSkipOpenings = _prefs!.getBool('settings_auto_skip_openings') ?? true;
           _autoPauseOnLeave = _prefs!.getBool('settings_auto_pause_on_leave') ?? true;
           _liquidGlassEffects = _prefs!.getBool('settings_liquid_glass') ?? DevicePerformanceService.instance.isLiquidGlassBlurEnabled;
@@ -1173,6 +1184,62 @@ class _SettingsScreenState extends State<SettingsScreen>
                         color: themePrimary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
+                      child: Icon(Icons.dashboard_customize_outlined, color: themePrimary, size: 20),
+                    ),
+                    title: const Text(
+                      'Интерфейс видеоплеера (HUD)',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      _playerHudPreset == PlayerHudPreset.minimal
+                          ? 'Минималистичный: чистый экран, управление жестами'
+                          : _playerHudPreset == PlayerHudPreset.advanced
+                              ? 'Расширенный: быстрые кнопки скорости и серий'
+                              : 'Стандартный: сбалансированный HUD с перемоткой ±10с',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: DropdownButton<PlayerHudPreset>(
+                      value: _playerHudPreset,
+                      dropdownColor: AppColors.surfaceElevated,
+                      underline: const SizedBox.shrink(),
+                      style: TextStyle(
+                        color: themePrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: PlayerHudPreset.standard,
+                          child: Text('Стандартный'),
+                        ),
+                        DropdownMenuItem(
+                          value: PlayerHudPreset.minimal,
+                          child: Text('Минималистичный'),
+                        ),
+                        DropdownMenuItem(
+                          value: PlayerHudPreset.advanced,
+                          child: Text('Расширенный'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _playerHudPreset = val);
+                          _saveString('settings_player_hud_preset', val.name);
+                          if (getIt.isRegistered<SettingsCubit>()) {
+                            getIt<SettingsCubit>().setPlayerHudPreset(val);
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  _buildDivider(),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: themePrimary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                       child: Icon(Icons.hd_outlined, color: themePrimary, size: 20),
                     ),
                     title: const Text(
@@ -1201,6 +1268,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                         if (val != null) {
                           setState(() => _defaultQuality = val);
                           _saveString('settings_default_quality', val);
+                          if (getIt.isRegistered<SettingsCubit>()) {
+                            getIt<SettingsCubit>().setDefaultQuality(val);
+                          }
                         }
                       },
                     ),
@@ -1228,6 +1298,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                     onChanged: (val) {
                       setState(() => _autoSkipOpenings = val);
                       _saveBool('settings_auto_skip_openings', val);
+                      if (getIt.isRegistered<SettingsCubit>()) {
+                        getIt<SettingsCubit>().setAutoSkipOpenings(val);
+                      }
                     },
                   ),
                   _buildDivider(),
@@ -1253,6 +1326,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                     onChanged: (val) {
                       setState(() => _autoPauseOnLeave = val);
                       _saveBool('settings_auto_pause_on_leave', val);
+                      if (getIt.isRegistered<SettingsCubit>()) {
+                        getIt<SettingsCubit>().setAutoPauseOnLeave(val);
+                      }
                     },
                   ),
                   _buildDivider(),

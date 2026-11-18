@@ -13,6 +13,7 @@ import 'core/widgets/desktop_title_bar.dart';
 import 'features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
 import 'features/catalog/presentation/cubit/catalog_cubit.dart';
+import 'features/settings/presentation/cubit/settings_cubit.dart';
 import 'features/downloads/presentation/cubit/download_cubit.dart';
 import 'features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'features/player/services/global_mini_player_service.dart';
@@ -141,6 +142,7 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
         BlocProvider.value(value: getIt<DownloadCubit>()),
         BlocProvider.value(value: getIt<KodikCubit>()),
         BlocProvider.value(value: getIt<CatalogCubit>()),
+        BlocProvider.value(value: getIt<SettingsCubit>()),
       ],
       child: BlocBuilder<ThemeCubit, ThemeState>(
         builder: (context, themeState) {

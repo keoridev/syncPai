@@ -37,6 +37,7 @@ import '../../../watch_history/presentation/cubit/watch_history_state.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../cubit/anime_list_cubit.dart';
 import '../cubit/anime_list_state.dart';
+import '../../../settings/presentation/cubit/settings_cubit.dart';
 
 class SavedAnimeScreen extends StatefulWidget {
   final ValueChanged<AnimeTitle>? onTitleSelected;
@@ -96,7 +97,13 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
   }
 
   void _loadSavedPreferences() {
-    if (getIt.isRegistered<SharedPreferences>()) {
+    if (getIt.isRegistered<SettingsCubit>()) {
+      final settings = getIt<SettingsCubit>().state;
+      _gridColumns = settings.gridColumnCount;
+      if (settings.isListView) {
+        _viewMode = SavedAnimeViewMode.list;
+      }
+    } else if (getIt.isRegistered<SharedPreferences>()) {
       final prefs = getIt<SharedPreferences>();
       final modeStr = prefs.getString('saved_anime_view_mode');
       if (modeStr != null) {
@@ -118,6 +125,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     if (getIt.isRegistered<SharedPreferences>()) {
       getIt<SharedPreferences>().setString('saved_anime_view_mode', mode.name);
     }
+    if (getIt.isRegistered<SettingsCubit>()) {
+      getIt<SettingsCubit>().setIsListView(mode == SavedAnimeViewMode.list);
+    }
   }
 
   void _toggleGridColumns() {
@@ -136,6 +146,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       getIt<CatalogCubit>().setGridDensity(
         newCols == 3 ? CatalogGridDensity.compact : CatalogGridDensity.standard,
       );
+    }
+    if (getIt.isRegistered<SettingsCubit>()) {
+      getIt<SettingsCubit>().setGridColumnCount(newCols);
     }
   }
 

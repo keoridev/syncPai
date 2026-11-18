@@ -43,6 +43,7 @@ import '../../features/shorts/domain/repositories/anime_clips_repository.dart';
 import '../../features/kodik/data/datasources/kodik_remote_datasource.dart';
 import '../../features/kodik/data/datasources/kodik_stream_extractor.dart';
 import '../../features/kodik/presentation/cubit/kodik_cubit.dart';
+import '../../features/settings/presentation/cubit/settings_cubit.dart';
 import '../../features/profile/presentation/cubit/profile_cubit.dart';
 import '../../core/theme/cubit/theme_cubit.dart';
 
@@ -208,5 +209,9 @@ Future<void> configureDependencies() async {
       getCatalogUseCase: getIt<GetCatalogUseCase>(),
       searchCatalogUseCase: getIt<SearchCatalogUseCase>(),
     ),
+  );
+  // Features: Settings Cubit
+  getIt.registerLazySingleton<SettingsCubit>(
+    () => SettingsCubit(getIt<SharedPreferences>()),
   );
 }

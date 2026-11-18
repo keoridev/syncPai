@@ -35,6 +35,7 @@ class AnimeListTileCard extends StatelessWidget {
           splashColor: AppColors.strokeMedium,
           highlightColor: AppColors.stroke,
           child: Container(
+            width: double.infinity,
             height: 146,
             decoration: AppDecorations.cardDecoration,
             clipBehavior: Clip.antiAlias,

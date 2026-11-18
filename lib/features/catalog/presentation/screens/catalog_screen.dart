@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
@@ -22,6 +23,7 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
+import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
@@ -232,28 +234,69 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     },
                   ),
 
-                  // Единый переключатель вида (Сетка / Список)
+                  // Единый переключатель вида (Сетка / Список) + переключатель колонок (2 к. / 3 к.)
                   BlocBuilder<CatalogCubit, CatalogState>(
                     buildWhen: (prev, curr) => curr is CatalogLoaded,
                     builder: (context, state) {
                       final cubit = context.read<CatalogCubit>();
                       final isList = state is CatalogLoaded && state.viewMode == CatalogViewMode.list;
+                      final cols = state is CatalogLoaded
+                          ? state.gridDensity.mobileColumns
+                          : 2;
                       return Padding(
                         padding: const EdgeInsets.only(right: 4),
-                        child: ViewModeToggle(
-                          isGrid: !isList,
-                          onChanged: (grid) {
-                            if (grid && isList) {
-                              cubit.cycleDisplayMode();
-                            } else if (!grid && !isList) {
-                              // Переключаем в list mode
-                              cubit.cycleDisplayMode();
-                              if (cubit.state is CatalogLoaded &&
-                                  (cubit.state as CatalogLoaded).viewMode != CatalogViewMode.list) {
-                                cubit.cycleDisplayMode();
-                              }
-                            }
-                          },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!isDesktop && !isList) ...[
+                              InkWell(
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  final nextDensity = cols == 2
+                                      ? CatalogGridDensity.compact
+                                      : CatalogGridDensity.standard;
+                                  cubit.setGridDensity(nextDensity);
+                                  if (context.mounted && getIt.isRegistered<SettingsCubit>()) {
+                                    getIt<SettingsCubit>().setGridColumnCount(nextDensity.mobileColumns);
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.strokeMedium),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.view_column_rounded, size: 15, color: themePrimary),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '$cols к.',
+                                        style: const TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            ViewModeToggle(
+                              isGrid: !isList,
+                              onChanged: (grid) {
+                                cubit.setViewMode(grid ? CatalogViewMode.grid : CatalogViewMode.list);
+                                if (getIt.isRegistered<SettingsCubit>()) {
+                                  getIt<SettingsCubit>().setIsListView(!grid);
+                                }
+                              },
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -660,10 +703,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
                     if (state.viewMode == CatalogViewMode.list) {
                       return SliverPadding(
-                        padding: EdgeInsets.only(
-                          left: horizontalPad,
-                          right: horizontalPad + 18,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/sync_badge.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
+import '../../../settings/presentation/cubit/settings_cubit.dart';
+import '../../../settings/presentation/cubit/settings_state.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
@@ -49,6 +52,11 @@ class PlayerControlsOverlay extends StatelessWidget {
     final isGuestInSync = state.isSyncRoom && !state.isHost;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final isShort = MediaQuery.of(context).size.height < 520;
+    final preset = getIt.isRegistered<SettingsCubit>()
+        ? getIt<SettingsCubit>().state.playerHudPreset
+        : PlayerHudPreset.standard;
+    final isMinimal = preset == PlayerHudPreset.minimal;
+    final isAdvanced = preset == PlayerHudPreset.advanced;
 
     if (state.isScreenLocked) return const SizedBox.shrink();
 
@@ -297,55 +305,34 @@ class PlayerControlsOverlay extends StatelessWidget {
 
                               // В ЛАНДШАФТНОМ РЕЖИМЕ: чистый и лаконичный набор
                               if (isLandscape) ...[
-                                // Кнопка Скорости воспроизведения (быстрый выбор)
-                                InkWell(
-                                  onTap: () => _showQuickSpeedSheet(context),
-                                  borderRadius: AppDimensions.borderRadiusSmall,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surfaceElevated,
-                                      borderRadius: AppDimensions.borderRadiusSmall,
-                                      border: Border.all(color: AppColors.strokeMedium),
-                                    ),
-                                    child: Text(
-                                      '${state.playbackRate}x',
-                                      style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-
-                                // Быстрый выбор качества потока (1080p, 720p, 480p)
-                                InkWell(
-                                  onTap: () => _showQuickQualitySheet(context),
-                                  borderRadius: AppDimensions.borderRadiusSmall,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surfaceElevated,
-                                      borderRadius: AppDimensions.borderRadiusSmall,
-                                      border: Border.all(color: AppColors.strokeMedium),
-                                    ),
-                                    child: Text(
-                                      state.selectedQuality == PlayerQuality.fhd
-                                          ? '1080p'
-                                          : state.selectedQuality == PlayerQuality.hd
-                                              ? '720p'
-                                              : '480p',
-                                      style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                if (isAdvanced) ...[
+                                  // Кнопка Скорости воспроизведения (быстрый выбор в расширенном режиме)
+                                  InkWell(
+                                    onTap: () => _showQuickSpeedSheet(context),
+                                    borderRadius: AppDimensions.borderRadiusSmall,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surfaceElevated,
+                                        borderRadius: AppDimensions.borderRadiusSmall,
+                                        border: Border.all(color: AppColors.strokeMedium),
+                                      ),
+                                      child: Text(
+                                        '${state.playbackRate}x',
+                                        style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
+                                  const SizedBox(width: 6),
 
-                                // Список серий
-                                IconButton(
-                                  tooltip: 'Список серий',
-                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                                ),
+                                  // Список серий
+                                  IconButton(
+                                    tooltip: 'Список серий',
+                                    icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                                  ),
+                                ],
 
                                 // Единая шестеренка настроек (Озвучка, Масштаб, Автопропуск, Danmaku, PiP)
                                 IconButton(
@@ -373,13 +360,15 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   ),
                               ] else ...[
                                 // В ПОРТРЕТНОМ РЕЖИМЕ: компактный чистый набор
-                                // Список серий
-                                IconButton(
-                                  tooltip: 'Серии',
-                                  icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                                ),
+                                if (isAdvanced) ...[
+                                  // Список серий
+                                  IconButton(
+                                    tooltip: 'Серии',
+                                    icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                                  ),
+                                ],
 
                                 // Единая шестеренка всех настроек (Озвучка, Качество, Скорость, Автопропуск)
                                 IconButton(
@@ -465,13 +454,15 @@ class PlayerControlsOverlay extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Перемотка на 10 сек назад
-                      IconButton(
-                        iconSize: isLandscape ? 32 : 40,
-                        icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
-                        onPressed: () => cubit.seekRelative(-10),
-                      ),
-                      SizedBox(width: isLandscape ? 64 : 48),
+                      if (!isMinimal) ...[
+                        // Перемотка на 10 сек назад
+                        IconButton(
+                          iconSize: isLandscape ? 32 : 40,
+                          icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
+                          onPressed: () => cubit.seekRelative(-10),
+                        ),
+                        SizedBox(width: isLandscape ? 64 : 48),
+                      ],
 
                       // Единая центральная кнопка (синхронизированы 3 состояния: Загрузка / Пауза / Плей)
                       Material(
@@ -507,14 +498,16 @@ class PlayerControlsOverlay extends StatelessWidget {
                           ),
                         ),
                       ),
-                      SizedBox(width: isLandscape ? 64 : 48),
 
-                      // Перемотка на 10 сек вперед
-                      IconButton(
-                        iconSize: isLandscape ? 32 : 40,
-                        icon: const Icon(Icons.forward_10_rounded, color: AppColors.textPrimary),
-                        onPressed: () => cubit.seekRelative(10),
-                      ),
+                      if (!isMinimal) ...[
+                        SizedBox(width: isLandscape ? 64 : 48),
+                        // Перемотка на 10 сек вперед
+                        IconButton(
+                          iconSize: isLandscape ? 32 : 40,
+                          icon: const Icon(Icons.forward_10_rounded, color: AppColors.textPrimary),
+                          onPressed: () => cubit.seekRelative(10),
+                        ),
+                      ],
                     ],
                   ),
 
@@ -741,6 +734,27 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   ? () => cubit.switchEpisode(allEpisodes[currentIndex - 1])
                                   : null,
                             ),
+                            // Быстрый выбор качества потока (1080p, 720p, 480p)
+                            InkWell(
+                              onTap: () => _showQuickQualitySheet(context),
+                              borderRadius: AppDimensions.borderRadiusSmall,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceElevated,
+                                  borderRadius: AppDimensions.borderRadiusSmall,
+                                  border: Border.all(color: AppColors.strokeMedium),
+                                ),
+                                child: Text(
+                                  state.selectedQuality == PlayerQuality.fhd
+                                      ? '1080p'
+                                      : state.selectedQuality == PlayerQuality.hd
+                                          ? '720p'
+                                          : '480p',
+                                  style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                                ),
+                              ),
+                            ),
                             if (onToggleOrientation != null)
                               IconButton(
                                 tooltip: 'Повернуть экран (на весь экран)',
@@ -831,7 +845,30 @@ class PlayerControlsOverlay extends StatelessWidget {
                       ? () => cubit.switchEpisode(allEpisodes[currentIndex + 1])
                       : null,
                 ),
+                const SizedBox(width: 8),
               ],
+
+              // Быстрый выбор качества потока (1080p, 720p, 480p)
+              InkWell(
+                onTap: () => _showQuickQualitySheet(context),
+                borderRadius: AppDimensions.borderRadiusSmall,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: AppDimensions.borderRadiusSmall,
+                    border: Border.all(color: AppColors.strokeMedium),
+                  ),
+                  child: Text(
+                    state.selectedQuality == PlayerQuality.fhd
+                        ? '1080p'
+                        : state.selectedQuality == PlayerQuality.hd
+                            ? '720p'
+                            : '480p',
+                    style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                  ),
+                ),
+              ),
 
               const Spacer(),
 

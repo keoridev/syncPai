@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/services/presence_service.dart';
+import 'package:sync_pai/features/profile/domain/services/achievement_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -269,6 +270,10 @@ class PlayerCubit extends Cubit<PlayerState> {
         _checkNextEpisodePrefetch(pos);
         final now = DateTime.now();
         if (_lastPosSavedAt == null || now.difference(_lastPosSavedAt!).inSeconds >= 3) {
+          if (_lastPosSavedAt != null && state.isPlaying && !state.isBuffering) {
+            final elapsed = now.difference(_lastPosSavedAt!).inSeconds.clamp(1, 10);
+            unawaited(AchievementService.instance.addWatchSeconds(elapsed));
+          }
           _lastPosSavedAt = now;
           _savePlaybackPosition(pos, state.duration);
         }
@@ -372,6 +377,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   void skipOpening() {
     if (state.isSyncRoom && !state.isHost) return;
 
+    unawaited(AchievementService.instance.recordOpeningSkipped());
     final opening = state.effectiveOpening;
     if (opening != null) {
       seek(opening.stopDuration);
@@ -1168,6 +1174,12 @@ class PlayerCubit extends Cubit<PlayerState> {
         isPlaying: shouldPlay,
         errorMessage: () => null,
       ));
+      _updateDiscordPresence(isPaused: !shouldPlay);
+      unawaited(
+        AchievementService.instance.recordEpisodeWatched(
+          isWatchTogether: state.isSyncRoom,
+        ),
+      );
       await player.open(
         Media(
           streamUrl,
@@ -1350,6 +1362,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
     player.play();
     _broadcastControlAction('play');
+    _updateDiscordPresence(isPaused: false);
     _resetControlsTimer();
   }
 
@@ -1361,6 +1374,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     player.pause();
     emit(state.copyWith(pauseCount: state.pauseCount + 1));
     _broadcastControlAction('pause');
+    _updateDiscordPresence(isPaused: true);
     _resetControlsTimer();
   }
 
@@ -1688,18 +1702,33 @@ class PlayerCubit extends Cubit<PlayerState> {
     emit(state.copyWith(danmakuMessages: updated));
   }
 
-  void _updateDiscordPresence() {
+  void _updateDiscordPresence({bool? isPaused}) {
+    final paused = isPaused ?? !state.isPlaying;
     try {
-      DiscordRpcService.instance.updatePresence(
-        animeTitle: state.title.displayTitle,
-        episodeNumber: state.episode.episode,
-        roomCode: state.roomCode,
-        currentPeers: state.isSyncRoom ? 2 : 1,
-        maxPeers: 2,
-        isPaused: !state.isPlaying,
-        position: state.position,
-        duration: state.duration,
-      );
+      if (state.isSyncRoom && state.roomCode != null) {
+        unawaited(
+          DiscordRpcService.instance.setWatchingTogether(
+            title: state.title.displayTitle,
+            episodeNumber: state.episode.episode,
+            roomCode: state.roomCode!,
+            roomId: 'room_${state.roomCode}',
+            participantsCount: 2,
+            posterUrl: state.title.posterMedium,
+          ),
+        );
+      } else {
+        unawaited(
+          DiscordRpcService.instance.setWatchingSolo(
+            title: state.title.displayTitle,
+            episodeNumber: state.episode.episode,
+            totalEpisodes: state.title.episodesTotal,
+            posterUrl: state.title.posterMedium,
+            isPaused: paused,
+            position: state.position,
+            duration: state.duration,
+          ),
+        );
+      }
     } catch (_) {}
   }
 
@@ -2129,6 +2158,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     if (_isDisposing) return;
     _isDisposing = true;
     unawaited(PresenceService.instance.clearWatchingActivity());
+    unawaited(DiscordRpcService.instance.setBrowsing());
 
     // 1. Сначала отменяем все подписки на стримы
     for (final s in _subscriptions) {

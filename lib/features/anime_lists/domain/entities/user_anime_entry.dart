@@ -82,6 +82,7 @@ class UserAnimeEntry extends Equatable {
   final int lastEpisode;
   final int positionMs;
   final int? episodesTotal;
+  final double? score;
   final DateTime updatedAt;
 
   const UserAnimeEntry({
@@ -94,6 +95,7 @@ class UserAnimeEntry extends Equatable {
     this.lastEpisode = 1,
     this.positionMs = 0,
     this.episodesTotal,
+    this.score,
     required this.updatedAt,
   });
 
@@ -107,6 +109,7 @@ class UserAnimeEntry extends Equatable {
     int? lastEpisode,
     int? positionMs,
     int? episodesTotal,
+    double? score,
     DateTime? updatedAt,
   }) {
     return UserAnimeEntry(
@@ -119,6 +122,7 @@ class UserAnimeEntry extends Equatable {
       lastEpisode: lastEpisode ?? this.lastEpisode,
       positionMs: positionMs ?? this.positionMs,
       episodesTotal: episodesTotal ?? this.episodesTotal,
+      score: score ?? this.score,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -163,6 +167,7 @@ class UserAnimeEntry extends Equatable {
         'last_episode': lastEpisode,
         'position_ms': positionMs,
         'episodes_total': episodesTotal,
+        if (score != null) 'score': score,
         'updated_at': updatedAt.toIso8601String(),
       };
 
@@ -191,6 +196,7 @@ class UserAnimeEntry extends Equatable {
       lastEpisode: parsedEpisodes,
       positionMs: (json['position_ms'] as num?)?.toInt() ?? 0,
       episodesTotal: ((json['total_episodes'] ?? json['episodes_total']) as num?)?.toInt(),
+      score: (json['score'] as num?)?.toDouble(),
       updatedAt:
           DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
     );
@@ -207,6 +213,7 @@ class UserAnimeEntry extends Equatable {
         lastEpisode,
         positionMs,
         episodesTotal,
+        score,
         updatedAt,
       ];
 }

@@ -6,6 +6,7 @@ import '../../data/datasources/anixart_backup_parser.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
 import '../../services/import_poster_enricher.dart';
+import '../../../profile/domain/services/achievement_service.dart';
 import 'anime_list_state.dart';
 
 class AnimeListCubit extends Cubit<AnimeListState> {
@@ -97,6 +98,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     } else {
       updatedList.insert(0, entry);
     }
+    unawaited(AchievementService.instance.checkCollectorCount(updatedList.length));
     emit(state.copyWith(
       allEntries: updatedList,
       stats: UserAnimeStats.compute(updatedList),

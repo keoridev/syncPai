@@ -19,6 +19,7 @@ class DeepLinkService {
 
   InviteDetectedCallback? onFriendInviteDetected;
   void Function(String roomCode)? onRoomInviteDetected;
+  void Function(int animeId, int episodeNumber)? onAnimeEpisodeDetected;
 
   String? _pendingInviteCode;
   String? get pendingInviteCode => _pendingInviteCode;
@@ -72,6 +73,28 @@ class DeepLinkService {
         if (code.isNotEmpty) {
           onRoomInviteDetected?.call(code);
         }
+      }
+      return;
+    }
+
+    // 3. Переход к конкретной серии аниме:
+    //    syncpai://anime/{id}/ep/{num} или https://syncpai.app/open?anime={id}&ep={num}
+    final animeQuery = uri.queryParameters['anime'];
+    if (animeQuery != null) {
+      final animeId = int.tryParse(animeQuery);
+      final epNum = int.tryParse(uri.queryParameters['ep'] ?? '1') ?? 1;
+      if (animeId != null && animeId > 0) {
+        onAnimeEpisodeDetected?.call(animeId, epNum);
+      }
+      return;
+    }
+
+    final animeMatch = RegExp(r'/anime/(\d+)(?:/ep/(\d+))?').firstMatch(uriStr);
+    if (animeMatch != null) {
+      final animeId = int.tryParse(animeMatch.group(1) ?? '');
+      final epNum = int.tryParse(animeMatch.group(2) ?? '1') ?? 1;
+      if (animeId != null && animeId > 0) {
+        onAnimeEpisodeDetected?.call(animeId, epNum);
       }
     }
   }

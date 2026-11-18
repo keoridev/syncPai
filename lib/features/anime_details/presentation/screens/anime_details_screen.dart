@@ -12,8 +12,11 @@ import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
+import 'package:sync_pai/core/widgets/auth_gate_sheet.dart';
 import 'package:sync_pai/core/widgets/glass_container.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
+import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
@@ -1061,6 +1064,27 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     AnimeTitle title,
     EpisodeItem? currentEpisode,
   ) async {
+    final isUnreleased = title.episodes.isEmpty &&
+        (title.status.toLowerCase().contains('анонс') ||
+            (title.year != null && title.year! >= 2026));
+    if (isUnreleased) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ожидается выход — совместный просмотр станет доступен после релиза'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final authState = context.read<AuthCubit>().state;
+      if (authState is! Authenticated || authState.profile.isAnonymous) {
+        await AuthGateSheet.show(context);
+        return;
+      }
+    } catch (_) {}
+
     if (_isStartingWatchTogether) return;
     _isStartingWatchTogether = true;
     Future.delayed(const Duration(milliseconds: 600), () {

@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -28,11 +29,12 @@ import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
+import '../../domain/services/achievement_service.dart';
+import '../../domain/services/taste_compatibility_calculator.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
-import '../widgets/badge_details_sheet.dart';
 import '../widgets/friends_management_sheet.dart';
 import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
@@ -874,6 +876,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                                                   const SizedBox(height: 8),
                                                   _buildOwnerSupportPill(context, profile, currentAccentColor),
                                                 ],
+                                                if (!isCurrentUser && state.tasteCompatibility != null) ...[
+                                                  const SizedBox(height: 8),
+                                                  _buildTasteCompatibilityCard(
+                                                    context,
+                                                    state.tasteCompatibility!,
+                                                    currentAccentColor,
+                                                  ),
+                                                ],
                                                 const SizedBox(height: 8),
                                                 _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
                                                 const SizedBox(height: 8),
@@ -948,6 +958,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                                       child: _buildOwnerSupportPill(context, profile, currentAccentColor),
+                                    ),
+                                  ),
+                                if (!isCurrentUser && state.tasteCompatibility != null)
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                                      child: _buildTasteCompatibilityCard(
+                                        context,
+                                        state.tasteCompatibility!,
+                                        currentAccentColor,
+                                      ),
                                     ),
                                   ),
                                 // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
@@ -1080,6 +1101,114 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTasteCompatibilityCard(
+    BuildContext context,
+    TasteCompatibilityResult compat,
+    Color accent,
+  ) {
+    return Container(
+      key: const ValueKey('taste_compatibility_card'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12161F),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: accent, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  compat.hasEnoughData
+                      ? 'Совпадение вкусов: ${compat.percentage}%'
+                      : 'Мало общих тайтлов (${compat.sharedCount})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+              if (compat.hasEnoughData)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Общих: ${compat.sharedCount}',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (compat.hasEnoughData) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: (compat.percentage / 100.0).clamp(0.05, 1.0),
+                minHeight: 7,
+                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                valueColor: AlwaysStoppedAnimation<Color>(accent),
+              ),
+            ),
+            if (compat.highlights.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Вы оба высоко оценили «${compat.highlights.first.title}»',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: compat.highlights.map((h) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: h.posterUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: h.posterUrl,
+                              width: 38,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Container(
+                                width: 38,
+                                height: 52,
+                                color: Colors.white.withValues(alpha: 0.06),
+                              ),
+                            )
+                          : Container(
+                              width: 38,
+                              height: 52,
+                              color: Colors.white.withValues(alpha: 0.06),
+                              child: const Icon(Icons.movie_rounded, size: 16, color: Colors.white38),
+                            ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ],
       ),
     );
   }
@@ -1308,109 +1437,282 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildBadgesShowcaseCard(BuildContext context, Color accent) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final badges = SteamBadge.all.take(4).toList();
+    final profileState = _profileCubit.state;
+    final profileUnlocked = profileState.profile.unlockedBadges;
 
-    return _GlassCard(
-      accentColor: accent,
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ListenableBuilder(
+      listenable: AchievementService.instance,
+      builder: (context, _) {
+        final localUnlocked = profileState.isCurrentUser
+            ? AchievementService.instance.unlockedIds
+            : <String>{};
+        final unlockedSet = {...profileUnlocked, ...localUnlocked};
+        final unlockedCount = kSyncPaiAchievements
+            .where((b) => unlockedSet.contains(b.id))
+            .length;
+
+        return _GlassCard(
+          accentColor: accent,
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.military_tech_rounded, size: 16, color: accent),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'РЕДКИЕ ЗНАЧКИ И ДОСТИЖЕНИЯ',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${badges.length} шт.',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: badges.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 0.88,
-            ),
-            itemBuilder: (context, index) {
-              final b = badges[index];
-              return Tooltip(
-                message: '${b.title} (Ур. ${b.level})\n${b.description}',
-                child: InkWell(
-                  onTap: () => BadgeDetailsSheet.show(context, badge: b),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? scheme.surfaceContainerHighest.withValues(alpha: 0.5)
-                          : scheme.surfaceContainerLowest.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.07), width: 1.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(b.icon, color: accent, size: 24),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            width: 64,
-                            child: Text(
-                              b.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
+              Row(
+                children: [
+                  Icon(Icons.military_tech_rounded, size: 16, color: accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'ДОСТИЖЕНИЯ И ЗНАЧКИ',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                        color: scheme.onSurface,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$unlockedCount / ${kSyncPaiAchievements.length}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: kSyncPaiAchievements.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 1.05,
                 ),
-              );
-            },
+                itemBuilder: (context, index) {
+                  final b = kSyncPaiAchievements[index];
+                  final isUnlocked = unlockedSet.contains(b.id);
+                  return Tooltip(
+                    message: isUnlocked
+                        ? '${b.title}\n${b.hint}'
+                        : 'Закрыто: ${b.hint}',
+                    child: InkWell(
+                      onTap: () => _showBadgeProgressSheet(
+                        context,
+                        b,
+                        isUnlocked,
+                        profileState.profile.friendCode ?? profileState.profile.id,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isUnlocked
+                              ? b.color.withValues(alpha: isDark ? 0.14 : 0.10)
+                              : Colors.white.withValues(alpha: 0.03),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isUnlocked
+                                ? b.color.withValues(alpha: 0.45)
+                                : Colors.white.withValues(alpha: 0.07),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              b.icon,
+                              size: 24,
+                              color: isUnlocked
+                                  ? b.color
+                                  : scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              b.title,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: isUnlocked
+                                    ? scheme.onSurface
+                                    : scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showBadgeProgressSheet(
+    BuildContext context,
+    AchievementBadge badge,
+    bool isUnlocked,
+    String friendToken,
+  ) async {
+    final progress = await AchievementService.instance.getCurrentProgress(badge.id);
+    if (!context.mounted) return;
+    final target = badge.targetCount;
+    final ratio = isUnlocked ? 1.0 : (progress / target).clamp(0.0, 1.0);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF12161F),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isUnlocked
+                      ? badge.color.withValues(alpha: 0.45)
+                      : Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: badge.color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(badge.icon, color: badge.color, size: 26),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              badge.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: badge.color.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${badge.rarity} • ${isUnlocked ? 'Получено' : 'Закрыто'}',
+                                style: TextStyle(
+                                  color: badge.color,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    badge.hint,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Прогресс',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                      Text(
+                        isUnlocked
+                            ? '$target / $target ${badge.unitLabel}'
+                            : '$progress / $target ${badge.unitLabel}',
+                        style: TextStyle(
+                          color: badge.color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      minHeight: 7,
+                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      valueColor: AlwaysStoppedAnimation<Color>(badge.color),
+                    ),
+                  ),
+                  if (badge.id == 'bug_hunter' && !isUnlocked) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: badge.color,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.of(sheetCtx).pop();
+                        final uri = Uri.parse(
+                          'https://t.me/syncpai_bot?start=bug_${Uri.encodeComponent(friendToken)}',
+                        );
+                        launchUrl(uri, mode: LaunchMode.externalApplication);
+                      },
+                      icon: const Icon(Icons.bug_report_rounded, size: 18),
+                      label: const Text(
+                        'Сообщить о баге в Telegram',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

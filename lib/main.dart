@@ -23,6 +23,9 @@ import 'features/winter_theme/presentation/widgets/winter_snowfall_overlay.dart'
 import 'core/services/app_updater_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/device_performance_service.dart';
+import 'core/services/discord_rpc_service.dart';
+import 'core/widgets/achievement_toast_overlay.dart';
+import 'features/profile/domain/services/achievement_service.dart';
 import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
 
 void main() async {
@@ -101,6 +104,10 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
     _initDeepLinks();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppUpdaterService.instance.checkForUpdates();
+      if (!kIsWeb && Platform.isWindows) {
+        DiscordRpcService.instance.init();
+      }
+      AchievementService.instance.init();
     });
   }
 
@@ -122,12 +129,20 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
       }
     };
 
+    DeepLinkService.instance.onAnimeEpisodeDetected = (animeId, epNum) {
+      final navContext = rootNavigatorKey.currentContext;
+      if (navContext != null) {
+        appRouter.push('/details?id=$animeId&ep=$epNum');
+      }
+    };
+
     DeepLinkService.instance.init();
   }
 
   @override
   void dispose() {
     DeepLinkService.instance.dispose();
+    DiscordRpcService.instance.disposeService();
     super.dispose();
   }
 
@@ -165,6 +180,7 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
                           child ?? const SizedBox.shrink(),
                           const GlobalMiniPlayerOverlay(),
                           const SupportPromptOverlay(),
+                          const AchievementToastOverlay(),
                           const Positioned.fill(
                             child: WinterSnowfallOverlay(),
                           ),

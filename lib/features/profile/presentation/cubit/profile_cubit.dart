@@ -2,10 +2,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../app/di/injection.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
+import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../domain/services/taste_compatibility_calculator.dart';
 import 'profile_state.dart';
 
 class ProfileCubit extends Cubit<ProfileState> {
@@ -164,17 +167,18 @@ class ProfileCubit extends Cubit<ProfileState> {
           totalMinutesWatched: 8352,
         );
 
+        List<UserAnimeEntry> friendEntries = const [];
         if (client != null) {
           try {
             final List<dynamic> listRows = await client
                 .from('user_anime_lists')
-                .select()
+                .select('anime_id, status, score, title, poster_url')
                 .eq('user_id', targetUserId);
             if (listRows.isNotEmpty) {
-              final entries = listRows
+              friendEntries = listRows
                   .map((e) => UserAnimeEntry.fromJson(e as Map<String, dynamic>))
                   .toList();
-              friendStats = UserAnimeStats.compute(entries);
+              friendStats = UserAnimeStats.compute(friendEntries);
             }
           } catch (e) {
             debugPrint('Error getting friend anime lists: $e');
@@ -182,11 +186,26 @@ class ProfileCubit extends Cubit<ProfileState> {
         }
         if (isClosed) return;
 
+        List<UserAnimeEntry> myEntries = const [];
+        if (getIt.isRegistered<AnimeListCubit>()) {
+          myEntries = getIt<AnimeListCubit>().state.allEntries;
+        }
+        if (myEntries.isEmpty && animeListRepository != null) {
+          try {
+            myEntries = await animeListRepository!.getAllEntries();
+          } catch (_) {}
+        }
+        final compatibility = TasteCompatibilityCalculator.calculate(
+          myEntries,
+          friendEntries,
+        );
+
         _safeEmit(state.copyWith(
           status: ProfileStatus.loaded,
           profile: friendProfile,
           stats: friendStats,
           isCurrentUser: false,
+          tasteCompatibility: compatibility,
         ));
       } catch (e) {
         if (isClosed) return;

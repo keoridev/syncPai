@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/services/app_updater_service.dart';
 import '../../../../core/services/device_performance_service.dart';
+import '../../../../core/services/discord_rpc_service.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -1377,6 +1379,42 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     onTap: () => _clearCache(context),
                   ),
+                  if (Platform.isWindows) ...[
+                    _buildDivider(),
+                    ListenableBuilder(
+                      listenable: DiscordRpcService.instance,
+                      builder: (context, _) {
+                        return SwitchListTile(
+                          key: const ValueKey('settings_discord_rpc_switch'),
+                          secondary: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF5865F2).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.sports_esports_rounded,
+                              color: Color(0xFF5865F2),
+                              size: 20,
+                            ),
+                          ),
+                          title: const Text(
+                            'Discord Rich Presence',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                          subtitle: const Text(
+                            'Показывать текущее аниме, серию и комнату в статусе Discord',
+                            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                          ),
+                          value: DiscordRpcService.instance.isEnabled,
+                          onChanged: (val) {
+                            HapticFeedback.lightImpact();
+                            DiscordRpcService.instance.setEnabled(val);
+                          },
+                        );
+                      },
+                    ),
+                  ],
                 ]),
 
                 // 4. Секция "Аккаунт"
@@ -1527,6 +1565,42 @@ class _SettingsScreenState extends State<SettingsScreen>
                               }
                             }
                           },
+                  ),
+                  _buildDivider(),
+                  ListTile(
+                    key: const ValueKey('settings_bug_report_tile'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.bug_report_rounded,
+                        color: Color(0xFF00E676),
+                        size: 20,
+                      ),
+                    ),
+                    title: const Text(
+                      'Нашли баг? Получите бейдж «Кодинг-хакер»',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Отправить репорт в @syncpai_bot (v$_appVersion • ${Platform.isWindows ? 'Windows' : 'Android'})',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.open_in_new_rounded, color: AppColors.textSecondary, size: 18),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      final rawCode = profile.friendCode?.trim();
+                      final token = (rawCode != null && rawCode.isNotEmpty)
+                          ? rawCode
+                          : profile.id;
+                      final uri = Uri.parse(
+                        'https://t.me/syncpai_bot?start=bug_${Uri.encodeComponent(token)}',
+                      );
+                      launchUrl(uri, mode: LaunchMode.externalApplication);
+                    },
                   ),
                 ]),
 

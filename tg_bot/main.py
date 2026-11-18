@@ -6,8 +6,9 @@ from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
-from handlers import start_profile, support_payments, downloads, admin
+from handlers import start_profile, support_payments, downloads, admin, inline_invite, bug_report
 from services.card_renderer import invalidate_card_cache
+from services.episode_notifier import check_and_notify_new_episodes
 from services.expiration_worker import check_expired_supporters
 
 logging.basicConfig(
@@ -40,8 +41,10 @@ async def main():
     dp.include_router(support_payments.router)
     dp.include_router(downloads.router)
     dp.include_router(admin.router)
+    dp.include_router(inline_invite.router)
+    dp.include_router(bug_report.router)
 
-    # Настройка APScheduler для фонового воркера проверки истекших подписок
+    # Настройка APScheduler для фонового воркера проверки истекших подписок и новых серий
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         check_expired_supporters,
@@ -49,6 +52,13 @@ async def main():
         hours=24,
         kwargs={"bot": bot},
         id="supporter_expiration_check",
+    )
+    scheduler.add_job(
+        check_and_notify_new_episodes,
+        trigger="interval",
+        minutes=20,
+        kwargs={"bot": bot},
+        id="new_episode_notifier",
     )
     scheduler.start()
     logger.info("Background expiration scheduler started (24h interval).")

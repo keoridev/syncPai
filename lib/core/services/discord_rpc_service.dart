@@ -1,171 +1,335 @@
-import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Сервис Discord Rich Presence (RPC) на чистом Dart без тяжелых сторонних нативных библиотек.
-/// Отображает статус пользователя в Discord: «Смотрит [Аниме] в SyncPai (В комнате 2/2)»
-class DiscordRpcService {
-  static final DiscordRpcService instance = DiscordRpcService._internal();
-  DiscordRpcService._internal();
+import '../../app/di/injection.dart';
 
-  static const String defaultClientId = '1224859038291071000'; // SyncPai App ID
-  Socket? _socket;
-  bool _isConnected = false;
-  Timer? _reconnectTimer;
+typedef _CreateFileANative = ffi.IntPtr Function(
+  ffi.Pointer<ffi.Uint8> lpFileName,
+  ffi.Uint32 dwDesiredAccess,
+  ffi.Uint32 dwShareMode,
+  ffi.Pointer<ffi.Void> lpSecurityAttributes,
+  ffi.Uint32 dwCreationDisposition,
+  ffi.Uint32 dwFlagsAndAttributes,
+  ffi.IntPtr hTemplateFile,
+);
+typedef _CreateFileADart = int Function(
+  ffi.Pointer<ffi.Uint8> lpFileName,
+  int dwDesiredAccess,
+  int dwShareMode,
+  ffi.Pointer<ffi.Void> lpSecurityAttributes,
+  int dwCreationDisposition,
+  int dwFlagsAndAttributes,
+  int hTemplateFile,
+);
 
-  bool get isConnected => _isConnected;
+typedef _WriteFileNative = ffi.Int32 Function(
+  ffi.IntPtr hFile,
+  ffi.Pointer<ffi.Uint8> lpBuffer,
+  ffi.Uint32 nNumberOfBytesToWrite,
+  ffi.Pointer<ffi.Uint32> lpNumberOfBytesWritten,
+  ffi.Pointer<ffi.Void> lpOverlapped,
+);
+typedef _WriteFileDart = int Function(
+  int hFile,
+  ffi.Pointer<ffi.Uint8> lpBuffer,
+  int nNumberOfBytesToWrite,
+  ffi.Pointer<ffi.Uint32> lpNumberOfBytesWritten,
+  ffi.Pointer<ffi.Void> lpOverlapped,
+);
 
-  /// Инициализация и подключение к локальному сокету Discord IPC
-  Future<void> initialize({String clientId = defaultClientId}) async {
-    if (kIsWeb) return;
-    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-      // На мобильных платформах (Android/iOS) Discord не предоставляет локальный IPC сокет
-      return;
-    }
+typedef _CloseHandleNative = ffi.Int32 Function(ffi.IntPtr hObject);
+typedef _CloseHandleDart = int Function(int hObject);
 
+/// Лёгкий Windows-сервис Discord Rich Presence через локальный Named Pipe (`discord-ipc-0..9`).
+/// Работает без внешних DLL и безопасно отключается, если Discord не установлен или закрыт.
+class DiscordRpcService extends ChangeNotifier {
+  static final DiscordRpcService instance = DiscordRpcService._();
+  DiscordRpcService._();
+
+  static const String _prefEnabledKey = 'settings_discord_rpc_enabled';
+  static const String _clientId = '1310000000000000000';
+  static const int _invalidHandle = -1;
+
+  bool _isEnabled = true;
+  bool get isEnabled => _isEnabled;
+
+  int _pipeHandle = _invalidHandle;
+  bool _handshakeSent = false;
+  int _nonce = 0;
+
+  ffi.DynamicLibrary? _kernel32;
+  _CreateFileADart? _createFileA;
+  _WriteFileDart? _writeFile;
+  _CloseHandleDart? _closeHandle;
+
+  bool get _isWindows => !kIsWeb && Platform.isWindows;
+
+  Future<void> init() async {
+    if (!_isWindows) return;
     try {
-      await _connectIpc(clientId);
-    } catch (_) {
-      // Discord не запущен или сокет недоступен
+      final prefs = getIt.isRegistered<SharedPreferences>()
+          ? getIt<SharedPreferences>()
+          : await SharedPreferences.getInstance();
+      _isEnabled = prefs.getBool(_prefEnabledKey) ?? true;
+      notifyListeners();
+    } catch (_) {}
+
+    if (_isEnabled) {
+      await setBrowsing();
     }
   }
 
-  Future<void> _connectIpc(String clientId) async {
-    if (_isConnected) return;
+  Future<void> setEnabled(bool value) async {
+    _isEnabled = value;
+    notifyListeners();
+    try {
+      final prefs = getIt.isRegistered<SharedPreferences>()
+          ? getIt<SharedPreferences>()
+          : await SharedPreferences.getInstance();
+      await prefs.setBool(_prefEnabledKey, value);
+    } catch (_) {}
 
-    for (int i = 0; i < 10; i++) {
-      try {
-        if (Platform.isWindows) {
-          // Windows: Named Pipe
-          final pipeFile = File('\\\\.\\pipe\\discord-ipc-$i');
-          if (await pipeFile.exists()) {
-            // В Windows named pipe открывается через специальный сокет или поток
-            _isConnected = true;
-            _sendHandshake(clientId);
-            return;
-          }
-        } else {
-          // Linux / macOS: UNIX domain socket
-          final tempDir = Platform.environment['XDG_RUNTIME_DIR'] ??
-              Platform.environment['TMPDIR'] ??
-              Platform.environment['TMP'] ??
-              Platform.environment['TEMP'] ??
-              '/tmp';
-          final socketPath = '$tempDir/discord-ipc-$i';
-          final sock = await Socket.connect(
-            InternetAddress(socketPath, type: InternetAddressType.unix),
-            0,
-            timeout: const Duration(milliseconds: 500),
-          );
-          _socket = sock;
-          _isConnected = true;
-          _sendHandshake(clientId);
-          return;
-        }
-      } catch (_) {
-        continue;
-      }
+    if (!value) {
+      await clear();
+    } else {
+      await setBrowsing();
     }
   }
 
-  void _sendHandshake(String clientId) {
-    final payload = jsonEncode({
-      'v': 1,
-      'client_id': clientId,
+  Future<void> setBrowsing() async {
+    await _sendActivity({
+      'details': 'Выбирает аниме в SyncPai',
+      'state': 'Каталог • Windows Desktop',
+      'assets': {
+        'large_image': 'syncpai_logo',
+        'large_text': 'SyncPai',
+      },
     });
-    _sendFrame(0, payload); // Opcode 0 = Handshake
   }
 
-  /// Обновление статуса в Discord
-  Future<void> updatePresence({
-    required String animeTitle,
+  Future<void> setWatchingSolo({
+    required String title,
     required int episodeNumber,
-    String? roomCode,
-    int currentPeers = 1,
-    int maxPeers = 2,
+    int? totalEpisodes,
+    String? posterUrl,
     bool isPaused = false,
     Duration? position,
     Duration? duration,
   }) async {
-    final isRoom = roomCode != null && roomCode.isNotEmpty;
-    final stateStr = isRoom
-        ? 'Серия $episodeNumber • Комната $roomCode ($currentPeers/$maxPeers)'
-        : 'Серия $episodeNumber • Одиночный просмотр';
-
-    final detailsStr = isPaused ? '⏸ Пауза: $animeTitle' : '▶ Смотрит: $animeTitle';
+    final epState = isPaused
+        ? 'На паузе • Серия $episodeNumber'
+        : (totalEpisodes != null && totalEpisodes > 0
+            ? 'Серия $episodeNumber из $totalEpisodes'
+            : 'Серия $episodeNumber');
 
     final activity = <String, dynamic>{
-      'details': detailsStr,
-      'state': stateStr,
+      'details': title,
+      'state': epState,
       'assets': {
-        'large_image': 'syncpai_logo',
-        'large_text': 'SyncPai - Синхронный стриминг аниме',
-        'small_image': isPaused ? 'pause_icon' : 'play_icon',
-        'small_text': isPaused ? 'На паузе' : 'Воспроизведение',
+        'large_image': (posterUrl != null && posterUrl.startsWith('https://'))
+            ? posterUrl
+            : 'syncpai_logo',
+        'large_text': title,
       },
     };
 
-    if (isRoom) {
-      activity['party'] = {
-        'id': roomCode,
-        'size': [currentPeers, maxPeers],
+    if (!isPaused &&
+        duration != null &&
+        duration > Duration.zero &&
+        position != null) {
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final remainingSec = (duration - position).inSeconds.clamp(0, 86400);
+      activity['timestamps'] = {
+        'start': nowSec - position.inSeconds.clamp(0, 86400),
+        'end': nowSec + remainingSec,
       };
-      activity['secrets'] = {
-        'join': 'syncpai://room/$roomCode',
-      };
-      activity['buttons'] = [
-        {
-          'label': 'Присоединиться к просмотру',
-          'url': 'https://syncpai.app/room/$roomCode',
-        }
-      ];
     }
 
-    final framePayload = jsonEncode({
-      'cmd': 'SET_ACTIVITY',
-      'args': {
-        'pid': pid,
-        'activity': activity,
-      },
-      'nonce': DateTime.now().millisecondsSinceEpoch.toString(),
-    });
-
-    _sendFrame(1, framePayload); // Opcode 1 = Frame
+    await _sendActivity(activity);
   }
 
-  /// Очистка статуса в Discord
-  void clearPresence() {
-    final framePayload = jsonEncode({
-      'cmd': 'SET_ACTIVITY',
-      'args': {
-        'pid': pid,
-        'activity': null,
+  Future<void> setWatchingTogether({
+    required String title,
+    required int episodeNumber,
+    required String roomCode,
+    required String roomId,
+    required int participantsCount,
+    String? posterUrl,
+  }) async {
+    await _sendActivity({
+      'details': title,
+      'state': 'Смотрит вместе • Серия $episodeNumber (Код: $roomCode)',
+      'assets': {
+        'large_image': (posterUrl != null && posterUrl.startsWith('https://'))
+            ? posterUrl
+            : 'syncpai_logo',
+        'large_text': title,
       },
-      'nonce': DateTime.now().millisecondsSinceEpoch.toString(),
+      'party': {
+        'id': roomId,
+        'size': [participantsCount.clamp(1, 10), 10],
+      },
     });
-    _sendFrame(1, framePayload);
   }
 
-  void _sendFrame(int opcode, String payload) {
-    if (!_isConnected || _socket == null) return;
+  Future<void> clear() async {
+    if (!_isWindows || _pipeHandle == _invalidHandle) return;
+    _writeIpcFrame(1, {
+      'cmd': 'SET_ACTIVITY',
+      'args': {'pid': pid, 'activity': null},
+      'nonce': '${++_nonce}',
+    });
+    _closePipe();
+  }
+
+  void disposeService() {
+    _closePipe();
+  }
+
+  Future<void> _sendActivity(Map<String, dynamic> activity) async {
+    if (!_isWindows || !_isEnabled) return;
     try {
-      final bytes = utf8.encode(payload);
-      final header = ByteData(8);
-      header.setInt32(0, opcode, Endian.little);
-      header.setInt32(4, bytes.length, Endian.little);
-
-      _socket?.add(header.buffer.asUint8List());
-      _socket?.add(bytes);
+      if (!_ensureConnected()) return;
+      final ok = _writeIpcFrame(1, {
+        'cmd': 'SET_ACTIVITY',
+        'args': {
+          'pid': pid,
+          'activity': activity,
+        },
+        'nonce': '${++_nonce}',
+      });
+      if (!ok) {
+        _closePipe();
+      }
     } catch (_) {
-      _isConnected = false;
+      _closePipe();
     }
   }
 
-  void dispose() {
-    _reconnectTimer?.cancel();
-    _socket?.destroy();
-    _isConnected = false;
+  bool _ensureConnected() {
+    if (_pipeHandle != _invalidHandle && _handshakeSent) return true;
+    _initWin32();
+    if (_createFileA == null || _writeFile == null || _closeHandle == null) {
+      return false;
+    }
+
+    for (int i = 0; i < 10; i++) {
+      final pathBytes = utf8.encode('\\\\.\\pipe\\discord-ipc-$i\x00');
+      final ptr = _allocBytes(pathBytes);
+      if (ptr == null) return false;
+      final handle = _createFileA!(
+        ptr,
+        0xC0000000, // GENERIC_READ | GENERIC_WRITE
+        0,
+        ffi.nullptr,
+        3, // OPEN_EXISTING
+        0,
+        0,
+      );
+      _freeBytes(ptr);
+      if (handle != _invalidHandle && handle != 0) {
+        _pipeHandle = handle;
+        _handshakeSent = _writeIpcFrame(0, {'v': 1, 'client_id': _clientId});
+        if (_handshakeSent) return true;
+        _closePipe();
+      }
+    }
+    return false;
+  }
+
+  void _initWin32() {
+    if (_kernel32 != null) return;
+    try {
+      _kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
+      _createFileA = _kernel32!
+          .lookupFunction<_CreateFileANative, _CreateFileADart>('CreateFileA');
+      _writeFile = _kernel32!
+          .lookupFunction<_WriteFileNative, _WriteFileDart>('WriteFile');
+      _closeHandle = _kernel32!
+          .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
+    } catch (_) {}
+  }
+
+  bool _writeIpcFrame(int opcode, Map<String, dynamic> payload) {
+    if (_pipeHandle == _invalidHandle || _writeFile == null) return false;
+    final body = utf8.encode(jsonEncode(payload));
+    final packet = ByteData(8 + body.length);
+    packet.setUint32(0, opcode, Endian.little);
+    packet.setUint32(4, body.length, Endian.little);
+    final bytes = packet.buffer.asUint8List();
+    bytes.setRange(8, 8 + body.length, body);
+
+    final ptr = _allocBytes(bytes);
+    final writtenPtr = _allocUint32();
+    if (ptr == null || writtenPtr == null) {
+      if (ptr != null) _freeBytes(ptr);
+      if (writtenPtr != null) _freeBytes(writtenPtr);
+      return false;
+    }
+    try {
+      final res = _writeFile!(
+        _pipeHandle,
+        ptr,
+        bytes.length,
+        writtenPtr,
+        ffi.nullptr,
+      );
+      return res != 0;
+    } finally {
+      _freeBytes(ptr);
+      _freeBytes(writtenPtr);
+    }
+  }
+
+  void _closePipe() {
+    if (_pipeHandle != _invalidHandle && _closeHandle != null) {
+      try {
+        _closeHandle!(_pipeHandle);
+      } catch (_) {}
+    }
+    _pipeHandle = _invalidHandle;
+    _handshakeSent = false;
+  }
+
+  // Простой выделятель через HeapAlloc / HeapFree из kernel32 (без пакета package:ffi)
+  ffi.Pointer<ffi.Uint8>? _allocBytes(List<int> data) {
+    final k32 = _kernel32;
+    if (k32 == null) return null;
+    try {
+      final getProcessHeap =
+          k32.lookupFunction<ffi.IntPtr Function(), int Function()>('GetProcessHeap');
+      final heapAlloc = k32.lookupFunction<
+          ffi.Pointer<ffi.Uint8> Function(ffi.IntPtr, ffi.Uint32, ffi.IntPtr),
+          ffi.Pointer<ffi.Uint8> Function(int, int, int)>('HeapAlloc');
+      final heap = getProcessHeap();
+      final ptr = heapAlloc(heap, 0x08, data.length);
+      if (ptr == ffi.nullptr) return null;
+      ptr.asTypedList(data.length).setAll(0, data);
+      return ptr;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ffi.Pointer<ffi.Uint32>? _allocUint32() {
+    final ptr = _allocBytes(const [0, 0, 0, 0]);
+    return ptr?.cast<ffi.Uint32>();
+  }
+
+  void _freeBytes(ffi.Pointer<ffi.NativeType> ptr) {
+    final k32 = _kernel32;
+    if (k32 == null || ptr == ffi.nullptr) return;
+    try {
+      final getProcessHeap =
+          k32.lookupFunction<ffi.IntPtr Function(), int Function()>('GetProcessHeap');
+      final heapFree = k32.lookupFunction<
+          ffi.Int32 Function(ffi.IntPtr, ffi.Uint32, ffi.Pointer<ffi.Void>),
+          int Function(int, int, ffi.Pointer<ffi.Void>)>('HeapFree');
+      heapFree(getProcessHeap(), 0, ptr.cast<ffi.Void>());
+    } catch (_) {}
   }
 }
-

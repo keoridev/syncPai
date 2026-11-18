@@ -5,6 +5,25 @@ import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../player/domain/entities/player_quality.dart';
 
+/// Эфемерная реакция в Watch-Together (передаётся через Realtime Broadcast без записи в БД).
+class SyncReactionEvent {
+  final String id;
+  final String roomCode;
+  final String sender;
+  final String emoji;
+  final String label;
+  final DateTime timestamp;
+
+  const SyncReactionEvent({
+    required this.id,
+    required this.roomCode,
+    required this.sender,
+    required this.emoji,
+    required this.label,
+    required this.timestamp,
+  });
+}
+
 abstract class SyncRoomRepository {
   /// Создать новую комнату совместного просмотра (Я хост)
   Future<SyncRoom> createRoom({
@@ -138,6 +157,18 @@ abstract class SyncRoomRepository {
     EpisodeItem? episode,
     String sender = 'Хост',
   }) async => null;
+
+  /// Поток эфемерных реакций комнаты (Supabase Realtime Broadcast, без БД).
+  Stream<SyncReactionEvent> subscribeToReactions(String roomCode) =>
+      const Stream.empty();
+
+  /// Отправка эфемерной реакции через Realtime Broadcast (zero-DB).
+  Future<void> sendFloatingReaction({
+    required String roomCode,
+    required String sender,
+    required String emoji,
+    required String label,
+  }) async {}
 
   /// QUICK_PHRASE: отправка шортката быстрой фразы (с авто-показом плашки на 3 секунды)
   Future<void> sendQuickPhrase({

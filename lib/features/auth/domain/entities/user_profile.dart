@@ -34,6 +34,7 @@ class UserProfile extends Equatable {
   final SupporterTier supporterTier;
   final int? telegramId;
   final String? telegramUsername;
+  final List<String> unlockedBadges;
   final DateTime createdAt;
 
   const UserProfile({
@@ -65,6 +66,7 @@ class UserProfile extends Equatable {
     this.supporterTier = SupporterTier.free,
     this.telegramId,
     this.telegramUsername,
+    this.unlockedBadges = const [],
     required this.createdAt,
   });
 
@@ -199,6 +201,7 @@ class UserProfile extends Equatable {
     SupporterTier? supporterTier,
     int? telegramId,
     String? telegramUsername,
+    List<String>? unlockedBadges,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -230,6 +233,7 @@ class UserProfile extends Equatable {
       supporterTier: supporterTier ?? this.supporterTier,
       telegramId: telegramId ?? this.telegramId,
       telegramUsername: telegramUsername ?? this.telegramUsername,
+      unlockedBadges: unlockedBadges ?? this.unlockedBadges,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -265,6 +269,7 @@ class UserProfile extends Equatable {
         'supporter_tier': supporterTier.id,
         'telegram_id': telegramId,
         'telegram_username': telegramUsername,
+        'unlocked_badges': unlockedBadges,
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -342,6 +347,10 @@ class UserProfile extends Equatable {
       supporterTier: SupporterTier.fromId(json['supporter_tier'] as String?),
       telegramId: (json['telegram_id'] as num?)?.toInt(),
       telegramUsername: json['telegram_username'] as String?,
+      unlockedBadges: (json['unlocked_badges'] as List?)
+              ?.map((e) => '$e')
+              .toList() ??
+          const [],
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -376,6 +385,7 @@ class UserProfile extends Equatable {
         supporterTier,
         telegramId,
         telegramUsername,
+        unlockedBadges,
         createdAt,
       ];
 }

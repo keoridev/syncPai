@@ -51,6 +51,7 @@ def _linked_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
         [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="🐞 Сообщить о баге", callback_data="report_bug")],
     ])
 
 
@@ -59,6 +60,7 @@ def _guest_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
         [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="🐞 Сообщить о баге", callback_data="report_bug")],
     ])
 
 
@@ -68,8 +70,15 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     tg_id = message.from_user.id
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
-    # Проверка deep link: /start link_SP-XXXXXX
+    # Проверка deep link: /start link_SP-XXXXXX или /start bug_SP-XXXXXX
     args = (command.args or "").strip()
+    if args.startswith("bug_"):
+        from handlers.bug_report import start_bug_report_flow
+
+        friend_token = args.removeprefix("bug_").strip()
+        await start_bug_report_flow(message, state, friend_token=friend_token)
+        return
+
     if args.startswith("link_"):
         link_token = args.removeprefix("link_").strip()
         if link_token:

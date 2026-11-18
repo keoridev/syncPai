@@ -292,6 +292,10 @@ class AuthRepositoryImpl implements AuthRepository {
               true
           ? cloudRow!['telegram_username'] as String
           : local.telegramUsername,
+      unlockedBadges: (cloudRow?['unlocked_badges'] as List?)
+              ?.map((e) => '$e')
+              .toList() ??
+          local.unlockedBadges,
       createdAt: DateTime.tryParse(cloudRow?['created_at'] as String? ?? '') ??
           DateTime.now(),
     );

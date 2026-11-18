@@ -20,9 +20,12 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
   Map<String, SyncRoom> get _rooms => _sharedRooms;
   final Map<String, StreamController<SyncEvent>> _roomControllers = {};
   final Map<String, StreamController<SyncPacket>> _packetControllers = {};
+  final Map<String, StreamController<SyncReactionEvent>> _reactionControllers = {};
   final Map<String, StreamController<List<PeerPresence>>> _presenceControllers = {};
   final Map<String, Map<String, PeerPresence>> _presences = {};
   final Map<String, RealtimeChannel> _supabaseChannels = {};
+  final Map<String, Timer> _reconnectTimers = {};
+  final Set<String> _reconnectingPins = {};
   final Map<String, List<void Function(double timeSec, bool isPlaying, int episodeIndex)>>
       _playbackSyncCallbacks = {};
   final Random _random = Random();
@@ -520,6 +523,18 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       _getOrCreatePacketController(pinKey).add(packet);
     });
 
+    channel.onBroadcast(event: 'reaction', callback: (payload) {
+      final reaction = SyncReactionEvent(
+        id: '${payload['id'] ?? DateTime.now().microsecondsSinceEpoch}',
+        roomCode: pinKey,
+        sender: '${payload['sender'] ?? 'Участник'}',
+        emoji: '${payload['emoji'] ?? '🔥'}',
+        label: '${payload['label'] ?? ''}',
+        timestamp: DateTime.now(),
+      );
+      _getOrCreateReactionController(pinKey).add(reaction);
+    });
+
     // Supabase Realtime Presence listeners
     channel.onPresenceSync((_) {
       _syncSupabasePresence(pinKey, channel);
@@ -531,8 +546,45 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       _syncSupabasePresence(pinKey, channel);
     });
 
-    channel.subscribe();
     _supabaseChannels[pinKey] = channel;
+    channel.subscribe((status, [error]) {
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _reconnectTimers.remove(pinKey)?.cancel();
+        if (_reconnectingPins.remove(pinKey)) {
+          debugPrint('[WatchTogether] Канал $pinKey переподключён, синхронизируем состояние');
+          unawaited(getRoomData(pinKey).then((row) {
+            if (row == null) return;
+            final timeSec = (row['current_time_sec'] as num?)?.toDouble() ?? 0.0;
+            final isPlaying = row['is_playing'] == true;
+            final episodeIdx = (row['episode_index'] as num?)?.toInt() ?? 0;
+            final cbs = _playbackSyncCallbacks[pinKey];
+            if (cbs != null) {
+              for (final cb in List.of(cbs)) {
+                cb(timeSec, isPlaying, episodeIdx);
+              }
+            }
+          }).catchError((_) {}));
+        }
+      } else if (status == RealtimeSubscribeStatus.channelError ||
+          status == RealtimeSubscribeStatus.timedOut ||
+          status == RealtimeSubscribeStatus.closed) {
+        // Авто-переподключение при обрыве интернета, если пользователь не вышел сам
+        if (_supabaseChannels.containsKey(pinKey) &&
+            !(_reconnectTimers[pinKey]?.isActive ?? false)) {
+          _reconnectingPins.add(pinKey);
+          _reconnectTimers[pinKey] = Timer(const Duration(seconds: 2), () {
+            if (!_supabaseChannels.containsKey(pinKey)) return;
+            final dead = _supabaseChannels.remove(pinKey);
+            if (dead != null) {
+              try {
+                _supabase?.removeChannel(dead);
+              } catch (_) {}
+            }
+            _initSupabaseChannel(pinKey);
+          });
+        }
+      }
+    });
     return channel;
   }
 
@@ -1618,6 +1670,59 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     ));
   }
 
+  StreamController<SyncReactionEvent> _getOrCreateReactionController(String roomCode) {
+    final pinKey = extractPinCode(roomCode);
+    return _reactionControllers.putIfAbsent(
+      pinKey,
+      () => StreamController<SyncReactionEvent>.broadcast(),
+    );
+  }
+
+  @override
+  Stream<SyncReactionEvent> subscribeToReactions(String roomCode) {
+    final pinKey = extractPinCode(roomCode);
+    _initSupabaseChannel(pinKey);
+    return _getOrCreateReactionController(pinKey).stream;
+  }
+
+  @override
+  Future<void> sendFloatingReaction({
+    required String roomCode,
+    required String sender,
+    required String emoji,
+    required String label,
+  }) async {
+    final pinKey = extractPinCode(roomCode);
+    final id = '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(9999)}';
+    final event = SyncReactionEvent(
+      id: id,
+      roomCode: pinKey,
+      sender: sender,
+      emoji: emoji,
+      label: label,
+      timestamp: DateTime.now(),
+    );
+    // Локальное отображение мгновенно (<1ms)
+    _getOrCreateReactionController(pinKey).add(event);
+
+    final channel = _supabaseChannels[pinKey] ?? _initSupabaseChannel(pinKey);
+    if (channel != null) {
+      try {
+        await channel.sendBroadcastMessage(
+          event: 'reaction',
+          payload: {
+            'id': id,
+            'sender': sender,
+            'emoji': emoji,
+            'label': label,
+          },
+        );
+      } catch (e) {
+        debugPrint('[WatchTogether] Reaction broadcast error: $e');
+      }
+    }
+  }
+
   @override
   Future<void> leaveRoom(String roomCode) async {
     final pinKey = extractPinCode(roomCode);
@@ -1639,6 +1744,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
       } catch (_) {}
     }
 
+    _reconnectTimers.remove(pinKey)?.cancel();
+    _reconnectingPins.remove(pinKey);
     final sbChannel = _supabaseChannels.remove(pinKey);
     if (sbChannel != null && _supabase != null) {
       try {
@@ -1694,6 +1801,8 @@ class SyncRoomRepositoryImpl implements SyncRoomRepository {
     }
 
     // 3. Отписка и полная очистка локального состояния
+    _reconnectTimers.remove(pinKey)?.cancel();
+    _reconnectingPins.remove(pinKey);
     final sbChannel = _supabaseChannels.remove(pinKey);
     if (sbChannel != null && _supabase != null) {
       try {

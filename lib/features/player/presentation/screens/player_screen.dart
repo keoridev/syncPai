@@ -18,6 +18,7 @@ import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
+import 'package:sync_pai/features/sync_room/presentation/widgets/reaction_overlay_layer.dart';
 import 'package:sync_pai/features/sync_room/services/active_room_service.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/winter_theme/domain/services/winter_theme_service.dart';
@@ -70,6 +71,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   final GlobalKey _videoWidgetKey = GlobalKey(debugLabel: 'PersistentSyncPaiVideoSurface');
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
+  bool _watchReactionsEnabled = true;
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
   int? _dismissedOpeningEpisode;
@@ -729,13 +731,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
                 if (isDesktopOS) {
-                  return DesktopPlayerLayout(
+                  final desktop = DesktopPlayerLayout(
                     cubit: _cubit,
                     state: state,
                     videoController: _videoController,
                     onBack: _handleExit,
                     onSaveProgress: _saveWatchProgress,
                     skipOverlay: _buildSkipOverlay(state),
+                  );
+                  if (!state.isSyncRoom || state.roomCode == null) {
+                    return desktop;
+                  }
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      desktop,
+                      ..._buildSyncRoomReactionWidgets(state),
+                    ],
                   );
                 }
 
@@ -1037,6 +1049,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   // Плавающая кнопка пропуска опенинга и эндинга + таймер обратного отсчета до эндинга (рендерится поверх контролов)
                   _buildSkipOverlay(state),
 
+                  if (state.isSyncRoom && state.roomCode != null)
+                    ..._buildSyncRoomReactionWidgets(state),
+
                   // Ненавязчивая плавающая иконка замка при активной блокировке
                   if (state.isScreenLocked)
                     Positioned(
@@ -1169,6 +1184,37 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   ),
 );
 }
+
+  List<Widget> _buildSyncRoomReactionWidgets(PlayerState state) {
+    final roomCode = state.roomCode;
+    if (roomCode == null || roomCode.isEmpty) return const [];
+    final rawPeer = state.peerName?.trim() ?? '';
+    final senderName = rawPeer.isNotEmpty ? rawPeer : 'Участник';
+    return [
+      Positioned.fill(
+        child: ReactionOverlayLayer(
+          roomCode: roomCode,
+          enabled: _watchReactionsEnabled,
+        ),
+      ),
+      if (state.areControlsVisible)
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 84,
+          child: Center(
+            child: ReactionDockBar(
+              roomCode: roomCode,
+              senderName: senderName,
+              reactionsEnabled: _watchReactionsEnabled,
+              onToggleEnabled: () {
+                setState(() => _watchReactionsEnabled = !_watchReactionsEnabled);
+              },
+            ),
+          ),
+        ),
+    ];
+  }
 
   Widget _buildSkipOverlay(PlayerState state) {
     if (state.isScreenLocked || state.errorMessage != null) {

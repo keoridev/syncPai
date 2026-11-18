@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/auth_gate_sheet.dart';
 import '../../../../core/widgets/mascot/mascot_state.dart';
 import '../../../../core/widgets/mascot/sync_pai_mascot.dart';
+import '../../../auth/presentation/cubit/auth_cubit.dart';
+import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../domain/entities/anime_rating_aggregate.dart';
 import '../../domain/entities/anime_review.dart';
@@ -67,6 +71,13 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
 
   void _openWriteReview(BuildContext context) {
     if (widget.title == null) return;
+    try {
+      final authState = context.read<AuthCubit>().state;
+      if (authState is! Authenticated || authState.profile.isAnonymous) {
+        AuthGateSheet.show(context);
+        return;
+      }
+    } catch (_) {}
     WriteReviewSheet.show(
       context,
       title: widget.title!,

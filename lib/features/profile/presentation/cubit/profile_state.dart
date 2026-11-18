@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../auth/domain/entities/user_profile.dart';
+import '../../domain/services/taste_compatibility_calculator.dart';
 
 enum ProfileStatus { initial, loading, loaded, error }
 
@@ -9,6 +10,7 @@ class ProfileState extends Equatable {
   final UserProfile profile;
   final UserAnimeStats stats;
   final bool isCurrentUser;
+  final TasteCompatibilityResult? tasteCompatibility;
   final String? errorMessage;
 
   const ProfileState({
@@ -16,6 +18,7 @@ class ProfileState extends Equatable {
     required this.profile,
     required this.stats,
     this.isCurrentUser = true,
+    this.tasteCompatibility,
     this.errorMessage,
   });
 
@@ -42,6 +45,7 @@ class ProfileState extends Equatable {
     UserProfile? profile,
     UserAnimeStats? stats,
     bool? isCurrentUser,
+    TasteCompatibilityResult? tasteCompatibility,
     String? errorMessage,
   }) {
     return ProfileState(
@@ -49,6 +53,7 @@ class ProfileState extends Equatable {
       profile: profile ?? this.profile,
       stats: stats ?? this.stats,
       isCurrentUser: isCurrentUser ?? this.isCurrentUser,
+      tasteCompatibility: tasteCompatibility ?? this.tasteCompatibility,
       errorMessage: errorMessage ?? this.errorMessage,
     );
   }
@@ -59,6 +64,7 @@ class ProfileState extends Equatable {
         profile,
         stats,
         isCurrentUser,
+        tasteCompatibility,
         errorMessage,
       ];
 }

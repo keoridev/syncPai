@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../profile/domain/services/achievement_service.dart';
 import '../../domain/entities/anime_review.dart';
 
 abstract class SyncPaiReviewsDataSource {
@@ -133,6 +135,7 @@ class SyncPaiReviewsDataSourceImpl implements SyncPaiReviewsDataSource {
         final List<dynamic> localList = existingRaw != null ? jsonDecode(existingRaw) as List : [];
         localList.insert(0, review.toJson());
         await prefs.setString('$_localPrefix$animeKey', jsonEncode(localList));
+        unawaited(AchievementService.instance.recordReviewPublished());
       } catch (e) {
         debugPrint('[SyncPaiReviews] Failed to save local review: $e');
       }

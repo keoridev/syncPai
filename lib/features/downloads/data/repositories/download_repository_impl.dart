@@ -36,7 +36,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
           if (task.status == DownloadStatus.completed) {
             final file = File(task.localPath);
             if (file.existsSync()) {
-              _tasks[task.id] = task;
+              final actualSize = file.lengthSync();
+              _tasks[task.id] = (task.totalBytes <= 0 && actualSize > 0)
+                  ? task.copyWith(totalBytes: actualSize, downloadedBytes: actualSize)
+                  : task;
             }
           } else {
             // Если загрузка была оборвана при выходе из приложения
@@ -154,9 +157,20 @@ class DownloadRepositoryImpl implements DownloadRepository {
       );
 
       // Загрузка завершена успешно
+      int realBytes = currentTask.totalBytes;
+      if (realBytes <= 0 && currentTask.localPath.isNotEmpty) {
+        try {
+          final f = File(currentTask.localPath);
+          if (f.existsSync()) {
+            realBytes = f.lengthSync();
+          }
+        } catch (_) {}
+      }
       currentTask = currentTask.copyWith(
         status: DownloadStatus.completed,
         progress: 1.0,
+        totalBytes: realBytes > 0 ? realBytes : currentTask.downloadedBytes,
+        downloadedBytes: realBytes > 0 ? realBytes : currentTask.downloadedBytes,
       );
       _tasks[task.id] = currentTask;
       _updateController.add(currentTask);

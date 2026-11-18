@@ -48,6 +48,18 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
   }
 
+  String _formatEpisodesRu(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) {
+      return '$count серия';
+    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+      return '$count серии';
+    } else {
+      return '$count серий';
+    }
+  }
+
   String _formatBytes(int bytes) {
     if (bytes <= 0) return '0 МБ';
     final mb = bytes / (1024 * 1024);
@@ -240,7 +252,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Занято серий: $completedCount • ${_formatBytes(_storageUsedBytes)}',
+                              'Скачано: ${_formatEpisodesRu(completedCount)} • ${_formatBytes(_storageUsedBytes)}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,

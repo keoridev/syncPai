@@ -26,6 +26,7 @@ class UnifiedAnimeCard extends StatelessWidget {
   final bool isSelectionMode;
   final bool isSelected;
   final String? heroTagPrefix;
+  final bool isCompact;
 
   const UnifiedAnimeCard({
     super.key,
@@ -41,6 +42,7 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.isSelectionMode = false,
     this.isSelected = false,
     this.heroTagPrefix,
+    this.isCompact = false,
   });
 
   static const double posterRadius = 16.0;
@@ -145,58 +147,9 @@ class UnifiedAnimeCard extends StatelessWidget {
                               ),
                             ),
 
-                            // Верхний левый стеклянный пилл (серии / год / прогресс списка)
-                            if (effectiveBadgeText.isNotEmpty)
-                              Positioned(
-                                top: 8,
-                                left: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.65),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: statusColor != null
-                                          ? statusColor!.withValues(alpha: 0.45)
-                                          : Colors.white.withValues(alpha: 0.15),
-                                      width: 0.8,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (statusIcon != null) ...[
-                                        Icon(
-                                          statusIcon,
-                                          size: 10,
-                                          color: statusColor ?? Colors.white,
-                                        ),
-                                        const SizedBox(width: 4),
-                                      ] else if (statusColor != null) ...[
-                                        Container(
-                                          width: 6,
-                                          height: 6,
-                                          decoration: BoxDecoration(
-                                            color: statusColor,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 4),
-                                      ],
-                                      Text(
-                                        effectiveBadgeText,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                            // Верхний правый пилл оценки (★ 8.5) или чекбокс пакетного выбора
+                            // ВЕРХНИЙ ПРАВЫЙ УГОЛ:
+                            // Пакетный выбор, либо пилл статуса/серий, либо рейтинг (★ 8.5)
+                            // Верхний левый угол остаётся свободным, чтобы не перекрывать вшитый логотип AL
                             if (isSelectionMode)
                               Positioned(
                                 top: 8,
@@ -207,16 +160,70 @@ class UnifiedAnimeCard extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     color: isSelected
                                         ? scheme.primary
-                                        : Colors.black.withValues(alpha: 0.65),
+                                        : const Color(0xFF0B0E14).withValues(alpha: 0.88),
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: isSelected ? scheme.primary : Colors.white54,
+                                      color: isSelected
+                                          ? scheme.primary
+                                          : Colors.white.withValues(alpha: 0.2),
                                       width: 1.5,
                                     ),
                                   ),
                                   child: isSelected
                                       ? Icon(Icons.check_rounded, size: 15, color: scheme.onPrimary)
                                       : null,
+                                ),
+                              )
+                            else if (effectiveBadgeText.isNotEmpty)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isCompact ? 6.0 : 7.0,
+                                    vertical: isCompact ? 2.5 : 3.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0B0E14).withValues(alpha: 0.88),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: statusColor != null
+                                          ? statusColor!.withValues(alpha: 0.5)
+                                          : Colors.white.withValues(alpha: 0.12),
+                                      width: 1.0,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (statusIcon != null) ...[
+                                        Icon(
+                                          statusIcon,
+                                          size: isCompact ? 9 : 10,
+                                          color: statusColor ?? Colors.white,
+                                        ),
+                                        SizedBox(width: isCompact ? 3 : 4),
+                                      ] else if (statusColor != null) ...[
+                                        Container(
+                                          width: isCompact ? 5 : 6,
+                                          height: isCompact ? 5 : 6,
+                                          decoration: BoxDecoration(
+                                            color: statusColor,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        SizedBox(width: isCompact ? 3 : 4),
+                                      ],
+                                      Text(
+                                        formatBadgeText(effectiveBadgeText, isCompact: isCompact),
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               )
                             else if (hasRating)
@@ -226,11 +233,11 @@ class UnifiedAnimeCard extends StatelessWidget {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.65),
+                                    color: const Color(0xFF0B0E14).withValues(alpha: 0.88),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: Colors.amber.withValues(alpha: 0.35),
-                                      width: 0.8,
+                                      width: 1.0,
                                     ),
                                   ),
                                   child: Text(
@@ -271,36 +278,38 @@ class UnifiedAnimeCard extends StatelessWidget {
 
               const SizedBox(height: 6),
 
-              // 2. Название тайтла под постером (строго до 2 строк)
+              // 2. Название тайтла и метаданные с гарантированным выравниванием строк через Spacer()
               SizedBox(
-                height: 34,
-                child: Text(
-                  title.displayTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.start,
-                  style: AppTypography.bodySmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: isNarrow ? 11.5 : 12.5,
-                    height: 1.25,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 2),
-
-              // 3. Метаданные через точку: Год • Жанры (или прогресс серий)
-              Text(
-                subtitleOverride ?? _buildMetaSubtitle(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.caption.copyWith(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textMuted,
-                  letterSpacing: 0.1,
+                height: isCompact ? 48 : 54,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title.displayTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.start,
+                      style: AppTypography.bodySmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontSize: isCompact ? 11.5 : (isNarrow ? 11.5 : 12.5),
+                        height: 1.22,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      subtitleOverride ?? _buildMetaSubtitle(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption.copyWith(
+                        fontSize: isCompact ? 9.5 : 10.5,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.textMuted,
+                        letterSpacing: 0.1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -308,6 +317,15 @@ class UnifiedAnimeCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String formatBadgeText(String text, {required bool isCompact}) {
+    if (!isCompact) return text;
+    var s = text.replaceAll(' эп.', '').replaceAll(' / ', '/');
+    if (s.startsWith('Онгоинг • ')) {
+      s = s.replaceFirst('Онгоинг • ', '');
+    }
+    return s;
   }
 
   String _defaultTopLeftBadgeText() {
@@ -435,5 +453,6 @@ class AnimePosterCard extends UnifiedAnimeCard {
     super.isSelectionMode,
     super.isSelected,
     super.heroTagPrefix,
+    super.isCompact,
   });
 }

@@ -40,7 +40,7 @@ class DownloadState extends Equatable {
   int get totalDownloadedCount => completedTasks.length;
 
   int get totalBytesUsed =>
-      completedTasks.fold<int>(0, (sum, item) => sum + item.totalBytes);
+      completedTasks.fold<int>(0, (sum, item) => sum + item.effectiveBytes);
 
   String get formattedTotalBytesUsed {
     final mb = totalBytesUsed / (1024 * 1024);

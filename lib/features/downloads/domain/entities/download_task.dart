@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:equatable/equatable.dart';
 
 enum DownloadStatus {
@@ -127,9 +128,24 @@ class DownloadTask extends Equatable {
     );
   }
 
+  int get effectiveBytes {
+    if (totalBytes > 0) return totalBytes;
+    if (downloadedBytes > 0) return downloadedBytes;
+    if (localPath.isNotEmpty) {
+      try {
+        final f = File(localPath);
+        if (f.existsSync()) {
+          return f.lengthSync();
+        }
+      } catch (_) {}
+    }
+    return 0;
+  }
+
   String get formattedSize {
-    if (totalBytes <= 0) return '';
-    final mb = totalBytes / (1024 * 1024);
+    final bytes = effectiveBytes;
+    if (bytes <= 0) return '';
+    final mb = bytes / (1024 * 1024);
     if (mb >= 1024) {
       return '${(mb / 1024).toStringAsFixed(1)} ГБ';
     }

@@ -718,6 +718,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             return AnimePosterCard(
                               key: ValueKey(title.id),
                               title: title,
+                              isCompact: !isDesktop && mobileCols >= 3,
                               onTap: () => widget.onTitleSelected?.call(title),
                             );
                           },

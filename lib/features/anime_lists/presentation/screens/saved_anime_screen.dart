@@ -749,6 +749,43 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     } catch (_) {}
   }
 
+  String _formatEpisodesRu(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) {
+      return '$count серия';
+    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+      return '$count серии';
+    } else {
+      return '$count серий';
+    }
+  }
+
+  void _openDetailsForWatchHistory(BuildContext context, WatchHistoryItem recent, AnimeListState listState) {
+    final entry = listState.getEntryFor(recent.titleId);
+    if (entry != null) {
+      _openDetailsForEntry(context, entry);
+    } else {
+      final target = AnimeTitle(
+        id: recent.titleId,
+        code: 'recent_${recent.titleId}',
+        russianTitle: recent.titleName,
+        englishTitle: recent.titleName,
+        posterSmall: recent.posterUrl,
+        posterMedium: recent.posterUrl,
+        posterOriginal: recent.posterUrl,
+        genres: const [],
+        description: '',
+        status: 'В эфире',
+      );
+      if (widget.onTitleSelected != null) {
+        widget.onTitleSelected!(target);
+      } else {
+        context.pushNamed('details', extra: target);
+      }
+    }
+  }
+
   void _openPlayerForDownload(BuildContext context, DownloadTask dl) {
     final targetTitle = AnimeTitle(
       id: dl.titleId,
@@ -1006,78 +1043,150 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                           borderRadius: BorderRadius.circular(16),
                           blurSigma: 16,
                           backgroundOpacity: 0.08,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          onTap: () {
-                            final recent = historyState.lastWatched!;
-                            final entry = listState.getEntryFor(recent.titleId);
-                            if (entry != null) {
-                              _openDetailsForEntry(context, entry);
-                            } else {
-                              final target = AnimeTitle(
-                                id: recent.titleId,
-                                code: 'recent_${recent.titleId}',
-                                russianTitle: recent.titleName,
-                                englishTitle: recent.titleName,
-                                posterSmall: recent.posterUrl,
-                                posterMedium: recent.posterUrl,
-                                posterOriginal: recent.posterUrl,
-                                genres: const [],
-                                description: '',
-                                status: 'В эфире',
-                              );
-                              if (widget.onTitleSelected != null) {
-                                widget.onTitleSelected!(target);
-                              } else {
-                                context.pushNamed('details', extra: target);
-                              }
-                            }
-                          },
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: isDesktop
+                              ? Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      'ПРОДОЛЖИТЬ ПРОСМОТР',
-                                      style: AppTypography.caption.copyWith(
-                                        color: AppColors.primaryLight,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 10,
-                                        letterSpacing: 1.1,
-                                      ),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'ПРОДОЛЖИТЬ ПРОСМОТР',
+                                          style: AppTypography.caption.copyWith(
+                                            color: AppColors.primaryLight,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 10.5,
+                                            letterSpacing: 1.1,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      historyState.lastWatched!.titleName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTypography.titleSmall.copyWith(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Серия ${historyState.lastWatched!.episode} • ${historyState.lastWatched!.formattedPosition} / ${historyState.lastWatched!.formattedDuration}',
-                                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 10,
+                                      children: historyState.history.take(3).map((recent) {
+                                        return SizedBox(
+                                          width: 320,
+                                          height: 68,
+                                          child: TvFocusable(
+                                            borderRadius: BorderRadius.circular(12),
+                                            scaleFactor: 1.03,
+                                            onPressed: () => _openDetailsForWatchHistory(context, recent, listState),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withValues(alpha: 0.05),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: Colors.white.withValues(alpha: 0.1),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  ClipRRect(
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    child: Container(
+                                                      width: 38,
+                                                      height: 52,
+                                                      color: AppColors.surfaceElevated,
+                                                      child: recent.posterUrl.isNotEmpty
+                                                          ? CachedNetworkImage(
+                                                              imageUrl: wrapCorsSafeUrl(recent.posterUrl),
+                                                              fit: BoxFit.cover,
+                                                              memCacheWidth: 100,
+                                                              errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                                            )
+                                                          : const Icon(Icons.play_arrow_rounded, size: 20),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        Text(
+                                                          recent.titleName,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: AppTypography.titleSmall.copyWith(
+                                                            color: AppColors.textPrimary,
+                                                            fontWeight: FontWeight.w700,
+                                                            fontSize: 12.5,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          'Серия ${recent.episode} • ${recent.formattedPosition} / ${recent.formattedDuration}',
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: AppTypography.caption.copyWith(color: AppColors.textSecondary, fontSize: 11),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 20),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
                                     ),
                                   ],
+                                )
+                              : InkWell(
+                                  onTap: () => _openDetailsForWatchHistory(context, historyState.lastWatched!, listState),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 36,
+                                        height: 36,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryLight, size: 22),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'ПРОДОЛЖИТЬ ПРОСМОТР',
+                                              style: AppTypography.caption.copyWith(
+                                                color: AppColors.primaryLight,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 10,
+                                                letterSpacing: 1.1,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              historyState.lastWatched!.titleName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: AppTypography.titleSmall.copyWith(
+                                                color: AppColors.textPrimary,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Серия ${historyState.lastWatched!.episode} • ${historyState.lastWatched!.formattedPosition} / ${historyState.lastWatched!.formattedDuration}',
+                                              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 22),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 22),
-                            ],
-                          ),
                         ),
                       ),
                     ),
@@ -1124,88 +1233,181 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                       ),
                                       const Spacer(),
                                       Text(
-                                        '${dlState.totalDownloadedCount} серий • ${dlState.formattedTotalBytesUsed}',
+                                        '${_formatEpisodesRu(dlState.totalDownloadedCount)} • ${dlState.formattedTotalBytesUsed}',
                                         style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  SizedBox(
-                                    height: 64,
-                                    child: ListView.separated(
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: dlState.completedTasks.length,
-                                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                      itemBuilder: (context, i) {
-                                        final item = dlState.completedTasks[i];
-                                        return TvFocusable(
-                                          borderRadius: BorderRadius.circular(10),
-                                          scaleFactor: 1.05,
-                                          onPressed: () => _openPlayerForDownload(context, item),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.05),
-                                              borderRadius: BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: Colors.white.withValues(alpha: 0.1),
+                                  if (isDesktop)
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 10,
+                                      children: dlState.completedTasks.map((item) {
+                                        return SizedBox(
+                                          width: 290,
+                                          height: 68,
+                                          child: TvFocusable(
+                                            borderRadius: BorderRadius.circular(10),
+                                            scaleFactor: 1.03,
+                                            onPressed: () => _openPlayerForDownload(context, item),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withValues(alpha: 0.05),
+                                                borderRadius: BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: Colors.white.withValues(alpha: 0.1),
+                                                ),
                                               ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                ClipRRect(
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  child: Container(
-                                                    width: 36,
-                                                    height: 48,
-                                                    color: AppColors.surfaceElevated,
-                                                    child: item.posterUrl.isNotEmpty
-                                                        ? Image.network(
-                                                            item.posterUrl,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (_, __, ___) => const Icon(Icons.movie, size: 16),
-                                                          )
-                                                        : const Icon(Icons.movie, size: 16),
+                                              child: Row(
+                                                children: [
+                                                  ClipRRect(
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    child: Container(
+                                                      width: 38,
+                                                      height: 52,
+                                                      color: AppColors.surfaceElevated,
+                                                      child: item.posterUrl.isNotEmpty
+                                                          ? CachedNetworkImage(
+                                                              imageUrl: wrapCorsSafeUrl(item.posterUrl),
+                                                              fit: BoxFit.cover,
+                                                              memCacheWidth: 100,
+                                                              errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                                            )
+                                                          : const Icon(Icons.movie, size: 16),
+                                                    ),
                                                   ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Text(
-                                                      item.titleName,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        color: AppColors.textPrimary,
-                                                        fontSize: 12,
-                                                        fontWeight: FontWeight.w600,
-                                                      ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        Text(
+                                                          item.titleName,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            color: AppColors.textPrimary,
+                                                            fontSize: 12.5,
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          'Серия ${item.episode} • ${item.quality}${item.formattedSize.isNotEmpty ? ' • ${item.formattedSize}' : ''}',
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            color: AppColors.textSecondary,
+                                                            fontSize: 11,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
-                                                    Text(
-                                                      'Серия ${item.episode} • ${item.quality}',
-                                                      style: const TextStyle(
-                                                        color: AppColors.textSecondary,
-                                                        fontSize: 10.5,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(width: 6),
-                                                IconButton(
-                                                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.textMuted),
-                                                  onPressed: () {
-                                                    getIt<DownloadCubit>().deleteDownload(item.id);
-                                                  },
-                                                ),
-                                              ],
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.textMuted),
+                                                    tooltip: 'Удалить загрузку',
+                                                    onPressed: () {
+                                                      getIt<DownloadCubit>().deleteDownload(item.id);
+                                                    },
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         );
-                                      },
+                                      }).toList(),
+                                    )
+                                  else
+                                    SizedBox(
+                                      height: 68,
+                                      child: ListView.separated(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: dlState.completedTasks.length,
+                                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                        itemBuilder: (context, i) {
+                                          final item = dlState.completedTasks[i];
+                                          return SizedBox(
+                                            width: 270,
+                                            height: 68,
+                                            child: TvFocusable(
+                                              borderRadius: BorderRadius.circular(10),
+                                              scaleFactor: 1.04,
+                                              onPressed: () => _openPlayerForDownload(context, item),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withValues(alpha: 0.05),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: Colors.white.withValues(alpha: 0.1),
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    ClipRRect(
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      child: Container(
+                                                        width: 38,
+                                                        height: 52,
+                                                        color: AppColors.surfaceElevated,
+                                                        child: item.posterUrl.isNotEmpty
+                                                            ? CachedNetworkImage(
+                                                                imageUrl: wrapCorsSafeUrl(item.posterUrl),
+                                                                fit: BoxFit.cover,
+                                                                memCacheWidth: 100,
+                                                                errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
+                                                              )
+                                                            : const Icon(Icons.movie, size: 16),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          Text(
+                                                            item.titleName,
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              color: AppColors.textPrimary,
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.w600,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 2),
+                                                          Text(
+                                                            'Серия ${item.episode} • ${item.quality}${item.formattedSize.isNotEmpty ? ' • ${item.formattedSize}' : ''}',
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              color: AppColors.textSecondary,
+                                                              fontSize: 10.5,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.textMuted),
+                                                      tooltip: 'Удалить загрузку',
+                                                      onPressed: () {
+                                                        getIt<DownloadCubit>().deleteDownload(item.id);
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -1502,6 +1704,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             return UnifiedAnimeCard(
                               key: ValueKey(entry.animeId),
                               title: _toUnifiedAnimeTitle(entry),
+                              isCompact: !isDesktop && _gridColumns >= 3,
                               onTap: () => _handleItemTap(context, entry),
                               onLongPress: () => _isSelectionMode
                                   ? _handleItemTap(context, entry)

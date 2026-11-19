@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/datasources/anixart_backup_parser.dart';
+import '../../data/datasources/anixart_remote_datasource.dart';
 import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
 import '../../services/import_poster_enricher.dart';
@@ -269,7 +270,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
       }
       return result;
     } catch (e) {
-      final msg = e.toString().replaceFirst('Exception: ', '');
+      final msg = AnixartRemoteDataSourceImpl.mapUserFriendlyError(e);
       emit(state.copyWith(
         isLoading: false,
         errorMessage: msg,

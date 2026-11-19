@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
@@ -8,16 +10,25 @@ class SettingsCubit extends Cubit<SettingsState> {
   final SharedPreferences? _injectedPrefs;
 
   SettingsCubit([this._injectedPrefs]) : super(const SettingsState()) {
-    _loadSettings();
+    if (_injectedPrefs != null) {
+      _applyLoadedPrefs(_injectedPrefs);
+    } else {
+      _loadSettings();
+    }
   }
 
   static const String _keyGridColumns = 'grid_columns_count';
   static const String _keyIsListView = 'catalog_is_list_view';
   static const String _keyPlayerHudPreset = 'settings_player_hud_preset';
+  static const String _keyPlayerButtonVisibility =
+      'settings_player_button_visibility';
+  static const String _keyPlayerButtonOrder = 'settings_player_button_order';
   static const String _keyAutoSkipOpenings = 'settings_auto_skip_openings';
   static const String _keyAutoPauseOnLeave = 'settings_auto_pause_on_leave';
   static const String _keyLiquidGlass = 'settings_liquid_glass';
   static const String _keyDefaultQuality = 'settings_default_quality';
+  static const String _keyHasSeenPlayerOnboarding =
+      'settings_has_seen_player_onboarding';
 
   Future<SharedPreferences> _getPrefs() async {
     if (_injectedPrefs != null) return _injectedPrefs;
@@ -30,6 +41,12 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> _loadSettings() async {
     try {
       final prefs = await _getPrefs();
+      _applyLoadedPrefs(prefs);
+    } catch (_) {}
+  }
+
+  void _applyLoadedPrefs(SharedPreferences prefs) {
+    try {
       final cols = prefs.getInt(_keyGridColumns) ?? 3;
       final isList = prefs.getBool(_keyIsListView) ?? false;
       final presetStr = prefs.getString(_keyPlayerHudPreset);
@@ -39,15 +56,39 @@ class SettingsCubit extends Cubit<SettingsState> {
       final liquid = prefs.getBool(_keyLiquidGlass) ??
           DevicePerformanceService.instance.isLiquidGlassBlurEnabled;
       final quality = prefs.getString(_keyDefaultQuality) ?? '1080p FHD';
+      final hasSeenOnboarding =
+          prefs.getBool(_keyHasSeenPlayerOnboarding) ?? false;
+
+      Map<String, bool> visibility = PlayerHudPresets.visibilityFor(preset);
+      final rawVis = prefs.getString(_keyPlayerButtonVisibility);
+      if (rawVis != null && rawVis.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawVis) as Map<String, dynamic>;
+          visibility = {
+            ...visibility,
+            for (final e in decoded.entries) e.key: e.value == true,
+          };
+        } catch (_) {}
+      }
+
+      List<String> order = PlayerHudPresets.defaultOrder();
+      final savedOrder = prefs.getStringList(_keyPlayerButtonOrder);
+      if (savedOrder != null && savedOrder.isNotEmpty) {
+        final missing = order.where((id) => !savedOrder.contains(id));
+        order = [...savedOrder, ...missing];
+      }
 
       emit(state.copyWith(
         gridColumnCount: cols,
         isListView: isList,
         playerHudPreset: preset,
+        playerButtonVisibility: visibility,
+        playerButtonOrder: order,
         autoSkipOpenings: autoSkip,
         autoPauseOnLeave: autoPause,
         liquidGlassEffects: liquid,
         defaultQuality: quality,
+        hasSeenPlayerOnboarding: hasSeenOnboarding,
       ));
     } catch (_) {}
   }
@@ -83,10 +124,80 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> setPlayerHudPreset(PlayerHudPreset preset) async {
-    emit(state.copyWith(playerHudPreset: preset));
+    final visibility = preset == PlayerHudPreset.custom
+        ? state.playerButtonVisibility
+        : PlayerHudPresets.visibilityFor(preset);
+    emit(state.copyWith(
+      playerHudPreset: preset,
+      playerButtonVisibility: visibility,
+    ));
+    await _persistPlayerHud(preset, visibility, state.playerButtonOrder);
+  }
+
+  Future<void> togglePlayerButton(String id, bool visible) async {
+    // Защита от полной блокировки: нельзя скрыть одновременно 'back' и 'settings_gear'
+    if (!visible && (id == 'back' || id == 'settings_gear')) {
+      final otherId = id == 'back' ? 'settings_gear' : 'back';
+      if (!state.isHudButtonVisible(otherId)) {
+        return;
+      }
+    }
+    final updated = Map<String, bool>.from(state.playerButtonVisibility)
+      ..[id] = visible;
+    emit(state.copyWith(
+      playerHudPreset: PlayerHudPreset.custom,
+      playerButtonVisibility: updated,
+    ));
+    await _persistPlayerHud(
+      PlayerHudPreset.custom,
+      updated,
+      state.playerButtonOrder,
+    );
+  }
+
+  Future<void> reorderPlayerButtons(
+    int oldIndex,
+    int newIndex, {
+    bool adjustNewIndex = true,
+  }) async {
+    final list = List<String>.from(state.playerButtonOrder);
+    if (oldIndex < 0 || oldIndex >= list.length) return;
+    if (adjustNewIndex && newIndex > oldIndex) newIndex -= 1;
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), item);
+
+    emit(state.copyWith(
+      playerHudPreset: PlayerHudPreset.custom,
+      playerButtonOrder: list,
+    ));
+    await _persistPlayerHud(
+      PlayerHudPreset.custom,
+      state.playerButtonVisibility,
+      list,
+    );
+  }
+
+  Future<void> resetPlayerHudToDefault() async {
+    final defaultOrder = PlayerHudPresets.defaultOrder();
+    final defaultVis = PlayerHudPresets.visibilityFor(PlayerHudPreset.standard);
+    emit(state.copyWith(
+      playerHudPreset: PlayerHudPreset.standard,
+      playerButtonVisibility: defaultVis,
+      playerButtonOrder: defaultOrder,
+    ));
+    await _persistPlayerHud(PlayerHudPreset.standard, defaultVis, defaultOrder);
+  }
+
+  Future<void> _persistPlayerHud(
+    PlayerHudPreset preset,
+    Map<String, bool> visibility,
+    List<String> order,
+  ) async {
     try {
       final prefs = await _getPrefs();
       await prefs.setString(_keyPlayerHudPreset, preset.name);
+      await prefs.setString(_keyPlayerButtonVisibility, jsonEncode(visibility));
+      await prefs.setStringList(_keyPlayerButtonOrder, order);
     } catch (_) {}
   }
 
@@ -119,6 +230,22 @@ class SettingsCubit extends Cubit<SettingsState> {
     try {
       final prefs = await _getPrefs();
       await prefs.setString(_keyDefaultQuality, quality);
+    } catch (_) {}
+  }
+
+  Future<void> completePlayerOnboarding() async {
+    emit(state.copyWith(hasSeenPlayerOnboarding: true));
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setBool(_keyHasSeenPlayerOnboarding, true);
+    } catch (_) {}
+  }
+
+  Future<void> resetPlayerOnboarding() async {
+    emit(state.copyWith(hasSeenPlayerOnboarding: false));
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setBool(_keyHasSeenPlayerOnboarding, false);
     } catch (_) {}
   }
 }

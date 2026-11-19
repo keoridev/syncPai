@@ -37,6 +37,12 @@ class UserProfile extends Equatable {
   final List<String> unlockedBadges;
   final DateTime createdAt;
 
+  bool get isPlusOrHigher =>
+      supporterTier.index >= SupporterTier.supporter.index;
+
+  bool get isProOrHigher =>
+      supporterTier.index >= SupporterTier.vip.index;
+
   const UserProfile({
     required this.id,
     required this.username,

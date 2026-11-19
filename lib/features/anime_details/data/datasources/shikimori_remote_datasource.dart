@@ -47,23 +47,83 @@ abstract class ShikimoriRemoteDataSource {
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   final Dio _dio;
   final AnimeReviewsRepository? _reviewsRepository;
+  final Duration _minRequestInterval;
+  final Duration _retry429Delay;
 
-  static const String _baseUrl = 'https://shikimori.io/api';
+  static const String _baseUrl = 'https://shikimori.one/api';
+  static const String _graphqlUrl = 'https://shikimori.one/api/graphql';
+  static const String _userAgent = 'SyncPai/1.0 (Desktop/Mobile)';
 
-  ShikimoriRemoteDataSourceImpl({Dio? customDio, AnimeReviewsRepository? reviewsRepository})
-      : _dio = customDio ??
+  static Future<void> _queueTail = Future<void>.value();
+  static DateTime? _lastRequestAt;
+
+  ShikimoriRemoteDataSourceImpl({
+    Dio? customDio,
+    AnimeReviewsRepository? reviewsRepository,
+    Duration minRequestInterval = const Duration(milliseconds: 350),
+    Duration retry429Delay = const Duration(milliseconds: 1200),
+  })  : _dio = customDio ??
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(seconds: 2),
-                receiveTimeout: const Duration(seconds: 2),
+                connectTimeout: const Duration(seconds: 4),
+                receiveTimeout: const Duration(seconds: 4),
                 headers: {
-                  if (!kIsWeb) 'User-Agent': 'SyncPai/1.0.0 (Anime Sync App; contact@syncpai.app)',
+                  if (!kIsWeb) 'User-Agent': _userAgent,
                   'Accept': 'application/json',
                 },
               ),
             ),
-        _reviewsRepository = reviewsRepository;
+        _reviewsRepository = reviewsRepository,
+        _minRequestInterval = minRequestInterval,
+        _retry429Delay = retry429Delay;
+
+  /// Последовательная очередь запросов к Shikimori с минимальным интервалом 350 мс
+  /// и однократным ретраем через 1200 мс при HTTP 429.
+  Future<T> _enqueueShikimoriRequest<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+
+    _queueTail = _queueTail.then((_) async {
+      try {
+        if (_lastRequestAt != null && _minRequestInterval > Duration.zero) {
+          final elapsed = DateTime.now().difference(_lastRequestAt!);
+          if (elapsed < _minRequestInterval) {
+            await Future<void>.delayed(_minRequestInterval - elapsed);
+          }
+        }
+        _lastRequestAt = DateTime.now();
+
+        try {
+          final res = await action();
+          completer.complete(res);
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 429) {
+            if (_retry429Delay > Duration.zero) {
+              await Future<void>.delayed(_retry429Delay);
+            }
+            _lastRequestAt = DateTime.now();
+            final retryRes = await action();
+            completer.complete(retryRes);
+          } else {
+            rethrow;
+          }
+        }
+      } catch (e, st) {
+        if (!completer.isCompleted) {
+          completer.completeError(e, st);
+        }
+      }
+    });
+
+    return completer.future;
+  }
+
+  Options get _shikimoriOptions => Options(
+        headers: {
+          if (!kIsWeb) 'User-Agent': _userAgent,
+          'Accept': 'application/json',
+        },
+      );
 
   @override
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title) async {
@@ -119,12 +179,15 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             ? title.displayTitle
             : title.code;
 
-        final searchResponse = await _dio.get(
-          '/animes',
-          queryParameters: {
-            'search': searchQuery,
-            'limit': 3,
-          },
+        final searchResponse = await _enqueueShikimoriRequest(
+          () => _dio.get(
+            '/animes',
+            queryParameters: {
+              'search': searchQuery,
+              'limit': 3,
+            },
+            options: _shikimoriOptions,
+          ),
         );
 
         if (searchResponse.statusCode == 200 &&
@@ -141,24 +204,30 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       }
 
       if (shikimoriId != null && shikimoriId > 0) {
-        // Все независимые запросы выполняются строго параллельно!
+        // Статистика, оценки, видео и скриншоты загружаются одним GraphQL-запросом,
+        // а все обращения к Shikimori проходят через _enqueueShikimoriRequest.
         final results = await Future.wait<dynamic>([
           aggFuture,
+          _fetchAnimeDetailsGraphQL(shikimoriId, title),
           _fetchTopicsForAnime(shikimoriId, rawScore, title),
           _fetchRelatedReleases(shikimoriId, title, rawScore),
-          _fetchVideosAndStats(shikimoriId, title),
-          getScreenshots(shikimoriId).catchError((_) => <String>[]),
         ]);
 
         aggResult = results[0] as ReviewsAggregateResult?;
-        final topicReviews = results[1] as List<AnimeReview>;
-        final related = results[2] as List<RelatedAnimeRelease>;
-        final media = results[3] as ({
+        final details = results[1] as ({
           List<AnimeVideoItem> videos,
           UserListsStats stats,
           List<ScoreDistributionItem> scores,
+          List<String> screenshots,
         });
-        final screenshots = results[4] as List<String>;
+        final topicReviews = results[2] as List<AnimeReview>;
+        final related = results[3] as List<RelatedAnimeRelease>;
+        final media = (
+          videos: details.videos,
+          stats: details.stats,
+          scores: details.scores,
+        );
+        final screenshots = details.screenshots;
 
         final effectiveScore = aggResult?.aggregate.shikimoriScore ?? rawScore;
         final portalScores = <String, double>{
@@ -243,14 +312,17 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
   Future<List<AnimeReview>> _fetchTopicsForAnime(int animeId, double animeScore, AnimeTitle title) async {
     try {
-      final response = await _dio.get(
-        '/topics',
-        queryParameters: {
-          'forum': 'animanga',
-          'linked_id': animeId,
-          'linked_type': 'Anime',
-          'limit': 6,
-        },
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          '/topics',
+          queryParameters: {
+            'forum': 'animanga',
+            'linked_id': animeId,
+            'linked_type': 'Anime',
+            'limit': 6,
+          },
+          options: _shikimoriOptions,
+        ),
       );
 
       if (response.statusCode == 200 && response.data is List) {
@@ -315,7 +387,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       // 1. Приоритетный источник: официальный граф полной франшизы Shikimori (/franchise)
       // Предоставляет истинную каноничную цепочку сезонов и фильмов без посторонних тайтлов
       try {
-        final franchiseRes = await _dio.get('/animes/$shikimoriId/franchise');
+        final franchiseRes = await _enqueueShikimoriRequest(
+          () => _dio.get('/animes/$shikimoriId/franchise', options: _shikimoriOptions),
+        );
         if (franchiseRes.statusCode == 200 &&
             franchiseRes.data is Map &&
             franchiseRes.data['nodes'] is List) {
@@ -431,7 +505,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       } catch (_) {}
 
       // 2. Резервный источник: эндпоинт /related с фильтрацией несвязанных кроссоверов
-      final response = await _dio.get('/animes/$shikimoriId/related');
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get('/animes/$shikimoriId/related', options: _shikimoriOptions),
+      );
       if (response.statusCode == 200 && response.data is List) {
         final list = response.data as List;
         final results = <RelatedAnimeRelease>[];
@@ -502,7 +578,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         // Второй шаг для сбора полной цепочки сезонов франшизы (1 -> 2 -> 3)
         for (final hopId in hopIdsToFetch) {
           try {
-            final hopRes = await _dio.get('/animes/$hopId/related');
+            final hopRes = await _enqueueShikimoriRequest(
+              () => _dio.get('/animes/$hopId/related', options: _shikimoriOptions),
+            );
             if (hopRes.statusCode == 200 && hopRes.data is List) {
               for (final hItem in hopRes.data as List) {
                 if (hItem is! Map<String, dynamic>) continue;
@@ -593,12 +671,190 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     return _generateFallbackFranchise(currentTitle, currentScore);
   }
 
+  /// Загружает статистику списков, распределение оценок, видео и скриншоты одним GraphQL-запросом.
+  Future<({
+    List<AnimeVideoItem> videos,
+    UserListsStats stats,
+    List<ScoreDistributionItem> scores,
+    List<String> screenshots,
+  })> _fetchAnimeDetailsGraphQL(
+    int shikimoriId,
+    AnimeTitle title,
+  ) async {
+    try {
+      const gqlQuery = r'''
+        query ($ids: String!) {
+          animes(ids: $ids, limit: 1) {
+            id
+            score
+            statusesStats { status count }
+            scoresStats { score count }
+            screenshots { originalUrl }
+            videos { id name url imageUrl kind playerUrl }
+          }
+        }
+      ''';
+
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.post(
+          _graphqlUrl,
+          data: {
+            'query': gqlQuery,
+            'variables': {'ids': '$shikimoriId'},
+          },
+          options: Options(
+            headers: {
+              if (!kIsWeb) 'User-Agent': _userAgent,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+          ),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final root = response.data as Map<String, dynamic>;
+        final dataObj = root['data'];
+        final animes = (dataObj is Map<String, dynamic>) ? dataObj['animes'] : null;
+        if (animes is List && animes.isNotEmpty && animes.first is Map<String, dynamic>) {
+          final anime = animes.first as Map<String, dynamic>;
+
+          // 1. Статистика списков ("В списках у людей")
+          UserListsStats stats = _generateFallbackStats(title);
+          final rawStats = anime['statusesStats'];
+          if (rawStats is List && rawStats.isNotEmpty) {
+            int watching = 0, planned = 0, onHold = 0, dropped = 0, completed = 0;
+            for (final s in rawStats) {
+              if (s is! Map<String, dynamic>) continue;
+              final status = '${s['status']}'.toLowerCase();
+              final val = s['count'] as int? ?? int.tryParse('${s['count'] ?? ''}') ?? 0;
+              if (status == 'watching') watching = val;
+              if (status == 'planned') planned = val;
+              if (status == 'on_hold') onHold = val;
+              if (status == 'dropped') dropped = val;
+              if (status == 'completed') completed = val;
+            }
+            if (watching + planned + onHold + dropped + completed > 0) {
+              stats = UserListsStats(
+                watching: watching,
+                planned: planned,
+                onHold: onHold,
+                dropped: dropped,
+                completed: completed,
+              );
+            }
+          }
+
+          // 2. Распределение оценок (1..10)
+          var scores = <ScoreDistributionItem>[];
+          final rawScores = anime['scoresStats'];
+          if (rawScores is List && rawScores.isNotEmpty) {
+            int totalVotes = 0;
+            final scoreMap = <int, int>{};
+            for (final s in rawScores) {
+              if (s is! Map<String, dynamic>) continue;
+              final sc = s['score'] as int? ?? int.tryParse('${s['score'] ?? ''}') ?? 0;
+              final count = s['count'] as int? ?? int.tryParse('${s['count'] ?? ''}') ?? 0;
+              if (sc >= 1 && sc <= 10) {
+                scoreMap[sc] = count;
+                totalVotes += count;
+              }
+            }
+            if (totalVotes > 0) {
+              for (int sc = 10; sc >= 1; sc--) {
+                final v = scoreMap[sc] ?? 0;
+                scores.add(ScoreDistributionItem(
+                  score: sc,
+                  votes: v,
+                  percentage: (v / totalVotes * 100),
+                ));
+              }
+            }
+          }
+          if (scores.isEmpty) {
+            final avgScore = double.tryParse('${anime['score'] ?? ''}') ?? 8.8;
+            scores = _generateFallbackScoreDistribution(avgScore);
+          }
+
+          // 3. Официальные трейлеры и PV ролики
+          final videos = <AnimeVideoItem>[];
+          final rawVideos = anime['videos'];
+          if (rawVideos is List) {
+            for (final v in rawVideos) {
+              if (v is! Map<String, dynamic>) continue;
+              final id = '${v['id'] ?? ''}';
+              final url = v['url'] as String? ?? '';
+              var imageUrl = v['imageUrl'] as String? ?? '';
+              final name = v['name'] as String? ?? '';
+              final kind = v['kind'] as String? ?? 'pv';
+              if (url.isNotEmpty) {
+                if (imageUrl.isEmpty && (url.contains('youtu.be') || url.contains('youtube.com'))) {
+                  final ytMatch = RegExp(r'(?:youtu\.be\/|v=)([\w-]{11})').firstMatch(url);
+                  if (ytMatch != null) {
+                    imageUrl = 'https://img.youtube.com/vi/${ytMatch.group(1)}/hqdefault.jpg';
+                  }
+                }
+                videos.add(AnimeVideoItem(
+                  id: id,
+                  url: url,
+                  imageUrl: wrapCorsSafeUrl(imageUrl),
+                  title: name.isNotEmpty ? name : 'Трейлер ($kind)',
+                  kind: kind,
+                  hosting: url.contains('youtu') ? 'youtube' : 'video',
+                ));
+              }
+            }
+          }
+          if (videos.isEmpty) {
+            videos.addAll(_generateFallbackVideos(title));
+          }
+
+          // 4. Скриншоты
+          final screenshots = <String>[];
+          final rawScreens = anime['screenshots'];
+          if (rawScreens is List) {
+            for (final item in rawScreens) {
+              if (item is! Map) continue;
+              final original = item['originalUrl'] as String? ?? '';
+              if (original.isNotEmpty) {
+                screenshots.add(
+                  original.startsWith('http') ? original : 'https://shikimori.one$original',
+                );
+              }
+            }
+          }
+
+          return (
+            videos: videos,
+            stats: stats,
+            scores: scores,
+            screenshots: screenshots,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[ShikimoriDS] GraphQL query error, falling back to REST: $e');
+    }
+
+    // Резервный вариант через последовательные REST-запросы
+    final legacy = await _fetchVideosAndStats(shikimoriId, title);
+    final screenshots = await getScreenshots(shikimoriId).catchError((_) => <String>[]);
+    return (
+      videos: legacy.videos,
+      stats: legacy.stats,
+      scores: legacy.scores,
+      screenshots: screenshots,
+    );
+  }
+
   Future<({List<AnimeVideoItem> videos, UserListsStats stats, List<ScoreDistributionItem> scores})> _fetchVideosAndStats(
     int shikimoriId,
     AnimeTitle title,
   ) async {
     try {
-      final response = await _dio.get('/animes/$shikimoriId');
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get('/animes/$shikimoriId', options: _shikimoriOptions),
+      );
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
 
@@ -663,7 +919,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         final videos = <AnimeVideoItem>[];
 
         try {
-          final videosRes = await _dio.get('/animes/$shikimoriId/videos');
+          final videosRes = await _enqueueShikimoriRequest(
+            () => _dio.get('/animes/$shikimoriId/videos', options: _shikimoriOptions),
+          );
           if (videosRes.statusCode == 200 && videosRes.data is List && (videosRes.data as List).isNotEmpty) {
             for (final v in videosRes.data as List) {
               if (v is! Map<String, dynamic>) continue;
@@ -757,7 +1015,13 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     int? resolvedId = shikimoriId;
     if ((resolvedId == null || resolvedId <= 0) && query != null && query.trim().isNotEmpty) {
       try {
-        final searchRes = await _dio.get('/animes', queryParameters: {'search': query, 'limit': 1});
+        final searchRes = await _enqueueShikimoriRequest(
+          () => _dio.get(
+            '/animes',
+            queryParameters: {'search': query, 'limit': 1},
+            options: _shikimoriOptions,
+          ),
+        );
         if (searchRes.statusCode == 200 && searchRes.data is List && (searchRes.data as List).isNotEmpty) {
           resolvedId = (searchRes.data as List).first['id'] as int?;
         }
@@ -767,7 +1031,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     final videos = <AnimeVideoItem>[];
     if (resolvedId != null && resolvedId > 0) {
       try {
-        final res = await _dio.get('/animes/$resolvedId/videos');
+        final res = await _enqueueShikimoriRequest(
+          () => _dio.get('/animes/$resolvedId/videos', options: _shikimoriOptions),
+        );
         if (res.statusCode == 200 && res.data is List && (res.data as List).isNotEmpty) {
           for (final v in res.data as List) {
             if (v is! Map<String, dynamic>) continue;
@@ -822,7 +1088,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   Future<List<String>> getScreenshots(int shikimoriId) async {
     if (shikimoriId <= 0) return const [];
     try {
-      final res = await _dio.get('/animes/$shikimoriId/screenshots');
+      final res = await _enqueueShikimoriRequest(
+        () => _dio.get('/animes/$shikimoriId/screenshots', options: _shikimoriOptions),
+      );
       if (res.statusCode == 200 && res.data is List) {
         final list = <String>[];
         for (final item in res.data as List) {

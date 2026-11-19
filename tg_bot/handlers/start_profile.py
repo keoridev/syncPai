@@ -51,7 +51,7 @@ def _linked_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
         [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-        [InlineKeyboardButton(text="🐞 Сообщить о баге", callback_data="report_bug")],
+        [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
     ])
 
 
@@ -60,7 +60,7 @@ def _guest_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
         [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-        [InlineKeyboardButton(text="🐞 Сообщить о баге", callback_data="report_bug")],
+        [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
     ])
 
 

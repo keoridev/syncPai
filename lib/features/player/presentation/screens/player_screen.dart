@@ -31,6 +31,8 @@ import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import 'package:sync_pai/features/player/services/global_mini_player_service.dart';
+import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
+import '../widgets/player_onboarding_overlay.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
 import '../widgets/auto_next_episode_banner.dart';
 import '../widgets/desktop_player_layout.dart';
@@ -72,6 +74,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
   bool _watchReactionsEnabled = true;
+  bool _showOnboarding = false;
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
   int? _dismissedOpeningEpisode;
@@ -178,6 +181,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    final isMobilePlatform = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+    if (isMobilePlatform &&
+        getIt.isRegistered<SettingsCubit>() &&
+        !getIt<SettingsCubit>().state.hasSeenPlayerOnboarding) {
+      _showOnboarding = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _showOnboarding && !_cubit.state.isSyncRoom) {
+          _cubit.pause();
+        }
+      });
+    }
     WidgetsBinding.instance.addObserver(this);
 
     // Полноэкранный режим без системных панелей
@@ -1052,6 +1066,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   if (state.isSyncRoom && state.roomCode != null)
                     ..._buildSyncRoomReactionWidgets(state),
 
+                  if (_showOnboarding)
+                    Positioned.fill(
+                      child: PlayerOnboardingOverlay(
+                        onDismiss: _dismissOnboarding,
+                        onStepChanged: (step) {
+                          if (step == 3) {
+                            _cubit.showControls();
+                          }
+                        },
+                      ),
+                    ),
+
                   // Ненавязчивая плавающая иконка замка при активной блокировке
                   if (state.isScreenLocked)
                     Positioned(
@@ -1184,6 +1210,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   ),
 );
 }
+
+  void _dismissOnboarding() {
+    if (getIt.isRegistered<SettingsCubit>()) {
+      getIt<SettingsCubit>().completePlayerOnboarding();
+    }
+    if (mounted) {
+      setState(() => _showOnboarding = false);
+    }
+    if (!_cubit.state.isSyncRoom || _cubit.state.isHost) {
+      _cubit.play();
+    }
+  }
 
   List<Widget> _buildSyncRoomReactionWidgets(PlayerState state) {
     final roomCode = state.roomCode;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -52,15 +53,15 @@ class PlayerControlsOverlay extends StatelessWidget {
     final isGuestInSync = state.isSyncRoom && !state.isHost;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final isShort = MediaQuery.of(context).size.height < 520;
-    final preset = getIt.isRegistered<SettingsCubit>()
-        ? getIt<SettingsCubit>().state.playerHudPreset
-        : PlayerHudPreset.standard;
-    final isMinimal = preset == PlayerHudPreset.minimal;
-    final isAdvanced = preset == PlayerHudPreset.advanced;
-
     if (state.isScreenLocked) return const SizedBox.shrink();
 
-    return IgnorePointer(
+    final settingsCubit =
+        getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
+
+    Widget buildWithSettings(SettingsState settingsState) {
+      final showSeek10s = settingsState.isHudButtonVisible('seek_10s');
+
+      return IgnorePointer(
       ignoring: !state.areControlsVisible,
       child: AnimatedOpacity(
         opacity: state.areControlsVisible ? 1.0 : 0.0,
@@ -112,6 +113,8 @@ class PlayerControlsOverlay extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                if (state.isHudEditMode)
+                  _buildHudEditTopBanner(context, settingsCubit, settingsState),
                 // ВЕРХНИЙ БАР
                 Padding(
                   padding: EdgeInsets.symmetric(
@@ -290,110 +293,12 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   },
                                 ),
 
-                              // Кнопка сворачивания в плавающий мини-плеер (In-App PiP)
-                              if (onMinimize != null)
-                                IconButton(
-                                  tooltip: 'Мини-плеер (в окне)',
-                                  icon: const Icon(
-                                    Icons.picture_in_picture_alt_rounded,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  iconSize: isLandscape ? 18 : 20,
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: onMinimize,
-                                ),
-
-                              // В ЛАНДШАФТНОМ РЕЖИМЕ: чистый и лаконичный набор
-                              if (isLandscape) ...[
-                                if (isAdvanced) ...[
-                                  // Кнопка Скорости воспроизведения (быстрый выбор в расширенном режиме)
-                                  InkWell(
-                                    onTap: () => _showQuickSpeedSheet(context),
-                                    borderRadius: AppDimensions.borderRadiusSmall,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.surfaceElevated,
-                                        borderRadius: AppDimensions.borderRadiusSmall,
-                                        border: Border.all(color: AppColors.strokeMedium),
-                                      ),
-                                      child: Text(
-                                        '${state.playbackRate}x',
-                                        style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-
-                                  // Список серий
-                                  IconButton(
-                                    tooltip: 'Список серий',
-                                    icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 19),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                                  ),
-                                ],
-
-                                // Единая шестеренка настроек (Озвучка, Масштаб, Автопропуск, Danmaku, PiP)
-                                IconButton(
-                                  tooltip: 'Настройки плеера',
-                                  icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 19),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerSettingsSheet.show(
-                                    context,
-                                    cubit: cubit,
-                                    state: state,
-                                    onMinimizeToMiniPlayer: onMinimize,
-                                  ),
-                                ),
-
-                                if (onToggleOrientation != null)
-                                  IconButton(
-                                    tooltip: 'Портретный режим',
-                                    icon: const Icon(
-                                      Icons.screen_lock_portrait_rounded,
-                                      color: AppColors.textSecondary,
-                                      size: 19,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: onToggleOrientation,
-                                  ),
-                              ] else ...[
-                                // В ПОРТРЕТНОМ РЕЖИМЕ: компактный чистый набор
-                                if (isAdvanced) ...[
-                                  // Список серий
-                                  IconButton(
-                                    tooltip: 'Серии',
-                                    icon: const Icon(Icons.video_library_rounded, color: AppColors.textPrimary, size: 20),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
-                                  ),
-                                ],
-
-                                // Единая шестеренка всех настроек (Озвучка, Качество, Скорость, Автопропуск)
-                                IconButton(
-                                  tooltip: 'Настройки',
-                                  icon: const Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 20),
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => PlayerSettingsSheet.show(
-                                    context,
-                                    cubit: cubit,
-                                    state: state,
-                                    onMinimizeToMiniPlayer: onMinimize,
-                                  ),
-                                ),
-
-                                if (onToggleOrientation != null)
-                                  IconButton(
-                                    tooltip: 'Альбомный режим',
-                                    icon: const Icon(
-                                      Icons.screen_rotation_rounded,
-                                      color: AppColors.textPrimary,
-                                      size: 20,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: onToggleOrientation,
-                                  ),
+                              // Динамические кнопки HUD строго в порядке SettingsState.playerButtonOrder
+                              ..._buildOrderedTopActions(
+                                context,
+                                settingsState: settingsState,
+                                isLandscape: isLandscape,
+                              ),
 
                                 // Кнопка Watch Party Wrapped Сторис (в режиме совместного просмотра)
                                 if (state.isSyncRoom)
@@ -403,7 +308,6 @@ class PlayerControlsOverlay extends StatelessWidget {
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => cubit.toggleWatchPartyStats(),
                                   ),
-                              ],
                             ],
                           ),
                         ),
@@ -454,7 +358,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (!isMinimal) ...[
+                      if (showSeek10s) ...[
                         // Перемотка на 10 сек назад
                         IconButton(
                           iconSize: isLandscape ? 32 : 40,
@@ -499,7 +403,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ),
                       ),
 
-                      if (!isMinimal) ...[
+                      if (showSeek10s) ...[
                         SizedBox(width: isLandscape ? 64 : 48),
                         // Перемотка на 10 сек вперед
                         IconButton(
@@ -783,7 +687,428 @@ class PlayerControlsOverlay extends StatelessWidget {
       ),
     ),
   );
-}
+    }
+
+    if (settingsCubit == null) {
+      return buildWithSettings(const SettingsState());
+    }
+    return BlocBuilder<SettingsCubit, SettingsState>(
+      bloc: settingsCubit,
+      builder: (context, settingsState) => buildWithSettings(settingsState),
+    );
+  }
+
+  Widget _buildHudEditTopBanner(
+    BuildContext context,
+    SettingsCubit? settingsCubit,
+    SettingsState settingsState,
+  ) {
+    return Container(
+      key: const ValueKey('hud_edit_mode_banner'),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12161F).withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
+        ),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Icon(
+                Icons.drag_indicator_rounded,
+                color: Color(0xFF35D9D5),
+                size: 16,
+              ),
+              const Text(
+                'Режим настройки HUD',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              for (final p in const [
+                PlayerHudPreset.standard,
+                PlayerHudPreset.minimal,
+                PlayerHudPreset.advanced,
+              ])
+                InkWell(
+                  key: ValueKey('wysiwyg_preset_${p.name}'),
+                  onTap: () => settingsCubit?.setPlayerHudPreset(p),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: settingsState.playerHudPreset == p
+                          ? const Color(0xFF35D9D5).withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: settingsState.playerHudPreset == p
+                            ? const Color(0xFF35D9D5)
+                            : Colors.white12,
+                      ),
+                    ),
+                    child: Text(
+                      p.label,
+                      style: TextStyle(
+                        color: settingsState.playerHudPreset == p
+                            ? const Color(0xFF35D9D5)
+                            : Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              TextButton(
+                key: const ValueKey('wysiwyg_reset_btn'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => settingsCubit?.resetPlayerHudToDefault(),
+                child: const Text(
+                  'Сбросить',
+                  style: TextStyle(color: Colors.white60, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          ElevatedButton(
+            key: const ValueKey('wysiwyg_done_btn'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF35D9D5),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => cubit.setHudEditMode(false),
+            child: const Text(
+              'Готово',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildOrderedTopActions(
+    BuildContext context, {
+    required SettingsState settingsState,
+    required bool isLandscape,
+  }) {
+    final settingsCubit =
+        getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
+    final editMode = state.isHudEditMode;
+    final actions = <Widget>[];
+
+    Widget wrapEditable(String id, Widget child, bool isVisible) {
+      if (!editMode) return child;
+      return DragTarget<String>(
+        onWillAcceptWithDetails: (details) => details.data != id,
+        onAcceptWithDetails: (details) {
+          final order = settingsState.playerButtonOrder;
+          final oldIdx = order.indexOf(details.data);
+          final newIdx = order.indexOf(id);
+          if (oldIdx >= 0 && newIdx >= 0) {
+            settingsCubit?.reorderPlayerButtons(
+              oldIdx,
+              newIdx,
+              adjustNewIndex: false,
+            );
+          }
+        },
+        builder: (context, candidateData, _) {
+          final isDropTarget = candidateData.isNotEmpty;
+          return Draggable<String>(
+            data: id,
+            feedback: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF12161F),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF35D9D5), width: 1.5),
+                ),
+                child: child,
+              ),
+            ),
+            childWhenDragging: Opacity(opacity: 0.2, child: child),
+            child: GestureDetector(
+              key: ValueKey('wysiwyg_hud_slot_$id'),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                settingsCubit?.togglePlayerButton(id, !isVisible);
+              },
+              child: Opacity(
+                opacity: isVisible ? 1.0 : 0.35,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: isDropTarget
+                        ? const Color(0xFF35D9D5).withValues(alpha: 0.22)
+                        : Colors.black.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDropTarget
+                          ? const Color(0xFF35D9D5)
+                          : const Color(0xFF35D9D5).withValues(alpha: 0.6),
+                      width: 1,
+                    ),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IgnorePointer(child: child),
+                      Positioned(
+                        right: -3,
+                        top: -3,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: isVisible
+                                ? const Color(0xFF35D9D5)
+                                : const Color(0xFF242A38),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isVisible ? Icons.check : Icons.add,
+                            size: 9,
+                            color: isVisible ? Colors.black : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    for (final id in settingsState.playerButtonOrder) {
+      final isVisible = settingsState.isHudButtonVisible(id);
+      if (!editMode && !isVisible) continue;
+
+      switch (id) {
+        case 'pip':
+          if (onMinimize != null || editMode) {
+            actions.add(
+              wrapEditable(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_action_pip'),
+                  tooltip: 'Мини-плеер (в окне)',
+                  icon: const Icon(
+                    Icons.picture_in_picture_alt_rounded,
+                    color: AppColors.textPrimary,
+                  ),
+                  iconSize: isLandscape ? 18 : 20,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onMinimize ?? () {},
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+        case 'speed':
+          if (isLandscape || editMode) {
+            actions.add(
+              wrapEditable(
+                id,
+                InkWell(
+                  key: const ValueKey('hud_action_speed'),
+                  onTap: () => _showQuickSpeedSheet(context),
+                  borderRadius: AppDimensions.borderRadiusSmall,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: AppDimensions.borderRadiusSmall,
+                      border: Border.all(color: AppColors.strokeMedium),
+                    ),
+                    child: Text(
+                      '${state.playbackRate}x',
+                      style: AppTypography.badge.copyWith(
+                        color: AppColors.textPrimary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+        case 'next_episode':
+          if (editMode ||
+              settingsState.isHudButtonVisible('speed') ||
+              settingsState.playerHudPreset == PlayerHudPreset.advanced ||
+              settingsState.playerHudPreset == PlayerHudPreset.custom) {
+            actions.add(
+              wrapEditable(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_action_episodes'),
+                  tooltip: 'Список серий',
+                  icon: Icon(
+                    Icons.video_library_rounded,
+                    color: AppColors.textPrimary,
+                    size: isLandscape ? 19 : 20,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+        case 'aspect_ratio':
+          actions.add(
+            wrapEditable(
+              id,
+              IconButton(
+                key: const ValueKey('hud_action_aspect_ratio'),
+                tooltip: 'Соотношение сторон',
+                icon: Icon(
+                  Icons.aspect_ratio_rounded,
+                  color: AppColors.textPrimary,
+                  size: isLandscape ? 19 : 20,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  final nextFit = state.videoFit == BoxFit.contain
+                      ? BoxFit.cover
+                      : (state.videoFit == BoxFit.cover
+                          ? BoxFit.fill
+                          : BoxFit.contain);
+                  cubit.setVideoFit(nextFit);
+                },
+              ),
+              isVisible,
+            ),
+          );
+          break;
+        case 'screenshot':
+          if (editMode) {
+            actions.add(
+              wrapEditable(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_action_screenshot'),
+                  tooltip: 'Скриншот кадра',
+                  icon: Icon(
+                    Icons.camera_alt_outlined,
+                    color: AppColors.textPrimary,
+                    size: isLandscape ? 19 : 20,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {},
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+        case 'sleep_timer':
+          if (editMode) {
+            actions.add(
+              wrapEditable(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_action_sleep_timer'),
+                  tooltip: 'Таймер сна',
+                  icon: Icon(
+                    Icons.bedtime_outlined,
+                    color: AppColors.textPrimary,
+                    size: isLandscape ? 19 : 20,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {},
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+        case 'settings_gear':
+          actions.add(
+            wrapEditable(
+              id,
+              IconButton(
+                key: const ValueKey('hud_action_settings_gear'),
+                tooltip: 'Настройки плеера',
+                icon: Icon(
+                  Icons.settings_outlined,
+                  color: AppColors.textPrimary,
+                  size: isLandscape ? 19 : 20,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => PlayerSettingsSheet.show(
+                  context,
+                  cubit: cubit,
+                  state: state,
+                  onMinimizeToMiniPlayer: onMinimize,
+                ),
+              ),
+              isVisible,
+            ),
+          );
+          break;
+        case 'fullscreen':
+          if (onToggleOrientation != null || editMode) {
+            actions.add(
+              wrapEditable(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_action_fullscreen'),
+                  tooltip: isLandscape ? 'Портретный режим' : 'Альбомный режим',
+                  icon: Icon(
+                    isLandscape
+                        ? Icons.screen_lock_portrait_rounded
+                        : Icons.screen_rotation_rounded,
+                    color: isLandscape
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
+                    size: isLandscape ? 19 : 20,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onToggleOrientation ?? () {},
+                ),
+                isVisible,
+              ),
+            );
+          }
+          break;
+      }
+    }
+    return actions;
+  }
 
   Widget _buildLandscapeBottomBar(
     BuildContext context, {

@@ -8,6 +8,7 @@ import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../domain/entities/customization_tier_policy.dart';
 import '../../domain/services/taste_compatibility_calculator.dart';
 import 'profile_state.dart';
 
@@ -34,6 +35,90 @@ class ProfileCubit extends Cubit<ProfileState> {
       status: ProfileStatus.loaded,
       profile: updated,
     ));
+  }
+
+  /// Финальная защита и применение кастомизации с проверкой уровня подписки.
+  Future<UserProfile> applyCustomization({
+    required String frameId,
+    required String backgroundId,
+    String? customTitle,
+    String? customStatus,
+    String? bio,
+    String? badgeId,
+    String? favoriteAnimeTitle,
+    String? favoriteAnimeId,
+    String? favoriteAnimePoster,
+    String? artworkUrl,
+    String? artworkTitle,
+    String? accentColor,
+    String? showcaseType,
+    String? countryFlag,
+    String? countryName,
+    String? avatarShape,
+    String? avatarUrl,
+  }) async {
+    final current = state.profile;
+    final sanitized = CustomizationTierPolicy.sanitizePayload(
+      tier: current.supporterTier,
+      frameId: frameId,
+      backgroundId: backgroundId,
+      customTitle: customTitle,
+      artworkUrl: artworkUrl,
+      artworkTitle: artworkTitle,
+    );
+
+    final optimistic = current.copyWith(
+      avatarUrl: avatarUrl ?? current.avatarUrl,
+      frameId: sanitized.frameId,
+      backgroundId: sanitized.backgroundId,
+      customTitle: sanitized.customTitle,
+      customStatus: customStatus,
+      bio: bio,
+      badgeId: badgeId,
+      favoriteAnimeTitle: favoriteAnimeTitle,
+      favoriteAnimeId: favoriteAnimeId,
+      favoriteAnimePoster: favoriteAnimePoster,
+      artworkUrl: sanitized.artworkUrl,
+      artworkTitle: sanitized.artworkTitle,
+      accentColor: accentColor,
+      showcaseType: showcaseType ?? current.showcaseType,
+      countryFlag: countryFlag,
+      countryName: countryName,
+      avatarShape: avatarShape ?? current.avatarShape,
+    );
+
+    applyOptimisticProfile(optimistic);
+
+    if (authRepository != null) {
+      try {
+        final saved = await authRepository!.updateProfile(
+          username: current.username,
+          avatarUrl: avatarUrl ?? current.avatarUrl,
+          frameId: sanitized.frameId,
+          backgroundId: sanitized.backgroundId,
+          customTitle: sanitized.customTitle,
+          customStatus: customStatus,
+          bio: bio,
+          badgeId: badgeId,
+          favoriteAnimeTitle: favoriteAnimeTitle,
+          favoriteAnimeId: favoriteAnimeId,
+          favoriteAnimePoster: favoriteAnimePoster,
+          artworkUrl: sanitized.artworkUrl,
+          artworkTitle: sanitized.artworkTitle,
+          accentColor: accentColor,
+          showcaseType: showcaseType,
+          countryFlag: countryFlag,
+          countryName: countryName,
+          avatarShape: avatarShape,
+        );
+        applyOptimisticProfile(saved);
+        return saved;
+      } catch (e) {
+        debugPrint('ProfileCubit.applyCustomization persist error: $e');
+      }
+    }
+
+    return optimistic;
   }
 
   /// Загрузка данных профиля пользователя (своего или профиля друга по ID)

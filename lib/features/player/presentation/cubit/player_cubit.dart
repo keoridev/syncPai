@@ -277,6 +277,18 @@ class PlayerCubit extends Cubit<PlayerState> {
           _lastPosSavedAt = now;
           _savePlaybackPosition(pos, state.duration);
         }
+        // Достижения за просмотр (Первый шаг / Ночной дозор) — строго при просмотре >= 80% серии
+        if (state.duration.inSeconds > 10 &&
+            pos.inSeconds >= (state.duration.inSeconds * 0.8)) {
+          final epKey = '${state.title.id}_${state.episode.episode}';
+          if (_completed80Episodes.add(epKey)) {
+            unawaited(
+              AchievementService.instance.recordEpisodeWatched(
+                isWatchTogether: state.isSyncRoom,
+              ),
+            );
+          }
+        }
         // Троттлинг: обновляем позицию в Bloc не чаще чем раз в 250 мс для защиты FPS
         if ((pos - _lastEmittedPos).abs() >= const Duration(milliseconds: 250)) {
           _lastEmittedPos = pos;
@@ -1048,6 +1060,8 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
+  final Set<String> _completed80Episodes = {};
+
   Future<void> _loadCurrentEpisodeStream({Duration? initialPosition}) async {
     final effectiveStart = initialPosition ?? _pendingInitialSeek;
     if (effectiveStart != null && effectiveStart > Duration.zero) {
@@ -1175,11 +1189,11 @@ class PlayerCubit extends Cubit<PlayerState> {
         errorMessage: () => null,
       ));
       _updateDiscordPresence(isPaused: !shouldPlay);
-      unawaited(
-        AchievementService.instance.recordEpisodeWatched(
-          isWatchTogether: state.isSyncRoom,
-        ),
-      );
+      if (state.isSyncRoom && state.roomCode != null) {
+        unawaited(
+          AchievementService.instance.recordWatchTogetherJoined(state.roomCode),
+        );
+      }
       await player.open(
         Media(
           streamUrl,
@@ -2144,7 +2158,21 @@ class PlayerCubit extends Cubit<PlayerState> {
     });
   }
 
+  void setHudEditMode(bool enabled) {
+    if (enabled) {
+      _controlsTimer?.cancel();
+      emit(state.copyWith(isHudEditMode: true, areControlsVisible: true));
+    } else {
+      emit(state.copyWith(isHudEditMode: false, areControlsVisible: true));
+      _resetControlsTimer();
+    }
+  }
+
   void _resetControlsTimer() {
+    if (state.isHudEditMode) {
+      _controlsTimer?.cancel();
+      return;
+    }
     if (state.areControlsVisible) {
       _startControlsTimer();
     }

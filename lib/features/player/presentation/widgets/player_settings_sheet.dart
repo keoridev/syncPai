@@ -17,6 +17,7 @@ import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
+import 'player_hud_editor_sheet.dart';
 
 /// Современная полупрозрачная шторка настроек плеера (Bottom Sheet)
 /// в стиле Liquid Glass, объединяющая выбор озвучки, качества, скорости,
@@ -47,21 +48,30 @@ class PlayerSettingsSheet extends StatelessWidget {
             MediaQuery.of(context).size.width >= 650);
 
     if (isDesktop) {
-      return showDialog(
+      return showGeneralDialog<void>(
         context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.78),
-        builder: (_) => Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 680),
-            child: BlocProvider.value(
-              value: cubit,
-              child: BlocBuilder<PlayerCubit, PlayerState>(
-                builder: (ctx, liveState) => PlayerSettingsSheet(
-                  cubit: cubit,
-                  state: liveState,
-                  onMinimizeToMiniPlayer: onMinimizeToMiniPlayer,
+        barrierDismissible: true,
+        barrierLabel: 'Настройки воспроизведения',
+        barrierColor: Colors.black.withValues(alpha: 0.28),
+        transitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, __, ___) => SafeArea(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 420,
+                height: double.infinity,
+                margin: const EdgeInsets.all(12),
+                child: BlocProvider.value(
+                  value: cubit,
+                  child: BlocBuilder<PlayerCubit, PlayerState>(
+                    builder: (ctx, liveState) => PlayerSettingsSheet(
+                      cubit: cubit,
+                      state: liveState,
+                      onMinimizeToMiniPlayer: onMinimizeToMiniPlayer,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -156,7 +166,74 @@ class PlayerSettingsSheet extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
+
+                      // Быстрый вход в живой редактор кнопок HUD
+                      InkWell(
+                        key: const ValueKey('player_settings_direct_hud_edit_btn'),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          cubit.setHudEditMode(true);
+                        },
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: primary.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.drag_indicator_rounded, color: primary, size: 20),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Редактировать прямо на экране',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Icon(Icons.chevron_right_rounded, color: primary, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        key: const ValueKey('player_settings_open_hud_editor'),
+                        onTap: () => PlayerHudEditorSheet.show(context),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.tune_rounded, color: Colors.white70, size: 19),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Список и пресеты HUD',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 19),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // 1. ОЗВУЧКА И СТУДИЯ (Kodik / AniLibria)
                       _buildVoiceoverSection(context, primary),

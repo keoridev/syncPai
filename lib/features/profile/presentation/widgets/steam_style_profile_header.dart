@@ -265,27 +265,33 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
               ),
               const SizedBox(height: 20),
-              ListTile(
-                leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
-                title: Text('Открыть страницу аниме', style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                tileColor: scheme.surfaceContainer,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  context.pushNamed('anime-details', pathParameters: {'id': favId});
-                },
-              ),
-              if (widget.isCurrentUser) ...[
-                const SizedBox(height: 10),
-                ListTile(
-                  leading: Icon(Icons.palette_rounded, color: scheme.onSurfaceVariant, size: 26),
-                  title: Text('Сменить иллюстрацию витрины', style: TextStyle(color: scheme.onSurfaceVariant)),
+              Material(
+                type: MaterialType.transparency,
+                child: ListTile(
+                  leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
+                  title: Text('Открыть страницу аниме', style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   tileColor: scheme.surfaceContainer,
                   onTap: () {
                     Navigator.of(ctx).pop();
-                    _openArtworkSelectorSheet(context);
+                    context.pushNamed('anime-details', pathParameters: {'id': favId});
                   },
+                ),
+              ),
+              if (widget.isCurrentUser) ...[
+                const SizedBox(height: 10),
+                Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    leading: Icon(Icons.palette_rounded, color: scheme.onSurfaceVariant, size: 26),
+                    title: Text('Сменить иллюстрацию витрины', style: TextStyle(color: scheme.onSurfaceVariant)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    tileColor: scheme.surfaceContainer,
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _openArtworkSelectorSheet(context);
+                    },
+                  ),
                 ),
               ],
               const SizedBox(height: 10),
@@ -1233,7 +1239,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           children: [
             Icon(Icons.auto_awesome_mosaic_rounded, color: accent, size: 15),
             const SizedBox(width: 8),
-            Flexible(
+            Expanded(
               child: Text(
                 'ВИТРИНА ИЛЛЮСТРАЦИЙ',
                 maxLines: 1,
@@ -1246,8 +1252,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
               ),
             ),
-            const Spacer(),
-            if (widget.isCurrentUser)
+            if (widget.isCurrentUser) ...[
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: _handleShowcaseTap,
                 child: Container(
@@ -1274,6 +1280,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   ),
                 ),
               ),
+            ],
           ],
         ),
 
@@ -1515,28 +1522,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             )
           else
             const Spacer(),
-          // Быстрая кнопка смены иллюстрации
-          if (widget.isCurrentUser)
-            InkWell(
-              onTap: _handleShowcaseTap,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.palette_outlined, size: 13, color: accent),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Сменить',
-                      style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          const SizedBox(width: 6),
+          const Spacer(),
           Icon(Icons.open_in_new_rounded, size: 13, color: scheme.onSurfaceVariant),
         ],
       ),
@@ -1822,31 +1808,34 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
           itemBuilder: (context, index) {
             final t = titles[index];
             final poster = t.posterUrl;
-            return ListTile(
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 44,
-                  height: 64,
-                  child: CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(poster),
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: const Color(0xFF14161F)),
-                    errorWidget: (_, __, ___) => Container(
-                      color: const Color(0xFF14161F),
-                      child: const Icon(Icons.movie_rounded, color: Colors.white24, size: 20),
+            return Material(
+              type: MaterialType.transparency,
+              child: ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 44,
+                    height: 64,
+                    child: CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(poster),
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: const Color(0xFF14161F)),
+                      errorWidget: (_, __, ___) => Container(
+                        color: const Color(0xFF14161F),
+                        child: const Icon(Icons.movie_rounded, color: Colors.white24, size: 20),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              title: Text(t.displayTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5)),
-              subtitle: Text(t.genres.join(' • '), style: const TextStyle(color: Colors.white60, fontSize: 11)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              tileColor: Colors.white.withValues(alpha: 0.04),
-              onTap: () => _saveArtworkToSupabase(
-                posterUrl: poster,
-                title: t.displayTitle,
-                animeId: '${t.id}',
+                title: Text(t.displayTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5)),
+                subtitle: Text(t.genres.join(' • '), style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                tileColor: Colors.white.withValues(alpha: 0.04),
+                onTap: () => _saveArtworkToSupabase(
+                  posterUrl: poster,
+                  title: t.displayTitle,
+                  animeId: '${t.id}',
+                ),
               ),
             );
           },

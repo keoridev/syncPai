@@ -130,6 +130,7 @@ class AchievementService extends ChangeNotifier {
   static const String _prefDailyDateKey = 'syncpai_ach_daily_date';
   static const String _prefDailyCountKey = 'syncpai_ach_daily_count';
   static const String _prefPartyCountKey = 'syncpai_ach_party_count';
+  static const String _prefPartyRoomsKey = 'syncpai_ach_party_rooms';
   static const String _prefReviewsCountKey = 'syncpai_ach_reviews_count';
   static const String _prefWatchSecondsKey = 'syncpai_ach_watch_seconds';
   static const String _prefOpSkipsKey = 'syncpai_ach_op_skips';
@@ -282,11 +283,25 @@ class AchievementService extends ChangeNotifier {
     }
   }
 
-  Future<void> recordWatchTogetherJoined() async {
+  Future<void> recordWatchTogetherJoined([String? roomCode]) async {
     await _ensureInit();
     final prefs = await _getPrefs();
-    final count = (prefs.getInt(_prefPartyCountKey) ?? 0) + 1;
-    await prefs.setInt(_prefPartyCountKey, count);
+    int count;
+    if (roomCode != null && roomCode.trim().isNotEmpty) {
+      final rooms = List<String>.from(
+        prefs.getStringList(_prefPartyRoomsKey) ?? const [],
+      );
+      final clean = roomCode.trim();
+      if (!rooms.contains(clean)) {
+        rooms.add(clean);
+        await prefs.setStringList(_prefPartyRoomsKey, rooms);
+      }
+      count = rooms.length;
+      await prefs.setInt(_prefPartyCountKey, count);
+    } else {
+      count = (prefs.getInt(_prefPartyCountKey) ?? 0) + 1;
+      await prefs.setInt(_prefPartyCountKey, count);
+    }
     if (count >= 3) {
       await _unlock('party_soul');
     }

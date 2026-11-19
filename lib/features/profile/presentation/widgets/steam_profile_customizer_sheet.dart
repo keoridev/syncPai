@@ -15,7 +15,11 @@ import '../../../../core/theme/cubit/theme_cubit.dart';
 import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
+import '../../../../core/widgets/supporter_gate_sheet.dart';
 import '../../../../core/widgets/vector_country_flag.dart';
+import '../../../support/domain/entities/supporter_tier.dart';
+import '../../domain/entities/customization_tier_policy.dart';
+import '../cubit/profile_cubit.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
@@ -99,6 +103,8 @@ class _SteamProfileCustomizerSheetState
   late String _selectedAvatarShape;
   String? _selectedFavAnimeId;
   String? _selectedFavAnimePoster;
+  String? _selectedArtworkUrl;
+  String? _selectedArtworkTitle;
 
   late TextEditingController _customUrlController;
   late TextEditingController _customAvatarUrlController;
@@ -148,6 +154,8 @@ class _SteamProfileCustomizerSheetState
     _selectedAvatarShape = widget.profile.avatarShape;
     _selectedFavAnimeId = widget.profile.favoriteAnimeId;
     _selectedFavAnimePoster = widget.profile.favoriteAnimePoster;
+    _selectedArtworkUrl = widget.profile.artworkUrl;
+    _selectedArtworkTitle = widget.profile.artworkTitle;
 
     _customUrlController = TextEditingController(
       text: _selectedBgId.startsWith('http') ? _selectedBgId : '',
@@ -297,13 +305,22 @@ class _SteamProfileCustomizerSheetState
       }
     }
 
+    final sanitized = CustomizationTierPolicy.sanitizePayload(
+      tier: widget.profile.supporterTier,
+      frameId: _selectedFrameId,
+      backgroundId: effectiveBg,
+      customTitle: newTitle.isNotEmpty ? newTitle : null,
+      artworkUrl: _selectedArtworkUrl,
+      artworkTitle: _selectedArtworkTitle,
+    );
+
     // 1. Сохраняем в AuthCubit
     context.read<AuthCubit>().updateProfile(
           username: widget.profile.username,
           avatarUrl: effectiveAvatar,
-          frameId: _selectedFrameId,
-          backgroundId: effectiveBg,
-          customTitle: newTitle.isNotEmpty ? newTitle : null,
+          frameId: sanitized.frameId,
+          backgroundId: sanitized.backgroundId,
+          customTitle: sanitized.customTitle,
           customStatus: newStatus.isNotEmpty ? newStatus : null,
           bio: newBio.isNotEmpty ? newBio : null,
           badgeId: _selectedBadgeId,
@@ -311,12 +328,37 @@ class _SteamProfileCustomizerSheetState
           favoriteAnimeId: newFavAnime.isNotEmpty ? effectiveFavId : null,
           favoriteAnimePoster:
               newFavAnime.isNotEmpty ? effectiveFavPoster : null,
+          artworkUrl: sanitized.artworkUrl ?? '',
+          artworkTitle: sanitized.artworkTitle ?? '',
           accentColor: _selectedAccentHex,
           showcaseType: _selectedShowcaseType,
           countryFlag: _selectedCountryFlag,
           countryName: _selectedCountryName,
           avatarShape: _selectedAvatarShape,
         );
+
+    try {
+      context.read<ProfileCubit>().applyCustomization(
+            avatarUrl: effectiveAvatar,
+            frameId: sanitized.frameId,
+            backgroundId: sanitized.backgroundId,
+            customTitle: sanitized.customTitle,
+            customStatus: newStatus.isNotEmpty ? newStatus : null,
+            bio: newBio.isNotEmpty ? newBio : null,
+            badgeId: _selectedBadgeId,
+            favoriteAnimeTitle: newFavAnime.isNotEmpty ? newFavAnime : null,
+            favoriteAnimeId: newFavAnime.isNotEmpty ? effectiveFavId : null,
+            favoriteAnimePoster:
+                newFavAnime.isNotEmpty ? effectiveFavPoster : null,
+            artworkUrl: sanitized.artworkUrl,
+            artworkTitle: sanitized.artworkTitle,
+            accentColor: _selectedAccentHex,
+            showcaseType: _selectedShowcaseType,
+            countryFlag: _selectedCountryFlag,
+            countryName: _selectedCountryName,
+            avatarShape: _selectedAvatarShape,
+          );
+    } catch (_) {}
 
     // 2. СИНХРОНИЗАЦИЯ С ТЕМОЙ ПРИЛОЖЕНИЯ:
     // Динамически применяем выбранный цвет ко всему приложению!
@@ -795,10 +837,24 @@ class _SteamProfileCustomizerSheetState
           itemBuilder: (context, index) {
             final bg = SteamBackgroundTheme.all[index];
             final isSelected = _selectedBgId == bg.id;
+            final isBgUnlocked =
+                CustomizationTierPolicy.isBannerUnlocked(widget.profile.supporterTier, bg.id);
+            final requiredBgTier = CustomizationTierPolicy.requiredTierForBanner(bg.id);
 
             return RepaintBoundary(
               child: InkWell(
                 onTap: () {
+                  if (!isBgUnlocked) {
+                    SupporterGateSheet.show(
+                      context,
+                      profile: widget.profile,
+                      requiredTier: requiredBgTier,
+                      featureTitle: 'Анимированный баннер «${bg.name}»',
+                      featureDescription:
+                          'Живые фоны и баннеры профиля доступны по подписке ${requiredBgTier.title}.',
+                    );
+                    return;
+                  }
                   setState(() {
                     _selectedBgId = bg.id;
                     _customUrlController.clear();
@@ -836,6 +892,36 @@ class _SteamProfileCustomizerSheetState
                           ),
                         ),
                       ),
+                      if (!isBgUnlocked)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: requiredBgTier.accentColor.withValues(alpha: 0.65),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock_rounded, size: 10, color: requiredBgTier.accentColor),
+                                const SizedBox(width: 3),
+                                Text(
+                                  requiredBgTier.badgeLabel ?? 'Plus',
+                                  style: TextStyle(
+                                    color: requiredBgTier.accentColor,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.all(8),
                         child: Align(
@@ -995,9 +1081,28 @@ class _SteamProfileCustomizerSheetState
                 itemBuilder: (context, index) {
                   final frame = SteamAvatarFrame.all[index];
                   final isSelected = _selectedFrameId == frame.id;
+                  final isFrameUnlocked = CustomizationTierPolicy.isFrameUnlocked(
+                    widget.profile.supporterTier,
+                    frame.id,
+                  );
+                  final requiredFrameTier =
+                      CustomizationTierPolicy.requiredTierForFrame(frame.id);
 
                   return InkWell(
-                    onTap: () => setState(() => _selectedFrameId = frame.id),
+                    onTap: () {
+                      if (!isFrameUnlocked) {
+                        SupporterGateSheet.show(
+                          context,
+                          profile: widget.profile,
+                          requiredTier: requiredFrameTier,
+                          featureTitle: 'Рамка «${frame.name}»',
+                          featureDescription:
+                              'Анимированные и премиальные рамки аватара открываются в подписке ${requiredFrameTier.title}.',
+                        );
+                        return;
+                      }
+                      setState(() => _selectedFrameId = frame.id);
+                    },
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -1011,60 +1116,94 @@ class _SteamProfileCustomizerSheetState
                           width: isSelected ? 2 : 1,
                         ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Stack(
                         children: [
-                          Expanded(
-                            flex: 3,
-                            child: Center(
-                              child: SteamAvatarFrameWidget(
-                                frameId: frame.id,
-                                size: 30,
-                                shape: _selectedAvatarShape,
-                                child: Container(
-                                  width: 30,
-                                  height: 30,
-                                  decoration: BoxDecoration(
-                                    shape: _selectedAvatarShape == 'circle' ? BoxShape.circle : BoxShape.rectangle,
-                                    borderRadius: _selectedAvatarShape == 'square' ? BorderRadius.circular(6) : null,
-                                    color: const Color(0xFF1E2028),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Center(
+                                  child: SteamAvatarFrameWidget(
+                                    frameId: frame.id,
+                                    size: 30,
+                                    shape: _selectedAvatarShape,
+                                    child: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        shape: _selectedAvatarShape == 'circle' ? BoxShape.circle : BoxShape.rectangle,
+                                        borderRadius: _selectedAvatarShape == 'square' ? BorderRadius.circular(6) : null,
+                                        color: const Color(0xFF1E2028),
+                                      ),
+                                      child: Icon(frame.previewIcon,
+                                          size: 15, color: frame.colors.first),
+                                    ),
                                   ),
-                                  child: Icon(frame.previewIcon,
-                                      size: 15, color: frame.colors.first),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Expanded(
+                                flex: 2,
+                                child: Center(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                                      child: Text(
+                                        frame.name,
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: isNarrow ? 9.5 : 10.5,
+                                          height: 1.15,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                          color: isSelected
+                                              ? Colors.white
+                                              : AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (!isFrameUnlocked)
+                            Positioned(
+                              top: 2,
+                              right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.72),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: requiredFrameTier.accentColor.withValues(alpha: 0.65),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.lock_rounded, size: 8.5, color: requiredFrameTier.accentColor),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      requiredFrameTier.badgeLabel ?? 'Plus',
+                                      style: TextStyle(
+                                        color: requiredFrameTier.accentColor,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Expanded(
-                            flex: 2,
-                            child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Text(
-                              frame.name,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: isNarrow ? 9.5 : 10.5,
-                                height: 1.15,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             );
           },
@@ -1583,13 +1722,18 @@ class _SteamProfileCustomizerSheetState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '1. Главная витрина иллюстраций (Steam Artwork):',
-                style: AppTypography.caption.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  '1. Главная витрина иллюстраций (Steam Artwork):',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
@@ -1598,23 +1742,26 @@ class _SteamProfileCustomizerSheetState
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 icon: Icon(
-                  widget.profile.supporterTier.unlocksCustomArtworkUpload
+                  widget.profile.isProOrHigher
                       ? Icons.add_photo_alternate_rounded
                       : Icons.lock_rounded,
                   size: 15,
                 ),
                 label: Text(
-                  widget.profile.supporterTier.unlocksCustomArtworkUpload
+                  widget.profile.isProOrHigher
                       ? 'Свой арт'
                       : 'Свой арт (Pro)',
                   style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                 ),
                 onPressed: () async {
-                  if (!widget.profile.supporterTier.unlocksCustomArtworkUpload) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Загрузка своих GIF/артов открывается в SyncPai Pro'),
-                      ),
+                  if (!widget.profile.isProOrHigher) {
+                    await SupporterGateSheet.show(
+                      context,
+                      profile: widget.profile,
+                      requiredTier: SupporterTier.vip,
+                      featureTitle: 'Своя витрина иллюстраций',
+                      featureDescription:
+                          'Загрузите собственный арт или GIF-баннер в главную витрину с SyncPai Pro.',
                     );
                     return;
                   }
@@ -1639,10 +1786,8 @@ class _SteamProfileCustomizerSheetState
                       }
                       if (chosenPath.isNotEmpty && mounted) {
                         setState(() {
-                          _selectedFavAnimePoster = chosenPath;
-                          if (_favAnimeController.text.trim().isEmpty) {
-                            _favAnimeController.text = 'CUSTOM STEAM ARTWORK';
-                          }
+                          _selectedArtworkUrl = chosenPath;
+                          _selectedArtworkTitle = 'Свой арт';
                         });
                       }
                     }
@@ -1663,15 +1808,26 @@ class _SteamProfileCustomizerSheetState
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
                 final preset = SteamStyleProfileHeader.curatedPresets[index];
-                final isSelected = _selectedFavAnimePoster == preset.imageUrl;
+                final isSelected = _selectedArtworkUrl == preset.imageUrl;
                 final isLive = preset.imageUrl.startsWith('live:');
+                final isLockedLive = isLive && !widget.profile.isProOrHigher;
                 return RepaintBoundary(
                   child: InkWell(
                     onTap: () {
+                      if (isLockedLive) {
+                        SupporterGateSheet.show(
+                          context,
+                          profile: widget.profile,
+                          requiredTier: SupporterTier.vip,
+                          featureTitle: 'Живая витрина «${preset.title}»',
+                          featureDescription:
+                              'Анимированные LIVE-сцены витрины доступны с SyncPai Pro.',
+                        );
+                        return;
+                      }
                       setState(() {
-                        _selectedFavAnimePoster = preset.imageUrl;
-                        _favAnimeController.text = preset.title;
-                        _selectedShowcaseType = 'favorite_anime';
+                        _selectedArtworkUrl = preset.imageUrl;
+                        _selectedArtworkTitle = preset.title;
                       });
                     },
                     borderRadius: BorderRadius.circular(14),
@@ -1741,6 +1897,36 @@ class _SteamProfileCustomizerSheetState
                               top: 6,
                               right: 6,
                               child: Icon(Icons.check_circle_rounded, color: accent, size: 18),
+                            )
+                          else if (isLockedLive)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: SupporterTier.vip.accentColor.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.lock_rounded, size: 9, color: SupporterTier.vip.accentColor),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      'Pro',
+                                      style: TextStyle(
+                                        color: SupporterTier.vip.accentColor,
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           Positioned(
                             left: 8,
@@ -1837,13 +2023,17 @@ class _SteamProfileCustomizerSheetState
                   children: [
                     Icon(Icons.visibility_rounded, color: accent, size: 16),
                     const SizedBox(width: 6),
-                    Text(
-                      'ПРЕДПРОСМОТР ВИТРИНЫ (${_selectedShowcaseType == "stats_badges" ? "ЗНАЧКИ И СТАТИСТИКА" : (_selectedShowcaseType == "custom_text" ? "ИНФО-БОКС" : "ЛЮБИМЫЙ ТАЙТЛ")})',
-                      style: TextStyle(
-                        color: accent,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10.5,
-                        letterSpacing: 0.8,
+                    Expanded(
+                      child: Text(
+                        'ПРЕДПРОСМОТР ВИТРИНЫ (${_selectedShowcaseType == "stats_badges" ? "ЗНАЧКИ И СТАТИСТИКА" : (_selectedShowcaseType == "custom_text" ? "ИНФО-БОКС" : "ЛЮБИМЫЙ ТАЙТЛ")})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10.5,
+                          letterSpacing: 0.8,
+                        ),
                       ),
                     ),
                   ],
@@ -1999,7 +2189,7 @@ class _SteamProfileCustomizerSheetState
                   Text('Кастомный титул профиля:',
                       style: AppTypography.caption
                           .copyWith(color: AppColors.textMuted)),
-                  if (!widget.profile.supporterTier.unlocksCustomProfileTitle) ...[
+                  if (!widget.profile.isProOrHigher) ...[
                     const SizedBox(width: 6),
                     const Icon(
                       Icons.lock_outline_rounded,
@@ -2027,13 +2217,16 @@ class _SteamProfileCustomizerSheetState
           TextField(
             controller: _titleController,
             focusNode: _titleFocusNode,
-            readOnly: !widget.profile.supporterTier.unlocksCustomProfileTitle,
-            onTap: !widget.profile.supporterTier.unlocksCustomProfileTitle
+            readOnly: !widget.profile.isProOrHigher,
+            onTap: !widget.profile.isProOrHigher
                 ? () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Кастомный титул доступен в SyncPai Pro'),
-                      ),
+                    SupporterGateSheet.show(
+                      context,
+                      profile: widget.profile,
+                      requiredTier: SupporterTier.vip,
+                      featureTitle: 'Кастомный титул профиля',
+                      featureDescription:
+                          'Установите уникальный титул профиля в SyncPai Pro.',
                     );
                   }
                 : null,
@@ -2072,6 +2265,17 @@ class _SteamProfileCustomizerSheetState
                 SteamCustomTitle.titles.where((t) => t.isNotEmpty).map((t) {
               return InkWell(
                 onTap: () {
+                  if (!widget.profile.isProOrHigher) {
+                    SupporterGateSheet.show(
+                      context,
+                      profile: widget.profile,
+                      requiredTier: SupporterTier.vip,
+                      featureTitle: 'Кастомный титул профиля',
+                      featureDescription:
+                          'Установите уникальный титул профиля в SyncPai Pro.',
+                    );
+                    return;
+                  }
                   setState(() {
                     _titleController.text = t;
                   });

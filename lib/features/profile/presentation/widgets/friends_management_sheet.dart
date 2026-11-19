@@ -76,6 +76,34 @@ class FriendsManagementView extends StatefulWidget {
     this.userProfile,
   });
 
+  /// Строгое извлечение кода приглашения из буфера обмена (игнорирует длинные тексты > 160 символов).
+  static String? extractValidClipboardInvite(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty || trimmed.length > 160) return null;
+
+    final friendCodeMatch =
+        RegExp(r'\bSP-[A-Z0-9]{6}\b', caseSensitive: false).firstMatch(trimmed);
+    if (friendCodeMatch != null) {
+      return friendCodeMatch.group(0)!.toUpperCase();
+    }
+
+    final deepLinkMatch = RegExp(
+      r'(?:syncpai://(?:room|friend)/|t\.me/syncpai_bot\?start=(?:link_|room_))([A-Za-z0-9_-]{4,20})',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (deepLinkMatch != null) {
+      return deepLinkMatch.group(1)!;
+    }
+
+    final roomCodeMatch = RegExp(r'^\d{6}$').firstMatch(trimmed);
+    if (roomCodeMatch != null) {
+      return roomCodeMatch.group(0)!;
+    }
+
+    return null;
+  }
+
   @override
   State<FriendsManagementView> createState() => _FriendsManagementViewState();
 }
@@ -183,14 +211,11 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   Future<void> _checkClipboardForInvite() async {
     try {
       final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = clipboardData?.text;
-      if (text != null && text.isNotEmpty) {
-        final code = FriendsService.extractInviteCode(text);
-        if (code.isNotEmpty && mounted) {
-          setState(() {
-            _detectedClipboardInvite = code;
-          });
-        }
+      final code = FriendsManagementView.extractValidClipboardInvite(clipboardData?.text);
+      if (code != null && mounted) {
+        setState(() {
+          _detectedClipboardInvite = code;
+        });
       }
     } catch (_) {}
   }
@@ -931,7 +956,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
   }
 
   Widget _buildSearchAndAddTab(Color accent, ColorScheme scheme, bool isDark) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -939,6 +964,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           // Banner если в буфере обмена найдено приглашение
           if (_detectedClipboardInvite != null) ...[
             Container(
+              key: const ValueKey('clipboard_invite_banner'),
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -956,10 +982,14 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
                       children: [
                         Text(
                           'Найдено приглашение в буфере обмена',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700, fontSize: 12),
                         ),
                         Text(
                           'Код: $_detectedClipboardInvite',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
                         ),
                       ],
@@ -1068,9 +1098,7 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
           const SizedBox(height: 12),
 
           // Результаты поиска
-          Expanded(
-            child: _buildSearchResultsSection(accent, scheme, isDark),
-          ),
+          _buildSearchResultsSection(accent, scheme, isDark),
         ],
       ),
     );
@@ -1131,6 +1159,8 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
     }
 
     return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final profile = _searchResults[index];

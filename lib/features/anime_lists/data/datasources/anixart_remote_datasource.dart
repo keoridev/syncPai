@@ -39,7 +39,14 @@ class AnixartRemoteDataSourceImpl implements AnixartRemoteDataSource {
   static const List<String> _hosts = [
     'https://api.anixart.tv',
     'https://api.anixart.app',
+    'https://api-s.anixart.tv',
   ];
+
+  static const Map<String, String> _clientHeaders = {
+    'API-Version': 'v2',
+    'Content-Type': 'application/json; charset=UTF-8',
+    'Accept': 'application/json',
+  };
 
   AnixartRemoteDataSourceImpl({Dio? customDio})
       : _dio = customDio ??
@@ -48,11 +55,43 @@ class AnixartRemoteDataSourceImpl implements AnixartRemoteDataSource {
                 connectTimeout: const Duration(seconds: 12),
                 receiveTimeout: const Duration(seconds: 15),
                 headers: {
-                  if (!kIsWeb) 'User-Agent': 'AnixartApp/8.2.3 (Android; OkHttp)',
-                  'Accept': 'application/json',
+                  if (!kIsWeb)
+                    'User-Agent': 'AnixartApp/8.2.2-24110113 (Android 13; SDK 33; arm64-v8a; SyncPai)',
+                  ..._clientHeaders,
                 },
               ),
             );
+
+  /// Человекочитаемое сопоставление ошибок Anixart для UI (без сырого DioException).
+  static String mapUserFriendlyError(Object error) {
+    if (error is AnixartException) {
+      return error.message;
+    }
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      if (code == 400 || code == 404) {
+        return 'Профиль Anixart не найден или закрыт настройками приватности. Проверьте ID/логин или воспользуйтесь «Импортом из файла» ниже.';
+      }
+      if (code == 403 ||
+          code == 429 ||
+          error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        return 'Серверы Anixart временно недоступны или ограничивают запросы. Попробуйте позже или загрузите файл экспорта из Anixart.';
+      }
+      return 'Не удалось загрузить профиль Anixart. Проверьте ID/логин или воспользуйтесь «Импортом из файла» ниже.';
+    }
+    return 'Не удалось загрузить профиль Anixart. Попробуйте позже или воспользуйтесь «Импортом из файла» ниже.';
+  }
+
+  Options get _requestOptions => Options(
+        headers: {
+          if (!kIsWeb)
+            'User-Agent': 'AnixartApp/8.2.2-24110113 (Android 13; SDK 33; arm64-v8a; SyncPai)',
+          ..._clientHeaders,
+        },
+      );
 
   @override
   Future<AnixartImportResult> fetchProfileBookmarks({
@@ -75,30 +114,50 @@ class AnixartRemoteDataSourceImpl implements AnixartRemoteDataSource {
         rethrow;
       } on DioException catch (e) {
         lastDioError = e;
-        debugPrint('Anixart request to $host failed: ${e.message}, trying fallback...');
+        debugPrint('Anixart request to $host failed (${e.response?.statusCode ?? e.type}), trying fallback...');
       } catch (e) {
         debugPrint('Anixart error on $host: $e');
       }
     }
 
-    throw AnixartNetworkException(
-      lastDioError?.message != null
-          ? 'Ошибка сети при обращении к Anixart: ${lastDioError!.message}'
-          : 'Не удалось связаться с серверами Anixart. Используйте импорт через файл бэкапа.',
+    if (lastDioError != null) {
+      final code = lastDioError.response?.statusCode;
+      final friendly = mapUserFriendlyError(lastDioError);
+      if (code == 400 || code == 404) {
+        throw AnixartUserNotFoundException(friendly);
+      }
+      throw AnixartNetworkException(friendly);
+    }
+
+    throw const AnixartNetworkException(
+      'Серверы Anixart временно недоступны или ограничивают запросы. Попробуйте позже или загрузите файл экспорта из Anixart.',
     );
   }
 
   Future<int> _resolveProfileId(String host, String query) async {
     final directId = int.tryParse(query);
     if (directId != null) {
+      final profileRes = await _dio.get(
+        '$host/profile/$directId',
+        options: _requestOptions,
+      );
+      if (profileRes.statusCode == 403) {
+        throw const AnixartPrivateProfileException();
+      }
+      if (profileRes.statusCode == 400 || profileRes.statusCode == 404) {
+        throw AnixartUserNotFoundException(
+          'Профиль Anixart с ID $directId не найден или закрыт настройками приватности. Проверьте ID или воспользуйтесь «Импортом из файла» ниже.',
+        );
+      }
       return directId;
     }
 
-    // Если передан текст/логин — ищем через search профилей
-    final searchUrl = '$host/profile/search';
-    final response = await _dio.get(
+    // Если передан текст/логин — ищем через POST /search/profiles/{page}
+    final searchUrl = '$host/search/profiles/0';
+    final response = await _dio.post(
       searchUrl,
-      queryParameters: {'query': query, 'page': 0},
+      data: {'query': query},
+      options: _requestOptions,
     );
 
     if (response.statusCode == 200 && response.data != null) {
@@ -141,7 +200,7 @@ class AnixartRemoteDataSourceImpl implements AnixartRemoteDataSource {
     String userId,
   ) async {
     final bookmarksUrl = '$host/profile/$profileId/bookmarks';
-    final response = await _dio.get(bookmarksUrl);
+    final response = await _dio.get(bookmarksUrl, options: _requestOptions);
 
     if (response.statusCode == 403) {
       throw const AnixartPrivateProfileException();
@@ -166,7 +225,7 @@ class AnixartRemoteDataSourceImpl implements AnixartRemoteDataSource {
     if (result.entries.isEmpty) {
       try {
         final historyUrl = '$host/profile/$profileId/history';
-        final historyRes = await _dio.get(historyUrl);
+        final historyRes = await _dio.get(historyUrl, options: _requestOptions);
         if (historyRes.statusCode == 200 && historyRes.data != null) {
           final histJson = historyRes.data is String ? historyRes.data : jsonEncode(historyRes.data);
           final histResult = AnixartBackupParser.parse(histJson, userId: userId);

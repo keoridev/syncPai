@@ -10,6 +10,7 @@ import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/entities/episode_item.dart';
 import '../../../player/domain/entities/player_quality.dart';
+import '../../../player/presentation/widgets/player_hud_editor_sheet.dart';
 
 /// Шторка выбора качества видео перед переходом к просмотру серии.
 /// Позволяет выбрать 1080p, 720p или 480p с информацией о доступности потока.
@@ -190,14 +191,30 @@ class _EpisodeQualitySheetState extends State<EpisodeQualitySheet> {
                           fontSize: 18,
                         ),
                       ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: AppColors.textSecondary,
-                          size: 20,
-                        ),
-                        onPressed: () => Navigator.of(context).pop(),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            key: const ValueKey('quality_sheet_hud_settings_btn'),
+                            tooltip: 'Настроить плеер',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              Icons.settings_outlined,
+                              color: AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            onPressed: () => PlayerHudEditorSheet.show(context),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
                       ),
                     ],
                   ),

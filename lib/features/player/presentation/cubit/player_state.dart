@@ -79,6 +79,7 @@ class PlayerState extends Equatable {
   final int pauseCount;
   final int emojisSent;
   final BoxFit videoFit;
+  final bool isHudEditMode;
 
   const PlayerState({
     required this.title,
@@ -128,6 +129,7 @@ class PlayerState extends Equatable {
     this.pauseCount = 0,
     this.emojisSent = 0,
     this.videoFit = BoxFit.contain,
+    this.isHudEditMode = false,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
@@ -200,6 +202,7 @@ class PlayerState extends Equatable {
     int? pauseCount,
     int? emojisSent,
     BoxFit? videoFit,
+    bool? isHudEditMode,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -249,6 +252,7 @@ class PlayerState extends Equatable {
       pauseCount: pauseCount ?? this.pauseCount,
       emojisSent: emojisSent ?? this.emojisSent,
       videoFit: videoFit ?? this.videoFit,
+      isHudEditMode: isHudEditMode ?? this.isHudEditMode,
     );
   }
 
@@ -301,5 +305,6 @@ class PlayerState extends Equatable {
         pauseCount,
         emojisSent,
         videoFit,
+        isHudEditMode,
       ];
 }

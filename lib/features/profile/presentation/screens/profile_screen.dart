@@ -65,6 +65,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   bool _showActivityCharts = true;
+  bool _showMobileStatsExpanded = false;
   bool _guestBannerDismissed = false;
   bool _nicknamePromptDismissed = false;
   bool _isBgPaused = false;
@@ -835,7 +836,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: Center(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxWidth: isDesktopOS ? 1440 : 860),
-                      child: isDesktopOS
+                      child: (isDesktopOS && MediaQuery.sizeOf(context).width >= 800)
                           ? CustomScrollView(
                               controller: _scrollController,
                               physics: const BouncingScrollPhysics(),
@@ -982,6 +983,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
                                   ),
                                   SliverToBoxAdapter(
+                                    child: _buildBadgesShowcaseCard(context, currentAccentColor),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _StatsCard(
+                                      stats: stats,
+                                      currentAccentColor: currentAccentColor,
+                                      showActivityCharts: _showActivityCharts,
+                                      onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
+                                      isCompactMobile: true,
+                                      isExpanded: _showMobileStatsExpanded,
+                                      onToggleExpand: () => setState(
+                                        () => _showMobileStatsExpanded = !_showMobileStatsExpanded,
+                                      ),
+                                    ),
+                                  ),
+                                  SliverToBoxAdapter(
                                     child: _RecentHistoryCarousel(
                                       items: _watchHistory,
                                       currentAccentColor: currentAccentColor,
@@ -990,6 +1007,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                   SliverToBoxAdapter(
                                     child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _buildCommentsWallCard(context, profile, currentAccentColor),
                                   ),
                                 ] else if (_selectedMobileTab == 1) ...[
                                   SliverToBoxAdapter(
@@ -1086,13 +1106,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                             size: 14,
                             color: isSelected ? accent : scheme.onSurfaceVariant,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelected ? accent : scheme.onSurfaceVariant,
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected ? accent : scheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ],
@@ -1403,8 +1427,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(9),
                   child: SizedBox(
-                    width: 56,
-                    height: 80,
+                    width: 64,
+                    height: 92,
                     child: CachedNetworkImage(
                       imageUrl: wrapCorsSafeUrl(poster),
                       fit: BoxFit.cover,
@@ -1419,15 +1443,33 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'ТВ-сериал · Избранное',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1453,8 +1495,15 @@ class _ProfileScreenState extends State<ProfileScreen>
         final unlockedCount = kSyncPaiAchievements
             .where((b) => unlockedSet.contains(b.id))
             .length;
+        final sortedBadges = [
+          ...kSyncPaiAchievements.where((b) => unlockedSet.contains(b.id)),
+          ...kSyncPaiAchievements.where((b) => !unlockedSet.contains(b.id)),
+        ];
+        final previewBadges = sortedBadges.take(4).toList();
+        final friendToken = profileState.profile.friendCode ?? profileState.profile.id;
 
         return _GlassCard(
+          key: const ValueKey('profile_badges_showcase_card'),
           accentColor: accent,
           margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           padding: const EdgeInsets.all(16),
@@ -1487,21 +1536,42 @@ class _ProfileScreenState extends State<ProfileScreen>
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    key: const ValueKey('badges_view_all_btn'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _showAllBadgesSheet(context, unlockedSet, friendToken, accent),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Все ${kSyncPaiAchievements.length} →',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: kSyncPaiAchievements.length,
+                itemCount: previewBadges.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 1.05,
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  mainAxisExtent: 64,
                 ),
                 itemBuilder: (context, index) {
-                  final b = kSyncPaiAchievements[index];
+                  final b = previewBadges[index];
                   final isUnlocked = unlockedSet.contains(b.id);
                   return Tooltip(
                     message: isUnlocked
@@ -1512,16 +1582,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                         context,
                         b,
                         isUnlocked,
-                        profileState.profile.friendCode ?? profileState.profile.id,
+                        friendToken,
                       ),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                       child: Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                         decoration: BoxDecoration(
                           color: isUnlocked
                               ? b.color.withValues(alpha: isDark ? 0.14 : 0.10)
                               : Colors.white.withValues(alpha: 0.03),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: isUnlocked
                                 ? b.color.withValues(alpha: 0.45)
@@ -1533,19 +1603,19 @@ class _ProfileScreenState extends State<ProfileScreen>
                           children: [
                             Icon(
                               b.icon,
-                              size: 24,
+                              size: 20,
                               color: isUnlocked
                                   ? b.color
                                   : scheme.onSurfaceVariant.withValues(alpha: 0.3),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 4),
                             Text(
                               b.title,
-                              maxLines: 2,
+                              maxLines: 1,
                               textAlign: TextAlign.center,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 9.5,
                                 fontWeight: FontWeight.w700,
                                 color: isUnlocked
                                     ? scheme.onSurface
@@ -1560,6 +1630,174 @@ class _ProfileScreenState extends State<ProfileScreen>
                 },
               ),
             ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAllBadgesSheet(
+    BuildContext context,
+    Set<String> unlockedSet,
+    String friendToken,
+    Color accent,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12161F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final maxH = MediaQuery.sizeOf(sheetCtx).height * 0.82;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.military_tech_rounded, color: accent, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Все достижения (${kSyncPaiAchievements.length})',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        onPressed: () => Navigator.of(sheetCtx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                Flexible(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: kSyncPaiAchievements.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (ctx, index) {
+                      final badge = kSyncPaiAchievements[index];
+                      final isUnlocked = unlockedSet.contains(badge.id);
+                      return FutureBuilder<int>(
+                        future: AchievementService.instance.getCurrentProgress(badge.id),
+                        builder: (context, snapshot) {
+                          final progress = snapshot.data ?? 0;
+                          final target = badge.targetCount;
+                          final ratio = isUnlocked ? 1.0 : (progress / target).clamp(0.0, 1.0);
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () {
+                              Navigator.of(sheetCtx).pop();
+                              _showBadgeProgressSheet(
+                                this.context,
+                                badge,
+                                isUnlocked,
+                                friendToken,
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isUnlocked
+                                    ? badge.color.withValues(alpha: 0.10)
+                                    : Colors.white.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isUnlocked
+                                      ? badge.color.withValues(alpha: 0.40)
+                                      : Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      color: badge.color.withValues(alpha: isUnlocked ? 0.20 : 0.08),
+                                      borderRadius: BorderRadius.circular(11),
+                                    ),
+                                    child: Icon(
+                                      badge.icon,
+                                      color: isUnlocked ? badge.color : Colors.white38,
+                                      size: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                badge.title,
+                                                style: TextStyle(
+                                                  color: isUnlocked ? Colors.white : Colors.white70,
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            Text(
+                                              isUnlocked
+                                                  ? 'Открыто'
+                                                  : '${progress.clamp(0, target)}/$target',
+                                              style: TextStyle(
+                                                color: isUnlocked ? badge.color : Colors.white54,
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          badge.hint,
+                                          style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 11.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: LinearProgressIndicator(
+                                            value: ratio,
+                                            minHeight: 5,
+                                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              isUnlocked ? badge.color : accent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -1994,7 +2232,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.comment_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
-              Flexible(
+              Expanded(
                 child: Text(
                   'СТЕНА КОММЕНТАРИЕВ',
                   maxLines: 1,
@@ -2007,9 +2245,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Text(
                 '${comments.length} записи',
+                textAlign: TextAlign.right,
                 style: TextStyle(
                   fontSize: 11,
                   color: scheme.onSurfaceVariant,
@@ -2138,12 +2377,18 @@ class _StatsCard extends StatelessWidget {
   final Color currentAccentColor;
   final bool showActivityCharts;
   final VoidCallback onToggleCharts;
+  final bool isCompactMobile;
+  final bool isExpanded;
+  final VoidCallback? onToggleExpand;
 
   const _StatsCard({
     required this.stats,
     required this.currentAccentColor,
     required this.showActivityCharts,
     required this.onToggleCharts,
+    this.isCompactMobile = false,
+    this.isExpanded = true,
+    this.onToggleExpand,
   });
 
   @override
@@ -2182,40 +2427,74 @@ class _StatsCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              GestureDetector(
-                onTap: onToggleCharts,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? scheme.surfaceContainer.withValues(alpha: 0.55)
-                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
-                        size: 13,
-                        color: scheme.onSurfaceVariant,
+              if (isCompactMobile && onToggleExpand != null)
+                GestureDetector(
+                  key: const ValueKey('stats_mobile_expand_btn'),
+                  onTap: onToggleExpand,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: currentAccentColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      isExpanded ? 'Свернуть ▴' : 'Подробнее ▾',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: currentAccentColor,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: onToggleCharts,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                          : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
+                          size: 13,
                           color: scheme.onSurfaceVariant,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Text(
+                          showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
+          if (isCompactMobile && !isExpanded) ...[
+            const SizedBox(height: 10),
+            Text(
+              '$watchTimeStr  ·  $totalTitles тайтлов  ·  $totalEpisodes серий',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ] else ...[
           const SizedBox(height: 14),
 
           // Горизонтальный ряд из 3 равных колонок с разделителями
@@ -2280,6 +2559,7 @@ class _StatsCard extends StatelessWidget {
           if (showActivityCharts) ...[
             const SizedBox(height: 14),
             ProfileActivityChart(stats: stats),
+          ],
           ],
         ],
       ),
@@ -2353,6 +2633,192 @@ class _RecentHistoryCarousel extends StatelessWidget {
     required this.currentAccentColor,
     required this.onItemTap,
   });
+
+  static Future<void> _showFullWatchHistorySheet(
+    BuildContext context,
+    List<WatchHistoryItem> rawItems,
+    Color accent,
+    void Function(WatchHistoryItem) onItemTap,
+  ) async {
+    final sorted = List<WatchHistoryItem>.from(rawItems)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    String query = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12161F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final maxH = MediaQuery.sizeOf(sheetCtx).height * 0.85;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final filtered = query.trim().isEmpty
+                ? sorted
+                : sorted
+                    .where((i) => i.titleName
+                        .toLowerCase()
+                        .contains(query.trim().toLowerCase()))
+                    .toList();
+
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxH),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.history_rounded, color: accent, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'История просмотров (${sorted.length})',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                            onPressed: () => Navigator.of(sheetCtx).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                      child: TextField(
+                        onChanged: (v) => setSheetState(() => query = v),
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'Поиск по истории...',
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
+                          prefixIcon: Icon(Icons.search_rounded, color: accent, size: 18),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.05),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1, color: Colors.white10),
+                    Flexible(
+                      child: filtered.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'Ничего не найдено',
+                                style: TextStyle(color: Colors.white54, fontSize: 13),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
+                                final progress = item.durationMs > 0
+                                    ? (item.positionMs / item.durationMs).clamp(0.0, 1.0)
+                                    : 0.0;
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () {
+                                    Navigator.of(sheetCtx).pop();
+                                    onItemTap(item);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.04),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.08),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: SizedBox(
+                                            width: 44,
+                                            height: 62,
+                                            child: CachedNetworkImage(
+                                              imageUrl: wrapCorsSafeUrl(item.posterUrl),
+                                              fit: BoxFit.cover,
+                                              errorWidget: (_, __, ___) => Container(
+                                                color: const Color(0xFF1A1F2B),
+                                                child: const Icon(Icons.movie_rounded, color: Colors.white24),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.titleName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                'Серия ${item.episode}${item.episodeName != null && item.episodeName!.isNotEmpty ? ' · ${item.episodeName}' : ''}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white60,
+                                                  fontSize: 11.5,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: LinearProgressIndicator(
+                                                  value: progress,
+                                                  minHeight: 4,
+                                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                                  valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(Icons.play_arrow_rounded, color: accent, size: 22),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   static final List<WatchHistoryItem> _fallbackSampleItems = [
     WatchHistoryItem(
@@ -2438,11 +2904,13 @@ class _RecentHistoryCarousel extends StatelessWidget {
                 ),
               ),
               InkWell(
-                onTap: () {
-                  if (displayItems.isNotEmpty) {
-                    onItemTap(displayItems.first);
-                  }
-                },
+                key: const ValueKey('profile_full_history_btn'),
+                onTap: () => _showFullWatchHistorySheet(
+                  context,
+                  rawItems,
+                  currentAccentColor,
+                  onItemTap,
+                ),
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2634,6 +3102,7 @@ class _GlassCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _GlassCard({
+    super.key,
     required this.child,
     required this.accentColor,
     this.padding = const EdgeInsets.all(16),

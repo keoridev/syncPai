@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -23,9 +24,12 @@ import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/mascot/mascot_gallery_widget.dart';
 import '../../../../core/widgets/telegram_link_tile.dart';
 import '../../../anime_lists/data/datasources/anixart_csv_parser.dart';
+import '../../../anime_lists/data/datasources/anixart_remote_datasource.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../anime_lists/presentation/widgets/import_progress_dialog.dart';
 import '../../../anime_lists/presentation/widgets/import_status_selector_dialog.dart';
+import '../../../player/presentation/widgets/player_hud_editor_sheet.dart';
+import '../../../player/presentation/widgets/player_onboarding_overlay.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
@@ -51,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   String _defaultQuality = '1080p FHD';
   String _appVersion = '1.0.0';
   bool _isCheckingUpdates = false;
+  String _mobileSectionFilter = 'all';
   SharedPreferences? _prefs;
 
   @override
@@ -418,7 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 } catch (e) {
                                   setModalState(() {
                                     isSubmitting = false;
-                                    localError = e.toString().replaceFirst('Exception: ', '');
+                                    localError = AnixartRemoteDataSourceImpl.mapUserFriendlyError(e);
                                   });
                                 }
                               },
@@ -487,156 +492,423 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _clearCache(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text(
-          'Кэш плеера и временные файлы очищены!',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: const Color(0xFF242730),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Future<void> _showResetDataDialog(BuildContext context, String userId) async {
-    await showDialog<void>(
+  Future<void> _showMascotGallerySheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (dialogCtx) {
-        Future<void> performReset({
-          required bool clearLists,
-          required bool clearHistory,
-        }) async {
-          final messenger = ScaffoldMessenger.of(this.context);
-          AnimeListCubit? listCubit;
-          WatchHistoryCubit? historyCubit;
-          if (getIt.isRegistered<AnimeListCubit>()) {
-            listCubit = getIt<AnimeListCubit>();
-          } else {
-            try {
-              listCubit = this.context.read<AnimeListCubit>();
-            } catch (_) {}
-          }
-          if (getIt.isRegistered<WatchHistoryCubit>()) {
-            historyCubit = getIt<WatchHistoryCubit>();
-          } else {
-            try {
-              historyCubit = this.context.read<WatchHistoryCubit>();
-            } catch (_) {}
-          }
-
-          Navigator.of(dialogCtx).pop();
-          if (clearLists && listCubit != null) {
-            await listCubit.clearAllLists(userId: userId);
-          }
-          if (clearHistory && historyCubit != null) {
-            await historyCubit.clearAllHistory();
-          }
-          if (mounted) {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Данные успешно сброшены'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        }
-
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF12161F),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12161F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final maxH = MediaQuery.sizeOf(sheetCtx).height * 0.85;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Галерея маскота Пай-тян',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                        onPressed: () => Navigator.of(sheetCtx).pop(),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Сброс данных',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 17,
-                    ),
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                const Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
+                    child: MascotGalleryWidget(),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Выбери, какие данные удалить. Это действие нельзя отменить.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12.5,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  OutlinedButton(
-                    key: const ValueKey('reset_only_lists_btn'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () => performReset(clearLists: true, clearHistory: false),
-                    child: const Text('Очистить все списки закладок'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    key: const ValueKey('reset_only_history_btn'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () => performReset(clearLists: false, clearHistory: true),
-                    child: const Text('Очистить только историю просмотров'),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    key: const ValueKey('reset_all_data_btn'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFEF5350),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () => performReset(clearLists: true, clearHistory: true),
-                    child: const Text(
-                      'Сбросить всё (списки и историю)',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogCtx).pop(),
-                    child: const Text(
-                      'Отмена',
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
       },
     );
+  }
+
+  Future<void> _showClearCacheAndDataSheet(BuildContext context, String userId) async {
+    bool clearCache = true;
+    bool clearHistory = false;
+    bool clearLists = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12161F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final themePrimary = Theme.of(ctx).colorScheme.primary;
+            final hasSelection = clearCache || clearHistory || clearLists;
+
+            Future<void> performClear() async {
+              final messenger = ScaffoldMessenger.of(this.context);
+              AnimeListCubit? listCubit;
+              WatchHistoryCubit? historyCubit;
+              if (getIt.isRegistered<AnimeListCubit>()) {
+                listCubit = getIt<AnimeListCubit>();
+              } else {
+                try {
+                  listCubit = this.context.read<AnimeListCubit>();
+                } catch (_) {}
+              }
+              if (getIt.isRegistered<WatchHistoryCubit>()) {
+                historyCubit = getIt<WatchHistoryCubit>();
+              } else {
+                try {
+                  historyCubit = this.context.read<WatchHistoryCubit>();
+                } catch (_) {}
+              }
+
+              Navigator.of(sheetCtx).pop();
+
+              if (clearCache) {
+                PaintingBinding.instance.imageCache.clear();
+                PaintingBinding.instance.imageCache.clearLiveImages();
+              }
+              if (clearLists && listCubit != null) {
+                await listCubit.clearAllLists(userId: userId);
+              }
+              if (clearHistory && historyCubit != null) {
+                await historyCubit.clearAllHistory();
+              }
+
+              if (mounted) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Выбранные данные и кэш очищены',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                    backgroundColor: const Color(0xFF242730),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                );
+              }
+            }
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Очистка кэша и данных',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Выберите категории, которые хотите очистить:',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      key: const ValueKey('clear_opt_cache'),
+                      value: clearCache,
+                      activeColor: themePrimary,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Кэш картинок и плеера',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Временные буферы постеров и видео',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                      onChanged: (v) => setSheetState(() => clearCache = v ?? false),
+                    ),
+                    CheckboxListTile(
+                      key: const ValueKey('clear_opt_history'),
+                      value: clearHistory,
+                      activeColor: const Color(0xFFEF5350),
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'История просмотров',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Прогресс серий и недавно открытые тайтлы',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                      onChanged: (v) => setSheetState(() => clearHistory = v ?? false),
+                    ),
+                    CheckboxListTile(
+                      key: const ValueKey('clear_opt_lists'),
+                      value: clearLists,
+                      activeColor: const Color(0xFFEF5350),
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Списки закладок',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        '«Смотрю», «В планах», «Просмотрено» и др.',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                      onChanged: (v) => setSheetState(() => clearLists = v ?? false),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => Navigator.of(sheetCtx).pop(),
+                            child: const Text('Отмена'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            key: const ValueKey('confirm_clear_cache_data_btn'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: (clearHistory || clearLists)
+                                  ? const Color(0xFFEF5350)
+                                  : themePrimary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: hasSelection ? performClear : null,
+                            child: const Text(
+                              'Очистить',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPlayerHudPresetBlock(BuildContext context, Color themePrimary) {
+    final cubit = getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
+
+    Widget buildBody(PlayerHudPreset currentPreset) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: themePrimary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.dashboard_customize_outlined, color: themePrimary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Пресет плеера',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                          if (currentPreset == PlayerHudPreset.custom) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              key: const ValueKey('hud_custom_badge'),
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: themePrimary.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Пользовательский',
+                                style: TextStyle(
+                                  color: themePrimary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        currentPreset.description,
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                for (final p in const [
+                  PlayerHudPreset.standard,
+                  PlayerHudPreset.minimal,
+                  PlayerHudPreset.advanced,
+                ])
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: InkWell(
+                        key: ValueKey('hud_preset_${p.name}'),
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          setState(() => _playerHudPreset = p);
+                          _saveString('settings_player_hud_preset', p.name);
+                          cubit?.setPlayerHudPreset(p);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: currentPreset == p
+                                ? themePrimary.withValues(alpha: 0.18)
+                                : Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: currentPreset == p
+                                  ? themePrimary.withValues(alpha: 0.65)
+                                  : Colors.white.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Text(
+                            p.label,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: currentPreset == p ? themePrimary : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('hud_customize_buttons_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: cubit == null
+                        ? null
+                        : () => _showPlayerButtonsEditorSheet(context, cubit, themePrimary),
+                    icon: const Icon(Icons.tune_rounded, size: 16),
+                    label: const Text(
+                      'Настроить кнопки HUD',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('hud_reset_default_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() => _playerHudPreset = PlayerHudPreset.standard);
+                      _saveString('settings_player_hud_preset', PlayerHudPreset.standard.name);
+                      cubit?.resetPlayerHudToDefault();
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text(
+                      'Сбросить',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (cubit == null) {
+      return buildBody(_playerHudPreset);
+    }
+
+    return BlocBuilder<SettingsCubit, SettingsState>(
+      bloc: cubit,
+      builder: (context, settingsState) => buildBody(settingsState.playerHudPreset),
+    );
+  }
+
+  Future<void> _showPlayerButtonsEditorSheet(
+    BuildContext context,
+    SettingsCubit cubit,
+    Color themePrimary,
+  ) {
+    return PlayerHudEditorSheet.show(context, cubit: cubit);
   }
 
   Widget _buildSectionHeader(String title) {
@@ -837,14 +1109,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.textMuted,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textSecondary,
+                          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         icon: const Icon(Icons.refresh_rounded, size: 16),
-                        label: const Text('Сбросить тему', style: TextStyle(fontSize: 12.5)),
+                        label: const Text(
+                          'Сбросить тему',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
                         onPressed: () async {
                           HapticFeedback.lightImpact();
                           await winter.resetToDefault();
@@ -911,16 +1189,66 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: BlocBuilder<AuthCubit, AuthState>(
           builder: (context, authState) {
             final profile = authState is Authenticated ? authState.profile : UserProfile.guest();
+            final isMobile = MediaQuery.sizeOf(context).width < 700;
+            bool showSection(String key) =>
+                !isMobile || _mobileSectionFilter == 'all' || _mobileSectionFilter == key;
 
-            return ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            const filters = [
+              ('all', 'Все'),
+              ('player', 'Плеер'),
+              ('appearance', 'Внешний вид'),
+              ('data', 'Данные'),
+              ('account', 'Аккаунт'),
+            ];
+
+            return Column(
               children: [
-                // 0. Новогодняя зимняя сказка 2026
-                _buildWinterSection(context, themePrimary),
+                if (isMobile)
+                  SizedBox(
+                    key: const ValueKey('settings_mobile_filter_bar'),
+                    height: 46,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      itemCount: filters.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final (key, label) = filters[index];
+                        final selected = _mobileSectionFilter == key;
+                        return ChoiceChip(
+                          key: ValueKey('settings_filter_$key'),
+                          label: Text(label),
+                          selected: selected,
+                          onSelected: (_) => setState(() => _mobileSectionFilter = key),
+                          selectedColor: themePrimary.withValues(alpha: 0.22),
+                          backgroundColor: Colors.white.withValues(alpha: 0.05),
+                          side: BorderSide(
+                            color: selected
+                                ? themePrimary.withValues(alpha: 0.65)
+                                : Colors.white.withValues(alpha: 0.1),
+                          ),
+                          labelStyle: TextStyle(
+                            color: selected ? Colors.white : AppColors.textSecondary,
+                            fontSize: 12.5,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        );
+                      },
+                    ),
+                  ),
+                Expanded(
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    children: [
+                      if (showSection('appearance')) ...[
+                        // 0. Новогодняя зимняя сказка 2026
+                        _buildWinterSection(context, themePrimary),
 
-                // 1. Секция "Внешний вид"
-                _buildSectionHeader('ВНЕШНИЙ ВИД'),
+                        // 1. Секция "Внешний вид"
+                        _buildSectionHeader('ВНЕШНИЙ ВИД'),
                 _buildCard([
                   ListTile(
                     leading: Container(
@@ -1021,23 +1349,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
                           child: Icon(Icons.speed_rounded, color: themePrimary, size: 20),
                         ),
-                        title: Row(
-                          children: [
-                            const Text(
-                              'Режим производительности: ',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                            ),
-                            Text(
-                              tier.shortLabelRu,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: tier == DeviceTier.low
-                                    ? const Color(0xFFFFB74D)
-                                    : (tier == DeviceTier.mid ? Colors.lightBlueAccent : const Color(0xFF66BB6A)),
+                        title: Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(
+                                text: 'Режим производительности: ',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                               ),
-                            ),
-                          ],
+                              TextSpan(
+                                text: tier.shortLabelRu,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: tier == DeviceTier.low
+                                      ? const Color(0xFFFFB74D)
+                                      : (tier == DeviceTier.mid ? Colors.lightBlueAccent : const Color(0xFF66BB6A)),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         subtitle: Text(
                           'Авто-оптимизация рендеринга$ramStr. Буфер постеров: $cacheMb МБ.',
@@ -1065,9 +1395,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                     },
                   ),
                 ]),
+                      ],
 
-                // 2. Секция "Данные и синхронизация"
-                _buildSectionHeader('ДАННЫЕ И СИНХРОНИЗАЦИЯ'),
+                      if (showSection('data')) ...[
+                        // 2. Секция "Данные и синхронизация"
+                        _buildSectionHeader('ДАННЫЕ И СИНХРОНИЗАЦИЯ'),
                 _buildCard([
                   ListTile(
                     leading: Container(
@@ -1154,7 +1486,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   _buildDivider(),
                   ListTile(
-                    key: const ValueKey('settings_reset_lists_history_tile'),
+                    key: const ValueKey('settings_clear_cache_data_tile'),
                     leading: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -1164,76 +1496,70 @@ class _SettingsScreenState extends State<SettingsScreen>
                       child: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFEF5350), size: 20),
                     ),
                     title: const Text(
-                      'Сбросить списки и историю',
+                      'Очистка кэша и данных',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                     subtitle: const Text(
-                      'Удалить все закладки («В планах», «Просмотрено» и др.) и историю просмотров',
+                      'Кэш картинок и плеера, история просмотров и списки закладок',
                       style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
-                    onTap: () => _showResetDataDialog(context, profile.id),
+                    onTap: () => _showClearCacheAndDataSheet(context, profile.id),
                   ),
                 ]),
-
-                // 3. Секция "Плеер и система"
-                _buildSectionHeader('НАСТРОЙКИ ПЛЕЕРА И СИСТЕМЫ'),
-                _buildCard([
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: themePrimary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(Icons.dashboard_customize_outlined, color: themePrimary, size: 20),
-                    ),
-                    title: const Text(
-                      'Интерфейс видеоплеера (HUD)',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    subtitle: Text(
-                      _playerHudPreset == PlayerHudPreset.minimal
-                          ? 'Минималистичный: чистый экран, управление жестами'
-                          : _playerHudPreset == PlayerHudPreset.advanced
-                              ? 'Расширенный: быстрые кнопки скорости и серий'
-                              : 'Стандартный: сбалансированный HUD с перемоткой ±10с',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                    trailing: DropdownButton<PlayerHudPreset>(
-                      value: _playerHudPreset,
-                      dropdownColor: AppColors.surfaceElevated,
-                      underline: const SizedBox.shrink(),
-                      style: TextStyle(
-                        color: themePrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: PlayerHudPreset.standard,
-                          child: Text('Стандартный'),
-                        ),
-                        DropdownMenuItem(
-                          value: PlayerHudPreset.minimal,
-                          child: Text('Минималистичный'),
-                        ),
-                        DropdownMenuItem(
-                          value: PlayerHudPreset.advanced,
-                          child: Text('Расширенный'),
-                        ),
                       ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _playerHudPreset = val);
-                          _saveString('settings_player_hud_preset', val.name);
-                          if (getIt.isRegistered<SettingsCubit>()) {
-                            getIt<SettingsCubit>().setPlayerHudPreset(val);
-                          }
+
+                      if (showSection('player')) ...[
+                        // 3. Секция "Плеер и система"
+                        _buildSectionHeader('НАСТРОЙКИ ПЛЕЕРА И СИСТЕМЫ'),
+                _buildCard([
+                  _buildPlayerHudPresetBlock(context, themePrimary),
+                  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) ...[
+                    _buildDivider(),
+                    ListTile(
+                      key: const ValueKey('settings_player_onboarding_tile'),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: themePrimary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.touch_app_rounded, color: themePrimary, size: 20),
+                      ),
+                      title: const Text(
+                        'Обучение и жесты плеера',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      subtitle: const Text(
+                        'Посмотреть жесты и подсказки интерфейса',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        if (getIt.isRegistered<SettingsCubit>()) {
+                          getIt<SettingsCubit>().resetPlayerOnboarding();
                         }
+                        showGeneralDialog<void>(
+                          context: context,
+                          barrierDismissible: true,
+                          barrierLabel: 'Обучение плеера',
+                          barrierColor: Colors.transparent,
+                          pageBuilder: (dialogCtx, _, __) => Material(
+                            color: Colors.transparent,
+                            child: PlayerOnboardingOverlay(
+                              onDismiss: () {
+                                if (getIt.isRegistered<SettingsCubit>()) {
+                                  getIt<SettingsCubit>().completePlayerOnboarding();
+                                }
+                                Navigator.of(dialogCtx).pop();
+                              },
+                            ),
+                          ),
+                        );
                       },
                     ),
-                  ),
+                  ],
                   _buildDivider(),
                   ListTile(
                     leading: Container(
@@ -1359,26 +1685,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                       setState(() => SmartMirrorInterceptor.isAntiBlockEnabled = val);
                     },
                   ),
-                  _buildDivider(),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.delete_sweep_outlined, color: AppColors.textSecondary, size: 20),
-                    ),
-                    title: const Text(
-                      'Очистить кэш плеера и историю',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    subtitle: const Text(
-                      'Освободить временную память устройства',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                    onTap: () => _clearCache(context),
-                  ),
                   if (Platform.isWindows) ...[
                     _buildDivider(),
                     ListenableBuilder(
@@ -1416,9 +1722,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                   ],
                 ]),
+                      ],
 
-                // 4. Секция "Аккаунт"
-                _buildSectionHeader('АККАУНТ'),
+                      if (showSection('account')) ...[
+                        // 4. Секция "Аккаунт"
+                        _buildSectionHeader('АККАУНТ'),
                 _buildCard([
                   if (!profile.isAnonymous) ...[
                     ListTile(
@@ -1512,18 +1820,39 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                   ],
                 ]),
+                      ],
 
-                // 5. Секция "SyncPai Mascot" (Mascot Gallery)
-                _buildSectionHeader('МАСКОТ ПРИЛОЖЕНИЯ'),
+                      if (showSection('appearance')) ...[
+                        // 5. Секция "SyncPai Mascot" (Mascot Gallery)
+                        _buildSectionHeader('МАСКОТ ПРИЛОЖЕНИЯ'),
                 _buildCard([
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: MascotGalleryWidget(),
+                  ListTile(
+                    key: const ValueKey('settings_mascot_gallery_tile'),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: themePrimary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.pets_rounded, color: themePrimary, size: 20),
+                    ),
+                    title: const Text(
+                      'Галерея маскота Пай-тян',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      '35 эмоций и сезонных образов',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+                    onTap: () => _showMascotGallerySheet(context),
                   ),
                 ]),
+                      ],
 
-                // 6. Секция "Обновления и версия"
-                _buildSectionHeader('О ПРИЛОЖЕНИИ'),
+                      if (showSection('account')) ...[
+                        // 6. Секция "Обновления и версия"
+                        _buildSectionHeader('О ПРИЛОЖЕНИИ'),
                 _buildCard([
                   ListTile(
                     key: const ValueKey('settings_check_updates_tile'),
@@ -1605,6 +1934,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ]),
 
                 const SizedBox(height: 18),
+                      ],
 
                 // Ненавязчивая строка поддержки в самом низу настроек над версией приложения
                 _buildCard([
@@ -1646,6 +1976,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
 
                 const SizedBox(height: 32),
+              ],
+            ),
+                ),
               ],
             );
           },

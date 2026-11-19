@@ -20,6 +20,14 @@ class AnimeSilhouettePreset {
 
   static const List<AnimeSilhouettePreset> presets = [
     AnimeSilhouettePreset(
+      id: 'pai_hacker',
+      name: 'Пай-тян Хакер',
+      title: 'Кодинг-хакер',
+      eyeColor: Color(0xFF00E676),
+      backgroundGradient: [Color(0xFF03190E), Color(0xFF06291A)],
+      silhouetteIcon: Icons.terminal_rounded,
+    ),
+    AnimeSilhouettePreset(
       id: 'shadow_monarch',
       name: 'Теневой Монарх',
       title: 'Solo Leveling',

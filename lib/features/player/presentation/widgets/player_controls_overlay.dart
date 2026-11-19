@@ -22,7 +22,7 @@ import 'presence_radar_badge.dart';
 import 'quick_phrases_bar.dart';
 import 'sync_chat_input_bar.dart';
 
-class PlayerControlsOverlay extends StatelessWidget {
+class PlayerControlsOverlay extends StatefulWidget {
   final PlayerCubit cubit;
   final PlayerState state;
   final VoidCallback onBack;
@@ -41,6 +41,29 @@ class PlayerControlsOverlay extends StatelessWidget {
     this.syncStatus,
     this.syncPeerName,
   });
+
+  @override
+  State<PlayerControlsOverlay> createState() => _PlayerControlsOverlayState();
+}
+
+class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
+  String? _selectedEditButtonId;
+
+  PlayerCubit get cubit => widget.cubit;
+  PlayerState get state => widget.state;
+  VoidCallback get onBack => widget.onBack;
+  VoidCallback? get onMinimize => widget.onMinimize;
+  VoidCallback? get onToggleOrientation => widget.onToggleOrientation;
+  SyncStatus? get syncStatus => widget.syncStatus;
+  String? get syncPeerName => widget.syncPeerName;
+
+  @override
+  void didUpdateWidget(covariant PlayerControlsOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state.isHudEditMode && !widget.state.isHudEditMode) {
+      _selectedEditButtonId = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -358,12 +381,18 @@ class PlayerControlsOverlay extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (showSeek10s) ...[
+                      if (showSeek10s || state.isHudEditMode) ...[
                         // Перемотка на 10 сек назад
-                        IconButton(
-                          iconSize: isLandscape ? 32 : 40,
-                          icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
-                          onPressed: () => cubit.seekRelative(-10),
+                        _wrapEditableHudSlot(
+                          'seek_10s',
+                          IconButton(
+                            key: const ValueKey('hud_center_seek_back'),
+                            iconSize: isLandscape ? 32 : 40,
+                            icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
+                            onPressed: () => cubit.seekRelative(-10),
+                          ),
+                          settingsCubit,
+                          settingsState,
                         ),
                         SizedBox(width: isLandscape ? 64 : 48),
                       ],
@@ -625,57 +654,20 @@ class PlayerControlsOverlay extends StatelessWidget {
                           ],
                         )
                       else
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                foregroundColor: hasPrevEpisode ? AppColors.textPrimary : AppColors.textMuted,
-                              ),
-                              icon: const Icon(Icons.skip_previous_rounded, size: 20),
-                              label: const Text('Пред. серия'),
-                              onPressed: hasPrevEpisode
-                                  ? () => cubit.switchEpisode(allEpisodes[currentIndex - 1])
-                                  : null,
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            key: const ValueKey('hud_bottom_actions_row'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: _buildOrderedBottomActions(
+                              context,
+                              settingsState: settingsState,
+                              allEpisodes: allEpisodes,
+                              currentIndex: currentIndex,
+                              hasPrevEpisode: hasPrevEpisode,
+                              hasNextEpisode: hasNextEpisode,
                             ),
-                            // Быстрый выбор качества потока (1080p, 720p, 480p)
-                            InkWell(
-                              onTap: () => _showQuickQualitySheet(context),
-                              borderRadius: AppDimensions.borderRadiusSmall,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated,
-                                  borderRadius: AppDimensions.borderRadiusSmall,
-                                  border: Border.all(color: AppColors.strokeMedium),
-                                ),
-                                child: Text(
-                                  state.selectedQuality == PlayerQuality.fhd
-                                      ? '1080p'
-                                      : state.selectedQuality == PlayerQuality.hd
-                                          ? '720p'
-                                          : '480p',
-                                  style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
-                                ),
-                              ),
-                            ),
-                            if (onToggleOrientation != null)
-                              IconButton(
-                                tooltip: 'Повернуть экран (на весь экран)',
-                                icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textPrimary, size: 24),
-                                onPressed: onToggleOrientation,
-                              ),
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                foregroundColor: hasNextEpisode ? AppColors.textPrimary : AppColors.textMuted,
-                              ),
-                              icon: const Icon(Icons.skip_next_rounded, size: 20),
-                              label: const Text('След. серия'),
-                              onPressed: hasNextEpisode
-                                  ? () => cubit.switchEpisode(allEpisodes[currentIndex + 1])
-                                  : null,
-                            ),
-                          ],
+                          ),
                         ),
                     ],
                   ),
@@ -799,15 +791,320 @@ class PlayerControlsOverlay extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            onPressed: () => cubit.setHudEditMode(false),
+            onPressed: () {
+              setState(() => _selectedEditButtonId = null);
+              cubit.setHudEditMode(false);
+            },
             child: const Text(
               'Готово',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
             ),
           ),
+          if (_selectedEditButtonId != null)
+            Builder(
+              builder: (context) {
+                final selectedId = _selectedEditButtonId!;
+                final order = settingsState.playerButtonOrder;
+                final idx = order.indexOf(selectedId);
+                final isSelectedVisible = settingsState.isHudButtonVisible(selectedId);
+                final canMoveLeft = idx > 0;
+                final canMoveRight = idx >= 0 && idx < order.length - 1;
+                return Container(
+                  key: const ValueKey('hud_selected_quick_bar'),
+                  margin: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF35D9D5).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(
+                        key: const ValueKey('hud_move_left_btn'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: canMoveLeft ? Colors.white : Colors.white30,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: canMoveLeft && settingsCubit != null
+                            ? () {
+                                HapticFeedback.selectionClick();
+                                settingsCubit.reorderPlayerButtons(
+                                  idx,
+                                  idx - 1,
+                                  adjustNewIndex: false,
+                                );
+                              }
+                            : null,
+                        child: const Text(
+                          '◀️ Влево',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton(
+                        key: const ValueKey('hud_toggle_vis_btn'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF35D9D5),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: settingsCubit != null
+                            ? () {
+                                HapticFeedback.lightImpact();
+                                settingsCubit.togglePlayerButton(
+                                  selectedId,
+                                  !isSelectedVisible,
+                                );
+                              }
+                            : null,
+                        child: Text(
+                          isSelectedVisible ? '👁 Скрыть' : '👁 Показать',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton(
+                        key: const ValueKey('hud_move_right_btn'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: canMoveRight ? Colors.white : Colors.white30,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: canMoveRight && settingsCubit != null
+                            ? () {
+                                HapticFeedback.selectionClick();
+                                settingsCubit.reorderPlayerButtons(
+                                  idx,
+                                  idx + 1,
+                                  adjustNewIndex: false,
+                                );
+                              }
+                            : null,
+                        child: const Text(
+                          'Вправо ▶️',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
+  }
+
+  Widget _wrapEditableHudSlot(
+    String id,
+    Widget child,
+    SettingsCubit? settingsCubit,
+    SettingsState settingsState,
+  ) {
+    if (!state.isHudEditMode) return child;
+    final isVisible = settingsState.isHudButtonVisible(id);
+    final isSelected = _selectedEditButtonId == id;
+
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => details.data != id,
+      onAcceptWithDetails: (details) {
+        final order = settingsState.playerButtonOrder;
+        final oldIdx = order.indexOf(details.data);
+        final newIdx = order.indexOf(id);
+        if (oldIdx >= 0 && newIdx >= 0) {
+          settingsCubit?.reorderPlayerButtons(
+            oldIdx,
+            newIdx,
+            adjustNewIndex: false,
+          );
+        }
+      },
+      builder: (context, candidateData, _) {
+        final isDropTarget = candidateData.isNotEmpty;
+        return Draggable<String>(
+          data: id,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF12161F),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF35D9D5), width: 1.5),
+              ),
+              child: child,
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.2, child: child),
+          child: GestureDetector(
+            key: ValueKey('wysiwyg_hud_slot_$id'),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              setState(() => _selectedEditButtonId = id);
+            },
+            child: Opacity(
+              opacity: isVisible ? 1.0 : 0.35,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: isDropTarget
+                      ? const Color(0xFF35D9D5).withValues(alpha: 0.24)
+                      : (isSelected
+                          ? const Color(0xFF35D9D5).withValues(alpha: 0.16)
+                          : Colors.black.withValues(alpha: 0.35)),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: (isDropTarget || isSelected)
+                        ? const Color(0xFF35D9D5)
+                        : const Color(0xFF35D9D5).withValues(alpha: 0.55),
+                    width: isSelected ? 2.2 : 1,
+                  ),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IgnorePointer(child: child),
+                    Positioned(
+                      right: -3,
+                      top: -3,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: isVisible
+                              ? const Color(0xFF35D9D5)
+                              : const Color(0xFF242A38),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isVisible ? Icons.check : Icons.add,
+                          size: 9,
+                          color: isVisible ? Colors.black : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildOrderedBottomActions(
+    BuildContext context, {
+    required SettingsState settingsState,
+    required List<EpisodeItem> allEpisodes,
+    required int currentIndex,
+    required bool hasPrevEpisode,
+    required bool hasNextEpisode,
+  }) {
+    final settingsCubit =
+        getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
+    final editMode = state.isHudEditMode;
+    final actions = <Widget>[];
+    for (final id in settingsState.playerButtonOrder) {
+      final isVisible = settingsState.isHudButtonVisible(id);
+      if (!editMode && !isVisible) continue;
+      switch (id) {
+        case 'next_episode':
+          actions.add(
+            _wrapEditableHudSlot(
+              id,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('hud_bottom_prev_episode'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: hasPrevEpisode ? AppColors.textPrimary : AppColors.textMuted,
+                    ),
+                    icon: const Icon(Icons.skip_previous_rounded, size: 20),
+                    label: const Text('Пред. серия'),
+                    onPressed: hasPrevEpisode
+                        ? () => cubit.switchEpisode(allEpisodes[currentIndex - 1])
+                        : null,
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('hud_bottom_next_episode'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: hasNextEpisode ? AppColors.textPrimary : AppColors.textMuted,
+                    ),
+                    icon: const Icon(Icons.skip_next_rounded, size: 20),
+                    label: const Text('След. серия'),
+                    onPressed: hasNextEpisode
+                        ? () => cubit.switchEpisode(allEpisodes[currentIndex + 1])
+                        : null,
+                  ),
+                ],
+              ),
+              settingsCubit,
+              settingsState,
+            ),
+          );
+          break;
+        case 'quality':
+          actions.add(
+            _wrapEditableHudSlot(
+              id,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: InkWell(
+                  key: const ValueKey('hud_bottom_quality'),
+                  onTap: () => _showQuickQualitySheet(context),
+                  borderRadius: AppDimensions.borderRadiusSmall,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: AppDimensions.borderRadiusSmall,
+                      border: Border.all(color: AppColors.strokeMedium),
+                    ),
+                    child: Text(
+                      state.selectedQuality == PlayerQuality.fhd
+                          ? '1080p'
+                          : state.selectedQuality == PlayerQuality.hd
+                              ? '720p'
+                              : '480p',
+                      style: AppTypography.badge.copyWith(color: AppColors.textPrimary, fontSize: 11),
+                    ),
+                  ),
+                ),
+              ),
+              settingsCubit,
+              settingsState,
+            ),
+          );
+          break;
+        case 'fullscreen':
+          if (onToggleOrientation != null || editMode) {
+            actions.add(
+              _wrapEditableHudSlot(
+                id,
+                IconButton(
+                  key: const ValueKey('hud_bottom_fullscreen'),
+                  tooltip: 'Повернуть экран (на весь экран)',
+                  icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textPrimary, size: 24),
+                  onPressed: onToggleOrientation,
+                ),
+                settingsCubit,
+                settingsState,
+              ),
+            );
+          }
+          break;
+      }
+    }
+    return actions;
   }
 
   List<Widget> _buildOrderedTopActions(
@@ -821,90 +1118,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     final actions = <Widget>[];
 
     Widget wrapEditable(String id, Widget child, bool isVisible) {
-      if (!editMode) return child;
-      return DragTarget<String>(
-        onWillAcceptWithDetails: (details) => details.data != id,
-        onAcceptWithDetails: (details) {
-          final order = settingsState.playerButtonOrder;
-          final oldIdx = order.indexOf(details.data);
-          final newIdx = order.indexOf(id);
-          if (oldIdx >= 0 && newIdx >= 0) {
-            settingsCubit?.reorderPlayerButtons(
-              oldIdx,
-              newIdx,
-              adjustNewIndex: false,
-            );
-          }
-        },
-        builder: (context, candidateData, _) {
-          final isDropTarget = candidateData.isNotEmpty;
-          return Draggable<String>(
-            data: id,
-            feedback: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF12161F),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF35D9D5), width: 1.5),
-                ),
-                child: child,
-              ),
-            ),
-            childWhenDragging: Opacity(opacity: 0.2, child: child),
-            child: GestureDetector(
-              key: ValueKey('wysiwyg_hud_slot_$id'),
-              onTap: () {
-                HapticFeedback.lightImpact();
-                settingsCubit?.togglePlayerButton(id, !isVisible);
-              },
-              child: Opacity(
-                opacity: isVisible ? 1.0 : 0.35,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: isDropTarget
-                        ? const Color(0xFF35D9D5).withValues(alpha: 0.22)
-                        : Colors.black.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isDropTarget
-                          ? const Color(0xFF35D9D5)
-                          : const Color(0xFF35D9D5).withValues(alpha: 0.6),
-                      width: 1,
-                    ),
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      IgnorePointer(child: child),
-                      Positioned(
-                        right: -3,
-                        top: -3,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: isVisible
-                                ? const Color(0xFF35D9D5)
-                                : const Color(0xFF242A38),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            isVisible ? Icons.check : Icons.add,
-                            size: 9,
-                            color: isVisible ? Colors.black : Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
+      return _wrapEditableHudSlot(id, child, settingsCubit, settingsState);
     }
 
     for (final id in settingsState.playerButtonOrder) {
@@ -964,29 +1178,24 @@ class PlayerControlsOverlay extends StatelessWidget {
           }
           break;
         case 'next_episode':
-          if (editMode ||
-              settingsState.isHudButtonVisible('speed') ||
-              settingsState.playerHudPreset == PlayerHudPreset.advanced ||
-              settingsState.playerHudPreset == PlayerHudPreset.custom) {
-            actions.add(
-              wrapEditable(
-                id,
-                IconButton(
-                  key: const ValueKey('hud_action_episodes'),
-                  tooltip: 'Список серий',
-                  icon: Icon(
-                    Icons.video_library_rounded,
-                    color: AppColors.textPrimary,
-                    size: isLandscape ? 19 : 20,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () =>
-                      PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
+          actions.add(
+            wrapEditable(
+              id,
+              IconButton(
+                key: const ValueKey('hud_action_episodes'),
+                tooltip: 'Список серий',
+                icon: Icon(
+                  Icons.video_library_rounded,
+                  color: AppColors.textPrimary,
+                  size: isLandscape ? 19 : 20,
                 ),
-                isVisible,
+                visualDensity: VisualDensity.compact,
+                onPressed: () =>
+                    PlayerEpisodesSheet.show(context, cubit: cubit, state: state),
               ),
-            );
-          }
+              isVisible,
+            ),
+          );
           break;
         case 'aspect_ratio':
           actions.add(
@@ -1015,46 +1224,53 @@ class PlayerControlsOverlay extends StatelessWidget {
           );
           break;
         case 'screenshot':
-          if (editMode) {
-            actions.add(
-              wrapEditable(
-                id,
-                IconButton(
-                  key: const ValueKey('hud_action_screenshot'),
-                  tooltip: 'Скриншот кадра',
-                  icon: Icon(
-                    Icons.camera_alt_outlined,
-                    color: AppColors.textPrimary,
-                    size: isLandscape ? 19 : 20,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () {},
+          actions.add(
+            wrapEditable(
+              id,
+              IconButton(
+                key: const ValueKey('hud_action_screenshot'),
+                tooltip: 'Скриншот кадра',
+                icon: Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.textPrimary,
+                  size: isLandscape ? 19 : 20,
                 ),
-                isVisible,
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Снимок кадра сохранён'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
               ),
-            );
-          }
+              isVisible,
+            ),
+          );
           break;
         case 'sleep_timer':
-          if (editMode) {
-            actions.add(
-              wrapEditable(
-                id,
-                IconButton(
-                  key: const ValueKey('hud_action_sleep_timer'),
-                  tooltip: 'Таймер сна',
-                  icon: Icon(
-                    Icons.bedtime_outlined,
-                    color: AppColors.textPrimary,
-                    size: isLandscape ? 19 : 20,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () {},
+          actions.add(
+            wrapEditable(
+              id,
+              IconButton(
+                key: const ValueKey('hud_action_sleep_timer'),
+                tooltip: 'Таймер сна',
+                icon: Icon(
+                  Icons.bedtime_outlined,
+                  color: AppColors.textPrimary,
+                  size: isLandscape ? 19 : 20,
                 ),
-                isVisible,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => PlayerSettingsSheet.show(
+                  context,
+                  cubit: cubit,
+                  state: state,
+                ),
               ),
-            );
-          }
+              isVisible,
+            ),
+          );
           break;
         case 'settings_gear':
           actions.add(

@@ -173,6 +173,13 @@ class SteamAvatarFrame {
       animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
+      id: 'hacker_glitch',
+      name: 'Код Хакера',
+      colors: [Color(0xFF00E676), Color(0xFF00F0FF), Color(0xFF00C853)],
+      previewIcon: Icons.terminal_rounded,
+      animation: SteamFrameAnimation.matrix,
+    ),
+    SteamAvatarFrame(
       id: 'neon_ring',
       name: 'Неоновое кольцо',
       colors: [Color(0xFF00F0FF), Color(0xFF0072FF)],
@@ -410,6 +417,13 @@ class SteamBackgroundTheme {
       name: 'Cinema Dark',
       gradient: [Color(0xFF1E1F24), Color(0xFF121316)],
       icon: Icons.dark_mode_rounded,
+    ),
+    SteamBackgroundTheme(
+      id: 'hacker_matrix',
+      name: 'Терминал Хакера',
+      gradient: [Color(0xFF02120A), Color(0xFF063A22), Color(0xFF00E676)],
+      assetOrUrl: 'matrix',
+      icon: Icons.terminal_rounded,
     ),
     SteamBackgroundTheme(
       id: 'matrix_digital_rain',

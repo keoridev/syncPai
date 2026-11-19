@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/services/app_updater_service.dart';
@@ -20,6 +19,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/theme/cubit/theme_cubit.dart';
 import '../../../../core/theme/theme_preset.dart';
 import '../../../../core/theme/widgets/theme_selector_sheet.dart';
+import '../../../../core/utils/telegram_launcher.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../../core/widgets/mascot/mascot_gallery_widget.dart';
 import '../../../../core/widgets/telegram_link_tile.dart';
@@ -1925,10 +1925,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       final token = (rawCode != null && rawCode.isNotEmpty)
                           ? rawCode
                           : profile.id;
-                      final uri = Uri.parse(
-                        'https://t.me/syncpai_bot?start=bug_${Uri.encodeComponent(token)}',
-                      );
-                      launchUrl(uri, mode: LaunchMode.externalApplication);
+                      TelegramLauncher.openBugReport(context, friendCode: token);
                     },
                   ),
                 ]),

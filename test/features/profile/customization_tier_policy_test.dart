@@ -266,5 +266,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Открыть в @syncpai_bot'), findsOneWidget);
   });
+
+  test('CustomizationTierPolicy unlocks hacker_glitch, hacker_matrix, and pai_hacker only with bug_hunter badge', () {
+    expect(
+      CustomizationTierPolicy.isFrameUnlocked(SupporterTier.free, 'hacker_glitch'),
+      isFalse,
+    );
+    expect(
+      CustomizationTierPolicy.isBannerUnlocked(SupporterTier.free, 'hacker_matrix'),
+      isFalse,
+    );
+    expect(
+      CustomizationTierPolicy.isAvatarUnlocked('pai_hacker'),
+      isFalse,
+    );
+
+    expect(
+      CustomizationTierPolicy.isFrameUnlocked(
+        SupporterTier.free,
+        'hacker_glitch',
+        unlockedBadges: const ['bug_hunter'],
+      ),
+      isTrue,
+    );
+    expect(
+      CustomizationTierPolicy.isBannerUnlocked(
+        SupporterTier.free,
+        'hacker_matrix',
+        unlockedBadges: const ['bug_hunter'],
+      ),
+      isTrue,
+    );
+    expect(
+      CustomizationTierPolicy.isAvatarUnlocked(
+        'pai_hacker',
+        unlockedBadges: const ['bug_hunter'],
+      ),
+      isTrue,
+    );
+
+    final blocked = CustomizationTierPolicy.sanitizePayload(
+      tier: SupporterTier.free,
+      frameId: 'hacker_glitch',
+      backgroundId: 'hacker_matrix',
+    );
+    expect(blocked.frameId, 'none');
+    expect(blocked.backgroundId, 'none');
+
+    final unlocked = CustomizationTierPolicy.sanitizePayload(
+      tier: SupporterTier.free,
+      frameId: 'hacker_glitch',
+      backgroundId: 'hacker_matrix',
+      unlockedBadges: const ['bug_hunter'],
+    );
+    expect(unlocked.frameId, 'hacker_glitch');
+    expect(unlocked.backgroundId, 'hacker_matrix');
+  });
 }
 

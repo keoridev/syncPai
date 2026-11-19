@@ -65,6 +65,7 @@ class ProfileCubit extends Cubit<ProfileState> {
       customTitle: customTitle,
       artworkUrl: artworkUrl,
       artworkTitle: artworkTitle,
+      unlockedBadges: current.unlockedBadges,
     );
 
     final optimistic = current.copyWith(

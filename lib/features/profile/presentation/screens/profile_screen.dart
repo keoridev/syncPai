@@ -10,13 +10,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/telegram_launcher.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
@@ -65,7 +65,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   bool _showActivityCharts = true;
-  bool _showMobileStatsExpanded = false;
   bool _guestBannerDismissed = false;
   bool _nicknamePromptDismissed = false;
   bool _isBgPaused = false;
@@ -974,7 +973,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       ),
                                     ),
                                   ),
-                                // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Стена»
+                                // Segmented Tabs на телефоне: «Обзор» | «Статистика» | «Сообщество»
                                 SliverToBoxAdapter(
                                   child: _buildMobileSegmentedTabs(currentAccentColor),
                                 ),
@@ -983,33 +982,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
                                   ),
                                   SliverToBoxAdapter(
-                                    child: _buildBadgesShowcaseCard(context, currentAccentColor),
-                                  ),
-                                  SliverToBoxAdapter(
-                                    child: _StatsCard(
-                                      stats: stats,
-                                      currentAccentColor: currentAccentColor,
-                                      showActivityCharts: _showActivityCharts,
-                                      onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
-                                      isCompactMobile: true,
-                                      isExpanded: _showMobileStatsExpanded,
-                                      onToggleExpand: () => setState(
-                                        () => _showMobileStatsExpanded = !_showMobileStatsExpanded,
-                                      ),
-                                    ),
-                                  ),
-                                  SliverToBoxAdapter(
                                     child: _RecentHistoryCarousel(
                                       items: _watchHistory,
                                       currentAccentColor: currentAccentColor,
                                       onItemTap: (item) => _openDetailsForHistory(context, item),
                                     ),
-                                  ),
-                                  SliverToBoxAdapter(
-                                    child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
-                                  ),
-                                  SliverToBoxAdapter(
-                                    child: _buildCommentsWallCard(context, profile, currentAccentColor),
                                   ),
                                 ] else if (_selectedMobileTab == 1) ...[
                                   SliverToBoxAdapter(
@@ -1024,6 +1001,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     child: _buildBadgesShowcaseCard(context, currentAccentColor),
                                   ),
                                 ] else ...[
+                                  SliverToBoxAdapter(
+                                    child: _buildMobileFriendsBanner(context, profile, currentAccentColor),
+                                  ),
                                   SliverToBoxAdapter(
                                     child: _buildCommentsWallCard(context, profile, currentAccentColor),
                                   ),
@@ -1049,7 +1029,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final tabs = [
       (0, 'Обзор', Icons.auto_awesome_mosaic_rounded),
       (1, 'Статистика', Icons.bar_chart_rounded),
-      (2, 'Стена', Icons.comment_rounded),
+      (2, 'Сообщество', Icons.people_alt_rounded),
     ];
 
     return Padding(
@@ -1935,11 +1915,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ),
                       ),
                       onPressed: () {
+                        final parentContext = context;
                         Navigator.of(sheetCtx).pop();
-                        final uri = Uri.parse(
-                          'https://t.me/syncpai_bot?start=bug_${Uri.encodeComponent(friendToken)}',
+                        TelegramLauncher.openBugReport(
+                          parentContext,
+                          friendCode: friendToken,
                         );
-                        launchUrl(uri, mode: LaunchMode.externalApplication);
                       },
                       icon: const Icon(Icons.bug_report_rounded, size: 18),
                       label: const Text(
@@ -2377,18 +2358,12 @@ class _StatsCard extends StatelessWidget {
   final Color currentAccentColor;
   final bool showActivityCharts;
   final VoidCallback onToggleCharts;
-  final bool isCompactMobile;
-  final bool isExpanded;
-  final VoidCallback? onToggleExpand;
 
   const _StatsCard({
     required this.stats,
     required this.currentAccentColor,
     required this.showActivityCharts,
     required this.onToggleCharts,
-    this.isCompactMobile = false,
-    this.isExpanded = true,
-    this.onToggleExpand,
   });
 
   @override
@@ -2427,74 +2402,40 @@ class _StatsCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              if (isCompactMobile && onToggleExpand != null)
-                GestureDetector(
-                  key: const ValueKey('stats_mobile_expand_btn'),
-                  onTap: onToggleExpand,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: currentAccentColor.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      isExpanded ? 'Свернуть ▴' : 'Подробнее ▾',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: currentAccentColor,
-                      ),
-                    ),
+              GestureDetector(
+                onTap: onToggleCharts,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
                   ),
-                )
-              else
-                GestureDetector(
-                  onTap: onToggleCharts,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? scheme.surfaceContainer.withValues(alpha: 0.55)
-                          : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
-                          size: 13,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
+                        size: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
                           color: scheme.onSurfaceVariant,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
             ],
           ),
-          if (isCompactMobile && !isExpanded) ...[
-            const SizedBox(height: 10),
-            Text(
-              '$watchTimeStr  ·  $totalTitles тайтлов  ·  $totalEpisodes серий',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ] else ...[
           const SizedBox(height: 14),
 
           // Горизонтальный ряд из 3 равных колонок с разделителями
@@ -2559,7 +2500,6 @@ class _StatsCard extends StatelessWidget {
           if (showActivityCharts) ...[
             const SizedBox(height: 14),
             ProfileActivityChart(stats: stats),
-          ],
           ],
         ],
       ),

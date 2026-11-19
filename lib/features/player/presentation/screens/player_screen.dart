@@ -75,6 +75,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _isInPip = false;
   bool _watchReactionsEnabled = true;
   bool _showOnboarding = false;
+  final GlobalKey<PlayerOnboardingOverlayState> _onboardingKey =
+      GlobalKey<PlayerOnboardingOverlayState>();
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
   int? _dismissedOpeningEpisode;
@@ -805,10 +807,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
                       DoubleTapSeekOverlay(
                         onTap: () => _cubit.toggleControls(),
-                        onSeekRelative: (seconds) => _cubit.seekRelative(seconds),
+                        onSeekRelative: (seconds) {
+                          _cubit.seekRelative(seconds);
+                          if (_showOnboarding) {
+                            _onboardingKey.currentState?.notifySeekDoubleTapped();
+                          }
+                        },
                         onCenterDoubleTap: () => _cubit.togglePlayPause(),
-                        onBrightnessChanged: (b) => _cubit.setBrightness(b),
-                        onVolumeChanged: (v) => _cubit.setVolume(v),
+                        onBrightnessChanged: (b) {
+                          _cubit.setBrightness(b);
+                          if (_showOnboarding) {
+                            _onboardingKey.currentState?.notifyBrightnessSwiped();
+                          }
+                        },
+                        onVolumeChanged: (v) {
+                          _cubit.setVolume(v);
+                          if (_showOnboarding) {
+                            _onboardingKey.currentState?.notifyVolumeSwiped();
+                          }
+                        },
                         onScrubSeek: (pos) => _cubit.seek(pos),
                         currentPosition: state.position,
                         totalDuration: state.duration,
@@ -1069,6 +1086,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   if (_showOnboarding)
                     Positioned.fill(
                       child: PlayerOnboardingOverlay(
+                        key: _onboardingKey,
                         onDismiss: _dismissOnboarding,
                         onStepChanged: (step) {
                           if (step == 3) {

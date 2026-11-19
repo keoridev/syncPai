@@ -154,7 +154,7 @@ void main() {
     expect(find.byType(MascotGalleryWidget), findsOneWidget);
   });
 
-  testWidgets('ProfileScreen mobile cleanup: single artwork showcase, compact 4-col badges with Все 9 ->, collapsed stats toggle',
+  testWidgets('ProfileScreen mobile cleanup: 3 focused tabs (Обзор, Статистика, Сообщество), single showcase, full history sheet',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(430, 932));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -164,39 +164,19 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Single artwork showcase (no duplicate ГЛАВНАЯ ИЛЛЮСТРАЦИЯ, single 'Сменить арт')
+    // Tab 1 (Обзор): Header + Showcase + Favorite Anime + Recently Watched (clean, no Stats/Badges/Wall)
     expect(find.text('ГЛАВНАЯ ИЛЛЮСТРАЦИЯ'), findsNothing);
     expect(find.text('ВИТРИНА ИЛЛЮСТРАЦИЙ'), findsOneWidget);
     expect(find.text('Сменить арт'), findsOneWidget);
     expect(find.text('Сменить'), findsNothing);
     expect(find.text('Любимое аниме'), findsOneWidget);
+    expect(find.text('Обзор'), findsOneWidget);
+    expect(find.text('Статистика'), findsOneWidget);
+    expect(find.text('Сообщество'), findsOneWidget);
+    expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsNothing);
 
-    // Scroll to Badges & Stats on Mobile
     final customScrollFinder = find.byType(CustomScrollView).first;
-    await tester.drag(customScrollFinder, const Offset(0, -450));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.ensureVisible(find.byKey(const ValueKey('badges_view_all_btn')));
-    await tester.pump(const Duration(milliseconds: 100));
-
-    // Tap 'Все 9 →' to open full achievements sheet
-    await tester.tap(find.byKey(const ValueKey('badges_view_all_btn')));
-    await tester.pumpAndSettle();
-    expect(find.text('Все достижения (9)'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.close_rounded).last);
-    await tester.pumpAndSettle();
-
-    // Stats collapsed by default on mobile with 'Подробнее ▾'
-    await tester.drag(customScrollFinder, const Offset(0, -220));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.ensureVisible(find.byKey(const ValueKey('stats_mobile_expand_btn')));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Подробнее ▾'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('stats_mobile_expand_btn')));
-    await tester.pumpAndSettle();
-    expect(find.text('Свернуть ▴'), findsOneWidget);
-
-    // Full watch history sheet opens on 'Вся история >'
-    await tester.drag(customScrollFinder, const Offset(0, -240));
+    await tester.drag(customScrollFinder, const Offset(0, -320));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.ensureVisible(find.byKey(const ValueKey('profile_full_history_btn')));
     await tester.pump(const Duration(milliseconds: 100));
@@ -206,8 +186,33 @@ void main() {
     await tester.tap(find.byIcon(Icons.close_rounded).last);
     await tester.pumpAndSettle();
 
-    await tester.drag(customScrollFinder, const Offset(0, -300));
+    // Tab 2 (Статистика): Stats + Badges with Все 9 ->
+    await tester.drag(customScrollFinder, const Offset(0, 320));
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.text('Статистика'));
+    await tester.pumpAndSettle();
+    expect(find.text('СТАТИСТИКА ПРОСМОТРА'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('badges_view_all_btn')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.byKey(const ValueKey('badges_view_all_btn')));
+    await tester.tap(find.byKey(const ValueKey('badges_view_all_btn')));
+    await tester.pumpAndSettle();
+    expect(find.text('Все достижения (9)'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.pumpAndSettle();
+
+    // Tab 3 (Сообщество): Friends + Comments Wall (3 записи)
+    await tester.scrollUntilVisible(
+      find.text('Сообщество'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Сообщество'));
+    await tester.pumpAndSettle();
+    expect(find.text('СТЕНА КОММЕНТАРИЕВ'), findsOneWidget);
     expect(find.text('3 записи'), findsOneWidget);
   });
 }

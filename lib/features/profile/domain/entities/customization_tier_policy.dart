@@ -160,6 +160,13 @@ class CustomizationTierPolicy {
     'slate',
   };
 
+  static const String bugHunterFrameId = 'hacker_glitch';
+  static const String bugHunterBannerId = 'hacker_matrix';
+  static const String bugHunterAvatarId = 'pai_hacker';
+
+  static bool isBugHunterCosmetic(String id) =>
+      id == bugHunterFrameId || id == bugHunterBannerId || id == bugHunterAvatarId;
+
   static bool hasTier(SupporterTier userTier, SupporterTier requiredTier) {
     return userTier.index >= requiredTier.index;
   }
@@ -180,7 +187,14 @@ class CustomizationTierPolicy {
     return SupporterTier.supporter;
   }
 
-  static bool isFrameUnlocked(SupporterTier userTier, String frameId) {
+  static bool isFrameUnlocked(
+    SupporterTier userTier,
+    String frameId, {
+    List<String> unlockedBadges = const [],
+  }) {
+    if (frameId == bugHunterFrameId) {
+      return unlockedBadges.contains('bug_hunter');
+    }
     return hasTier(userTier, requiredTierForFrame(frameId));
   }
 
@@ -200,8 +214,25 @@ class CustomizationTierPolicy {
     return SupporterTier.supporter;
   }
 
-  static bool isBannerUnlocked(SupporterTier userTier, String bannerId) {
+  static bool isBannerUnlocked(
+    SupporterTier userTier,
+    String bannerId, {
+    List<String> unlockedBadges = const [],
+  }) {
+    if (bannerId == bugHunterBannerId) {
+      return unlockedBadges.contains('bug_hunter');
+    }
     return hasTier(userTier, requiredTierForBanner(bannerId));
+  }
+
+  static bool isAvatarUnlocked(
+    String avatarId, {
+    List<String> unlockedBadges = const [],
+  }) {
+    if (avatarId == bugHunterAvatarId) {
+      return unlockedBadges.contains('bug_hunter');
+    }
+    return true;
   }
 
   static bool canEditCustomTitle(SupporterTier userTier) =>
@@ -227,9 +258,16 @@ class CustomizationTierPolicy {
     String? customTitle,
     String? artworkUrl,
     String? artworkTitle,
+    List<String> unlockedBadges = const [],
   }) {
-    final safeFrameId = isFrameUnlocked(tier, frameId) ? frameId : 'none';
-    final safeBackgroundId = isBannerUnlocked(tier, backgroundId) ? backgroundId : 'none';
+    final safeFrameId =
+        isFrameUnlocked(tier, frameId, unlockedBadges: unlockedBadges)
+            ? frameId
+            : 'none';
+    final safeBackgroundId =
+        isBannerUnlocked(tier, backgroundId, unlockedBadges: unlockedBadges)
+            ? backgroundId
+            : 'none';
     final safeCustomTitle = canEditCustomTitle(tier) ? customTitle : null;
 
     String? safeArtworkUrl = artworkUrl;

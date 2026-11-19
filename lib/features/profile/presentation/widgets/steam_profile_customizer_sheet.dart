@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../../core/utils/telegram_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -253,6 +254,54 @@ class _SteamProfileCustomizerSheetState
     });
   }
 
+  void _showBugHunterUnlockPrompt(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF12161F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.terminal_rounded, color: Color(0xFF00E676), size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Эксклюзив «Кодинг-хакер»',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Этот предмет открывается бесплатно за найденный баг!\n\n'
+          'Нажмите кнопку ниже, чтобы отправить баг-репорт в @syncpai_bot — после подтверждения вы получите рамку, фон и аватар «Кодинг-хакер».',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Закрыть', style: TextStyle(color: Colors.white54)),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00E676),
+              foregroundColor: Colors.black,
+            ),
+            icon: const Icon(Icons.bug_report_rounded, size: 16),
+            label: const Text('Открыть @syncpai_bot', style: TextStyle(fontWeight: FontWeight.w700)),
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              TelegramLauncher.openBugReport(
+                context,
+                friendCode: widget.profile.friendCode ?? widget.profile.id,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   void _applyChanges() {
     HapticFeedback.heavyImpact();
     final newStatus = _statusController.text.trim();
@@ -312,6 +361,7 @@ class _SteamProfileCustomizerSheetState
       customTitle: newTitle.isNotEmpty ? newTitle : null,
       artworkUrl: _selectedArtworkUrl,
       artworkTitle: _selectedArtworkTitle,
+      unlockedBadges: widget.profile.unlockedBadges,
     );
 
     // 1. Сохраняем в AuthCubit
@@ -837,14 +887,22 @@ class _SteamProfileCustomizerSheetState
           itemBuilder: (context, index) {
             final bg = SteamBackgroundTheme.all[index];
             final isSelected = _selectedBgId == bg.id;
-            final isBgUnlocked =
-                CustomizationTierPolicy.isBannerUnlocked(widget.profile.supporterTier, bg.id);
+            final isBugHunterItem = CustomizationTierPolicy.isBugHunterCosmetic(bg.id);
+            final isBgUnlocked = CustomizationTierPolicy.isBannerUnlocked(
+              widget.profile.supporterTier,
+              bg.id,
+              unlockedBadges: widget.profile.unlockedBadges,
+            );
             final requiredBgTier = CustomizationTierPolicy.requiredTierForBanner(bg.id);
 
             return RepaintBoundary(
               child: InkWell(
                 onTap: () {
                   if (!isBgUnlocked) {
+                    if (isBugHunterItem) {
+                      _showBugHunterUnlockPrompt(context);
+                      return;
+                    }
                     SupporterGateSheet.show(
                       context,
                       profile: widget.profile,
@@ -911,9 +969,13 @@ class _SteamProfileCustomizerSheetState
                                 Icon(Icons.lock_rounded, size: 10, color: requiredBgTier.accentColor),
                                 const SizedBox(width: 3),
                                 Text(
-                                  requiredBgTier.badgeLabel ?? 'Plus',
+                                  isBugHunterItem
+                                      ? '👾 За баг'
+                                      : (requiredBgTier.badgeLabel ?? 'Plus'),
                                   style: TextStyle(
-                                    color: requiredBgTier.accentColor,
+                                    color: isBugHunterItem
+                                        ? const Color(0xFF00E676)
+                                        : requiredBgTier.accentColor,
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -1081,9 +1143,11 @@ class _SteamProfileCustomizerSheetState
                 itemBuilder: (context, index) {
                   final frame = SteamAvatarFrame.all[index];
                   final isSelected = _selectedFrameId == frame.id;
+                  final isBugHunterFrame = CustomizationTierPolicy.isBugHunterCosmetic(frame.id);
                   final isFrameUnlocked = CustomizationTierPolicy.isFrameUnlocked(
                     widget.profile.supporterTier,
                     frame.id,
+                    unlockedBadges: widget.profile.unlockedBadges,
                   );
                   final requiredFrameTier =
                       CustomizationTierPolicy.requiredTierForFrame(frame.id);
@@ -1091,6 +1155,10 @@ class _SteamProfileCustomizerSheetState
                   return InkWell(
                     onTap: () {
                       if (!isFrameUnlocked) {
+                        if (isBugHunterFrame) {
+                          _showBugHunterUnlockPrompt(context);
+                          return;
+                        }
                         SupporterGateSheet.show(
                           context,
                           profile: widget.profile,
@@ -1191,9 +1259,13 @@ class _SteamProfileCustomizerSheetState
                                     Icon(Icons.lock_rounded, size: 8.5, color: requiredFrameTier.accentColor),
                                     const SizedBox(width: 2),
                                     Text(
-                                      requiredFrameTier.badgeLabel ?? 'Plus',
+                                      isBugHunterFrame
+                                          ? '👾 За баг'
+                                          : (requiredFrameTier.badgeLabel ?? 'Plus'),
                                       style: TextStyle(
-                                        color: requiredFrameTier.accentColor,
+                                        color: isBugHunterFrame
+                                            ? const Color(0xFF00E676)
+                                            : requiredFrameTier.accentColor,
                                         fontSize: 8,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -1455,11 +1527,19 @@ class _SteamProfileCustomizerSheetState
         ...AnimeSilhouettePreset.presets.map((preset) {
           final isSelected = _selectedAvatar == preset.id &&
               _customAvatarUrlController.text.isEmpty;
+          final isAvatarUnlocked = CustomizationTierPolicy.isAvatarUnlocked(
+            preset.id,
+            unlockedBadges: widget.profile.unlockedBadges,
+          );
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: InkWell(
               onTap: () {
+                if (!isAvatarUnlocked) {
+                  _showBugHunterUnlockPrompt(context);
+                  return;
+                }
                 setState(() {
                   _selectedAvatar = preset.id;
                   _customAvatarUrlController.clear();
@@ -1500,6 +1580,27 @@ class _SteamProfileCustomizerSheetState
                               fontSize: 13.5,
                             ),
                           ),
+                          if (!isAvatarUnlocked) ...[
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00E676).withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF00E676).withValues(alpha: 0.45),
+                                ),
+                              ),
+                              child: const Text(
+                                '👾 За найденный баг',
+                                style: TextStyle(
+                                  color: Color(0xFF00E676),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 2),
                           Text(
                             preset.title,

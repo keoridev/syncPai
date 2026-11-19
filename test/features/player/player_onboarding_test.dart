@@ -49,8 +49,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // Step 1: Brightness (left 35%)
+    expect(find.byKey(const ValueKey('player_onboarding_pill_banner')), findsOneWidget);
     expect(find.text('1 / 4'), findsOneWidget);
-    expect(find.text('Яркость экрана'), findsOneWidget);
+    expect(find.text('Яркость — свайп слева'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding_zone_brightness')), findsOneWidget);
     expect(find.text('Пропустить'), findsOneWidget);
 
@@ -59,26 +60,27 @@ void main() {
 
     // Step 2: Volume (right 35%)
     expect(find.text('2 / 4'), findsOneWidget);
-    expect(find.text('Громкость звука'), findsOneWidget);
+    expect(find.text('Громкость — свайп справа'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding_zone_volume')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('player_onboarding_next_btn')));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Step 3: Double-tap ±10s + bottom seek bar
+    // Step 3: Double-tap ±10s
     expect(find.text('3 / 4'), findsOneWidget);
-    expect(find.text('Быстрая перемотка'), findsOneWidget);
+    expect(find.text('Перемотка ±10с — двойной тап'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding_zone_seek_left')), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding_zone_seek_right')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('player_onboarding_next_btn')));
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Step 4: Next episode & episode list HUD spotlight
+    // Step 4: Next episode & settings HUD spotlight
     expect(find.text('4 / 4'), findsOneWidget);
-    expect(find.text('Серии и навигация'), findsOneWidget);
+    expect(find.text('Следующая серия и настройки ⚙️'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding_zone_hud_episodes')), findsOneWidget);
-    expect(find.text('Понятно, смотреть'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding_zone_hud_settings')), findsOneWidget);
+    expect(find.text('Готово'), findsOneWidget);
     expect(seenSteps, [0, 1, 2, 3]);
 
     await tester.tap(find.byKey(const ValueKey('player_onboarding_dismiss_btn')));

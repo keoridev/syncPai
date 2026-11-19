@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     bot_token: str
     supabase_url: str
     supabase_service_role_key: str
-    admin_telegram_id: int
+    admin_telegram_id: Optional[int] = None
+    admin_ids: str = ""
     support_chat_id: Optional[int] = None
 
     # Payment details / links

@@ -24,6 +24,7 @@ async def set_bot_commands(bot: Bot):
         BotCommand(command="link", description="Привязать профиль SyncPai"),
         BotCommand(command="profile", description="Мой профиль SyncPai"),
         BotCommand(command="support", description="Поддержать проект и подписки"),
+        BotCommand(command="bug", description="Сообщить о баге"),
         BotCommand(command="download", description="Скачать приложение (.apk / .exe)"),
     ]
     await bot.set_my_commands(commands)
@@ -36,13 +37,13 @@ async def main():
     bot = Bot(token=settings.bot_token)
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Регистрация модулей
+    # Регистрация модулей (bug_report до общих catch-all обработчиков)
+    dp.include_router(bug_report.router)
     dp.include_router(start_profile.router)
     dp.include_router(support_payments.router)
     dp.include_router(downloads.router)
     dp.include_router(admin.router)
     dp.include_router(inline_invite.router)
-    dp.include_router(bug_report.router)
 
     # Настройка APScheduler для фонового воркера проверки истекших подписок и новых серий
     scheduler = AsyncIOScheduler()

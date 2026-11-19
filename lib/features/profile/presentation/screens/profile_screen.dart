@@ -720,10 +720,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themePrimary = scheme.primary;
 
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: BlocBuilder<ProfileCubit, ProfileState>(
-        bloc: _profileCubit,
+    return BlocProvider<ProfileCubit>.value(
+      value: _profileCubit,
+      child: Scaffold(
+        backgroundColor: scheme.surface,
+        body: BlocBuilder<ProfileCubit, ProfileState>(
+          bloc: _profileCubit,
         builder: (context, state) {
           final isFriend = widget.userId != null && widget.userId!.isNotEmpty;
           UserProfile profile;
@@ -1017,6 +1019,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           );
         },
       ),
+    ),
     );
   }
 

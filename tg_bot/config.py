@@ -18,11 +18,11 @@ class Settings(BaseSettings):
     monthly_goal_target: int = 3000
     monthly_goal_title: str = "Оплата VDS и инфраструктуры на месяц"
 
-    # Payment details / links
-    boosty_url: str = "https://boosty.to/syncpai"
-    crypto_usdt_trc20: str = "TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    crypto_ton: str = "EQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    tribute_url: str = "https://t.me/tribute/app?startapp=syncpai"
+    # Anonymous privacy-preserving payment methods (zero bank cards / zero personal names)
+    # Shown only if explicitly configured in .env:
+    pay_crypto_bot_link: Optional[str] = None  # PAY_CRYPTO_BOT_LINK: @CryptoBot link under brand "SyncPai"
+    pay_ton: Optional[str] = None  # PAY_TON: Anonymous TON wallet address
+    pay_tribute: Optional[str] = None  # PAY_TRIBUTE: @tribute link under brand "SyncPai"
     payment_provider_token: str = ""
 
     log_level: str = "INFO"

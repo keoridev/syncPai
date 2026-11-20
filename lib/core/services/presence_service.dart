@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -25,6 +26,21 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
   static const String channelName = 'syncpai:presence';
 
   static final PresenceService instance = PresenceService._();
+
+  void _safeNotifyListeners() {
+    try {
+      final phase = SchedulerBinding.instance.schedulerPhase;
+      if (phase == SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (hasListeners) {
+            super.notifyListeners();
+          }
+        });
+        return;
+      }
+    } catch (_) {}
+    super.notifyListeners();
+  }
 
   final StreamController<Map<String, OnlinePresenceInfo>> _onlineController =
       StreamController<Map<String, OnlinePresenceInfo>>.broadcast();
@@ -61,7 +77,7 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
       final saved = prefs.getBool(incognitoPrefsKey);
       if (saved != null && saved != _isIncognito) {
         _isIncognito = saved;
-        notifyListeners();
+        _safeNotifyListeners();
       }
     } catch (_) {}
   }
@@ -145,7 +161,7 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
       }
       _onlineUsers = Map.unmodifiable(next);
       _onlineController.add(_onlineUsers);
-      notifyListeners();
+      _safeNotifyListeners();
     } catch (e) {
       debugPrint('[PresenceService] presenceState parse error: $e');
     }
@@ -178,7 +194,7 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
     _currentActivity = cleanTitle.isEmpty
         ? defaultActivity
         : 'Смотрит: $cleanTitle • $episodeNumber сер.';
-    notifyListeners();
+    _safeNotifyListeners();
     if (!_isIncognito) {
       await _trackCurrentState();
     }
@@ -187,7 +203,7 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> clearWatchingActivity() async {
     if (_currentActivity == defaultActivity) return;
     _currentActivity = defaultActivity;
-    notifyListeners();
+    _safeNotifyListeners();
     if (!_isIncognito) {
       await _trackCurrentState();
     }
@@ -196,7 +212,7 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setIncognito(bool enabled) async {
     if (_isIncognito == enabled) return;
     _isIncognito = enabled;
-    notifyListeners();
+    _safeNotifyListeners();
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -247,13 +263,13 @@ class PresenceService extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {}
     }
     _onlineUsers = const {};
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   @visibleForTesting
   void setTestOnlineUsers(Map<String, OnlinePresenceInfo> users) {
     _onlineUsers = Map.unmodifiable(users);
     _onlineController.add(_onlineUsers);
-    notifyListeners();
+    _safeNotifyListeners();
   }
 }

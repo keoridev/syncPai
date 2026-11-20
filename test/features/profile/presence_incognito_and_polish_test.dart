@@ -100,7 +100,7 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('CYBERPUNK // SAMURAI'), findsNothing);
-      expect(find.text('Сменить'), findsOneWidget);
+      expect(find.text('Сменить арт'), findsOneWidget);
       expect(find.text('ONLINE'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('profile_status_pill')));

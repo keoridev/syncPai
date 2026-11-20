@@ -13,14 +13,17 @@ class CatalogFilterSheet extends StatefulWidget {
     required this.currentState,
   });
 
-  static Future<void> show(BuildContext context, CatalogLoaded state) {
+  static Future<void> show(BuildContext context, [CatalogLoaded? state]) {
+    final cubit = context.read<CatalogCubit>();
+    final currentState = state ?? (cubit.state is CatalogLoaded ? cubit.state as CatalogLoaded : null);
+    if (currentState == null) return Future.value();
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => BlocProvider.value(
-        value: context.read<CatalogCubit>(),
-        child: CatalogFilterSheet(currentState: state),
+        value: cubit,
+        child: CatalogFilterSheet(currentState: currentState),
       ),
     );
   }
@@ -66,7 +69,10 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedGenres = Set.from(widget.currentState.selectedGenres);
+    _selectedGenres = widget.currentState.selectedGenres
+        .map((g) => g.trim())
+        .where((g) => g.isNotEmpty && g.toLowerCase() != 'все')
+        .toSet();
     _sortBy = widget.currentState.sortBy;
     _matchAll = widget.currentState.matchAllGenres;
     _status = widget.currentState.statusFilter;
@@ -91,11 +97,12 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
       _status = null;
     });
     final cubit = context.read<CatalogCubit>();
-    cubit.clearGenres();
-    cubit.setSortBy(CatalogSort.updates);
-    cubit.setMatchAllGenres(false);
-    cubit.setStatusFilter(null);
-    Navigator.of(context).pop();
+    cubit.applyFilterSheet(
+      genres: const {},
+      sortBy: CatalogSort.updates,
+      matchAll: false,
+      statusFilter: null,
+    );
   }
 
   @override
@@ -159,11 +166,19 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                   if (_selectedGenres.isNotEmpty || _sortBy != CatalogSort.updates || _status != null)
                     TextButton(
                       style: TextButton.styleFrom(
-                        foregroundColor: AppColors.textSecondary,
+                        foregroundColor: themePrimaryLight,
                         visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       ),
                       onPressed: _resetFilters,
-                      child: const Text('Сбросить', style: TextStyle(fontSize: 13)),
+                      child: Text(
+                        'Сбросить',
+                        style: TextStyle(
+                          color: themePrimaryLight,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -337,7 +352,9 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                     spacing: 8,
                     runSpacing: 8,
                     children: allGenres.map((genre) {
-                      final isSelected = _selectedGenres.contains(genre);
+                      final isSelected = _selectedGenres.any(
+                        (g) => g.toLowerCase() == genre.toLowerCase(),
+                      );
                       return FilterChip(
                         label: Text(genre),
                         selected: isSelected,
@@ -361,7 +378,9 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                             if (selected) {
                               _selectedGenres.add(genre);
                             } else {
-                              _selectedGenres.remove(genre);
+                              _selectedGenres.removeWhere(
+                                (g) => g.toLowerCase() == genre.toLowerCase(),
+                              );
                             }
                           });
                         },

@@ -113,7 +113,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       final current = state as CatalogLoaded;
       if (cleanCategory != 'Все' &&
           current.selectedGenres.length == 1 &&
-          current.selectedGenres.contains(cleanCategory)) {
+          current.selectedGenres.any((g) => g.toLowerCase() == cleanCategory.toLowerCase())) {
         cleanCategory = 'Все';
       }
     }
@@ -149,6 +149,8 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sort,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        searchQuery: '',
+        isSearching: false,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: _pageMap[cleanCategory] ?? 1,
@@ -169,6 +171,8 @@ class CatalogCubit extends Cubit<CatalogState> {
       final current = state as CatalogLoaded;
       emit(current.copyWith(
         selectedGenres: genres,
+        searchQuery: '',
+        isSearching: false,
         filteredTitles: const [], // Показывает скелетон снизу без задержки кнопки
         isLoadingMore: true,
       ));
@@ -325,6 +329,8 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sort,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        searchQuery: '',
+        isSearching: false,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: page,
@@ -504,6 +510,33 @@ class CatalogCubit extends Cubit<CatalogState> {
     bool matchAll = false,
     bool isLoadMore = false,
   }) async {
+    // 0. Если это сброс на дефолт (без жанров, свежие обновления, статус Все) и есть кэш — отдаем сразу
+    if (!isLoadMore &&
+        genres.isEmpty &&
+        sortBy == CatalogSort.updates &&
+        statusFilter == null &&
+        _cache.containsKey('Все') &&
+        _cache['Все']!.isNotEmpty) {
+      final cached = _cache['Все']!;
+      _cachedUpdates = cached;
+      emit(CatalogLoaded(
+        titles: cached,
+        filteredTitles: cached,
+        selectedGenres: const {},
+        sortBy: CatalogSort.updates,
+        matchAllGenres: false,
+        statusFilter: null,
+        searchQuery: '',
+        isSearching: false,
+        viewMode: _currentViewMode,
+        gridDensity: _currentGridDensity,
+        currentPage: _pageMap['Все'] ?? 1,
+        hasMore: _hasMoreMap['Все'] ?? true,
+        isLoadingMore: false,
+      ));
+      return;
+    }
+
     final genreStr = _formatGenres(genres);
     final cacheKey = _buildCacheKey(genres: genreStr, sort: sortBy, status: statusFilter);
 
@@ -518,6 +551,8 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sortBy,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        searchQuery: '',
+        isSearching: false,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: _pageMap[cacheKey] ?? 1,
@@ -616,6 +651,8 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sortBy,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        searchQuery: '',
+        isSearching: false,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: page,
@@ -681,32 +718,17 @@ class CatalogCubit extends Cubit<CatalogState> {
     String? statusFilter,
   }) {
     if (state is! CatalogLoaded) return;
-    final current = state as CatalogLoaded;
+    final cleanGenres = genres
+        .map((g) => g.trim())
+        .where((g) => g.isNotEmpty && g.toLowerCase() != 'все')
+        .toSet();
 
-    if (current.searchQuery.isNotEmpty) {
-      final filtered = _applyFiltersAndSorting(
-        current.titles,
-        genres: genres,
-        sortBy: sortBy,
-        matchAll: matchAll,
-        statusFilter: statusFilter,
-      );
-      emit(current.copyWith(
-        selectedGenres: genres,
-        sortBy: sortBy,
-        matchAllGenres: matchAll,
-        statusFilter: statusFilter,
-        clearStatusFilter: statusFilter == null,
-        filteredTitles: filtered,
-      ));
-    } else {
-      _fetchFilteredCatalog(
-        genres: genres,
-        sortBy: sortBy,
-        statusFilter: statusFilter,
-        matchAll: matchAll,
-      );
-    }
+    _fetchFilteredCatalog(
+      genres: cleanGenres,
+      sortBy: sortBy,
+      statusFilter: statusFilter,
+      matchAll: matchAll,
+    );
   }
 
   /// Одиночный выбор жанра (для совместимости)

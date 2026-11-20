@@ -110,26 +110,46 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final isNarrow = screenWidth <= 360;
     final horizontalPad = isNarrow ? 12.0 : (isDesktop ? 20.0 : 16.0);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        top: !isDesktopOS,
-        bottom: !isDesktopOS,
-        left: !isDesktopOS,
-        right: !isDesktopOS,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: isDesktop ? 1440 : double.infinity,
-            ),
-            child: RefreshIndicator(
-              color: themePrimary,
-              backgroundColor: AppColors.surfaceElevated,
-              onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
-              child: CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-            slivers: [
+    return BlocListener<CatalogCubit, CatalogState>(
+      listenWhen: (prev, curr) {
+        if (curr is CatalogLoaded) {
+          if (prev is! CatalogLoaded) return true;
+          return prev.searchQuery != curr.searchQuery;
+        }
+        return false;
+      },
+      listener: (context, state) {
+        if (state is CatalogLoaded) {
+          if (state.searchQuery.isEmpty && _searchController.text.isNotEmpty) {
+            _searchController.clear();
+          } else if (state.searchQuery.isNotEmpty && _searchController.text != state.searchQuery) {
+            _searchController.value = TextEditingValue(
+              text: state.searchQuery,
+              selection: TextSelection.collapsed(offset: state.searchQuery.length),
+            );
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          top: !isDesktopOS,
+          bottom: !isDesktopOS,
+          left: !isDesktopOS,
+          right: !isDesktopOS,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: isDesktop ? 1440 : double.infinity,
+              ),
+              child: RefreshIndicator(
+                color: themePrimary,
+                backgroundColor: AppColors.surfaceElevated,
+                onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+                child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              slivers: [
               // 1. Плавающий SliverAppBar (Логотип слева, профиль и кнопка поиска справа)
               SliverAppBar(
                 floating: !isDesktop,
@@ -577,8 +597,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           // Компактная кнопка расширенных фильтров
                           InkWell(
                             onTap: () {
-                              if (state is CatalogLoaded) {
-                                CatalogFilterSheet.show(context, state);
+                              final currentState = state is CatalogLoaded
+                                  ? state
+                                  : (context.read<CatalogCubit>().state is CatalogLoaded
+                                      ? context.read<CatalogCubit>().state as CatalogLoaded
+                                      : null);
+                              if (currentState != null) {
+                                CatalogFilterSheet.show(context, currentState);
                               }
                             },
                             borderRadius: BorderRadius.circular(10),
@@ -624,13 +649,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ..._popularGenres.map((genre) {
                             final isAll = genre == 'Все';
                             final isSelected = isAll
-                                ? selectedGenres.isEmpty
-                                : selectedGenres.contains(genre);
+                                ? selectedGenres.where((g) => g.toLowerCase() != 'все').isEmpty
+                                : selectedGenres.any((g) => g.toLowerCase() == genre.toLowerCase());
 
                             return Padding(
                               padding: const EdgeInsets.only(right: 8),
                               child: InkWell(
                                 onTap: () {
+                                  if (_searchController.text.isNotEmpty) {
+                                    _searchController.clear();
+                                  }
+                                  if (_isSearchOpen) {
+                                    setState(() => _isSearchOpen = false);
+                                  }
                                   if (isAll) {
                                     context.read<CatalogCubit>().clearGenres();
                                   } else {
@@ -802,7 +833,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
       ),
     ),
   ),
-);
+),
+    );
   }
 
   Widget _buildSliverLoadingGrid(

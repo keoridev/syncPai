@@ -10,6 +10,7 @@ import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
 import '../../domain/usecases/search_catalog_usecase.dart';
 import '../../domain/usecases/search_titles.dart';
+import '../../services/catalog_prefetch_service.dart';
 import 'catalog_state.dart';
 
 class CatalogCubit extends Cubit<CatalogState> {
@@ -117,7 +118,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
     }
 
-    // Если данные для этого жанра уже есть в кэше — отдаем их моментально!
+    // 1. Проверяем наличие в двухуровневом сервисе предзагрузки (In-Memory + Disk)
+    final prefetched = CatalogPrefetchService.instance.getCached(cleanCategory);
+    if (prefetched != null && prefetched.isNotEmpty && !_cache.containsKey(cleanCategory)) {
+      _cache[cleanCategory] = prefetched;
+    }
+
+    // Если данные для этого жанра уже есть в кэше — отдаем их моментально (0ms)!
     if (_cache.containsKey(cleanCategory) && _cache[cleanCategory]!.isNotEmpty) {
       final cached = _cache[cleanCategory]!;
       _cachedUpdates = cached;
@@ -148,6 +155,11 @@ class CatalogCubit extends Cubit<CatalogState> {
         hasMore: _hasMoreMap[cleanCategory] ?? true,
         isLoadingMore: false,
       ));
+
+      // Если кэш устарел (> 15 минут), тихо обновляем его в фоне без сброса интерфейса
+      if (CatalogPrefetchService.instance.isStale(cleanCategory)) {
+        _fetchCatalog(category: cleanCategory, isLoadMore: false);
+      }
       return;
     }
 
@@ -302,6 +314,9 @@ class CatalogCubit extends Cubit<CatalogState> {
       _pageMap[cleanCategory] = page;
       _hasMoreMap[cleanCategory] = hasMore;
       _cachedUpdates = filtered;
+
+      CatalogPrefetchService.instance.putCache(cleanCategory, accumulated);
+      CatalogPrefetchService.instance.startPrefetchQueue();
 
       emit(CatalogLoaded(
         titles: accumulated,
@@ -591,6 +606,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       _hasMoreMap[cacheKey] = hasMore;
       if (filtered.isNotEmpty) {
         _pageCache[cacheKey] = filtered;
+        CatalogPrefetchService.instance.putCache(cacheKey, filtered);
       }
 
       emit(CatalogLoaded(
@@ -717,6 +733,27 @@ class CatalogCubit extends Cubit<CatalogState> {
         filteredTitles: filtered,
       ));
     } else {
+      // Моментальная выдача из кэша для «Популярное» (рейтинг)
+      if (sort == CatalogSort.rating && current.selectedGenres.isEmpty && current.statusFilter == null) {
+        final cached = CatalogPrefetchService.instance.getCached('popular');
+        if (cached != null && cached.isNotEmpty) {
+          emit(current.copyWith(
+            sortBy: sort,
+            filteredTitles: cached,
+            titles: cached,
+          ));
+          if (CatalogPrefetchService.instance.isStale('popular')) {
+            _fetchFilteredCatalog(
+              genres: current.selectedGenres,
+              sortBy: sort,
+              statusFilter: current.statusFilter,
+              matchAll: current.matchAllGenres,
+            );
+          }
+          return;
+        }
+      }
+
       _fetchFilteredCatalog(
         genres: current.selectedGenres,
         sortBy: sort,
@@ -764,6 +801,27 @@ class CatalogCubit extends Cubit<CatalogState> {
         filteredTitles: filtered,
       ));
     } else {
+      // Моментальная выдача из кэша для онгоингов
+      if (status == 'ongoing' && current.selectedGenres.isEmpty && current.sortBy == CatalogSort.updates) {
+        final cached = CatalogPrefetchService.instance.getCached('ongoing');
+        if (cached != null && cached.isNotEmpty) {
+          emit(current.copyWith(
+            statusFilter: status,
+            filteredTitles: cached,
+            titles: cached,
+          ));
+          if (CatalogPrefetchService.instance.isStale('ongoing')) {
+            _fetchFilteredCatalog(
+              genres: current.selectedGenres,
+              sortBy: current.sortBy,
+              statusFilter: status,
+              matchAll: current.matchAllGenres,
+            );
+          }
+          return;
+        }
+      }
+
       _fetchFilteredCatalog(
         genres: current.selectedGenres,
         sortBy: current.sortBy,

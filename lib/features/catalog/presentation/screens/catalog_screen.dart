@@ -23,6 +23,7 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
+import 'package:sync_pai/features/catalog/services/catalog_prefetch_service.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -70,6 +71,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     super.initState();
     _scrollController = ScrollController()..addListener(_onScroll);
     context.read<CatalogCubit>().loadUpdates();
+    CatalogPrefetchService.instance.startPrefetchQueue();
   }
 
   @override

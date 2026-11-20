@@ -23,6 +23,15 @@ class ThematicAvatarFramePainter extends CustomPainter {
     final radius = outerSize / 2;
 
     switch (frameType) {
+      case 'pai_headphones':
+        _paintPaiHeadphonesFrame(canvas, center, radius);
+        break;
+      case 'pai_peek':
+        _paintPaiPeekFrame(canvas, center, radius);
+        break;
+      case 'pai_hacker':
+        _paintPaiHackerFrame(canvas, center, radius);
+        break;
       case 'sakura':
         _paintSakuraFrame(canvas, center, radius);
         break;
@@ -365,6 +374,283 @@ class ThematicAvatarFramePainter extends CustomPainter {
       )!.withValues(alpha: alpha);
 
       canvas.drawCircle(Offset(px, py), 1.8 * (1.0 - prog * 0.4), sparkPaint);
+    }
+  }
+
+  // --- 0.1 ТЕМА «НАУШНИКИ ПАЙ-ТЯН» (Pai-chan Cat-Ear Headphones — Free) ---
+  void _paintPaiHeadphonesFrame(Canvas canvas, Offset center, double radius) {
+    const cyan = Color(0xFF35D9D5);
+    const glowCyan = Color(0xFF00E5FF);
+
+    // 1. Неоновое свечение ободка
+    final glowPaint = Paint()
+      ..color = glowCyan.withValues(alpha: 0.5)
+      ..strokeWidth = 5.0
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+
+    final bandPaint = Paint()
+      ..color = cyan
+      ..strokeWidth = 2.8
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Дуга наушников через верх (от -0.85*pi до -0.15*pi)
+    final bandRect = Rect.fromCircle(center: center, radius: radius + 3.5);
+    canvas.drawArc(bandRect, -math.pi * 0.85, math.pi * 0.70, false, glowPaint);
+    canvas.drawArc(bandRect, -math.pi * 0.85, math.pi * 0.70, false, bandPaint);
+
+    // 2. Кошачьи ушки на оголовье (Cat-Ear horns)
+    final earAngles = [-math.pi * 0.65, -math.pi * 0.35];
+    for (int i = 0; i < earAngles.length; i++) {
+      final a = earAngles[i];
+      final ex = center.dx + (radius + 3.5) * math.cos(a);
+      final ey = center.dy + (radius + 3.5) * math.sin(a);
+
+      canvas.save();
+      canvas.translate(ex, ey);
+      canvas.rotate(a + math.pi / 2);
+
+      // Внешнее ушко
+      final earPath = Path()
+        ..moveTo(-5, 0)
+        ..lineTo(0, -11)
+        ..lineTo(5, 0)
+        ..close();
+
+      final earFillPaint = Paint()
+        ..color = cyan.withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill;
+      canvas.drawPath(earPath, earFillPaint);
+      canvas.drawPath(earPath, bandPaint);
+
+      // Внутреннее светящееся ушко
+      final innerEarPath = Path()
+        ..moveTo(-2.5, 0)
+        ..lineTo(0, -6.5)
+        ..lineTo(2.5, 0)
+        ..close();
+      final innerPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.85)
+        ..style = PaintingStyle.fill;
+      canvas.drawPath(innerEarPath, innerPaint);
+
+      canvas.restore();
+    }
+
+    // 3. Светящиеся чашечки наушников по бокам с пульсацией
+    final pulse = 1.0 + 0.12 * math.sin(animationValue * math.pi * 2);
+    final earcupPaint = Paint()
+      ..color = cyan
+      ..style = PaintingStyle.fill;
+    final earcupGlow = Paint()
+      ..color = glowCyan.withValues(alpha: 0.6)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+
+    final cupAngles = [-math.pi * 0.88, -math.pi * 0.12];
+    for (final ca in cupAngles) {
+      final cx = center.dx + (radius + 2.5) * math.cos(ca);
+      final cy = center.dy + (radius + 2.5) * math.sin(ca);
+
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(ca + math.pi / 2);
+      final cupRect = Rect.fromCenter(center: Offset.zero, width: 6.0 * pulse, height: 11.0 * pulse);
+      final rrect = RRect.fromRectAndRadius(cupRect, const Radius.circular(3));
+      canvas.drawRRect(rrect, earcupGlow);
+      canvas.drawRRect(rrect, earcupPaint);
+      // Белый неоновый блик в центре чашки
+      canvas.drawCircle(Offset.zero, 1.8, Paint()..color = Colors.white);
+      canvas.restore();
+    }
+
+    // 4. Тонкое базовое кольцо с неоновым свечением
+    final ringPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFF35D9D5),
+          Color(0xFF00B4D8),
+          Color(0xFF90E0EF),
+          Color(0xFF35D9D5),
+        ],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+    canvas.drawCircle(center, radius, ringPaint);
+  }
+
+  // --- 0.2 ТЕМА «ПАЙ-ТЯН РЯДОМ» (Pai-chan Peek — Plus) ---
+  void _paintPaiPeekFrame(Canvas canvas, Offset center, double radius) {
+    // 1. Cyan/Violet градиентное внешнее кольцо
+    final ringPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFF35D9D5),
+          Color(0xFF8B5CF6),
+          Color(0xFFFF76AC),
+          Color(0xFF35D9D5),
+        ],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8;
+    canvas.drawCircle(center, radius, ringPaint);
+
+    // 2. Chibi Пай-тян, выглядывающая снизу справа (угол ~ 45 градусов / math.pi * 0.25)
+    const peekAngle = math.pi * 0.25;
+    // Легкое покачивание / дыхание маскота
+    final bob = math.sin(animationValue * math.pi * 2) * 1.2;
+    final px = center.dx + (radius + 2.0) * math.cos(peekAngle);
+    final py = center.dy + (radius + 2.0) * math.sin(peekAngle) + bob;
+
+    canvas.save();
+    canvas.translate(px, py);
+
+    // Личико Пай-тян (круглая форма головы)
+    final facePaint = Paint()..color = const Color(0xFFFFF3E0);
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    canvas.drawCircle(Offset.zero, 8.5, shadowPaint);
+    canvas.drawCircle(Offset.zero, 8.0, facePaint);
+
+    // Волосы / челка Пай-тян (неоново-бирюзовый с фиолетовым)
+    final hairPaint = Paint()..color = const Color(0xFF35D9D5);
+    final hairPath = Path()
+      ..moveTo(-7.5, -3)
+      ..quadraticBezierTo(-4, -9.5, 0, -8)
+      ..quadraticBezierTo(4, -9.5, 7.5, -3)
+      ..quadraticBezierTo(3, -5, 0, -5)
+      ..quadraticBezierTo(-3, -5, -7.5, -3)
+      ..close();
+    canvas.drawPath(hairPath, hairPaint);
+
+    // Ушки маскота
+    final earPaint = Paint()..color = const Color(0xFF8B5CF6);
+    final leftEar = Path()
+      ..moveTo(-6, -6)
+      ..lineTo(-9, -12)
+      ..lineTo(-3, -8)
+      ..close();
+    final rightEar = Path()
+      ..moveTo(3, -8)
+      ..lineTo(9, -12)
+      ..lineTo(6, -6)
+      ..close();
+    canvas.drawPath(leftEar, earPaint);
+    canvas.drawPath(rightEar, earPaint);
+
+    // Kawaii глаза (темно-фиолетовые точки с белыми искорками)
+    final eyePaint = Paint()..color = const Color(0xFF2E1065);
+    final glintPaint = Paint()..color = Colors.white;
+    canvas.drawCircle(const Offset(-3.0, -0.5), 1.4, eyePaint);
+    canvas.drawCircle(const Offset(3.0, -0.5), 1.4, eyePaint);
+    canvas.drawCircle(const Offset(-3.4, -0.9), 0.5, glintPaint);
+    canvas.drawCircle(const Offset(2.6, -0.9), 0.5, glintPaint);
+
+    // Румянец на щечках
+    final blushPaint = Paint()..color = const Color(0xFFFF80AB).withValues(alpha: 0.65);
+    canvas.drawCircle(const Offset(-5.0, 1.8), 1.2, blushPaint);
+    canvas.drawCircle(const Offset(5.0, 1.8), 1.2, blushPaint);
+
+    // Лапки, держащиеся за обод рамки
+    final pawPaint = Paint()..color = Colors.white;
+    final pawStroke = Paint()
+      ..color = const Color(0xFF35D9D5)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+    final leftPaw = RRect.fromRectAndRadius(const Rect.fromLTWH(-6.5, 3.5, 4.5, 3.5), const Radius.circular(2));
+    final rightPaw = RRect.fromRectAndRadius(const Rect.fromLTWH(2.0, 3.5, 4.5, 3.5), const Radius.circular(2));
+    canvas.drawRRect(leftPaw, pawPaint);
+    canvas.drawRRect(leftPaw, pawStroke);
+    canvas.drawRRect(rightPaw, pawPaint);
+    canvas.drawRRect(rightPaw, pawStroke);
+
+    canvas.restore();
+  }
+
+  // --- 0.3 ТЕМА «КИБЕР-ПАЙ-ТЯН» (Pai-chan Cyber Glitch — Bug Hunter) ---
+  void _paintPaiHackerFrame(Canvas canvas, Offset center, double radius) {
+    const emerald = Color(0xFF00FF87);
+    const cyan = Color(0xFF00F0FF);
+
+    // 1. Вращающееся матрично-глитчевое кольцо с неоновым свечением
+    final ringPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFF00FF87),
+          Color(0xFF00F0FF),
+          Color(0xFF059669),
+          Color(0xFF00FF87),
+        ],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4;
+    canvas.drawCircle(center, radius, ringPaint);
+
+    // 2. Кибернетические HUD-засечки по 8 сторонам
+    final hudPaint = Paint()
+      ..color = emerald.withValues(alpha: 0.85)
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 8; i++) {
+      final a = (i * math.pi / 4);
+      final x1 = center.dx + (radius - 1.5) * math.cos(a);
+      final y1 = center.dy + (radius - 1.5) * math.sin(a);
+      final x2 = center.dx + (radius + 4.0) * math.cos(a);
+      final y2 = center.dy + (radius + 4.0) * math.sin(a);
+      canvas.drawLine(Offset(x1, y1), Offset(x2, y2), hudPaint);
+    }
+
+    // 3. Cyber-visor акцент в верхней части (светящаяся футуристическая полоса)
+    final visorPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          cyan.withValues(alpha: 0.0),
+          cyan.withValues(alpha: 0.95),
+          emerald,
+          cyan.withValues(alpha: 0.95),
+          cyan.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromLTWH(center.dx - radius, center.dy - radius - 5, radius * 2, 8))
+      ..strokeWidth = 3.6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final visorPath = Path();
+    visorPath.addArc(
+      Rect.fromCircle(center: center, radius: radius + 2.0),
+      -math.pi * 0.78,
+      math.pi * 0.56,
+    );
+    canvas.drawPath(visorPath, visorPaint);
+
+    // 4. Бегущая скан-линия по визору (glitch scanline)
+    final scanProgress = (animationValue * 2) % 1.0;
+    final scanAngle = -math.pi * 0.75 + (scanProgress * math.pi * 0.50);
+    final sx = center.dx + (radius + 2.0) * math.cos(scanAngle);
+    final sy = center.dy + (radius + 2.0) * math.sin(scanAngle);
+
+    final beamPaint = Paint()
+      ..color = Colors.white
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawCircle(Offset(sx, sy), 2.2, beamPaint);
+
+    // 5. Дрейфующие пиксели матрицы
+    final pixelPaint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 7; i++) {
+      final seed = (i * 0.23);
+      final prog = (animationValue + seed) % 1.0;
+      final a = (i * 0.9) + prog * math.pi;
+      final dist = radius + 3.0 + prog * 6.0;
+      final px = center.dx + dist * math.cos(a);
+      final py = center.dy + dist * math.sin(a);
+      final alpha = (1.0 - (prog - 0.5).abs() * 2).clamp(0.2, 0.9);
+      pixelPaint.color = emerald.withValues(alpha: alpha);
+      canvas.drawRect(Rect.fromLTWH(px, py, 2.2, 2.2), pixelPaint);
     }
   }
 

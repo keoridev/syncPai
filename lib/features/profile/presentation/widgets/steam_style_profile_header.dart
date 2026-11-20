@@ -26,6 +26,7 @@ import '../../domain/entities/steam_profile_customization.dart';
 import '../../services/friends_service.dart';
 import 'badge_details_sheet.dart';
 import 'live_backgrounds/live_background_widget.dart';
+import 'pai_chan_artwork_banner.dart';
 
 /// Кастомный Steam Artwork Profile Header в стиле премиальных профилей Steam Community:
 /// 1. Внешний стеклянный контейнер Steam Profile Backing с тонким контуром `Border.all(color: Colors.white10)`.
@@ -68,6 +69,30 @@ class SteamStyleProfileHeader extends StatefulWidget {
 
   // Курированные готовые пресеты артворков в стиле Steam Artwork Showcase (статичные + живые аниме-сцены)
   static const List<SteamArtworkPreset> curatedPresets = [
+    SteamArtworkPreset(
+      title: 'Пай-тян • Ночной марафон',
+      kanji: '夜',
+      tagline: 'LOFI CHILL // FREE',
+      imageUrl: 'pai_chill',
+    ),
+    SteamArtworkPreset(
+      title: 'Зимняя Пай-тян 2026',
+      kanji: '冬',
+      tagline: 'WINTER VIBES // FREE',
+      imageUrl: 'pai_winter',
+    ),
+    SteamArtworkPreset(
+      title: 'Пай-тян • Абсолют кино',
+      kanji: '映',
+      tagline: 'PLUS EXCLUSIVE // HERO',
+      imageUrl: 'pai_celebrate',
+    ),
+    SteamArtworkPreset(
+      title: 'Пай-тян • Кодинг-хакер',
+      kanji: '電',
+      tagline: 'BUG HUNTER // ROOT',
+      imageUrl: 'pai_hacker_art',
+    ),
     SteamArtworkPreset(
       title: 'Самурай',
       kanji: '侍',
@@ -1357,6 +1382,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required double height,
   }) {
     final trimmed = imageUrl.trim();
+    if (trimmed.startsWith('pai_')) {
+      return PaiChanArtworkBanner(
+        artworkId: trimmed,
+        width: width,
+        height: height,
+      );
+    }
+
     if (trimmed.startsWith('live:')) {
       final liveId = trimmed.substring(5);
       final bgTheme = SteamBackgroundTheme.fromId(liveId);
@@ -1715,7 +1748,13 @@ class _ArtworkSelectorSheetState extends State<_ArtworkSelectorSheet>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (preset.imageUrl.startsWith('live:'))
+                  if (preset.imageUrl.startsWith('pai_'))
+                    PaiChanArtworkBanner(
+                      artworkId: preset.imageUrl,
+                      width: 140,
+                      height: 90,
+                    )
+                  else if (preset.imageUrl.startsWith('live:'))
                     LiveBackgroundWidget(
                       backgroundId: preset.imageUrl.substring(5),
                       fallbackGradient: const [Color(0xFF14161F), Color(0xFF22143B)],

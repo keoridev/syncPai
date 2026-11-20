@@ -130,6 +130,58 @@ class AnimeTitle extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'shikimoriId': shikimoriId,
+        'score': score,
+        'code': code,
+        'russianTitle': russianTitle,
+        'englishTitle': englishTitle,
+        'posterSmall': posterSmall,
+        'posterMedium': posterMedium,
+        'posterOriginal': posterOriginal,
+        'fallbackPosterUrl': fallbackPosterUrl,
+        'episodesTotal': episodesTotal,
+        'latestEpisode': latestEpisode,
+        'season': season,
+        'year': year,
+        'genres': genres,
+        'description': description,
+        'status': status,
+        'playerHost': playerHost,
+        'episodes': episodes.map((e) => e.toJson()).toList(),
+        'trailerUrl': trailerUrl,
+        'shikimoriUrl': shikimoriUrl,
+      };
+
+  factory AnimeTitle.fromJson(Map<String, dynamic> json) => AnimeTitle(
+        id: json['id'] as int? ?? 0,
+        shikimoriId: json['shikimoriId'] as int?,
+        score: (json['score'] as num?)?.toDouble(),
+        code: json['code'] as String? ?? '',
+        russianTitle: json['russianTitle'] as String? ?? '',
+        englishTitle: json['englishTitle'] as String? ?? '',
+        posterSmall: json['posterSmall'] as String? ?? '',
+        posterMedium: json['posterMedium'] as String? ?? '',
+        posterOriginal: json['posterOriginal'] as String? ?? '',
+        fallbackPosterUrl: json['fallbackPosterUrl'] as String? ?? '',
+        episodesTotal: json['episodesTotal'] as int?,
+        latestEpisode: json['latestEpisode'] as int?,
+        season: json['season'] as String?,
+        year: json['year'] as int?,
+        genres: (json['genres'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        description: json['description'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+        playerHost: json['playerHost'] as String?,
+        episodes: (json['episodes'] as List?)
+                ?.whereType<Map>()
+                .map((e) => EpisodeItem.fromJson(Map<String, dynamic>.from(e)))
+                .toList() ??
+            const [],
+        trailerUrl: json['trailerUrl'] as String?,
+        shikimoriUrl: json['shikimoriUrl'] as String?,
+      );
+
   @override
   List<Object?> get props => [
         id,

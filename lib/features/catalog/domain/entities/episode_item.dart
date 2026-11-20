@@ -22,6 +22,16 @@ class TimecodeRange extends Equatable {
   Duration get startDuration => Duration(seconds: start);
   Duration get stopDuration => Duration(seconds: stop);
 
+  Map<String, dynamic> toJson() => {
+        'start': start,
+        'stop': stop,
+      };
+
+  factory TimecodeRange.fromJson(Map<String, dynamic> json) => TimecodeRange(
+        start: json['start'] as int? ?? 0,
+        stop: json['stop'] as int? ?? 0,
+      );
+
   @override
   List<Object?> get props => [start, stop];
 }
@@ -64,6 +74,36 @@ class EpisodeItem extends Equatable {
       return sdUrl ?? hdUrl ?? fhdUrl ?? '';
     }
   }
+
+  Map<String, dynamic> toJson() => {
+        'episode': episode,
+        'name': name,
+        'previewUrl': previewUrl,
+        'sdUrl': sdUrl,
+        'hdUrl': hdUrl,
+        'fhdUrl': fhdUrl,
+        'opening': opening?.toJson(),
+        'ending': ending?.toJson(),
+        'youtubeId': youtubeId,
+        'rutubeId': rutubeId,
+      };
+
+  factory EpisodeItem.fromJson(Map<String, dynamic> json) => EpisodeItem(
+        episode: json['episode'] as int? ?? 1,
+        name: json['name'] as String?,
+        previewUrl: json['previewUrl'] as String?,
+        sdUrl: json['sdUrl'] as String?,
+        hdUrl: json['hdUrl'] as String?,
+        fhdUrl: json['fhdUrl'] as String?,
+        opening: json['opening'] is Map
+            ? TimecodeRange.fromJson(Map<String, dynamic>.from(json['opening'] as Map))
+            : null,
+        ending: json['ending'] is Map
+            ? TimecodeRange.fromJson(Map<String, dynamic>.from(json['ending'] as Map))
+            : null,
+        youtubeId: json['youtubeId'] as String?,
+        rutubeId: json['rutubeId'] as String?,
+      );
 
   @override
   List<Object?> get props => [

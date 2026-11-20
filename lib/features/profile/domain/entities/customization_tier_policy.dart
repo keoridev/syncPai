@@ -153,6 +153,7 @@ class CustomizationTierPolicy {
     'spirit_realm',
     'mech_core',
     'frame_ramen_cyan',
+    'pai_headphones',
   };
 
   /// Бесплатные спокойные тёмные и арт-баннеры (+ 'none')
@@ -175,7 +176,11 @@ class CustomizationTierPolicy {
   static const String bugHunterAvatarId = 'pai_hacker';
 
   static bool isBugHunterCosmetic(String id) =>
-      id == bugHunterFrameId || id == bugHunterBannerId || id == bugHunterAvatarId;
+      id == bugHunterFrameId ||
+      id == bugHunterBannerId ||
+      id == bugHunterAvatarId ||
+      id == 'pai_hacker' ||
+      id == 'pai_hacker_art';
 
   static bool hasTier(SupporterTier userTier, SupporterTier requiredTier) {
     return userTier.index >= requiredTier.index;
@@ -190,8 +195,11 @@ class CustomizationTierPolicy {
     if (frameId.isEmpty || freeFrameIds.contains(frameId)) {
       return SupporterTier.free;
     }
-    if (frameId == bugHunterFrameId) {
+    if (isBugHunterCosmetic(frameId)) {
       return SupporterTier.free;
+    }
+    if (frameId == 'pai_peek') {
+      return SupporterTier.supporter;
     }
     for (final f in frames) {
       if (f.id == frameId) return f.requiredTier;
@@ -220,7 +228,8 @@ class CustomizationTierPolicy {
     String frameId, {
     List<String> unlockedBadges = const [],
   }) {
-    if (frameId == bugHunterFrameId) {
+    if (frameId.isEmpty || freeFrameIds.contains(frameId)) return true;
+    if (frameId == bugHunterFrameId || frameId == 'pai_hacker') {
       return unlockedBadges.contains('bug_hunter');
     }
     return hasTier(userTier, requiredTierForFrame(frameId));
@@ -283,6 +292,50 @@ class CustomizationTierPolicy {
   static bool canUseHeroArtwork(SupporterTier userTier) =>
       hasTier(userTier, SupporterTier.vip);
 
+  /// Бесплатные пресеты витрины иллюстраций (Пай-тян)
+  static const Set<String> freeArtworkIds = {
+    'pai_chill',
+    'pai_winter',
+  };
+
+  static SupporterTier requiredTierForArtwork(String artworkUrl) {
+    if (artworkUrl.isEmpty || freeArtworkIds.contains(artworkUrl)) {
+      return SupporterTier.free;
+    }
+    if (artworkUrl == 'pai_hacker_art' || isBugHunterCosmetic(artworkUrl)) {
+      return SupporterTier.free;
+    }
+    if (artworkUrl == 'pai_celebrate') {
+      return SupporterTier.supporter;
+    }
+    if (artworkUrl.startsWith('live:')) {
+      return SupporterTier.vip;
+    }
+    return SupporterTier.free;
+  }
+
+  static bool isArtworkUnlocked(
+    SupporterTier userTier,
+    String? artworkUrl, {
+    List<String> unlockedBadges = const [],
+  }) {
+    if (artworkUrl == null || artworkUrl.isEmpty) return true;
+    if (freeArtworkIds.contains(artworkUrl)) return true;
+    if (artworkUrl == 'pai_hacker_art') {
+      return unlockedBadges.contains('bug_hunter');
+    }
+    if (artworkUrl == 'pai_celebrate') {
+      return hasTier(userTier, SupporterTier.supporter);
+    }
+    if (artworkUrl.startsWith('live:')) {
+      return hasTier(userTier, SupporterTier.vip);
+    }
+    if (artworkUrl.startsWith('http') || artworkUrl.startsWith('assets/')) {
+      return true;
+    }
+    return canUseHeroArtwork(userTier);
+  }
+
   static int maxFavoriteAnimeCount(SupporterTier userTier) =>
       hasTier(userTier, SupporterTier.vip) ? 3 : 1;
 
@@ -314,10 +367,8 @@ class CustomizationTierPolicy {
 
     String? safeArtworkUrl = artworkUrl;
     String? safeArtworkTitle = artworkTitle;
-    if (!canUseHeroArtwork(tier) && safeArtworkUrl != null && safeArtworkUrl.isNotEmpty) {
-      final isCustomOrLive = safeArtworkUrl.startsWith('live:') ||
-          (!safeArtworkUrl.startsWith('http') && !safeArtworkUrl.startsWith('assets/'));
-      if (isCustomOrLive) {
+    if (safeArtworkUrl != null && safeArtworkUrl.isNotEmpty) {
+      if (!isArtworkUnlocked(tier, safeArtworkUrl, unlockedBadges: unlockedBadges)) {
         safeArtworkUrl = null;
         safeArtworkTitle = null;
       }

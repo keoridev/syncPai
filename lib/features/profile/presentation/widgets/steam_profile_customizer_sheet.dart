@@ -35,6 +35,7 @@ import '../../../../core/widgets/holographic_monogram_avatar.dart';
 import 'badge_details_sheet.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
+import 'pai_chan_artwork_banner.dart';
 import 'steam_style_profile_header.dart';
 
 /// Интерактивное меню кастомизации профиля в стиле Steam Community & Points Shop
@@ -368,7 +369,11 @@ class _SteamProfileCustomizerSheetState
         !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
     final isArtworkLocked = _selectedArtworkUrl != null &&
         _selectedArtworkUrl!.isNotEmpty &&
-        !CustomizationTierPolicy.canUseHeroArtwork(widget.profile.supporterTier);
+        !CustomizationTierPolicy.isArtworkUnlocked(
+          widget.profile.supporterTier,
+          _selectedArtworkUrl,
+          unlockedBadges: widget.profile.unlockedBadges,
+        );
 
     if (isFrameLocked || isBgLocked || isTitleLocked || isArtworkLocked) {
       SupporterTier reqTier = SupporterTier.supporter;
@@ -380,8 +385,12 @@ class _SteamProfileCustomizerSheetState
         final bTier = CustomizationTierPolicy.requiredTierForBanner(effectiveBg);
         if (bTier.index > reqTier.index) reqTier = bTier;
       }
-      if (isTitleLocked || isArtworkLocked) {
+      if (isTitleLocked) {
         if (SupporterTier.vip.index > reqTier.index) reqTier = SupporterTier.vip;
+      }
+      if (isArtworkLocked) {
+        final aTier = CustomizationTierPolicy.requiredTierForArtwork(_selectedArtworkUrl ?? '');
+        if (aTier.index > reqTier.index) reqTier = aTier;
       }
 
       final frame = SteamAvatarFrame.fromId(_selectedFrameId);
@@ -512,7 +521,11 @@ class _SteamProfileCustomizerSheetState
         !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
     final isArtworkLocked = _selectedArtworkUrl != null &&
         _selectedArtworkUrl!.isNotEmpty &&
-        !CustomizationTierPolicy.canUseHeroArtwork(widget.profile.supporterTier);
+        !CustomizationTierPolicy.isArtworkUnlocked(
+          widget.profile.supporterTier,
+          _selectedArtworkUrl,
+          unlockedBadges: widget.profile.unlockedBadges,
+        );
     final hasLockedSelection = isFrameLocked || isBgLocked || isTitleLocked || isArtworkLocked;
 
     SupporterTier requiredTier = SupporterTier.free;
@@ -524,8 +537,12 @@ class _SteamProfileCustomizerSheetState
       final bTier = CustomizationTierPolicy.requiredTierForBanner(effectiveBg);
       if (bTier.index > requiredTier.index) requiredTier = bTier;
     }
-    if (isTitleLocked || isArtworkLocked) {
+    if (isTitleLocked) {
       if (SupporterTier.vip.index > requiredTier.index) requiredTier = SupporterTier.vip;
+    }
+    if (isArtworkLocked) {
+      final aTier = CustomizationTierPolicy.requiredTierForArtwork(_selectedArtworkUrl ?? '');
+      if (aTier.index > requiredTier.index) requiredTier = aTier;
     }
     if (hasLockedSelection && requiredTier == SupporterTier.free) {
       requiredTier = SupporterTier.supporter;
@@ -2058,18 +2075,33 @@ class _SteamProfileCustomizerSheetState
                 final preset = SteamStyleProfileHeader.curatedPresets[index];
                 final isSelected = _selectedArtworkUrl == preset.imageUrl;
                 final isLive = preset.imageUrl.startsWith('live:');
-                final isLockedLive = isLive && !widget.profile.isProOrHigher;
+                final isPai = preset.imageUrl.startsWith('pai_');
+                final isFreePai = preset.imageUrl == 'pai_chill' || preset.imageUrl == 'pai_winter';
+                final isPlusPai = preset.imageUrl == 'pai_celebrate';
+                final isHackerPai = preset.imageUrl == 'pai_hacker_art';
+
+                final isUnlocked = CustomizationTierPolicy.isArtworkUnlocked(
+                  widget.profile.supporterTier,
+                  preset.imageUrl,
+                  unlockedBadges: widget.profile.unlockedBadges,
+                );
                 return RepaintBoundary(
                   child: InkWell(
                     onTap: () {
-                      if (isLockedLive) {
+                      if (!isUnlocked) {
+                        if (isHackerPai) {
+                          _showBugHunterUnlockPrompt(context);
+                          return;
+                        }
+                        final requiredTier = isPlusPai ? SupporterTier.supporter : SupporterTier.vip;
                         SupporterGateSheet.show(
                           context,
                           profile: widget.profile,
-                          requiredTier: SupporterTier.vip,
-                          featureTitle: 'Живая витрина «${preset.title}»',
-                          featureDescription:
-                              'Анимированные LIVE-сцены витрины доступны с SyncPai Pro.',
+                          requiredTier: requiredTier,
+                          featureTitle: 'Витрина «${preset.title}»',
+                          featureDescription: isPlusPai
+                              ? 'Эксклюзивная витрина Пай-тян доступна для подписчиков SyncPai Plus.'
+                              : 'Анимированные LIVE-сцены витрины доступны с SyncPai Pro.',
                         );
                         return;
                       }
@@ -2092,7 +2124,14 @@ class _SteamProfileCustomizerSheetState
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          if (isLive)
+                          if (isPai)
+                            PaiChanArtworkBanner(
+                              artworkId: preset.imageUrl,
+                              width: 155,
+                              height: 108,
+                              isSelected: isSelected,
+                            )
+                          else if (isLive)
                             LiveBackgroundWidget(
                               backgroundId: preset.imageUrl.substring(5),
                               fallbackGradient: const [Color(0xFF14161F), Color(0xFF23133A)],
@@ -2114,13 +2153,74 @@ class _SteamProfileCustomizerSheetState
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  Colors.black.withValues(alpha: 0.2),
+                                  Colors.black.withValues(alpha: 0.15),
                                   Colors.black.withValues(alpha: 0.85),
                                 ],
                               ),
                             ),
                           ),
-                          if (isLive)
+                          // Бейджи в левом верхнем углу
+                          if (isFreePai)
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Бесплатно',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (isPlusPai)
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Plus',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (isHackerPai)
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00FF87).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Bug Hunter',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (isLive)
                             Positioned(
                               top: 6,
                               left: 6,
@@ -2146,7 +2246,7 @@ class _SteamProfileCustomizerSheetState
                               right: 6,
                               child: Icon(Icons.check_circle_rounded, color: accent, size: 18),
                             )
-                          else if (isLockedLive)
+                          else if (!isUnlocked)
                             Positioned(
                               top: 6,
                               right: 6,
@@ -2156,18 +2256,39 @@ class _SteamProfileCustomizerSheetState
                                   color: Colors.black.withValues(alpha: 0.75),
                                   borderRadius: BorderRadius.circular(5),
                                   border: Border.all(
-                                    color: SupporterTier.vip.accentColor.withValues(alpha: 0.7),
+                                    color: (isPlusPai
+                                            ? SupporterTier.supporter.accentColor
+                                            : isHackerPai
+                                                ? const Color(0xFF00FF87)
+                                                : SupporterTier.vip.accentColor)
+                                        .withValues(alpha: 0.7),
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.lock_rounded, size: 9, color: SupporterTier.vip.accentColor),
+                                    Icon(
+                                      isHackerPai ? Icons.bug_report_rounded : Icons.lock_rounded,
+                                      size: 9,
+                                      color: isPlusPai
+                                          ? SupporterTier.supporter.accentColor
+                                          : isHackerPai
+                                              ? const Color(0xFF00FF87)
+                                              : SupporterTier.vip.accentColor,
+                                    ),
                                     const SizedBox(width: 2),
                                     Text(
-                                      'Pro',
+                                      isPlusPai
+                                          ? 'Plus'
+                                          : isHackerPai
+                                              ? 'Хакер'
+                                              : 'Pro',
                                       style: TextStyle(
-                                        color: SupporterTier.vip.accentColor,
+                                        color: isPlusPai
+                                            ? SupporterTier.supporter.accentColor
+                                            : isHackerPai
+                                                ? const Color(0xFF00FF87)
+                                                : SupporterTier.vip.accentColor,
                                         fontSize: 8.5,
                                         fontWeight: FontWeight.w800,
                                       ),

@@ -215,8 +215,22 @@ class SteamAvatarFrame {
       previewIcon: Icons.precision_manufacturing_rounded,
       animation: SteamFrameAnimation.rotate,
     ),
+    SteamAvatarFrame(
+      id: 'pai_headphones',
+      name: 'Наушники Пай-тян',
+      colors: [Color(0xFF35D9D5), Color(0xFF00B4D8), Color(0xFF90E0EF)],
+      previewIcon: Icons.headphones_rounded,
+      animation: SteamFrameAnimation.pulse,
+    ),
 
     // --- 2. Рамки SyncPai Plus ---
+    SteamAvatarFrame(
+      id: 'pai_peek',
+      name: 'Пай-тян рядом',
+      colors: [Color(0xFF35D9D5), Color(0xFF8B5CF6), Color(0xFFFF76AC)],
+      previewIcon: Icons.pets_rounded,
+      animation: SteamFrameAnimation.wave,
+    ),
     SteamAvatarFrame(
       id: 'sakura_blossom',
       name: 'Цветение Сакуры',
@@ -341,6 +355,13 @@ class SteamAvatarFrame {
       colors: [Color(0xFF00E676), Color(0xFF00F0FF), Color(0xFF00C853)],
       previewIcon: Icons.terminal_rounded,
       animation: SteamFrameAnimation.matrix,
+    ),
+    SteamAvatarFrame(
+      id: 'pai_hacker',
+      name: 'Кибер-Пай-тян',
+      colors: [Color(0xFF00FF87), Color(0xFF00F0FF), Color(0xFF059669)],
+      previewIcon: Icons.bug_report_rounded,
+      animation: SteamFrameAnimation.rotate,
     ),
   ];
 

@@ -60,6 +60,15 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
 
   String _resolveThematicType(String id) {
     final clean = id.toLowerCase();
+    if (clean.contains('pai_headphones') || clean == 'headphones') {
+      return 'pai_headphones';
+    }
+    if (clean.contains('pai_peek') || clean == 'peek') {
+      return 'pai_peek';
+    }
+    if (clean.contains('pai_hacker') || clean == 'hacker_glitch' || clean == 'bug_hunter') {
+      return 'pai_hacker';
+    }
     if (clean.contains('sakura') || clean.contains('blossom')) {
       return 'sakura';
     }
@@ -179,18 +188,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                   ),
                 ),
 
-                // 2. Тематический слой сюжетной рамки (CustomPainter)
-                CustomPaint(
-                  size: Size(frameOuterSize + 16, frameOuterSize + 16),
-                  painter: ThematicAvatarFramePainter(
-                    animationValue: t,
-                    frameType: thematicType,
-                    colors: frame.colors,
-                    outerSize: frameOuterSize,
-                  ),
-                ),
-
-                // 3. Внутренняя подложка для чистого разделения рамки и аватара
+                // 2. Внутренняя подложка для чистого разделения рамки и аватара
                 Container(
                   width: widget.size + 4,
                   height: widget.size + 4,
@@ -200,8 +198,21 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                   ),
                 ),
 
-                // 4. Сам аватар пользователя
+                // 3. Сам аватар пользователя
                 widget.child,
+
+                // 4. Тематический слой сюжетной рамки (CustomPainter)
+                IgnorePointer(
+                  child: CustomPaint(
+                    size: Size(frameOuterSize + 20, frameOuterSize + 20),
+                    painter: ThematicAvatarFramePainter(
+                      animationValue: t,
+                      frameType: thematicType,
+                      colors: frame.colors,
+                      outerSize: frameOuterSize,
+                    ),
+                  ),
+                ),
               ],
             ),
           );

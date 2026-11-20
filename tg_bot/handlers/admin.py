@@ -181,7 +181,7 @@ async def cb_admin_approve(callback: CallbackQuery):
     if profile_id and profile_id != "none":
         ok = supabase_client.set_supporter_tier(profile_id, tier_id, days=days)
         if ok:
-            success_msg = f"Уровень <b>{info['title']}</b> активирован на <b>{days} дней</b>."
+            success_msg = f"Уровень <b>{info['title']}</b> активирован ({info['days_label']})."
         else:
             success_msg = "Не удалось обновить профиль в базе данных."
     else:
@@ -192,7 +192,7 @@ async def cb_admin_approve(callback: CallbackQuery):
             chat_id=target_tg_id,
             text=(
                 f"<b>Платёж подтверждён</b>\n\n"
-                f"Тебе начислен статус <b>{info['title']}</b> на <b>{days} дней</b>.\n"
+                f"Тебе начислен статус <b>{info['title']}</b> ({info['days_label']}).\n"
                 f"Перезапусти приложение SyncPai, чтобы активировать все возможности."
             ),
             parse_mode="HTML",
@@ -213,6 +213,80 @@ async def cb_admin_approve(callback: CallbackQuery):
             reply_markup=None,
         )
     await callback.answer("Платёж подтверждён")
+
+
+@router.callback_query(F.data.startswith("admin_apprgift_"))
+async def cb_admin_approve_gift(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Только для администратора", show_alert=True)
+        return
+
+    parts = (callback.data or "").split("_", 4)
+    if len(parts) < 5:
+        await callback.answer("Некорректные данные подарка", show_alert=True)
+        return
+
+    sender_tg_id = int(parts[2])
+    tier_id = parts[3]
+    recipient_id = parts[4]
+
+    info = TIERS_DATA.get(tier_id, TIERS_DATA["supporter"])
+    days = info["days"]
+
+    ok = supabase_client.set_supporter_tier(recipient_id, tier_id, days=days)
+    recip = supabase_client.get_profile_by_code_or_tag(recipient_id)
+    recip_name = html.escape(str(recip.get("username") or "Друг")) if recip else "Друг"
+    recip_tg_id = recip.get("telegram_id") if recip else None
+
+    if ok:
+        success_msg = f"Подарок <b>{info['title']}</b> активирован для <b>{recip_name}</b> ({info['days_label']})."
+    else:
+        success_msg = "Не удалось обновить профиль получателя в базе данных."
+
+    # Уведомляем отправителя
+    try:
+        await callback.bot.send_message(
+            chat_id=sender_tg_id,
+            text=(
+                f"🎁 <b>Подарок подтверждён!</b>\n\n"
+                f"Администратор одобрил платёж. Статус <b>{info['title']}</b> "
+                f"активирован для <b>{recip_name}</b> ({info['days_label']})!\n"
+                f"Спасибо за поддержку проекта!"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify sender {sender_tg_id}: {e}")
+
+    # Уведомляем получателя
+    if recip_tg_id:
+        try:
+            await callback.bot.send_message(
+                chat_id=recip_tg_id,
+                text=(
+                    f"🎁 <b>Вам подарок!</b>\n\n"
+                    f"Вам подарили подписку <b>SyncPai {info['title']}</b> ({info['days_label']})!\n\n"
+                    f"Все возможности уже активны в вашем профиле SyncPai. "
+                    f"Перезапустите приложение, чтобы наслаждаться новыми возможностями!"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning(f"Could not notify recipient {recip_tg_id}: {e}")
+
+    if callback.message.caption is not None:
+        await callback.message.edit_caption(
+            caption=f"{callback.message.caption}\n\n<b>[Одобрено]</b>\n{success_msg}",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    else:
+        await callback.message.edit_text(
+            text=f"{callback.message.text or ''}\n\n<b>[Одобрено]</b>\n{success_msg}",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    await callback.answer("Подарок подтверждён")
 
 
 @router.callback_query(F.data.startswith("admin_reject_"))
@@ -270,7 +344,7 @@ async def cmd_grant(message: Message, state: FSMContext):
 
     identifier = parts[1]
     tier = parts[2].lower()
-    days = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 30
+    days = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else (0 if tier == "producer" else 30)
 
     if tier not in ["supporter", "vip", "producer"]:
         await message.answer("Неверный уровень. Доступны: supporter, vip, producer.")
@@ -284,15 +358,16 @@ async def cmd_grant(message: Message, state: FSMContext):
     ok = supabase_client.set_supporter_tier(profile["id"], tier, days=days)
     if ok:
         uname = html.escape(str(profile.get("username") or "Пользователь"))
+        duration_label = "навсегда (бессрочно)" if days <= 0 or tier == "producer" else f"на {days} дней"
         await message.answer(
-            f"Пользователю <b>{uname}</b> выдан <b>{tier}</b> на {days} дней.",
+            f"Пользователю <b>{uname}</b> выдан <b>{tier}</b> {duration_label}.",
             parse_mode="HTML",
         )
         if profile.get("telegram_id"):
             try:
                 await message.bot.send_message(
                     chat_id=profile["telegram_id"],
-                    text=f"Администратор активировал тебе уровень <b>{tier}</b> на {days} дней.",
+                    text=f"Администратор активировал тебе уровень <b>{tier}</b> {duration_label}.",
                     parse_mode="HTML",
                 )
             except Exception:

@@ -80,7 +80,7 @@ class CustomizationTierPolicy {
     FrameOptionMeta(
       id: 'founders_gold',
       label: 'Золотой ореол',
-      requiredTier: SupporterTier.vip,
+      requiredTier: SupporterTier.producer,
       colors: [Color(0xFFFFD54F), Color(0xFFFF9800), Color(0xFFFFF176)],
       isAnimated: true,
     ),

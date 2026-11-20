@@ -29,7 +29,7 @@ def get_profile_card_text(profile: dict) -> str:
         "free": "Базовый (Free)",
         "supporter": "SyncPai Plus",
         "vip": "SyncPai Pro",
-        "producer": "Founders Club",
+        "producer": "Founders Club (Навсегда)",
     }
     tier_title = tier_labels.get(tier, str(tier))
 
@@ -39,7 +39,9 @@ def get_profile_card_text(profile: dict) -> str:
         f"• <b>Код дружбы:</b> <code>{friend_code}</code>\n"
         f"• <b>Уровень поддержки:</b> <b>{tier_title}</b>\n"
     )
-    if expires:
+    if tier == "producer" or (expires and str(expires).startswith("2099")):
+        text += "• <b>Срок действия:</b> Навсегда (Бессрочно)\n"
+    elif expires:
         text += f"• <b>Действует до:</b> {str(expires)[:10]}\n"
     text += f"• <b>Статус:</b> <i>{status}</i>\n"
     text += f"• <b>О себе:</b> <i>{bio}</i>"
@@ -49,7 +51,7 @@ def get_profile_card_text(profile: dict) -> str:
 def _linked_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
-        [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="💎 Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
         [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
     ])
@@ -58,7 +60,7 @@ def _linked_menu_keyboard() -> InlineKeyboardMarkup:
 def _guest_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
-        [InlineKeyboardButton(text="💎 Уровни поддержки", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="💎 Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
         [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
         [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
     ])

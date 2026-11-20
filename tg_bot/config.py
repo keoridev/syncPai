@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     support_chat_id: Optional[int] = None
 
+    # Server infrastructure goal
+    monthly_goal_current: int = 1450
+    monthly_goal_target: int = 3000
+    monthly_goal_title: str = "Оплата VDS и инфраструктуры на месяц"
+
     # Payment details / links
     boosty_url: str = "https://boosty.to/syncpai"
     crypto_usdt_trc20: str = "TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

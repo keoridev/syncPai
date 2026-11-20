@@ -34,7 +34,8 @@ void main() async {
   final defaultOnError = FlutterError.onError;
   FlutterError.onError = (details) {
     final msg = details.exceptionAsString();
-    if (msg.contains('raw_keyboard.dart') || msg.contains('keysPressed.isNotEmpty')) {
+    if (msg.contains('raw_keyboard.dart') ||
+        msg.contains('keysPressed.isNotEmpty')) {
       return;
     }
     if (defaultOnError != null) {
@@ -197,33 +198,3 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

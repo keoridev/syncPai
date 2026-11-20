@@ -37,11 +37,24 @@ def get_profile_by_tg_id(tg_id: int) -> Optional[Dict[str, Any]]:
 
 
 def get_profile_by_code_or_tag(identifier: str) -> Optional[Dict[str, Any]]:
-    """Поиск профиля по SP-XXXXXX (friend_code), username#tag или UUID."""
+    """Поиск профиля по SP-XXXXXX (friend_code), username#tag, @username или UUID."""
     clean = identifier.strip()
     if not clean:
         return None
     try:
+        # 0. По telegram_username (@username)
+        if clean.startswith("@"):
+            clean_tg = clean.lstrip("@").strip()
+            res = (
+                supabase.table("profiles")
+                .select("*")
+                .ilike("telegram_username", clean_tg)
+                .limit(1)
+                .execute()
+            )
+            if res.data:
+                return res.data[0]
+
         # 1. По friend_code (например, SP-ABC123 или SPABC123)
         upper = clean.upper()
         if upper.startswith("SP-") or (upper.startswith("SP") and len(upper) >= 6):
@@ -85,7 +98,18 @@ def get_profile_by_code_or_tag(identifier: str) -> Optional[Dict[str, Any]]:
             if res.data:
                 return res.data[0]
 
-        # 4. По username
+        # 4. По telegram_username (без @)
+        res = (
+            supabase.table("profiles")
+            .select("*")
+            .ilike("telegram_username", clean)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return res.data[0]
+
+        # 5. По username
         res = (
             supabase.table("profiles")
             .select("*")
@@ -139,13 +163,22 @@ def unlink_profile_telegram(profile_id: str) -> bool:
 
 
 def set_supporter_tier(profile_id: str, tier_id: str, days: int = 30) -> bool:
-    """Активация уровня поддержки в профиле пользователя."""
+    """Активация уровня поддержки в профиле пользователя.
+    
+    Для tier_id == 'producer' (Founders Club) или days <= 0 статус выдаётся навсегда (до 2099 года).
+    """
     try:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
-        payload = {
-            "supporter_tier": tier_id,
-            "supporter_until": expires_at.isoformat(),
-        }
+        if days <= 0 or tier_id == "producer":
+            payload = {
+                "supporter_tier": tier_id,
+                "supporter_until": "2099-12-31T23:59:59Z",
+            }
+        else:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            payload = {
+                "supporter_tier": tier_id,
+                "supporter_until": expires_at.isoformat(),
+            }
         res = supabase.table("profiles").update(payload).eq("id", profile_id).execute()
         return bool(res.data)
     except Exception as e:
@@ -179,6 +212,7 @@ def get_expired_supporters() -> List[Dict[str, Any]]:
             supabase.table("profiles")
             .select("id, username, supporter_tier, supporter_until, telegram_id")
             .neq("supporter_tier", "free")
+            .neq("supporter_tier", "producer")
             .lt("supporter_until", now_iso)
             .execute()
         )

@@ -281,7 +281,7 @@ class PlayerHudEditorSheet extends StatelessWidget {
               child: ReorderableListView.builder(
                 padding: const EdgeInsets.only(bottom: 16),
                 itemCount: s.playerButtonOrder.length,
-                onReorderItem: (oldIdx, newIdx) => cubit.reorderPlayerButtons(
+                onReorder: (oldIdx, newIdx) => cubit.reorderPlayerButtons(
                   oldIdx,
                   newIdx,
                   adjustNewIndex: false,

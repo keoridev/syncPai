@@ -1473,7 +1473,13 @@ Title,Status,Episodes
   });
 
   test('ShikimoriRemoteDataSource returns ratings and fallback on unreachable host', () async {
-    final ds = ShikimoriRemoteDataSourceImpl();
+    final ds = ShikimoriRemoteDataSourceImpl(
+      customDio: Dio(BaseOptions(
+        baseUrl: 'http://127.0.0.1:9',
+        connectTimeout: const Duration(milliseconds: 300),
+        receiveTimeout: const Duration(milliseconds: 300),
+      )),
+    );
     final res = await ds.getReviewsAndRatings(testTitle);
 
     expect(res.portalScores, isNotEmpty);
@@ -1612,7 +1618,7 @@ Title,Status,Episodes
     expect(find.text('НАСТРОЙКИ ПЛЕЕРА И СИСТЕМЫ'), findsOneWidget);
     expect(find.text('Качество видео'), findsOneWidget);
     expect(find.text('Авто-пропуск опенингов'), findsOneWidget);
-    expect(find.text('Очистить кэш плеера и историю'), findsOneWidget);
+    expect(find.text('Очистка кэша и данных'), findsOneWidget);
   });
 
   testWidgets('MainScreen integrates 4 tabs with LiquidGlassNavBar and switches between them', (tester) async {

@@ -21,8 +21,8 @@ class SupportConfig {
   });
 
   static const SupportConfig fallback = SupportConfig(
-    goalTitle: 'Оплата серверов и API',
-    goalPercent: 45,
+    goalTitle: 'Оплата VDS и инфраструктуры на месяц',
+    goalPercent: 48,
     boostyUrl: 'https://boosty.to/syncpai',
     tributeUrl: 'https://t.me/tribute/app?startapp=syncpai',
     tonAddress: 'UQSyncPaiTONWalletAddressReplaceInAppConfig0001',

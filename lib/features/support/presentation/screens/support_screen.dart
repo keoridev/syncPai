@@ -339,7 +339,7 @@ class _SupportScreenState extends State<SupportScreen>
                       children: [
                         const Flexible(
                           child: Text(
-                            'Независимый проект без рекламы',
+                            '«SyncPai работает без рекламы и инвесторов»',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -374,11 +374,9 @@ class _SupportScreenState extends State<SupportScreen>
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      _hasInteracted
-                          ? 'Спасибо за поддержку. Выбранный уровень можно активировать ниже.'
-                          : 'Все средства идут на оплату серверов синхронизации, CDN и новых релизов.',
-                      style: const TextStyle(
+                    const Text(
+                      'Весь стриминг и совместный просмотр бесплатны. Подписка помогает оплачивать серверы для бота и ускоряет выход новых функций.',
+                      style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12.5,
                         height: 1.35,
@@ -412,7 +410,7 @@ class _SupportScreenState extends State<SupportScreen>
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  '${_config.goalTitle}: $pct%',
+                  '1 450 / 3 000 сом ($pct%) — ${_config.goalTitle}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,

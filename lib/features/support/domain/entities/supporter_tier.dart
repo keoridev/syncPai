@@ -5,7 +5,7 @@ enum SupporterTier {
   free(
     id: 'free',
     title: 'Базовый аккаунт',
-    priceLabel: '0 ₽',
+    priceLabel: '0 сом',
     badgeLabel: null,
     icon: Icons.person_outline_rounded,
     accentColor: Color(0xFF9CA3AF),
@@ -17,41 +17,43 @@ enum SupporterTier {
   supporter(
     id: 'supporter',
     title: 'SyncPai Plus',
-    priceLabel: '149 ₽ / \$1.5',
+    priceLabel: '99 сом / мес (55 ⭐)',
     badgeLabel: 'Plus',
     icon: Icons.bolt_rounded,
     accentColor: Color(0xFF22D3EE),
     perks: [
-      'Неоновая рамка аватара',
-      'Значок саппортера в профиле и чате комнаты',
-      'Доступ в закрытый канал бета-тестеров',
+      'Живые анимированные рамки («Северное сияние», «Кибер-импульс») и анимированные шапки',
+      'Расширенная палитра акцентных цветов интерфейса',
+      'Расширенные комнаты Watch Together до 10 друзей + приоритетная синхронизация',
+      'Значок саппортера в профиле',
     ],
   ),
   vip(
     id: 'vip',
     title: 'SyncPai Pro',
-    priceLabel: '349 ₽ / \$4',
+    priceLabel: '199 сом / мес (110 ⭐)',
     badgeLabel: 'Pro',
     icon: Icons.auto_awesome_rounded,
     accentColor: Color(0xFFA855F7),
     perks: [
-      'Все возможности SyncPai Plus',
-      'Анимированные рамки и эксклюзивный стикер Пай-тян',
-      'Загрузка собственного GIF / арта в витрину профиля',
-      'Кастомный титул над ником и комнаты до 10 человек',
+      'Всё из SyncPai Plus',
+      'Топ-3 любимых тайтла на полке в профиле (вместо 1)',
+      'Главная иллюстрация (Steam Artwork / GIF) — загрузка своего арта в витрину',
+      'Кастомный титул профиля под никнеймом',
+      'Экспорт карточки SyncPai Wrapped без водяного знака',
     ],
   ),
   producer(
     id: 'producer',
     title: 'Founders Club',
-    priceLabel: '990 ₽ / \$12',
+    priceLabel: '490 сом навсегда (270 ⭐)',
     badgeLabel: 'Founder',
     icon: Icons.verified_rounded,
     accentColor: Color(0xFFFBBF24),
     perks: [
-      'Все возможности SyncPai Pro',
-      'Упоминание в списке основателей проекта',
-      'Приоритетный запрос новой фичи или скина',
+      'Все возможности SyncPai Pro навсегда без ежемесячных списаний',
+      'Эксклюзивная золотая рамка «Золотой ореол» и значок первопроходца Founders Club',
+      'Имя в титрах благодарности в разделе «О приложении»',
     ],
   );
 
@@ -77,10 +79,10 @@ enum SupporterTier {
   bool get isVipOrAbove => index >= SupporterTier.vip.index;
   bool get isProducer => this == SupporterTier.producer;
 
-  int get maxRoomParticipants => isVipOrAbove ? 10 : 5;
+  int get maxRoomParticipants => isSupporterOrAbove ? 10 : 5;
   bool get unlocksRamenFrame => isSupporterOrAbove;
-  bool get unlocksAnimatedFrames => isVipOrAbove;
-  bool get unlocksCyberSticker => isVipOrAbove;
+  bool get unlocksAnimatedFrames => isSupporterOrAbove;
+  bool get unlocksCyberSticker => isSupporterOrAbove;
   bool get unlocksCustomArtworkUpload => isVipOrAbove;
   bool get unlocksCustomProfileTitle => isVipOrAbove;
 

@@ -143,21 +143,31 @@ class CustomizationTierPolicy {
     'sunset_orange',
   };
 
-  /// 4 бесплатных статичных рамки
+  /// Бесплатные статичные и базовые рамки
   static const Set<String> freeFrameIds = {
     'none',
     'minimal',
     'steel',
     'neon_static',
+    'neon_ring',
+    'spirit_realm',
+    'mech_core',
+    'frame_ramen_cyan',
   };
 
-  /// 4 бесплатных тёмных градиентных баннера (+ 'none')
+  /// Бесплатные спокойные тёмные и арт-баннеры (+ 'none')
   static const Set<String> freeBannerIds = {
     'none',
     'midnight',
     'graphite',
     'deep_ocean',
     'slate',
+    'lofi_sunset',
+    'pixel_art_room',
+    'bamboo_forest',
+    'fantasy_sky',
+    'shinjuku_rain',
+    'tokyo_neon',
   };
 
   static const String bugHunterFrameId = 'hacker_glitch';
@@ -177,11 +187,29 @@ class CustomizationTierPolicy {
   }
 
   static SupporterTier requiredTierForFrame(String frameId) {
+    if (frameId.isEmpty || freeFrameIds.contains(frameId)) {
+      return SupporterTier.free;
+    }
+    if (frameId == bugHunterFrameId) {
+      return SupporterTier.free;
+    }
     for (final f in frames) {
       if (f.id == frameId) return f.requiredTier;
     }
-    if (freeFrameIds.contains(frameId)) return SupporterTier.free;
-    if (frameId.contains('gold') || frameId.contains('pro') || frameId.contains('founders')) {
+    if (frameId == 'golden_rank' || frameId == 'founders_gold') {
+      return SupporterTier.producer;
+    }
+    if (frameId == 'cosmic_void' ||
+        frameId == 'shadow_oni' ||
+        frameId == 'golden_dragon' ||
+        frameId == 'cursed_seal' ||
+        frameId == 'cyber_samurai' ||
+        frameId == 'terminal_matrix' ||
+        frameId.contains('dragon') ||
+        frameId.contains('oni') ||
+        frameId.contains('void') ||
+        frameId.contains('cursed') ||
+        frameId.contains('pro')) {
       return SupporterTier.vip;
     }
     return SupporterTier.supporter;
@@ -202,13 +230,27 @@ class CustomizationTierPolicy {
     if (bannerId.isEmpty || freeBannerIds.contains(bannerId)) {
       return SupporterTier.free;
     }
-    if (bannerId.startsWith('http') || bannerId.contains('/') || bannerId.contains('\\')) {
-      return SupporterTier.vip;
+    if (bannerId == bugHunterBannerId) {
+      return SupporterTier.free;
     }
     for (final b in banners) {
       if (b.id == bannerId) return b.requiredTier;
     }
-    if (bannerId.contains('cyber') || bannerId.contains('pro') || bannerId.contains('live')) {
+    if (bannerId.startsWith('http') || bannerId.contains('/') || bannerId.contains('\\')) {
+      if (freeBannerIds.contains(bannerId)) return SupporterTier.free;
+      return SupporterTier.vip;
+    }
+    if (bannerId == 'cyberpunk_grid_3d' ||
+        bannerId == 'matrix_digital_rain' ||
+        bannerId == 'solo_leveling' ||
+        bannerId == 'attack_on_titan' ||
+        bannerId == 'jujutsu_kaisen' ||
+        bannerId == 'demon_slayer' ||
+        bannerId == 'evangelion' ||
+        bannerId == 'bleach' ||
+        bannerId.contains('grid') ||
+        bannerId.contains('cyber') ||
+        bannerId.contains('pro')) {
       return SupporterTier.vip;
     }
     return SupporterTier.supporter;

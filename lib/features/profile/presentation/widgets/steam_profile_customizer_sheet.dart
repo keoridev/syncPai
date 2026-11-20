@@ -354,6 +354,55 @@ class _SteamProfileCustomizerSheetState
       }
     }
 
+    final isFrameLocked = !CustomizationTierPolicy.isFrameUnlocked(
+      widget.profile.supporterTier,
+      _selectedFrameId,
+      unlockedBadges: widget.profile.unlockedBadges,
+    );
+    final isBgLocked = !CustomizationTierPolicy.isBannerUnlocked(
+      widget.profile.supporterTier,
+      effectiveBg,
+      unlockedBadges: widget.profile.unlockedBadges,
+    );
+    final isTitleLocked = newTitle.isNotEmpty &&
+        !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
+    final isArtworkLocked = _selectedArtworkUrl != null &&
+        _selectedArtworkUrl!.isNotEmpty &&
+        !CustomizationTierPolicy.canUseHeroArtwork(widget.profile.supporterTier);
+
+    if (isFrameLocked || isBgLocked || isTitleLocked || isArtworkLocked) {
+      SupporterTier reqTier = SupporterTier.supporter;
+      if (isFrameLocked) {
+        final fTier = CustomizationTierPolicy.requiredTierForFrame(_selectedFrameId);
+        if (fTier.index > reqTier.index) reqTier = fTier;
+      }
+      if (isBgLocked) {
+        final bTier = CustomizationTierPolicy.requiredTierForBanner(effectiveBg);
+        if (bTier.index > reqTier.index) reqTier = bTier;
+      }
+      if (isTitleLocked || isArtworkLocked) {
+        if (SupporterTier.vip.index > reqTier.index) reqTier = SupporterTier.vip;
+      }
+
+      final frame = SteamAvatarFrame.fromId(_selectedFrameId);
+      final bg = SteamBackgroundTheme.fromId(effectiveBg);
+      final lockedDetails = <String>[];
+      if (isFrameLocked) lockedDetails.add('рамка «${frame.name}»');
+      if (isBgLocked) lockedDetails.add('фон «${bg.name}»');
+      if (isTitleLocked) lockedDetails.add('кастомный титул');
+      if (isArtworkLocked) lockedDetails.add('витрина иллюстраций');
+
+      SupporterGateSheet.show(
+        context,
+        profile: widget.profile,
+        requiredTier: reqTier,
+        featureTitle: 'Премиум-витрина профиля',
+        featureDescription:
+            'Вы собрали витрину с элементами подписки ${reqTier.title} (${lockedDetails.join(", ")}). Чтобы закрепить её в профиле, оформите подписку.',
+      );
+      return;
+    }
+
     final sanitized = CustomizationTierPolicy.sanitizePayload(
       tier: widget.profile.supporterTier,
       frameId: _selectedFrameId,
@@ -445,6 +494,42 @@ class _SteamProfileCustomizerSheetState
     final effectiveAvatar = _customAvatarUrlController.text.trim().isNotEmpty
         ? _customAvatarUrlController.text.trim()
         : _selectedAvatar;
+    final effectiveBg = _customUrlController.text.trim().isNotEmpty
+        ? _customUrlController.text.trim()
+        : _selectedBgId;
+
+    final isFrameLocked = !CustomizationTierPolicy.isFrameUnlocked(
+      widget.profile.supporterTier,
+      _selectedFrameId,
+      unlockedBadges: widget.profile.unlockedBadges,
+    );
+    final isBgLocked = !CustomizationTierPolicy.isBannerUnlocked(
+      widget.profile.supporterTier,
+      effectiveBg,
+      unlockedBadges: widget.profile.unlockedBadges,
+    );
+    final isTitleLocked = _titleController.text.trim().isNotEmpty &&
+        !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
+    final isArtworkLocked = _selectedArtworkUrl != null &&
+        _selectedArtworkUrl!.isNotEmpty &&
+        !CustomizationTierPolicy.canUseHeroArtwork(widget.profile.supporterTier);
+    final hasLockedSelection = isFrameLocked || isBgLocked || isTitleLocked || isArtworkLocked;
+
+    SupporterTier requiredTier = SupporterTier.free;
+    if (isFrameLocked) {
+      final fTier = CustomizationTierPolicy.requiredTierForFrame(_selectedFrameId);
+      if (fTier.index > requiredTier.index) requiredTier = fTier;
+    }
+    if (isBgLocked) {
+      final bTier = CustomizationTierPolicy.requiredTierForBanner(effectiveBg);
+      if (bTier.index > requiredTier.index) requiredTier = bTier;
+    }
+    if (isTitleLocked || isArtworkLocked) {
+      if (SupporterTier.vip.index > requiredTier.index) requiredTier = SupporterTier.vip;
+    }
+    if (hasLockedSelection && requiredTier == SupporterTier.free) {
+      requiredTier = SupporterTier.supporter;
+    }
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.90,
@@ -546,6 +631,45 @@ class _SteamProfileCustomizerSheetState
                       ),
                     ),
                   ),
+
+                  // Бейдж предпросмотра витрины при выборе элементов выше текущего уровня
+                  if (hasLockedSelection)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: requiredTier.accentColor.withValues(alpha: 0.85),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: requiredTier.accentColor.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.remove_red_eye_rounded, size: 12, color: requiredTier.accentColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Примерка • ${requiredTier.title}',
+                              style: TextStyle(
+                                color: requiredTier.accentColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   // Инфо поверх
                   Padding(
@@ -707,26 +831,61 @@ class _SteamProfileCustomizerSheetState
             ),
           ),
 
-          // Кнопка применить
+          // Кнопка применить / оформить подписку на собранную витрину
           Padding(
             padding: const EdgeInsets.all(AppDimensions.spacingXl),
             child: SizedBox(
               width: double.infinity,
               height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-                onPressed: _applyChanges,
-                child: const Text(
-                  'Применить кастомизацию',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                ),
-              ),
+              child: hasLockedSelection
+                  ? ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: requiredTier.accentColor,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        elevation: 2,
+                      ),
+                      icon: const Icon(Icons.workspace_premium_rounded, size: 20),
+                      label: Text(
+                        'Применить (требуется ${requiredTier.title})',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+                      ),
+                      onPressed: () {
+                        final frame = SteamAvatarFrame.fromId(_selectedFrameId);
+                        final lockedDetails = <String>[];
+                        if (isFrameLocked) lockedDetails.add('рамка «${frame.name}»');
+                        if (isBgLocked) lockedDetails.add('фон «${bgTheme.name}»');
+                        if (isTitleLocked) lockedDetails.add('кастомный титул');
+                        if (isArtworkLocked) lockedDetails.add('витрина иллюстраций');
+
+                        final desc = lockedDetails.isNotEmpty
+                            ? 'Вы примерили крутые элементы (${lockedDetails.join(", ")}). Чтобы закрепить эту витрину в своём профиле, оформите подписку ${requiredTier.title}.'
+                            : 'Для сохранения выбранной витрины профиля требуется подписка ${requiredTier.title}.';
+
+                        SupporterGateSheet.show(
+                          context,
+                          profile: widget.profile,
+                          requiredTier: requiredTier,
+                          featureTitle: 'Премиум-витрина профиля',
+                          featureDescription: desc,
+                        );
+                      },
+                    )
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      onPressed: _applyChanges,
+                      child: const Text(
+                        'Применить кастомизацию',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -898,21 +1057,6 @@ class _SteamProfileCustomizerSheetState
             return RepaintBoundary(
               child: InkWell(
                 onTap: () {
-                  if (!isBgUnlocked) {
-                    if (isBugHunterItem) {
-                      _showBugHunterUnlockPrompt(context);
-                      return;
-                    }
-                    SupporterGateSheet.show(
-                      context,
-                      profile: widget.profile,
-                      requiredTier: requiredBgTier,
-                      featureTitle: 'Анимированный баннер «${bg.name}»',
-                      featureDescription:
-                          'Живые фоны и баннеры профиля доступны по подписке ${requiredBgTier.title}.',
-                    );
-                    return;
-                  }
                   setState(() {
                     _selectedBgId = bg.id;
                     _customUrlController.clear();
@@ -950,40 +1094,49 @@ class _SteamProfileCustomizerSheetState
                           ),
                         ),
                       ),
-                      if (!isBgUnlocked)
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.72),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: requiredBgTier.accentColor.withValues(alpha: 0.65),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.lock_rounded, size: 10, color: requiredBgTier.accentColor),
-                                const SizedBox(width: 3),
-                                Text(
-                                  isBugHunterItem
-                                      ? '👾 За баг'
-                                      : (requiredBgTier.badgeLabel ?? 'Plus'),
-                                  style: TextStyle(
-                                    color: isBugHunterItem
-                                        ? const Color(0xFF00E676)
-                                        : requiredBgTier.accentColor,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isBgUnlocked
+                                  ? (requiredBgTier == SupporterTier.free
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : requiredBgTier.accentColor.withValues(alpha: 0.4))
+                                  : requiredBgTier.accentColor.withValues(alpha: 0.65),
                             ),
                           ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!isBgUnlocked) ...[
+                                Icon(Icons.lock_rounded, size: 10, color: requiredBgTier.accentColor),
+                                const SizedBox(width: 3),
+                              ],
+                              Text(
+                                isBugHunterItem
+                                    ? '👾 За баг'
+                                    : (requiredBgTier == SupporterTier.free
+                                        ? 'Бесплатно'
+                                        : (requiredBgTier.badgeLabel ?? 'Plus')),
+                                style: TextStyle(
+                                  color: isBugHunterItem
+                                      ? const Color(0xFF00E676)
+                                      : (requiredBgTier == SupporterTier.free
+                                          ? AppColors.textSecondary
+                                          : requiredBgTier.accentColor),
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.all(8),
                         child: Align(
@@ -1154,21 +1307,6 @@ class _SteamProfileCustomizerSheetState
 
                   return InkWell(
                     onTap: () {
-                      if (!isFrameUnlocked) {
-                        if (isBugHunterFrame) {
-                          _showBugHunterUnlockPrompt(context);
-                          return;
-                        }
-                        SupporterGateSheet.show(
-                          context,
-                          profile: widget.profile,
-                          requiredTier: requiredFrameTier,
-                          featureTitle: 'Рамка «${frame.name}»',
-                          featureDescription:
-                              'Анимированные и премиальные рамки аватара открываются в подписке ${requiredFrameTier.title}.',
-                        );
-                        return;
-                      }
                       setState(() => _selectedFrameId = frame.id);
                     },
                     borderRadius: BorderRadius.circular(16),
@@ -1240,40 +1378,49 @@ class _SteamProfileCustomizerSheetState
                               ),
                             ],
                           ),
-                          if (!isFrameUnlocked)
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.72),
-                                  borderRadius: BorderRadius.circular(5),
-                                  border: Border.all(
-                                    color: requiredFrameTier.accentColor.withValues(alpha: 0.65),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.lock_rounded, size: 8.5, color: requiredFrameTier.accentColor),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      isBugHunterFrame
-                                          ? '👾 За баг'
-                                          : (requiredFrameTier.badgeLabel ?? 'Plus'),
-                                      style: TextStyle(
-                                        color: isBugHunterFrame
-                                            ? const Color(0xFF00E676)
-                                            : requiredFrameTier.accentColor,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.72),
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(
+                                  color: isFrameUnlocked
+                                      ? (requiredFrameTier == SupporterTier.free
+                                          ? Colors.white.withValues(alpha: 0.2)
+                                          : requiredFrameTier.accentColor.withValues(alpha: 0.4))
+                                      : requiredFrameTier.accentColor.withValues(alpha: 0.65),
                                 ),
                               ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!isFrameUnlocked) ...[
+                                    Icon(Icons.lock_rounded, size: 8.5, color: requiredFrameTier.accentColor),
+                                    const SizedBox(width: 2),
+                                  ],
+                                  Text(
+                                    isBugHunterFrame
+                                        ? '👾 За баг'
+                                        : (requiredFrameTier == SupporterTier.free
+                                            ? 'Бесплатно'
+                                            : (requiredFrameTier.badgeLabel ?? 'Plus')),
+                                    style: TextStyle(
+                                      color: isBugHunterFrame
+                                          ? const Color(0xFF00E676)
+                                          : (requiredFrameTier == SupporterTier.free
+                                              ? AppColors.textSecondary
+                                              : requiredFrameTier.accentColor),
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                          ),
                         ],
                       ),
               ),

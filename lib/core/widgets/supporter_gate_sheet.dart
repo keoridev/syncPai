@@ -81,7 +81,10 @@ class SupporterGateSheet {
                                 ),
                               ),
                               const SizedBox(height: 3),
-                              Row(
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -99,7 +102,6 @@ class SupporterGateSheet {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
                                   Text(
                                     effectiveTier.priceLabel,
                                     style: TextStyle(
@@ -204,14 +206,19 @@ class SupporterGateSheet {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                '🎯 Серверы на месяц: 1 450 / 3 000 сом',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 11,
+                              const Flexible(
+                                child: Text(
+                                  '🎯 Серверы на месяц: 1 450 / 3 000 сом',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
                               Text(
                                 '48%',
                                 style: TextStyle(
@@ -262,9 +269,9 @@ class SupporterGateSheet {
                         launchUrl(uri, mode: LaunchMode.externalApplication);
                       },
                       icon: const Icon(Icons.send_rounded, size: 17),
-                      label: Text(
-                        'Подключить в @syncpai_bot (${effectiveTier.priceLabel})',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                      label: const Text(
+                        'Открыть в @syncpai_bot',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
                       ),
                     ),
                     const SizedBox(height: 8),

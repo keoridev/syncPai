@@ -32,6 +32,7 @@ import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../../../../core/widgets/anime_silhouette_avatars.dart';
 import '../../../../core/widgets/holographic_monogram_avatar.dart';
+import 'achievement_badge_artwork.dart';
 import 'badge_details_sheet.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
@@ -1885,15 +1886,12 @@ class _SteamProfileCustomizerSheetState
             ),
             child: Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: b.color.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: b.color.withValues(alpha: 0.6)),
-                  ),
-                  child: Icon(b.icon, color: b.color, size: 24),
+                AchievementBadgeArtwork(
+                  badgeId: b.id,
+                  isUnlocked: true,
+                  size: 46,
+                  rarity: b.rarity.name,
+                  accentColor: b.color,
                 ),
                 const SizedBox(width: 14),
                 Expanded(

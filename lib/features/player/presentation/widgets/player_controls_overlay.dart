@@ -28,6 +28,10 @@ class PlayerControlsOverlay extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback? onMinimize;
   final VoidCallback? onToggleOrientation;
+  final VoidCallback? onTakeScreenshot;
+  final VoidCallback? onOpenSleepTimer;
+  final VoidCallback? onEnterPip;
+  final ValueChanged<BoxFit>? onAspectRatioChanged;
   final SyncStatus? syncStatus;
   final String? syncPeerName;
 
@@ -38,6 +42,10 @@ class PlayerControlsOverlay extends StatefulWidget {
     required this.onBack,
     this.onMinimize,
     this.onToggleOrientation,
+    this.onTakeScreenshot,
+    this.onOpenSleepTimer,
+    this.onEnterPip,
+    this.onAspectRatioChanged,
     this.syncStatus,
     this.syncPeerName,
   });
@@ -1127,20 +1135,20 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
 
       switch (id) {
         case 'pip':
-          if (onMinimize != null || editMode) {
+          if (onMinimize != null || widget.onEnterPip != null || editMode) {
             actions.add(
               wrapEditable(
                 id,
                 IconButton(
                   key: const ValueKey('hud_action_pip'),
-                  tooltip: 'Мини-плеер (в окне)',
+                  tooltip: 'Картинка в картинке (PiP)',
                   icon: const Icon(
                     Icons.picture_in_picture_alt_rounded,
                     color: AppColors.textPrimary,
                   ),
                   iconSize: isLandscape ? 18 : 20,
                   visualDensity: VisualDensity.compact,
-                  onPressed: onMinimize ?? () {},
+                  onPressed: widget.onEnterPip ?? onMinimize ?? () {},
                 ),
                 isVisible,
               ),
@@ -1217,6 +1225,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           ? BoxFit.fill
                           : BoxFit.contain);
                   cubit.setVideoFit(nextFit);
+                  widget.onAspectRatioChanged?.call(nextFit);
                 },
               ),
               isVisible,
@@ -1236,14 +1245,15 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                   size: isLandscape ? 19 : 20,
                 ),
                 visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Снимок кадра сохранён'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
+                onPressed: widget.onTakeScreenshot ??
+                    () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Скриншот сохранён'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
               ),
               isVisible,
             ),
@@ -1262,11 +1272,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                   size: isLandscape ? 19 : 20,
                 ),
                 visualDensity: VisualDensity.compact,
-                onPressed: () => PlayerSettingsSheet.show(
-                  context,
-                  cubit: cubit,
-                  state: state,
-                ),
+                onPressed: widget.onOpenSleepTimer ??
+                    () => PlayerSettingsSheet.show(
+                          context,
+                          cubit: cubit,
+                          state: state,
+                        ),
               ),
               isVisible,
             ),

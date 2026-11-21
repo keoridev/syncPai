@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/features/auth/domain/entities/user_profile.dart';
 import 'package:sync_pai/features/player/presentation/widgets/twitch_chat_overlay.dart';
@@ -18,7 +17,7 @@ void main() {
   group('SupporterTier clean naming, zero emojis & UserProfile serialization', () {
     test('enforces room capacity, custom GIF/title locks and clean chat badges per tier', () {
       expect(SupporterTier.free.maxRoomParticipants, 5);
-      expect(SupporterTier.supporter.maxRoomParticipants, 5);
+      expect(SupporterTier.supporter.maxRoomParticipants, 10);
       expect(SupporterTier.vip.maxRoomParticipants, 10);
       expect(SupporterTier.producer.maxRoomParticipants, 10);
 
@@ -70,8 +69,8 @@ void main() {
     });
   });
 
-  group('SupportScreen minimalist layout, Goal Bar & Crypto QR', () {
-    testWidgets('loads goal bar, displays clean tier names without emojis, reacts on Boosty & TON QR', (tester) async {
+  group('SupportScreen minimalist layout, Goal Bar & Telegram Stars CTA', () {
+    testWidgets('loads goal bar, displays clean tier names, Telegram Stars CTA & TON copy', (tester) async {
       String? copiedText;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -103,35 +102,23 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('Оплата серверов и API: 45%'), findsOneWidget);
+      expect(find.text('1 450 / 3 000 сом (45%) — Оплата серверов и API'), findsOneWidget);
       expect(find.text('SyncPai Plus'), findsNWidgets(2)); // tier card + selected pill
       expect(find.text('SyncPai Pro'), findsOneWidget);
       expect(find.text('Founders Club'), findsNWidgets(2)); // tier card + section header
       expect(find.text('keori #5727'), findsOneWidget);
+      expect(find.byKey(const ValueKey('support_stars_cta_btn')), findsOneWidget);
+      expect(find.text('⭐ Оплатить 55 ⭐ в @syncpai_bot (Авто-активация)'), findsOneWidget);
+      expect(find.byKey(const ValueKey('support_tribute_btn')), findsOneWidget);
 
-      // Tap Boosty -> header text updates cleanly
-      await tester.ensureVisible(find.byKey(const ValueKey('support_boosty_btn')));
-      await tester.tap(find.byKey(const ValueKey('support_boosty_btn')));
-      await tester.pump();
-      expect(
-        find.text('Спасибо за поддержку. Выбранный уровень можно активировать ниже.'),
-        findsOneWidget,
-      );
-
-      // Tap TON -> QR modal opens & 1-tap copy works
+      // Tap TON -> copies TON address directly to clipboard
       await tester.ensureVisible(find.byKey(const ValueKey('support_ton_btn')));
       await tester.tap(find.byKey(const ValueKey('support_ton_btn')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.byType(QrImageView), findsOneWidget);
-      expect(find.text('TON Network'), findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('crypto_copy_address_btn')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
       expect(copiedText, 'UQ_TEST_TON_WALLET_123');
-      expect(find.text('Адрес скопирован'), findsOneWidget);
+      expect(find.text('TON-адрес скопирован в буфер обмена'), findsOneWidget);
     });
   });
 

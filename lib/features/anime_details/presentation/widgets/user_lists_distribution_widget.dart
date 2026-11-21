@@ -34,6 +34,7 @@ class UserListsDistributionWidget extends StatelessWidget {
     final droppedFlex = (stats.dropped / total * 100).clamp(1.0, 100.0).round();
 
     final showSkeleton = isLoading && stats.total == 0;
+    final isFreshEmpty = !showSkeleton && stats.total == 0;
 
     final barAndLegend = showSkeleton
         ? Column(
@@ -66,7 +67,40 @@ class UserListsDistributionWidget extends StatelessWidget {
               ),
             ],
           )
-        : ClipRRect(
+        : (isFreshEmpty
+            ? Container(
+                key: const ValueKey('user_lists_fresh_fallback'),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181D27),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 16,
+                      color: Color(0xFF35D9D5),
+                    ),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Свежий релиз — статистика ещё формируется',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ClipRRect(
             key: const ValueKey('user_lists_data'),
             borderRadius: BorderRadius.circular(8),
             child: SizedBox(
@@ -99,7 +133,7 @@ class UserListsDistributionWidget extends StatelessWidget {
                 ],
               ),
             ),
-          );
+          ));
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +149,7 @@ class UserListsDistributionWidget extends StatelessWidget {
         const SizedBox(height: 12),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
-          child: showSkeleton
+          child: (showSkeleton || isFreshEmpty)
               ? barAndLegend
               : Column(
                   key: const ValueKey('user_lists_full'),

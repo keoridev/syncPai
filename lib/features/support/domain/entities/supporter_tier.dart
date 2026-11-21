@@ -79,6 +79,20 @@ enum SupporterTier {
   bool get isVipOrAbove => index >= SupporterTier.vip.index;
   bool get isProducer => this == SupporterTier.producer;
 
+  int get starsPrice => switch (this) {
+        SupporterTier.supporter => 55,
+        SupporterTier.vip => 110,
+        SupporterTier.producer => 270,
+        SupporterTier.free => 0,
+      };
+
+  String get botBuyKey => switch (this) {
+        SupporterTier.supporter => 'plus',
+        SupporterTier.vip => 'pro',
+        SupporterTier.producer => 'founders',
+        SupporterTier.free => 'free',
+      };
+
   int get maxRoomParticipants => isSupporterOrAbove ? 10 : 5;
   bool get unlocksRamenFrame => isSupporterOrAbove;
   bool get unlocksAnimatedFrames => isSupporterOrAbove;

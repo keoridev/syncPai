@@ -85,7 +85,6 @@ void main() async {
 
   await configureDependencies();
 
-  // Адаптивная авто-оптимизация под объем ОЗУ и бюджет кэша изображений
   await DevicePerformanceService.instance.init();
 
   runApp(const SyncPaiApp());
@@ -183,7 +182,7 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
                           const SupportPromptOverlay(),
                           const AchievementToastOverlay(),
                           const Positioned.fill(
-                            child: WinterSnowfallOverlay(),
+                            child: WinterSnowfallOverlay(opacity: 0.35),
                           ),
                         ],
                       ),

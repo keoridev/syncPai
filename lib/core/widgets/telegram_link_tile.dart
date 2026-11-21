@@ -120,7 +120,10 @@ class TelegramLinkTile extends StatelessWidget {
               .withValues(alpha: 0.25),
         ),
       ),
-      child: tile,
+      child: Material(
+        type: MaterialType.transparency,
+        child: tile,
+      ),
     );
   }
 }

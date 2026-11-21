@@ -38,7 +38,7 @@ class AnimeMetaCacheEntry {
   });
 
   bool get isFresh =>
-      DateTime.now().difference(updatedAt) < const Duration(hours: 24);
+      DateTime.now().difference(updatedAt) < const Duration(days: 7);
 
   Map<String, dynamic> toPayloadJson() {
     return {

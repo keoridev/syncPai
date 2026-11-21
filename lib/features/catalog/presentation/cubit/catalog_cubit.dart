@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -165,15 +164,22 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    // Если нет — оптимистично подсвечиваем кнопку и переходим в состояние скелетона
+    // 0ms: мгновенно фильтруем уже загруженный кэш в памяти, пока API обновляется
     final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
+      final instantFiltered = _applyFiltersAndSorting(
+        current.titles,
+        genres: genres,
+        sortBy: current.sortBy,
+        matchAll: current.matchAllGenres,
+        statusFilter: current.statusFilter,
+      );
       emit(current.copyWith(
         selectedGenres: genres,
         searchQuery: '',
         isSearching: false,
-        filteredTitles: const [], // Показывает скелетон снизу без задержки кнопки
+        filteredTitles: instantFiltered,
         isLoadingMore: true,
       ));
     }
@@ -181,16 +187,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     _pageMap[cleanCategory] = 1;
     _filterDebounceTimer?.cancel();
     _resetCancelToken('Filter changed');
-    final isTestEnv = Platform.environment.containsKey('FLUTTER_TEST');
-    if (isTestEnv) {
-      _fetchCatalog(category: cleanCategory, isLoadMore: false);
-    } else {
-      _filterDebounceTimer = Timer(const Duration(milliseconds: 150), () {
-        if (!isClosed) {
-          _fetchCatalog(category: cleanCategory, isLoadMore: false);
-        }
-      });
-    }
+    _fetchCatalog(category: cleanCategory, isLoadMore: false);
   }
 
   Future<List<AnimeTitle>> _fetchSingleCatalogPage({
@@ -438,7 +435,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 350), () async {
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 800), () async {
       await performSearch(trimmed);
     });
   }
@@ -575,12 +572,22 @@ class CatalogCubit extends Cubit<CatalogState> {
     final requestId = ++_requestId;
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
+      final instantFiltered = !isLoadMore
+          ? _applyFiltersAndSorting(
+              current.titles,
+              genres: genres,
+              sortBy: sortBy,
+              matchAll: matchAll,
+              statusFilter: statusFilter,
+            )
+          : current.filteredTitles;
       emit(current.copyWith(
         selectedGenres: genres,
         sortBy: sortBy,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
         clearStatusFilter: statusFilter == null,
+        filteredTitles: instantFiltered,
         isLoadingMore: true,
       ));
     } else {

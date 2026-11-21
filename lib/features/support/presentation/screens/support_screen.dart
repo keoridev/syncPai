@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/telegram_link_tile.dart';
@@ -95,147 +94,6 @@ class _SupportScreenState extends State<SupportScreen>
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } catch (_) {}
     }
-  }
-
-  void _openCryptoSheet({
-    required String networkTitle,
-    required String networkBadge,
-    required String address,
-    required Color accent,
-  }) {
-    setState(() => _hasInteracted = true);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return Container(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10131C),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: accent.withValues(alpha: 0.35)),
-                      ),
-                      child: Text(
-                        networkBadge,
-                        style: TextStyle(
-                          color: accent,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        networkTitle,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary, size: 20),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: QrImageView(
-                    data: address,
-                    version: QrVersions.auto,
-                    size: 168,
-                    backgroundColor: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                  ),
-                  child: SelectableText(
-                    address,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    key: const ValueKey('crypto_copy_address_btn'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.copy_rounded, size: 17),
-                    label: const Text(
-                      'Скопировать адрес',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: address));
-                      if (sheetContext.mounted) {
-                        Navigator.of(sheetContext).pop();
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Адрес скопирован'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -444,14 +302,16 @@ class _SupportScreenState extends State<SupportScreen>
   Widget _buildTierCards(bool isDesktop) {
     final tiers = SupporterTier.paidTiers;
     if (isDesktop) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (int i = 0; i < tiers.length; i++) ...[
-            Expanded(child: _buildSingleTierCard(tiers[i])),
-            if (i < tiers.length - 1) const SizedBox(width: 10),
+      return IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < tiers.length; i++) ...[
+              Expanded(child: _buildSingleTierCard(tiers[i])),
+              if (i < tiers.length - 1) const SizedBox(width: 10),
+            ],
           ],
-        ],
+        ),
       );
     }
     return Column(
@@ -486,33 +346,51 @@ class _SupportScreenState extends State<SupportScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: tier.accentColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(tier.icon, size: 16, color: tier.accentColor),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    tier.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: tier.accentColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(tier.icon, size: 16, color: tier.accentColor),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        tier.title,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  tier.priceLabel,
-                  style: TextStyle(
-                    color: tier.accentColor,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: tier.accentColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    tier.priceLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: tier.accentColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -585,54 +463,72 @@ class _SupportScreenState extends State<SupportScreen>
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            'Укажите ник ($userHandle) в комментарии к переводу для автоматической выдачи статуса.',
-            style: const TextStyle(
+          const Text(
+            'Мгновенная и полностью анонимная активация через Telegram Stars (⭐) в боте @syncpai_bot',
+            style: TextStyle(
               color: AppColors.textMuted,
               fontSize: 11.5,
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _PaymentButton(
-                key: const ValueKey('support_boosty_btn'),
-                icon: Icons.rocket_launch_rounded,
-                label: 'Boosty',
-                accent: const Color(0xFFF15F2C),
-                onTap: () => _openExternalUrl(_config.boostyUrl),
-              ),
-              _PaymentButton(
-                key: const ValueKey('support_tribute_btn'),
-                icon: Icons.send_rounded,
-                label: 'Telegram Tribute',
-                accent: const Color(0xFF38BDF8),
-                onTap: () => _openExternalUrl(_config.tributeUrl),
-              ),
-              _PaymentButton(
-                key: const ValueKey('support_ton_btn'),
-                icon: Icons.qr_code_2_rounded,
-                label: 'TON',
-                accent: const Color(0xFF22D3EE),
-                onTap: () => _openCryptoSheet(
-                  networkTitle: 'TON Network',
-                  networkBadge: 'TON',
-                  address: _config.tonAddress,
-                  accent: const Color(0xFF22D3EE),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('support_stars_cta_btn'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _selectedTier == SupporterTier.producer
+                    ? const Color(0xFFFBBF24)
+                    : const Color(0xFF35D9D5),
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              _PaymentButton(
-                key: const ValueKey('support_usdt_btn'),
-                icon: Icons.qr_code_2_rounded,
-                label: 'USDT TRC-20',
-                accent: const Color(0xFF26A17B),
-                onTap: () => _openCryptoSheet(
-                  networkTitle: 'USDT (TRC-20)',
-                  networkBadge: 'TRC-20',
-                  address: _config.usdtTrc20Address,
-                  accent: const Color(0xFF26A17B),
+              onPressed: () => _openExternalUrl(
+                'https://t.me/syncpai_bot?start=buy_${_selectedTier.botBuyKey}',
+              ),
+              child: Text(
+                '⭐ Оплатить ${_selectedTier.starsPrice} ⭐ в @syncpai_bot (Авто-активация)',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _PaymentButton(
+                  key: const ValueKey('support_tribute_btn'),
+                  icon: Icons.send_rounded,
+                  label: 'Telegram Tribute',
+                  accent: const Color(0xFF38BDF8),
+                  onTap: () => _openExternalUrl(_config.tributeUrl),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PaymentButton(
+                  key: const ValueKey('support_ton_btn'),
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'TON Кошелёк',
+                  accent: const Color(0xFF22D3EE),
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: _config.tonAddress));
+                    if (mounted) {
+                      setState(() => _hasInteracted = true);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('TON-адрес скопирован в буфер обмена'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
                 ),
               ),
             ],

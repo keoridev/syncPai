@@ -35,6 +35,7 @@ import '../../../watch_history/domain/repositories/watch_history_repository.dart
 import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
+import '../widgets/achievement_badge_artwork.dart';
 import '../widgets/friends_management_sheet.dart';
 import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
@@ -1548,7 +1549,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   crossAxisCount: 4,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  mainAxisExtent: 64,
+                  mainAxisExtent: 74,
                 ),
                 itemBuilder: (context, index) {
                   final b = previewBadges[index];
@@ -1581,14 +1582,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              b.icon,
-                              size: 20,
-                              color: isUnlocked
-                                  ? b.color
-                                  : scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                            AchievementBadgeArtwork(
+                              badgeId: b.id,
+                              isUnlocked: isUnlocked,
+                              size: 34,
+                              rarity: b.rarity,
+                              accentColor: b.color,
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 5),
                             Text(
                               b.title,
                               maxLines: 1,
@@ -1702,18 +1703,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                               ),
                               child: Row(
                                 children: [
-                                  Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: badge.color.withValues(alpha: isUnlocked ? 0.20 : 0.08),
-                                      borderRadius: BorderRadius.circular(11),
-                                    ),
-                                    child: Icon(
-                                      badge.icon,
-                                      color: isUnlocked ? badge.color : Colors.white38,
-                                      size: 22,
-                                    ),
+                                  AchievementBadgeArtwork(
+                                    badgeId: badge.id,
+                                    isUnlocked: isUnlocked,
+                                    size: 46,
+                                    rarity: badge.rarity,
+                                    accentColor: badge.color,
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -1723,15 +1718,30 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         Row(
                                           children: [
                                             Expanded(
-                                              child: Text(
-                                                badge.title,
-                                                style: TextStyle(
-                                                  color: isUnlocked ? Colors.white : Colors.white70,
-                                                  fontSize: 13.5,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                              child: Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      badge.title,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        color: isUnlocked ? Colors.white : Colors.white70,
+                                                        fontSize: 13.5,
+                                                        fontWeight: FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  AchievementRarityPill(
+                                                    badgeId: badge.id,
+                                                    rarity: badge.rarity,
+                                                    isUnlocked: isUnlocked,
+                                                  ),
+                                                ],
                                               ),
                                             ),
+                                            const SizedBox(width: 6),
                                             Text(
                                               isUnlocked
                                                   ? 'Открыто'
@@ -1819,13 +1829,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: badge.color.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(badge.icon, color: badge.color, size: 26),
+                      AchievementBadgeArtwork(
+                        badgeId: badge.id,
+                        isUnlocked: isUnlocked,
+                        size: 54,
+                        rarity: badge.rarity,
+                        accentColor: badge.color,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1840,24 +1849,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(height: 3),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: badge.color.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${badge.rarity} • ${isUnlocked ? 'Получено' : 'Закрыто'}',
-                                style: TextStyle(
-                                  color: badge.color,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                AchievementRarityPill(
+                                  badgeId: badge.id,
+                                  rarity: badge.rarity,
+                                  isUnlocked: isUnlocked,
                                 ),
-                              ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  isUnlocked ? 'Получено' : 'Закрыто',
+                                  style: TextStyle(
+                                    color: isUnlocked ? badge.color : Colors.white54,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/shikimori_remote_datasource.dart';
+import 'package:sync_pai/features/anime_details/domain/entities/user_lists_stats.dart';
+import 'package:sync_pai/features/anime_details/presentation/widgets/user_lists_distribution_widget.dart';
 import 'package:sync_pai/features/anime_lists/data/datasources/anixart_remote_datasource.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 
@@ -204,5 +207,31 @@ void main() {
     final msgTimeout = AnixartRemoteDataSourceImpl.mapUserFriendlyError(errTimeout);
     expect(msgTimeout, contains('Серверы Anixart временно недоступны или ограничивают запросы'));
     expect(msgTimeout, isNot(contains('DioException')));
+  });
+
+  test('ShikimoriRemoteDataSourceImpl.normalizeTitleForSearch strips season/part/tags', () {
+    expect(
+      ShikimoriRemoteDataSourceImpl.normalizeTitleForSearch(
+        'Магическая битва 2 сезон (Часть 2) [ТВ-2]',
+      ),
+      'Магическая битва',
+    );
+  });
+
+  testWidgets('UserListsDistributionWidget shows fresh-release fallback pill when stats are empty',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: UserListsDistributionWidget(
+            stats: UserListsStats(),
+            isLoading: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('user_lists_fresh_fallback')), findsOneWidget);
+    expect(find.text('Свежий релиз — статистика ещё формируется'), findsOneWidget);
   });
 }

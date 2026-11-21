@@ -175,31 +175,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           : Future<ReviewsAggregateResult?>.value(null);
 
       if (shikimoriId == null || shikimoriId <= 0) {
-        final searchQuery = title.displayTitle.isNotEmpty
-            ? title.displayTitle
-            : title.code;
-
-        final searchResponse = await _enqueueShikimoriRequest(
-          () => _dio.get(
-            '/animes',
-            queryParameters: {
-              'search': searchQuery,
-              'limit': 3,
-            },
-            options: _shikimoriOptions,
-          ),
-        );
-
-        if (searchResponse.statusCode == 200 &&
-            searchResponse.data != null &&
-            searchResponse.data.toString().trim().isNotEmpty &&
-            searchResponse.data is List) {
-          final list = searchResponse.data as List;
-          if (list.isNotEmpty) {
-            final first = list.first as Map<String, dynamic>;
-            shikimoriId = first['id'] as int?;
-            rawScore = double.tryParse('${first['score'] ?? ''}') ?? rawScore;
-          }
+        final resolved = await _resolveShikimoriIdAndScore(title);
+        shikimoriId = resolved.id;
+        if (resolved.score != null && resolved.score! > 0) {
+          rawScore = resolved.score!;
         }
       }
 
@@ -671,6 +650,78 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     return _generateFallbackFranchise(currentTitle, currentScore);
   }
 
+  /// Нормализует название (удаляет «2 сезон», «Часть 2», теги в скобках) для точного поиска в Shikimori.
+  static String normalizeTitleForSearch(String raw) {
+    var cleaned = raw
+        .replaceAll(RegExp(r'\([^)]*\)|\[[^\]]*\]'), ' ')
+        .replaceAll(
+          RegExp(
+            r'(?:^|\s)(?:\d+\s*сезон|сезон\s*\d+|часть\s*\d+|тв[-\s]*\d+|финал|ova|ona|special)(?=\s|$)',
+            caseSensitive: false,
+            unicode: true,
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return cleaned.isNotEmpty ? cleaned : raw.trim();
+  }
+
+  Future<({int? id, double? score})> _resolveShikimoriIdAndScore(AnimeTitle title) async {
+    final candidates = <String>[];
+    final en = title.englishTitle.trim();
+    if (en.isNotEmpty) {
+      candidates.add(en);
+    }
+    final ruClean = normalizeTitleForSearch(title.russianTitle);
+    if (ruClean.isNotEmpty && !candidates.contains(ruClean)) {
+      candidates.add(ruClean);
+    }
+    final fallback = title.displayTitle.isNotEmpty ? title.displayTitle : title.code;
+    if (fallback.isNotEmpty && !candidates.contains(fallback)) {
+      candidates.add(fallback);
+    }
+
+    for (final q in candidates) {
+      try {
+        final searchResponse = await _enqueueShikimoriRequest(
+          () => _dio.get(
+            '/animes',
+            queryParameters: {
+              'search': q,
+              'limit': 5,
+            },
+            options: _shikimoriOptions,
+          ),
+        );
+
+        if (searchResponse.statusCode == 200 && searchResponse.data is List) {
+          final list = (searchResponse.data as List)
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          if (list.isNotEmpty) {
+            Map<String, dynamic> best = list.first;
+            if (title.year != null && title.year! > 1960) {
+              for (final item in list) {
+                final aired = '${item['aired_on'] ?? item['released_on'] ?? ''}';
+                if (aired.startsWith('${title.year}')) {
+                  best = item;
+                  break;
+                }
+              }
+            }
+            return (
+              id: best['id'] as int?,
+              score: double.tryParse('${best['score'] ?? ''}'),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    return (id: null, score: null);
+  }
+
   /// Загружает статистику списков, распределение оценок, видео и скриншоты одним GraphQL-запросом.
   Future<({
     List<AnimeVideoItem> videos,
@@ -720,7 +771,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           final anime = animes.first as Map<String, dynamic>;
 
           // 1. Статистика списков ("В списках у людей")
-          UserListsStats stats = _generateFallbackStats(title);
+          UserListsStats stats = const UserListsStats();
           final rawStats = anime['statusesStats'];
           if (rawStats is List && rawStats.isNotEmpty) {
             int watching = 0, planned = 0, onHold = 0, dropped = 0, completed = 0;

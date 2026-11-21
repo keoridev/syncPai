@@ -87,8 +87,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
     if (pos.pixels <= 0 || pos.maxScrollExtent <= 0) return;
-    // Pre-fetch следующей страницы за 600px до конца списка с дебаунсом
-    if (pos.pixels >= pos.maxScrollExtent - 600) {
+    // Pre-fetch следующей страницы при достижении 70% прокрутки
+    if (pos.pixels >= pos.maxScrollExtent * 0.70) {
       if (_scrollDebounceTimer?.isActive ?? false) return;
       _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
         if (mounted) {
@@ -759,26 +759,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     // Единая адаптивная сетка (Catalog == My Lists):
                     // Desktop: maxCrossAxisExtent: 215, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.62
                     // Mobile: crossAxisCount: 2 (или 3 в компактном режиме), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62
-                    final int mobileCols = state.gridDensity.mobileColumns;
-                    final SliverGridDelegate gridDelegate = isDesktop
+                    final SliverGridDelegate gridDelegate = screenWidth >= 900
                         ? const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 215,
                             crossAxisSpacing: 16,
                             mainAxisSpacing: 16,
                             childAspectRatio: 0.62,
                           )
-                        : (screenWidth > 600
-                            ? const SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: 195,
+                        : (screenWidth >= 600
+                            ? const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                childAspectRatio: 0.64,
                                 crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: 0.62,
+                                mainAxisSpacing: 14,
                               )
-                            : SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: mobileCols,
-                                childAspectRatio: mobileCols >= 3 ? 0.56 : 0.62,
+                            : const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.66,
                                 crossAxisSpacing: 12.0,
-                                mainAxisSpacing: 12.0,
+                                mainAxisSpacing: 14.0,
                               ));
 
                     return SliverPadding(
@@ -791,7 +790,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             return AnimePosterCard(
                               key: ValueKey(title.id),
                               title: title,
-                              isCompact: !isDesktop && mobileCols >= 3,
+                              isCompact: false,
                               onTap: () => widget.onTitleSelected?.call(title),
                             );
                           },

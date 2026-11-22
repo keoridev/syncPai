@@ -726,7 +726,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return BlocProvider<ProfileCubit>.value(
       value: _profileCubit,
       child: Scaffold(
-        backgroundColor: scheme.surface,
+        backgroundColor: isDark ? const Color(0xFF0B0E14) : scheme.surface,
         body: BlocBuilder<ProfileCubit, ProfileState>(
           bloc: _profileCubit,
         builder: (context, state) {
@@ -1051,13 +1051,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: isDark
-                  ? scheme.surfaceContainer.withValues(alpha: 0.55)
-                  : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
+                  ? const Color(0xFF131720).withValues(alpha: 0.92)
+                  : scheme.surfaceContainerLowest.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.35),
-                width: 1.1,
-              ),
             ),
             child: Row(
               children: tabs.map((tab) {
@@ -1077,15 +1073,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                       padding: const EdgeInsets.symmetric(vertical: 9),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? accent.withValues(alpha: isDark ? 0.22 : 0.16)
+                            ? (isDark
+                                ? const Color(0xFF252C3B)
+                                : accent.withValues(alpha: 0.16))
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? accent.withValues(alpha: 0.55)
-                              : Colors.transparent,
-                          width: 1.0,
-                        ),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1130,9 +1122,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       key: const ValueKey('taste_compatibility_card'),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF12161F),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: const Color(0xFF131720),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1267,9 +1258,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: pillColor.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: pillColor.withValues(alpha: 0.35)),
+                color: pillColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 actionLabel,
@@ -1383,9 +1373,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: accent.withValues(alpha: 0.4)),
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   '★ 10/10',
@@ -1404,7 +1393,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.35),
@@ -1414,7 +1402,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(10),
                   child: SizedBox(
                     width: 64,
                     height: 92,
@@ -1579,13 +1567,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                         decoration: BoxDecoration(
                           color: isUnlocked
                               ? b.color.withValues(alpha: isDark ? 0.14 : 0.10)
-                              : Colors.white.withValues(alpha: 0.03),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isUnlocked
-                                ? b.color.withValues(alpha: 0.45)
-                                : Colors.white.withValues(alpha: 0.07),
-                          ),
+                              : (isDark
+                                  ? const Color(0xFF191F2B)
+                                  : Colors.white.withValues(alpha: 0.05)),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1700,14 +1685,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: isUnlocked
-                                    ? badge.color.withValues(alpha: 0.10)
-                                    : Colors.white.withValues(alpha: 0.04),
+                                    ? badge.color.withValues(alpha: 0.12)
+                                    : const Color(0xFF191F2B),
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: isUnlocked
-                                      ? badge.color.withValues(alpha: 0.40)
-                                      : Colors.white.withValues(alpha: 0.08),
-                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1823,13 +1803,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: const Color(0xFF12161F),
+                color: const Color(0xFF131720),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isUnlocked
-                      ? badge.color.withValues(alpha: 0.45)
-                      : Colors.white.withValues(alpha: 0.08),
-                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2026,11 +2001,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: accent.withValues(alpha: 0.4)),
+                          color: accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           '$onlineCount в сети',
@@ -2052,10 +2026,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
               decoration: BoxDecoration(
                 color: isDark
-                    ? scheme.surfaceContainer.withValues(alpha: 0.4)
-                    : scheme.surfaceContainerLowest.withValues(alpha: 0.8),
+                    ? const Color(0xFF191F2B)
+                    : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
               ),
               child: Column(
                 children: [
@@ -2081,7 +2054,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ),
                   ),
                   const SizedBox(height: 10),
-                  OutlinedButton.icon(
+                  TextButton.icon(
                     onPressed: () => showFriendsManagementSheet(
                       context,
                       accentColor: accent,
@@ -2091,12 +2064,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                     icon: Icon(Icons.person_add_alt_1_rounded, size: 15, color: accent),
                     label: Text(
                       profile.isAnonymous ? 'Добавить друзей' : 'Найти друзей',
-                      style: TextStyle(color: scheme.onSurface, fontSize: 11.5, fontWeight: FontWeight.w700),
+                      style: TextStyle(color: accent, fontSize: 11.5, fontWeight: FontWeight.w700),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: scheme.onSurface,
-                      side: BorderSide(color: accent.withValues(alpha: 0.5)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: accent.withValues(alpha: 0.14),
+                      foregroundColor: accent,
                       visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
@@ -2125,10 +2099,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: isDark
-                          ? scheme.surfaceContainer.withValues(alpha: 0.45)
+                          ? const Color(0xFF191F2B)
                           : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                     children: [
@@ -2270,10 +2243,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
             decoration: BoxDecoration(
               color: isDark
-                  ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                  ? const Color(0xFF191F2B)
                   : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
@@ -2431,13 +2403,12 @@ class _StatsCard extends StatelessWidget {
               GestureDetector(
                 onTap: onToggleCharts,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? scheme.surfaceContainer.withValues(alpha: 0.55)
-                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -2568,11 +2539,10 @@ class _StatsCard extends StatelessWidget {
 
   Widget _buildCategoryPill({required String label, required Color color}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.35), width: 0.8),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
@@ -2706,11 +2676,8 @@ class _RecentHistoryCarousel extends StatelessWidget {
                                   child: Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.04),
+                                      color: const Color(0xFF191F2B),
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.08),
-                                      ),
                                     ),
                                     child: Row(
                                       children: [
@@ -2932,10 +2899,9 @@ class _RecentHistoryCarousel extends StatelessWidget {
               height: previewHeight,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 0.8),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(10),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -2962,7 +2928,6 @@ class _RecentHistoryCarousel extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.black.withValues(alpha: 0.55),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
                         ),
                         child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
                       ),
@@ -3085,19 +3050,13 @@ class _GlassCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: isDark
-            ? const Color(0xFF12161F)
-            : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.07)
-              : scheme.outlineVariant.withValues(alpha: 0.35),
-          width: 1.0,
-        ),
+            ? const Color(0xFF131720)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.90),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
+                ? Colors.black.withValues(alpha: 0.32)
                 : Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
@@ -3111,11 +3070,11 @@ class _GlassCard extends StatelessWidget {
       child: Padding(
         padding: margin,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           child: onTap != null
               ? InkWell(
                   onTap: onTap,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(18),
                   child: cardContent,
                 )
               : cardContent,

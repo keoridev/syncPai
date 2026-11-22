@@ -90,10 +90,9 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
       padding: const EdgeInsets.all(AppDimensions.spacingLg),
       decoration: BoxDecoration(
         color: isDark
-            ? scheme.surfaceContainer.withValues(alpha: 0.65)
-            : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
+            ? const Color(0xFF191F2B)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,15 +157,9 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? accent.withValues(alpha: 0.22)
+                ? (isDark ? const Color(0xFF252C3B) : accent.withValues(alpha: 0.18))
                 : (isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerHigh.withValues(alpha: 0.4)),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected
-                  ? accent.withValues(alpha: 0.65)
-                  : scheme.outlineVariant.withValues(alpha: 0.25),
-              width: 1.0,
-            ),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -528,7 +521,6 @@ class _GenreStatChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

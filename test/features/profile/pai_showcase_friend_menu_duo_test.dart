@@ -48,6 +48,8 @@ void main() {
 
       expect(find.byType(PaiChanArtworkBanner), findsNWidgets(4));
       expect(find.byType(RepaintBoundary), findsWidgets);
+      expect(find.text('Пай-тян • Кодинг-хакер'), findsOneWidget);
+      expect(find.byIcon(Icons.open_in_new_rounded), findsOneWidget);
       // Проверяем, что громоздкая текстовая плашка внутри баннера удалена
       expect(find.text('НОЧНОЙ МАРАФОН • PAI-CHAN'), findsNothing);
       expect(find.text('BUG HUNTER • ROOT'), findsNothing);

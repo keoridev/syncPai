@@ -845,8 +845,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
                     // Единая адаптивная сетка (Catalog == My Lists):
                     // Desktop: maxCrossAxisExtent: 215, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.62
-                    // Mobile: crossAxisCount: 2 (или 3 в компактном режиме), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62
+                    // Mobile (width < 600): horizontal: 14, crossAxisSpacing: 12 (2 cols) / 8 (3 cols), mainAxisSpacing: 14 / 12, childAspectRatio: 0.56 (2 cols) / 0.50 (3 cols)
                     final mobileCols = state.gridDensity.mobileColumns;
+                    final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
                     final SliverGridDelegate gridDelegate = screenWidth >= 900
                         ? const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 215,
@@ -863,13 +864,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               )
                             : SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: mobileCols,
-                                childAspectRatio: mobileCols == 3 ? 0.58 : 0.66,
+                                childAspectRatio: mobileCols == 3 ? 0.50 : 0.56,
                                 crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
                                 mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
                               ));
 
                     return SliverPadding(
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                      padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
                       sliver: SliverGrid(
                         gridDelegate: gridDelegate,
                         delegate: SliverChildBuilderDelegate(
@@ -946,6 +947,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       );
     }
 
+    final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
     final SliverGridDelegate gridDelegate = isDesktop
         ? const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 215,
@@ -954,14 +956,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
             childAspectRatio: 0.62,
           )
         : SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: screenWidth > 600 ? 3 : 2,
-            childAspectRatio: 0.62,
+            crossAxisCount: screenWidth >= 600 ? 3 : 2,
+            childAspectRatio: screenWidth >= 600 ? 0.64 : 0.56,
             crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
+            mainAxisSpacing: 14,
           );
 
     return SliverPadding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+      padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
       sliver: SliverGrid(
         gridDelegate: gridDelegate,
         delegate: SliverChildBuilderDelegate(

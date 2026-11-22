@@ -371,16 +371,12 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isDark
-              ? scheme.surfaceContainer.withValues(alpha: 0.88)
+              ? const Color(0xFF131720)
               : scheme.surfaceContainerLowest.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.35),
-            width: 1.2,
-          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+              color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
               blurRadius: 18,
               offset: const Offset(0, 6),
             ),
@@ -455,10 +451,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: isDark
-                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                    ? Colors.white.withValues(alpha: 0.06)
                     : scheme.surfaceContainerHigh.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.35)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -507,10 +502,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   ? null
                   : widget.profile.supporterTier.accentColor.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: widget.profile.supporterTier.accentColor.withValues(alpha: 0.7),
-                width: 1.0,
-              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -547,15 +538,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               return GestureDetector(
                 onTap: () => BadgeDetailsSheet.show(context, badge: badge),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: accent.withValues(alpha: 0.6), width: 1.0),
                     boxShadow: [
                       BoxShadow(
-                        color: accent.withValues(alpha: 0.15 + ((_idleController?.value ?? 0.5) * 0.25)),
-                        blurRadius: 8 + ((_idleController?.value ?? 0.5) * 6),
+                        color: accent.withValues(alpha: 0.14 + ((_idleController?.value ?? 0.5) * 0.20)),
+                        blurRadius: 8 + ((_idleController?.value ?? 0.5) * 5),
                       ),
                     ],
                   ),
@@ -785,11 +775,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                             decoration: BoxDecoration(
                               color: isSelected
                                   ? accent.withValues(alpha: 0.22)
-                                  : Colors.white.withValues(alpha: 0.05),
+                                  : Colors.white.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isSelected ? accent : Colors.white.withValues(alpha: 0.1),
-                              ),
                             ),
                             child: Text(
                               preset,
@@ -914,11 +901,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                         ),
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.all(3),
+                          padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
                             color: accent.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
                           ),
                           child: Icon(
                             widget.isCurrentUser ? Icons.edit_rounded : Icons.copy_rounded,
@@ -974,11 +960,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                       onTap: () => _copyUserHandle(context, accent),
                       borderRadius: BorderRadius.circular(6),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                         decoration: BoxDecoration(
                           color: accent.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1180,6 +1165,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               listenable: PresenceService.instance,
               builder: (context, _) {
                 final scheme = Theme.of(context).colorScheme;
+                final isDarkPill = Theme.of(context).brightness == Brightness.dark;
                 final isIncognito =
                     widget.isCurrentUser && PresenceService.instance.isIncognito;
                 final pillColor =
@@ -1191,16 +1177,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                       ? () => PresenceService.instance.toggleIncognito()
                       : null,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: isIncognito
-                          ? const Color(0xFF1E2430)
+                      color: isDarkPill
+                          ? (isIncognito
+                              ? const Color(0xFF191F2B)
+                              : const Color(0xFF131720))
                           : scheme.surfaceContainer,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: pillColor.withValues(alpha: isIncognito ? 0.45 : 0.8),
-                        width: 1.0,
-                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1263,7 +1247,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-    final double showcaseHeight = isDesktopOS ? 360.0 : 200.0;
+    final bool isHackerPanorama = artworkUrl.trim() == 'pai_hacker_art';
+    final double showcaseHeight = isHackerPanorama ? 195.0 : (isDesktopOS ? 360.0 : 200.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1291,11 +1276,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               GestureDetector(
                 onTap: _handleShowcaseTap,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: accent.withValues(alpha: 0.45), width: 0.8),
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1332,15 +1316,11 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             child: Container(
               height: showcaseHeight,
               decoration: BoxDecoration(
-                color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: 0.4),
-                  width: 1.2,
-                ),
+                color: isDark ? const Color(0xFF191F2B) : scheme.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(isHackerPanorama ? 16 : 14),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.42 : 0.08),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
@@ -1369,13 +1349,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     },
                   ),
 
-                  // Нижняя панель действий (Лайки, комментарии, название)
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: _buildArtworkBottomBar(accent, artworkTitle),
-                  ),
+                  // Нижняя панель действий (панорама pai_hacker_art рисует собственную полосу 32px)
+                  if (!isHackerPanorama)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: _buildArtworkBottomBar(accent, artworkTitle),
+                    ),
                 ],
               ),
             ),
@@ -1515,6 +1496,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     required Color accent,
     required String artworkTitle,
   }) {
+    if (imageUrl.trim() == 'pai_hacker_art') {
+      return PaiChanArtworkBanner(
+        artworkId: 'pai_hacker_art',
+        width: totalWidth,
+        height: showcaseHeight,
+      );
+    }
+
     // Увеличенный масштаб медиа-слоя (+8% по ширине и высоте),
     // чтобы при смещении фона по параллаксу по краям никогда не появлялись черные полосы
     const bleedScale = 1.08;
@@ -1563,15 +1552,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
           ),
         ),
 
-        // Элементы оформления Steam Artwork
-        // Тонкий внутренний контур панели
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1584,11 +1564,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: isDark
-            ? scheme.surfaceContainer.withValues(alpha: 0.92)
-            : scheme.surfaceContainerLowest.withValues(alpha: 0.95),
-        border: Border(
-          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35), width: 1.0),
-        ),
+            ? const Color(0xFF131720).withValues(alpha: 0.86)
+            : scheme.surfaceContainerLowest.withValues(alpha: 0.92),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

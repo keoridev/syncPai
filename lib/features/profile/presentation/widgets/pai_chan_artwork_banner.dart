@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 /// Виджет фирменных художественных витрин Пай-тян (Pai-chan Mascot Artwork Showcases)
@@ -22,20 +24,53 @@ class PaiChanArtworkBanner extends StatefulWidget {
 }
 
 class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+  late final AnimationController _panController;
+
+  bool get _isHackerScene => widget.artworkId.trim() == 'pai_hacker_art';
 
   @override
   void initState() {
     super.initState();
+    _panController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    );
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3200),
-    )..repeat();
+      duration: _isHackerScene
+          ? const Duration(milliseconds: 2500)
+          : const Duration(milliseconds: 3200),
+    );
+    _syncAnimations();
+  }
+
+  @override
+  void didUpdateWidget(covariant PaiChanArtworkBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.artworkId != widget.artworkId) {
+      _controller.stop();
+      _controller.duration = _isHackerScene
+          ? const Duration(milliseconds: 2500)
+          : const Duration(milliseconds: 3200);
+      _syncAnimations();
+    }
+  }
+
+  void _syncAnimations() {
+    if (_isHackerScene) {
+      _panController.repeat(reverse: true);
+      _controller.repeat(reverse: true);
+    } else {
+      _panController.stop();
+      _controller.repeat();
+    }
   }
 
   @override
   void dispose() {
+    _panController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -63,13 +98,12 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
         );
       case 'pai_hacker_art':
         return const _PaiShowcaseSpec(
-          gradient: [Color(0xFF02120A), Color(0xFF062717), Color(0xFF0B3F26)],
-          primaryGlow: Color(0xFF10B981),
-          secondaryGlow: Color(0xFF22D3EE),
-          mascotAsset: 'assets/mascot/general/mascot_idle.png',
-          fallbackAsset: 'assets/mascot/general/mascot_thinking.png',
+          gradient: [Color(0xFF050A14), Color(0xFF0B1829), Color(0xFF0F2A3F)],
+          primaryGlow: Color(0xFF22D3EE),
+          secondaryGlow: Color(0xFF10B981),
+          mascotAsset: 'assets/banners/pai_hacker_bg.png',
+          fallbackAsset: 'assets/mascot/general/mascot_idle.png',
           fallbackIcon: Icons.terminal_rounded,
-          isMatrix: true,
         );
       case 'pai_chill':
       default:
@@ -86,12 +120,18 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
 
   @override
   Widget build(BuildContext context) {
+    if (_isHackerScene) {
+      return _buildHackerPanorama(context);
+    }
+
     final spec = _resolveSpec();
     final w = widget.width;
     final h = widget.height;
     final isCompact = h < 120 || w < 220;
-    final mascotHeight = math.min(h * 0.92, 190.0);
-    final mascotWidth = math.min(w * 0.54, mascotHeight);
+    final mascotHeight = isCompact
+        ? math.min(h * 0.90, 120.0)
+        : (h >= 300 ? 175.0 : 150.0);
+    final mascotWidth = math.min(w * 0.56, mascotHeight);
 
     return RepaintBoundary(
       child: ClipRect(
@@ -114,15 +154,6 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (spec.isMatrix)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _MatrixGridPainter(
-                          progress: t,
-                          color: spec.primaryGlow,
-                        ),
-                      ),
-                    ),
                   if (spec.isWinter)
                     Positioned.fill(
                       child: CustomPaint(
@@ -130,17 +161,16 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
                       ),
                     ),
                   // Мягкий радиальный свет за персонажем
-                  Positioned(
-                    right: isCompact ? -w * 0.06 : w * 0.04,
-                    top: -h * 0.08,
+                  Align(
+                    alignment: isCompact ? Alignment.centerRight : Alignment.center,
                     child: Container(
-                      width: mascotHeight * 1.15,
-                      height: mascotHeight * 1.15,
+                      width: mascotHeight * 1.25,
+                      height: mascotHeight * 1.25,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            spec.primaryGlow.withValues(alpha: 0.32),
+                            spec.primaryGlow.withValues(alpha: 0.30),
                             spec.secondaryGlow.withValues(alpha: 0.14),
                             Colors.transparent,
                           ],
@@ -153,7 +183,10 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
                   Align(
                     alignment: isCompact ? Alignment.bottomRight : Alignment.bottomCenter,
                     child: Padding(
-                      padding: EdgeInsets.only(right: isCompact ? 6 : 0, bottom: 2),
+                      padding: EdgeInsets.only(
+                        right: isCompact ? 6 : 0,
+                        bottom: isCompact ? 2 : 24,
+                      ),
                       child: Transform.translate(
                         offset: Offset(0, floatY),
                         child: SizedBox(
@@ -186,6 +219,167 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
       ),
     );
   }
+
+  /// Панорамная киберпанк-витрина «Пай-тян • Кодинг-хакер» с медленным панорамированием,
+  /// изолированными частицами и дыханием неонового свечения наушников/куртки.
+  Widget _buildHackerPanorama(BuildContext context) {
+    final w = widget.width;
+    final h = widget.height;
+    final isCompact = h < 120 || w < 220;
+    final effectiveHeight = isCompact ? h : (h > 195.0 ? 195.0 : h);
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.all(Radius.circular(16)),
+      child: SizedBox(
+        width: w,
+        height: effectiveHeight,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Фоновый слой: панорама ночного кибер-мегаполиса с плавным ±4px панорамированием
+            AnimatedBuilder(
+              animation: _panController,
+              builder: (context, child) {
+                final horizontalOffset =
+                    (_panController.value * 2.0 - 1.0) * (isCompact ? 2.0 : 4.0);
+                return Transform.translate(
+                  offset: Offset(horizontalOffset, 0),
+                  child: Transform.scale(
+                    scale: 1.04,
+                    child: child,
+                  ),
+                );
+              },
+              child: Image.asset(
+                'assets/banners/pai_hacker_bg.png',
+                width: w,
+                height: effectiveHeight,
+                fit: BoxFit.cover,
+                alignment: Alignment.centerRight,
+                errorBuilder: (_, __, ___) => DecoratedBox(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF050A14), Color(0xFF0B1829), Color(0xFF0F2A3F)],
+                    ),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.terminal_rounded,
+                      color: const Color(0xFF22D3EE).withValues(alpha: 0.7),
+                      size: isCompact ? 28 : 44,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // 2. Слой эмбиент-анимации (изолирован в RepaintBoundary):
+            // звёзды/боке, дыхание цианового свечения гарнитуры/куртки и микро-левитация
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final rawT = _controller.value;
+                  final easedT = Curves.easeInOut.transform(rawT);
+                  final glowOpacity = 0.4 + 0.6 * easedT;
+                  final floatY = math.sin(rawT * math.pi) * (isCompact ? 0.8 : 1.5);
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CustomPaint(
+                        painter: _CyberCityParticlesPainter(progress: rawT),
+                      ),
+                      // Мягкое циановое дыхание на гарнитуре и контуре куртки справа
+                      Align(
+                        alignment: const Alignment(0.56, -0.18),
+                        child: Transform.translate(
+                          offset: Offset(0, floatY),
+                          child: Opacity(
+                            opacity: glowOpacity,
+                            child: Container(
+                              width: effectiveHeight * 0.62,
+                              height: effectiveHeight * 0.62,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    const Color(0xFF22D3EE).withValues(alpha: 0.28),
+                                    const Color(0xFF06B6D4).withValues(alpha: 0.10),
+                                    Colors.transparent,
+                                  ],
+                                  stops: const [0.0, 0.48, 1.0],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
+            // 3. Передний интерфейсный слой: полупрозрачная матовая лента внизу (32px)
+            if (!isCompact)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 32,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                    child: Container(
+                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            const Color(0xFF0C1018).withValues(alpha: 0.90),
+                            const Color(0xFF0C1018).withValues(alpha: 0.45),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.55, 1.0],
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Пай-тян • Кодинг-хакер',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Color(0xFF8E9AA8),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Icon(
+                            Icons.open_in_new_rounded,
+                            size: 13,
+                            color: Color(0xFF8E9AA8),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _PaiShowcaseSpec {
@@ -196,7 +390,6 @@ class _PaiShowcaseSpec {
   final String fallbackAsset;
   final IconData fallbackIcon;
   final bool isWinter;
-  final bool isMatrix;
 
   const _PaiShowcaseSpec({
     required this.gradient,
@@ -206,7 +399,6 @@ class _PaiShowcaseSpec {
     required this.fallbackAsset,
     required this.fallbackIcon,
     this.isWinter = false,
-    this.isMatrix = false,
   });
 }
 
@@ -234,42 +426,35 @@ class _BannerSnowPainter extends CustomPainter {
       oldDelegate.progress != progress;
 }
 
-class _MatrixGridPainter extends CustomPainter {
+/// Мягкое мерцание далёкого цифрового боке и звёзд для ночного кибер-города.
+class _CyberCityParticlesPainter extends CustomPainter {
   final double progress;
-  final Color color;
 
-  const _MatrixGridPainter({required this.progress, required this.color});
+  const _CyberCityParticlesPainter({required this.progress});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = color.withValues(alpha: 0.12)
-      ..strokeWidth = 1.0;
-
-    const step = 22.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    final barPaint = Paint()
-      ..color = color.withValues(alpha: 0.35)
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
-    for (int i = 0; i < 8; i++) {
-      final x = ((i * 47 + 16) % size.width.toInt()).toDouble();
-      final yStart = (((i * 29) / 100.0 + progress) % 1.0) * size.height;
-      canvas.drawLine(
-        Offset(x, yStart),
-        Offset(x, (yStart + 14).clamp(0.0, size.height)),
-        barPaint,
+    final starPaint = Paint();
+    for (int i = 0; i < 18; i++) {
+      final seedX = ((i * 53 + 11) % 97) / 100.0;
+      final seedY = ((i * 37 + 7) % 72) / 100.0;
+      final phase = (progress + (i * 0.17)) * math.pi * 2;
+      final pulse = 0.25 + 0.55 * (0.5 + 0.5 * math.sin(phase));
+      final isBokeh = i % 4 == 0;
+      starPaint.color = (isBokeh
+              ? const Color(0xFF22D3EE)
+              : Colors.white)
+          .withValues(alpha: isBokeh ? pulse * 0.26 : pulse * 0.48);
+      final radius = isBokeh ? (2.0 + (i % 2) * 1.1) : (0.8 + (i % 3) * 0.35);
+      canvas.drawCircle(
+        Offset(seedX * size.width, seedY * size.height),
+        radius,
+        starPaint,
       );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _MatrixGridPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
+  bool shouldRepaint(covariant _CyberCityParticlesPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }

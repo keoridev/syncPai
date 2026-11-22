@@ -4,8 +4,28 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/features/catalog/data/datasources/anime_remote_datasource.dart';
+import 'package:sync_pai/features/catalog/data/services/catalog_persistent_store.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
+import 'package:sync_pai/features/catalog/domain/repositories/catalog_repository.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/get_updates.dart';
+import 'package:sync_pai/features/catalog/domain/usecases/search_titles.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
+
+class _FailingCatalogRepository implements CatalogRepository {
+  @override
+  Future<List<AnimeTitle>> getUpdates({int page = 1, int limit = 20}) async {
+    throw Exception('HTTP 422');
+  }
+
+  @override
+  Future<List<AnimeTitle>> searchTitles(String query, {int limit = 20}) async =>
+      const [];
+
+  @override
+  Future<AnimeTitle> getTitleDetails({int? id, String? code}) async =>
+      throw UnimplementedError();
+}
 
 class _GenreRefMockAdapter implements HttpClientAdapter {
   final List<RequestOptions> requests = [];
@@ -79,24 +99,27 @@ void main() {
 
       await ds.syncGenreReferences(force: true);
 
-      expect(ds.resolveGenreId('Сёнен'), 4);
-      expect(ds.resolveGenreId('Сенен'), 4);
-      expect(ds.resolveGenreId('сэйнэн'), 5);
-      expect(ds.resolveGenreId('Сейнен'), 5);
-      expect(ds.resolveGenreId('Мистика'), 9);
-      expect(ds.resolveGenreId('Психология'), 19);
-      // «Исекай» отсутствует в живом справочнике -> не отправляем битый ID
+      // Демографические и виртуальные теги никогда не отправляют f[genres] на AniLibria
+      expect(ds.resolveGenreId('Сёнен'), isNull);
+      expect(ds.resolveGenreId('Сенен'), isNull);
+      expect(ds.resolveGenreId('сэйнэн'), isNull);
+      expect(ds.resolveGenreId('Сейнен'), isNull);
       expect(ds.resolveGenreId('Исекай'), isNull);
 
-      await ds.getCatalog(page: 1, genres: 'Сёнен');
+      // Стандартные жанры из справочника корректно разрешаются в ID
+      expect(ds.resolveGenreId('Мистика'), 9);
+      expect(ds.resolveGenreId('Психология'), 19);
+      expect(ds.resolveGenreId('Фэнтези'), 29);
+
+      await ds.getCatalog(page: 1, genres: 'Мистика');
       final releaseReq = adapter.requests
           .lastWhere((r) => r.path.contains('/catalog/releases'));
-      expect(releaseReq.queryParameters['f[genres]'], '4');
+      expect(releaseReq.queryParameters['f[genres]'], '9');
 
-      await ds.getCatalog(page: 1, genres: 'Исекай');
-      final isekaiReq = adapter.requests
+      await ds.getCatalog(page: 1, genres: 'Сёнен');
+      final shounenReq = adapter.requests
           .lastWhere((r) => r.path.contains('/catalog/releases'));
-      expect(isekaiReq.queryParameters.containsKey('f[genres]'), isFalse);
+      expect(shounenReq.queryParameters.containsKey('f[genres]'), isFalse);
     });
 
     test('CatalogCubit.matchesGenreOrAlias matches demographic tags and keywords', () {
@@ -128,6 +151,54 @@ void main() {
       expect(CatalogCubit.matchesGenreOrAlias(isekaiByDesc, 'Исекай'), isTrue);
       expect(CatalogCubit.matchesGenreOrAlias(seinenByTag, 'Сэйнэн'), isTrue);
       expect(CatalogCubit.matchesGenreOrAlias(seinenByTag, 'Психология'), isTrue);
+
+      const battleShounen = AnimeTitle(
+        id: 3,
+        code: 'battle-1',
+        russianTitle: 'Боец',
+        englishTitle: 'Fighter',
+        posterSmall: '',
+        posterMedium: '',
+        posterOriginal: '',
+        genres: ['Экшен', 'Боевые искусства'],
+        description: '',
+        status: 'ongoing',
+      );
+      expect(CatalogCubit.matchesGenreOrAlias(battleShounen, 'Сёнен'), isTrue);
+    });
+
+    test('CatalogCubit never emits CatalogError when local cache has matches for Сёнен',
+        () async {
+      await CatalogPersistentStore.instance.clear();
+      await CatalogPersistentStore.instance.mergeAndPersist([
+        const AnimeTitle(
+          id: 77,
+          code: 'naruto-like',
+          russianTitle: 'Хроники Синоби',
+          englishTitle: 'Shinobi',
+          posterSmall: '',
+          posterMedium: '',
+          posterOriginal: '',
+          genres: ['Экшен', 'Приключения'],
+          description: '',
+          status: 'released',
+        ),
+      ]);
+
+      final repo = _FailingCatalogRepository();
+      final cubit = CatalogCubit(
+        getUpdates: GetUpdates(repo),
+        searchTitles: SearchTitles(repo),
+      );
+      cubit.onCategoryChanged('Сёнен');
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(cubit.state, isA<CatalogLoaded>());
+      final loaded = cubit.state as CatalogLoaded;
+      expect(loaded.filteredTitles.any((t) => t.id == 77), isTrue);
+
+      await cubit.close();
+      await CatalogPersistentStore.instance.clear();
     });
   });
 }

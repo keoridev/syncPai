@@ -7,12 +7,14 @@ import '../../domain/entities/anime_title.dart';
 import '../../domain/services/recommendation_engine.dart';
 
 /// Горизонтальная полка рекомендаций («Для тебя» или «Похожее по вайбу»)
-/// с причиной подбора и действием «Не интересно».
+/// с фиксированной геометрией карточек, бейджем в верхнем левом углу
+/// и действием «Не интересно».
 class ForYouRecommendationsShelf extends StatelessWidget {
   final String title;
   final List<RecommendedAnimePick> picks;
   final ValueChanged<AnimeTitle> onTitleTap;
   final ValueChanged<AnimeTitle>? onDismissPick;
+  final bool showBottomDivider;
 
   const ForYouRecommendationsShelf({
     super.key,
@@ -20,6 +22,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
     required this.picks,
     required this.onTitleTap,
     this.onDismissPick,
+    this.showBottomDivider = true,
   });
 
   @override
@@ -32,7 +35,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Row(
             children: [
               Icon(Icons.auto_awesome_rounded, size: 17, color: accent),
@@ -61,7 +64,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 236,
+          height: 248,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -79,7 +82,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
 
               return SizedBox(
                 key: ValueKey('rec_card_${anime.id}'),
-                width: 138,
+                width: 144,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(14),
                   onTap: () => onTitleTap(anime),
@@ -87,7 +90,9 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
+                      SizedBox(
+                        width: 144,
+                        height: 204,
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
@@ -121,51 +126,56 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                                     ),
                             ),
                             Positioned(
-                              left: 6,
-                              right: 28,
-                              bottom: 6,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.78),
-                                  borderRadius: BorderRadius.circular(7),
-                                  border: Border.all(
-                                    color: accent.withValues(alpha: 0.45),
-                                    width: 0.8,
+                              left: 8,
+                              top: 8,
+                              right: 36,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  height: 22,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
                                   ),
-                                ),
-                                child: Text(
-                                  pick.reasonTag,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: accent,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w700,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD10C1018),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: accent.withValues(alpha: 0.45),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    pick.reasonTag,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: accent,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.0,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                             Positioned(
-                              top: 6,
-                              right: 6,
+                              top: 8,
+                              right: 8,
                               child: InkWell(
                                 key: ValueKey('rec_more_${anime.id}'),
                                 borderRadius: BorderRadius.circular(12),
                                 onTap: () => _showDismissMenu(context, anime),
                                 child: Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.65),
+                                  width: 22,
+                                  height: 22,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xD10C1018),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
                                     Icons.more_horiz_rounded,
-                                    size: 15,
+                                    size: 14,
                                     color: Colors.white,
                                   ),
                                 ),
@@ -175,15 +185,18 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        anime.displayTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          height: 1.2,
+                      SizedBox(
+                        height: 38,
+                        child: Text(
+                          anime.displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.22,
+                          ),
                         ),
                       ),
                     ],
@@ -193,6 +206,17 @@ class ForYouRecommendationsShelf extends StatelessWidget {
             },
           ),
         ),
+        if (showBottomDivider) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Divider(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
       ],
     );
   }

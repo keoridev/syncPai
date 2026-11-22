@@ -254,7 +254,7 @@ class RecommendationEngine extends ChangeNotifier {
         picks.add(
           RecommendedAnimePick(
             anime: anime,
-            reasonTag: 'Новая серия',
+            reasonTag: 'Новинка',
             hook: RecommendationHook.zeigarnik,
             score: 100.0,
             matchPercent: 98,
@@ -394,7 +394,7 @@ class RecommendationEngine extends ChangeNotifier {
         picks.add(
           RecommendedAnimePick(
             anime: c.anime,
-            reasonTag: 'Совпадение $pct%',
+            reasonTag: '$pct% совпадение',
             hook: RecommendationHook.coreTaste,
             score: c.score,
             matchPercent: pct,

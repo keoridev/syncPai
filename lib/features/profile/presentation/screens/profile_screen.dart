@@ -29,6 +29,7 @@ import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
+import '../../../wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../../domain/services/achievement_service.dart';
 import '../../domain/services/taste_compatibility_calculator.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
@@ -1001,6 +1002,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                   SliverToBoxAdapter(
                                     child: _buildBadgesShowcaseCard(context, currentAccentColor),
+                                  ),
+                                  const SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: EdgeInsets.fromLTRB(14, 8, 14, 4),
+                                      child: WrappedPromoBanner(),
+                                    ),
                                   ),
                                 ] else ...[
                                   SliverToBoxAdapter(

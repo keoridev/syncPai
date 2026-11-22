@@ -274,24 +274,25 @@ class CatalogCubit extends Cubit<CatalogState> {
             : _resetForegroundCancelToken('Load more catalog'))
         : _resetForegroundCancelToken('New catalog fetch');
     final requestId = ++_requestId;
-    try {
-      int page = isLoadMore ? (_pageMap[cleanCategory] ?? 1) + 1 : 1;
-      final genreParam = cleanCategory == 'Все' ? null : cleanCategory;
-      final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
-      final sort = current?.sortBy ?? CatalogSort.updates;
-      final statusFilter = current?.statusFilter;
-      final matchAll = current?.matchAllGenres ?? false;
-      final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
+    int page = isLoadMore ? (_pageMap[cleanCategory] ?? 1) + 1 : 1;
+    final genreParam = cleanCategory == 'Все' ? null : cleanCategory;
+    final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+    final sort = current?.sortBy ?? CatalogSort.updates;
+    final statusFilter = current?.statusFilter;
+    final matchAll = current?.matchAllGenres ?? false;
+    final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
 
-      final List<AnimeTitle> accumulated = isLoadMore
-          ? List<AnimeTitle>.from(_cache[cleanCategory] ?? [])
-          : (cleanCategory != 'Все'
-              ? CatalogPersistentStore.instance
-                  .queryLocal()
-                  .where((t) => matchesGenreOrAlias(t, cleanCategory))
-                  .toList()
-              : <AnimeTitle>[]);
-      final existingIds = accumulated.map((t) => t.id).toSet();
+    final List<AnimeTitle> accumulated = isLoadMore
+        ? List<AnimeTitle>.from(_cache[cleanCategory] ?? [])
+        : (cleanCategory != 'Все'
+            ? CatalogPersistentStore.instance
+                .queryLocal()
+                .where((t) => matchesGenreOrAlias(t, cleanCategory))
+                .toList()
+            : <AnimeTitle>[]);
+    final existingIds = accumulated.map((t) => t.id).toSet();
+
+    try {
 
       bool hasMore = true;
       List<AnimeTitle> filtered = [];
@@ -366,7 +367,37 @@ class CatalogCubit extends Cubit<CatalogState> {
       ));
     } catch (e) {
       if (requestId != _requestId || cancelToken.isCancelled) return;
-      if (isLoadMore && state is CatalogLoaded) {
+      final localFallback = cleanCategory != 'Все'
+          ? CatalogPersistentStore.instance
+              .queryLocal()
+              .where((t) => matchesGenreOrAlias(t, cleanCategory))
+              .toList()
+          : CatalogPersistentStore.instance.queryLocal();
+      final combinedFallback = accumulated.isNotEmpty ? accumulated : localFallback;
+      if (combinedFallback.isNotEmpty) {
+        final fallbackFiltered = _applyFiltersAndSorting(
+          combinedFallback,
+          genres: genres,
+          sortBy: sort,
+          matchAll: matchAll,
+          statusFilter: statusFilter,
+        );
+        emit(CatalogLoaded(
+          titles: combinedFallback,
+          filteredTitles: fallbackFiltered,
+          selectedGenres: genres,
+          sortBy: sort,
+          matchAllGenres: matchAll,
+          statusFilter: statusFilter,
+          searchQuery: '',
+          isSearching: false,
+          viewMode: _currentViewMode,
+          gridDensity: _currentGridDensity,
+          currentPage: page,
+          hasMore: false,
+          isLoadingMore: false,
+        ));
+      } else if (isLoadMore && state is CatalogLoaded) {
         emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
       } else {
         emit(CatalogError(e.toString()));
@@ -635,7 +666,14 @@ class CatalogCubit extends Cubit<CatalogState> {
       int page = isLoadMore ? (_pageMap[cacheKey] ?? 1) + 1 : 1;
       final List<AnimeTitle> accumulated = isLoadMore
           ? List<AnimeTitle>.from(_pageCache[cacheKey] ?? [])
-          : <AnimeTitle>[];
+          : (genres.isNotEmpty
+              ? CatalogPersistentStore.instance
+                  .queryLocal()
+                  .where((t) => matchAll
+                      ? genres.every((g) => matchesGenreOrAlias(t, g))
+                      : genres.any((g) => matchesGenreOrAlias(t, g)))
+                  .toList()
+              : CatalogPersistentStore.instance.queryLocal());
       final existingIds = accumulated.map((t) => t.id).toSet();
 
       bool hasMore = true;
@@ -705,7 +743,38 @@ class CatalogCubit extends Cubit<CatalogState> {
       ));
     } catch (e) {
       if (requestId != _requestId || cancelToken.isCancelled) return;
-      if (isLoadMore && state is CatalogLoaded) {
+      final localFallback = genres.isNotEmpty
+          ? CatalogPersistentStore.instance
+              .queryLocal()
+              .where((t) => matchAll
+                  ? genres.every((g) => matchesGenreOrAlias(t, g))
+                  : genres.any((g) => matchesGenreOrAlias(t, g)))
+              .toList()
+          : CatalogPersistentStore.instance.queryLocal();
+      if (localFallback.isNotEmpty) {
+        final fallbackFiltered = _applyFiltersAndSorting(
+          localFallback,
+          genres: genres,
+          sortBy: sortBy,
+          matchAll: matchAll,
+          statusFilter: statusFilter,
+        );
+        emit(CatalogLoaded(
+          titles: localFallback,
+          filteredTitles: fallbackFiltered,
+          selectedGenres: genres,
+          sortBy: sortBy,
+          matchAllGenres: matchAll,
+          statusFilter: statusFilter,
+          searchQuery: '',
+          isSearching: false,
+          viewMode: _currentViewMode,
+          gridDensity: _currentGridDensity,
+          currentPage: 1,
+          hasMore: false,
+          isLoadingMore: false,
+        ));
+      } else if (isLoadMore && state is CatalogLoaded) {
         emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
       } else {
         emit(CatalogError(e.toString()));
@@ -910,12 +979,29 @@ class CatalogCubit extends Cubit<CatalogState> {
       'сенен': ['сенен', 'shounen', 'shonen'],
       'сэйнэн': ['сэйнэн', 'сейнен', 'seinen'],
       'сейнен': ['сэйнэн', 'сейнен', 'seinen'],
+      'седзе': ['седзе', 'shoujo', 'романтика', 'драма'],
+      'дзесей': ['дзесей', 'josei', 'драма', 'повседневность'],
       'исекай': ['исекай', 'isekai', 'другой мир', 'перерожд'],
       'школа': ['школа', 'школьн', 'академ'],
       'мистика': ['мистика', 'сверхъестеств', 'призрак', 'демон'],
       'психология': ['психология', 'психологическое'],
       'психологическое': ['психология', 'психологическое'],
     };
+
+    if (g == 'сенен') {
+      final hasAction = titleGenres.any((tg) => tg.contains('экшен') || tg.contains('экшн'));
+      final hasBattleBuddy = titleGenres.any((tg) =>
+          tg.contains('приключения') ||
+          tg.contains('сверхъестеств') ||
+          tg.contains('боевые искусства') ||
+          tg.contains('фэнтези') ||
+          tg.contains('магия') ||
+          tg.contains('демон') ||
+          tg.contains('супер'));
+      if (hasAction && hasBattleBuddy) {
+        return true;
+      }
+    }
 
     final keywords = aliases[g] ?? [g];
     for (final kw in keywords) {

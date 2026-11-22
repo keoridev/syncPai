@@ -296,7 +296,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                       textAlign: TextAlign.start,
                       style: AppTypography.bodySmall.copyWith(
                         fontWeight: FontWeight.w700,
-                        fontSize: isCompact ? 11.5 : (isNarrow ? 11.5 : 12.5),
+                        fontSize: isCompact ? 12.0 : (isNarrow ? 11.5 : 12.5),
                         height: 1.22,
                         color: AppColors.textPrimary,
                         letterSpacing: -0.1,

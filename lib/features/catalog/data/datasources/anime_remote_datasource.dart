@@ -145,6 +145,15 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     'самураи': 35,
   };
 
+  static const Set<String> virtualDemographicTags = {
+    'сенен',
+    'сейнен',
+    'сейдзе',
+    'седзе',
+    'дзесей',
+    'исекай',
+  };
+
   static String normalizeGenreKey(String raw) =>
       raw.trim().toLowerCase().replaceAll('ё', 'е').replaceAll('э', 'е');
 
@@ -226,10 +235,13 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     }
   }
 
-  /// Разрешение ID жанра: при наличии живого справочника берём только валидные серверные ID,
-  /// чтобы не отправлять несуществующий ID (например, для «Исекай»).
+  /// Разрешение ID жанра: для виртуальных/демографических тегов («Сёнен», «Сэйнэн», «Сёдзё»,
+  /// «Дзёсэй», «Исекай») возвращаем null, чтобы не отправлять невалидный `f[genres]` (422) на AniLibria.
   int? resolveGenreId(String rawGenre) {
     final key = normalizeGenreKey(rawGenre);
+    if (virtualDemographicTags.contains(key)) {
+      return null;
+    }
     if (_hasLiveGenreReferences) {
       return _liveGenreNameToId[key] ?? int.tryParse(key);
     }

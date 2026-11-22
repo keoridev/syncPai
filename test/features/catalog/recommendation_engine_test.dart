@@ -135,15 +135,15 @@ void main() {
       }
 
       expect(
-        picks.any((p) => p.reasonTag == 'Новая серия • Из «Смотрю»'),
+        picks.any((p) => p.reasonTag == 'Новая серия'),
         isTrue,
       );
       expect(
-        picks.any((p) => p.reasonTag == 'После «Completed Hero»'),
+        picks.any((p) => p.reasonTag == 'Похожее'),
         isTrue,
       );
       expect(
-        picks.any((p) => p.reasonTag == 'Из вашего списка «В планах»'),
+        picks.any((p) => p.reasonTag == 'Из планов'),
         isTrue,
       );
       expect(
@@ -194,7 +194,7 @@ void main() {
               picks: [
                 RecommendedAnimePick(
                   anime: anime,
-                  reasonTag: 'Совпадение 94% • Фэнтези',
+                  reasonTag: 'Совпадение 94%',
                   hook: RecommendationHook.coreTaste,
                   score: 9.5,
                   matchPercent: 94,
@@ -208,7 +208,7 @@ void main() {
       );
 
       expect(find.text('Для тебя'), findsOneWidget);
-      expect(find.text('Совпадение 94% • Фэнтези'), findsOneWidget);
+      expect(find.text('Совпадение 94%'), findsOneWidget);
       expect(find.text('Frieren Beyond'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('rec_more_10')));

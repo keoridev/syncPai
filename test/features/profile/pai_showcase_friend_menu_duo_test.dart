@@ -46,11 +46,11 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 120));
 
-      expect(find.text('Ночной марафон'), findsOneWidget);
-      expect(find.text('НОЧНОЙ МАРАФОН • PAI-CHAN'), findsOneWidget);
-      expect(find.text('Зимняя Пай-тян'), findsOneWidget);
-      expect(find.text('Абсолют кино'), findsOneWidget);
-      expect(find.text('Кодинг-хакер'), findsOneWidget);
+      expect(find.byType(PaiChanArtworkBanner), findsNWidgets(4));
+      expect(find.byType(RepaintBoundary), findsWidgets);
+      // Проверяем, что громоздкая текстовая плашка внутри баннера удалена
+      expect(find.text('НОЧНОЙ МАРАФОН • PAI-CHAN'), findsNothing);
+      expect(find.text('BUG HUNTER • ROOT'), findsNothing);
     });
 
     test('UserProfile roundtrips Duo fields and CustomizationTierPolicy gates diptychs',

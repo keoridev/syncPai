@@ -254,7 +254,7 @@ class RecommendationEngine extends ChangeNotifier {
         picks.add(
           RecommendedAnimePick(
             anime: anime,
-            reasonTag: 'Новая серия • Из «Смотрю»',
+            reasonTag: 'Новая серия',
             hook: RecommendationHook.zeigarnik,
             score: 100.0,
             matchPercent: 98,
@@ -297,7 +297,7 @@ class RecommendationEngine extends ChangeNotifier {
           picks.add(
             RecommendedAnimePick(
               anime: c.anime,
-              reasonTag: 'После «${lastCompleted.titleRu}»',
+              reasonTag: 'Похожее',
               hook: RecommendationHook.postFinaleEcho,
               score: c.score,
               matchPercent: 94,
@@ -332,7 +332,7 @@ class RecommendationEngine extends ChangeNotifier {
         picks.add(
           RecommendedAnimePick(
             anime: c.anime,
-            reasonTag: 'Из вашего списка «В планах»',
+            reasonTag: 'Из планов',
             hook: RecommendationHook.plannedResurface,
             score: c.score,
             matchPercent: 90,
@@ -391,13 +391,10 @@ class RecommendationEngine extends ChangeNotifier {
     for (final c in coreCandidates.take(coreQuota)) {
       if (usedIds.add(c.anime.id)) {
         final pct = (72 + (c.score * 2.1)).round().clamp(68, 99);
-        final genrePart = (c.topGenre != null && c.topGenre!.isNotEmpty)
-            ? ' • ${c.topGenre}'
-            : '';
         picks.add(
           RecommendedAnimePick(
             anime: c.anime,
-            reasonTag: 'Совпадение $pct%$genrePart',
+            reasonTag: 'Совпадение $pct%',
             hook: RecommendationHook.coreTaste,
             score: c.score,
             matchPercent: pct,

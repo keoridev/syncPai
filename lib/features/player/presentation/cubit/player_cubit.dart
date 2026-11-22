@@ -72,6 +72,36 @@ class PlayerCubit extends Cubit<PlayerState> {
   DateTime? _lastPosSavedAt;
   String? _prefetchedEpisodeKey;
   final Set<String> _completed90Episodes = {};
+  int _streamRetryCount = 0;
+  Timer? _streamRetryTimer;
+
+  static bool isTransientStreamError(String error) {
+    final lower = error.toLowerCase();
+    return lower.contains('ffurl_write') ||
+        lower.contains('0xffffff99') ||
+        lower.contains('ffurl_read_returned') ||
+        lower.contains('failed reading') ||
+        lower.contains('0xdfb9b0bb') ||
+        lower.contains('tcp:') ||
+        lower.contains('end of file') ||
+        lower.contains('connection reset') ||
+        lower.contains('broken pipe') ||
+        lower.contains('software caused connection abort') ||
+        lower.contains('operation not permitted') ||
+        lower.contains('timed out') ||
+        lower.contains('timeout');
+  }
+
+  static String formatFriendlyStreamError(String error) {
+    final lower = error.toLowerCase();
+    if (isTransientStreamError(error) ||
+        lower.contains('http') ||
+        lower.contains('socket') ||
+        lower.contains('network')) {
+      return 'Потеряно соединение с видеосервером. Проверьте интернет и нажмите «Повторить».';
+    }
+    return 'Не удалось воспроизвести видеопоток. Попробуйте переключить качество или повторить.';
+  }
 
   void _savePlaybackPosition(Duration pos, Duration dur) {
     if (pos.inSeconds < 2) return;
@@ -249,6 +279,10 @@ class PlayerCubit extends Cubit<PlayerState> {
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
         if (isClosed || _isDisposing) return;
+        if (playing) {
+          _streamRetryCount = 0;
+          _streamRetryTimer?.cancel();
+        }
         emit(state.copyWith(isPlaying: playing));
         _updateDiscordPresence();
       }),
@@ -351,30 +385,28 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.error.listen((error) {
         if (isClosed || _isDisposing) return;
         if (error.isNotEmpty) {
-          // Игнорируем нефатальные ошибки разрыва соединения и таймаута TCP-сокетов при паузе и чтении сегментов
-          final lower = error.toLowerCase();
-          final isTransientSocketError = lower.contains('ffurl_read_returned') ||
-              lower.contains('failed reading') ||
-              lower.contains('0xdfb9b0bb') ||
-              lower.contains('end of file') ||
-              lower.contains('connection reset') ||
-              lower.contains('broken pipe') ||
-              lower.contains('software caused connection abort') ||
-              lower.contains('operation not permitted') ||
-              lower.contains('timed out') ||
-              lower.contains('timeout');
-
-          if (isTransientSocketError) {
-            return;
-          }
-
-          // Если видео уже воспроизводится, не блокируем плеер фоновыми ворнингами
-          if (state.isPlaying) {
+          if (isTransientStreamError(error)) {
+            if (_streamRetryCount < 3) {
+              _streamRetryCount++;
+              final attempt = _streamRetryCount;
+              final resumePos = state.position;
+              emit(state.copyWith(
+                isBuffering: true,
+                errorMessage: () => null,
+              ));
+              _streamRetryTimer?.cancel();
+              _streamRetryTimer = Timer(Duration(seconds: attempt), () {
+                if (isClosed || _isDisposing) return;
+                _loadCurrentEpisodeStream(initialPosition: resumePos);
+              });
+              return;
+            }
+          } else if (state.isPlaying) {
             return;
           }
 
           emit(state.copyWith(
-            errorMessage: () => error,
+            errorMessage: () => formatFriendlyStreamError(error),
             isPlaying: false,
             isBuffering: false,
           ));
@@ -2218,6 +2250,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _subscriptions.clear();
 
     // 2. Отменяем фоновые таймеры и сетевые подписки
+    _streamRetryTimer?.cancel();
     _controlsTimer?.cancel();
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();

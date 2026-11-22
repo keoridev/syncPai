@@ -274,7 +274,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (!isDesktop && !isList) ...[
+                            if (!isDesktop && !isList && screenWidth >= 600) ...[
                               InkWell(
                                 onTap: () {
                                   HapticFeedback.lightImpact();
@@ -761,18 +761,32 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   }
 
                   if (state is CatalogError) {
-                    return SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _buildErrorState(context, state.message),
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 40,
+                        ),
+                        child: Center(
+                          child: _buildErrorState(context, state.message),
+                        ),
+                      ),
                     );
                   }
 
                   if (state is CatalogLoaded) {
                     final titles = state.filteredTitles;
                     if (titles.isEmpty) {
-                      return SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: _buildEmptyState(context),
+                      return SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 40,
+                          ),
+                          child: Center(
+                            child: _buildEmptyState(context),
+                          ),
+                        ),
                       );
                     }
 
@@ -937,8 +951,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
         state: MascotState.serverError,
         message: 'Не удалось загрузить каталог',
         description: message,
-        action: Row(
-          mainAxisSize: MainAxisSize.min,
+        action: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -951,7 +967,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Повторить', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
-            const SizedBox(width: 8),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,

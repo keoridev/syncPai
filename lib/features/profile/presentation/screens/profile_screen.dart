@@ -36,6 +36,7 @@ import '../../domain/entities/steam_profile_customization.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
 import '../widgets/achievement_badge_artwork.dart';
+import '../widgets/friend_action_sheet.dart';
 import '../widgets/friends_management_sheet.dart';
 import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
@@ -2105,16 +2106,24 @@ class _ProfileScreenState extends State<ProfileScreen>
               final statusText = (f['custom_status'] ?? f['status'] ?? (f['isOnline'] == true ? 'В сети' : 'Не в сети')).toString();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? scheme.surfaceContainer.withValues(alpha: 0.45)
-                        : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => showFriendActionSheet(
+                    context,
+                    friend: f,
+                    accentColor: accent,
+                    onFriendsChanged: _loadRealFriends,
                   ),
-                  child: Row(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? scheme.surfaceContainer.withValues(alpha: 0.45)
+                          : scheme.surfaceContainerLowest.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
                     children: [
                       Stack(
                         children: [
@@ -2197,7 +2206,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ],
                   ),
                 ),
-              );
+              ),
+            );
             }),
         ],
       ),

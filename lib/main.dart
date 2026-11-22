@@ -12,6 +12,7 @@ import 'core/theme/cubit/theme_cubit.dart';
 import 'core/widgets/desktop_title_bar.dart';
 import 'features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
+import 'features/catalog/data/services/catalog_persistent_store.dart';
 import 'features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'features/settings/presentation/cubit/settings_cubit.dart';
 import 'features/downloads/presentation/cubit/download_cubit.dart';
@@ -24,7 +25,9 @@ import 'core/services/app_updater_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/device_performance_service.dart';
 import 'core/services/discord_rpc_service.dart';
+import 'core/services/mascot_companion_service.dart';
 import 'core/widgets/achievement_toast_overlay.dart';
+import 'core/widgets/mascot/pai_companion_toast.dart';
 import 'features/profile/domain/services/achievement_service.dart';
 import 'features/profile/presentation/widgets/friend_invite_dialog.dart';
 
@@ -46,6 +49,7 @@ void main() async {
   };
 
   MediaKit.ensureInitialized();
+  await CatalogPersistentStore.instance.init();
 
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     try {
@@ -167,27 +171,35 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
             theme: themeState.themeData,
             routerConfig: appRouter,
             builder: (context, child) {
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                child: Column(
-                  children: [
-                    const DesktopTitleBar(),
-                    Expanded(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          child ?? const SizedBox.shrink(),
-                          const GlobalMiniPlayerOverlay(),
-                          const SupportPromptOverlay(),
-                          const AchievementToastOverlay(),
-                          const Positioned.fill(
-                            child: WinterSnowfallOverlay(opacity: 0.35),
-                          ),
-                        ],
+              return Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (_) =>
+                    MascotCompanionService.instance.reportUserActivity(),
+                onPointerHover: (_) =>
+                    MascotCompanionService.instance.reportUserActivity(),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                  child: Column(
+                    children: [
+                      const DesktopTitleBar(),
+                      Expanded(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            child ?? const SizedBox.shrink(),
+                            const GlobalMiniPlayerOverlay(),
+                            const SupportPromptOverlay(),
+                            const AchievementToastOverlay(),
+                            const PaiCompanionToast(),
+                            const Positioned.fill(
+                              child: WinterSnowfallOverlay(opacity: 0.35),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },

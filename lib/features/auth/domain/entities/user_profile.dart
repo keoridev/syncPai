@@ -35,6 +35,9 @@ class UserProfile extends Equatable {
   final int? telegramId;
   final String? telegramUsername;
   final List<String> unlockedBadges;
+  final String? partnerId;
+  final String? duoThemeId;
+  final DateTime? duoSince;
   final DateTime createdAt;
 
   bool get isPlusOrHigher =>
@@ -42,6 +45,12 @@ class UserProfile extends Equatable {
 
   bool get isProOrHigher =>
       supporterTier.index >= SupporterTier.vip.index;
+
+  bool get hasPartner => partnerId != null && partnerId!.isNotEmpty;
+
+  int get daysInDuo => duoSince == null
+      ? 1
+      : (DateTime.now().difference(duoSince!).inDays + 1).clamp(1, 99999);
 
   const UserProfile({
     required this.id,
@@ -73,6 +82,9 @@ class UserProfile extends Equatable {
     this.telegramId,
     this.telegramUsername,
     this.unlockedBadges = const [],
+    this.partnerId,
+    this.duoThemeId,
+    this.duoSince,
     required this.createdAt,
   });
 
@@ -208,6 +220,10 @@ class UserProfile extends Equatable {
     int? telegramId,
     String? telegramUsername,
     List<String>? unlockedBadges,
+    String? partnerId,
+    bool clearPartner = false,
+    String? duoThemeId,
+    DateTime? duoSince,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -240,6 +256,9 @@ class UserProfile extends Equatable {
       telegramId: telegramId ?? this.telegramId,
       telegramUsername: telegramUsername ?? this.telegramUsername,
       unlockedBadges: unlockedBadges ?? this.unlockedBadges,
+      partnerId: clearPartner ? null : (partnerId ?? this.partnerId),
+      duoThemeId: clearPartner ? null : (duoThemeId ?? this.duoThemeId),
+      duoSince: clearPartner ? null : (duoSince ?? this.duoSince),
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -276,6 +295,9 @@ class UserProfile extends Equatable {
         'telegram_id': telegramId,
         'telegram_username': telegramUsername,
         'unlocked_badges': unlockedBadges,
+        'partner_id': partnerId,
+        'duo_theme_id': duoThemeId,
+        'duo_since': duoSince?.toIso8601String(),
         'customization': customization.toJson(),
         'created_at': createdAt.toIso8601String(),
       };
@@ -357,6 +379,9 @@ class UserProfile extends Equatable {
               ?.map((e) => '$e')
               .toList() ??
           const [],
+      partnerId: json['partner_id'] as String?,
+      duoThemeId: json['duo_theme_id'] as String?,
+      duoSince: DateTime.tryParse(json['duo_since'] as String? ?? ''),
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
@@ -392,6 +417,9 @@ class UserProfile extends Equatable {
         telegramId,
         telegramUsername,
         unlockedBadges,
+        partnerId,
+        duoThemeId,
+        duoSince,
         createdAt,
       ];
 }

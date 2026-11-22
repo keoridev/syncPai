@@ -32,8 +32,10 @@ import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../../../../core/widgets/anime_silhouette_avatars.dart';
 import '../../../../core/widgets/holographic_monogram_avatar.dart';
+import '../../services/friends_service.dart';
 import 'achievement_badge_artwork.dart';
 import 'badge_details_sheet.dart';
+import 'duo_pairing_widgets.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
 import 'pai_chan_artwork_banner.dart';
@@ -2335,6 +2337,8 @@ class _SteamProfileCustomizerSheetState
             ),
           ),
           const SizedBox(height: 16),
+          _buildDuoPairingSection(accent),
+          const SizedBox(height: 16),
 
           // 2. Селектор типа дополнительной карточки витрины (Steam Showcase Mode)
           Text('2. Дополнительный блок под витриной Steam:',
@@ -3331,6 +3335,292 @@ class _SteamProfileCustomizerSheetState
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildDuoPairingSection(Color accent) {
+    final isPlusOrHigher = widget.profile.isPlusOrHigher;
+    final hasPartner = widget.profile.hasPartner;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF4D94).withValues(alpha: 0.12),
+            accent.withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFF4D94).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.favorite_rounded,
+                size: 16,
+                color: Color(0xFFFF4D94),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Парный профиль (Duo)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (hasPartner)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () async {
+                    await FriendsService.unlinkDuoPartner();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Парный режим отключён')),
+                      );
+                    }
+                  },
+                  child: const Text('Отвязать', style: TextStyle(fontSize: 11)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Синхронизированные диптих-обои, парный статус и общая статистика просмотра с другом или второй половинкой.',
+            style: TextStyle(color: Colors.white70, fontSize: 11.5),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 82,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: DuoDiptychPreset.all.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (ctx, i) {
+                final preset = DuoDiptychPreset.all[i];
+                final locked = preset.isPremium && !isPlusOrHigher;
+                final isSelected = (_selectedArtworkUrl ?? '') == preset.id;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    if (locked) {
+                      TelegramLauncher.openBotStart(context, 'buy_duo');
+                      return;
+                    }
+                    setState(() {
+                      _selectedArtworkUrl = preset.id;
+                      _selectedArtworkTitle = '${preset.title} (${preset.sideLabel})';
+                    });
+                  },
+                  child: Container(
+                    width: 138,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFFFF4D94)
+                            : Colors.white.withValues(alpha: 0.14),
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        DuoDiptychBanner(
+                          themeId: preset.id,
+                          width: 138,
+                          height: 82,
+                        ),
+                        if (locked)
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.72),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_rounded, size: 9, color: Color(0xFFFF4D94)),
+                                  SizedBox(width: 2),
+                                  Text(
+                                    'Duo / Plus',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('duo_link_partner_btn'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: const Color(0xFFFF4D94).withValues(alpha: 0.55)),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 15, color: Color(0xFFFF4D94)),
+                label: Text(
+                  hasPartner ? 'Сменить партнёра' : 'Отправить парный запрос',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () => _openDuoPartnerPicker(context),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('duo_share_compatibility_btn'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF38BDF8),
+                  side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.45)),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.share_rounded, size: 15),
+                label: const Text(
+                  'Поделиться парной карточкой',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () {
+                  showDuoCompatibilityCardSheet(
+                    context,
+                    myName: widget.profile.username,
+                    myAvatarUrl: widget.profile.avatarUrl,
+                    partnerName: hasPartner ? 'Партнёр' : 'Друг SyncPai',
+                    partnerAvatarUrl: null,
+                    daysTogether: widget.profile.daysInDuo,
+                    matchPercent: 88,
+                    sharedEpisodes: 12,
+                    sharedHours: 4.8,
+                  );
+                },
+              ),
+              if (!isPlusOrHigher)
+                ElevatedButton.icon(
+                  key: const ValueKey('duo_pack_buy_btn'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF4D94),
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 15),
+                  label: const Text(
+                    'Парный пак (149 сом / 85 Stars)',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                  onPressed: () {
+                    TelegramLauncher.openBotStart(context, 'buy_duo');
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openDuoPartnerPicker(BuildContext ctx) async {
+    final friends = await FriendsService.getFriends();
+    if (!ctx.mounted) return;
+    await showModalBottomSheet<void>(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      builder: (sCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF12161F),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Выберите партнёра из друзей',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (friends.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Сначала добавьте друга в разделе «Друзья», чтобы отправить парный запрос.',
+                      style: TextStyle(color: Colors.white60, fontSize: 12.5),
+                    ),
+                  )
+                else
+                  for (final f in friends.take(8))
+                    ListTile(
+                      dense: true,
+                      leading: AppAvatar(
+                        avatarUrl: (f['avatar_url'] ?? f['avatar'])?.toString(),
+                        username: (f['username'] ?? f['name'] ?? 'Друг').toString(),
+                        size: 36,
+                      ),
+                      title: Text(
+                        (f['username'] ?? f['name'] ?? 'Друг').toString(),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
+                      trailing: const Icon(Icons.favorite_border_rounded, color: Color(0xFFFF4D94), size: 18),
+                      onTap: () async {
+                        final fid = (f['id'] ?? '').toString();
+                        final theme = (_selectedArtworkUrl ?? '').startsWith('duo_')
+                            ? _selectedArtworkUrl!
+                            : 'duo_sunset_left';
+                        await FriendsService.sendDuoRequest(fid, duoThemeId: theme);
+                        await FriendsService.linkDuoPartner(partnerId: fid, myThemeId: theme);
+                        if (sCtx.mounted) Navigator.of(sCtx).pop();
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text('Парный запрос отправлен: ${(f['username'] ?? 'Друг')}'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

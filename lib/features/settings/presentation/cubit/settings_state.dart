@@ -111,6 +111,7 @@ class SettingsState extends Equatable {
   final bool liquidGlassEffects;
   final String defaultQuality;
   final bool hasSeenPlayerOnboarding;
+  final bool paiCompanionReactionsEnabled;
 
   const SettingsState({
     this.gridColumnCount = 3,
@@ -155,6 +156,7 @@ class SettingsState extends Equatable {
     this.liquidGlassEffects = true,
     this.defaultQuality = '1080p FHD',
     this.hasSeenPlayerOnboarding = false,
+    this.paiCompanionReactionsEnabled = true,
   });
 
   bool isHudButtonVisible(String id) => playerButtonVisibility[id] ?? true;
@@ -170,6 +172,7 @@ class SettingsState extends Equatable {
     bool? liquidGlassEffects,
     String? defaultQuality,
     bool? hasSeenPlayerOnboarding,
+    bool? paiCompanionReactionsEnabled,
   }) {
     return SettingsState(
       gridColumnCount: gridColumnCount ?? this.gridColumnCount,
@@ -184,6 +187,8 @@ class SettingsState extends Equatable {
       defaultQuality: defaultQuality ?? this.defaultQuality,
       hasSeenPlayerOnboarding:
           hasSeenPlayerOnboarding ?? this.hasSeenPlayerOnboarding,
+      paiCompanionReactionsEnabled:
+          paiCompanionReactionsEnabled ?? this.paiCompanionReactionsEnabled,
     );
   }
 
@@ -199,5 +204,6 @@ class SettingsState extends Equatable {
         liquidGlassEffects,
         defaultQuality,
         hasSeenPlayerOnboarding,
+        paiCompanionReactionsEnabled,
       ];
 }

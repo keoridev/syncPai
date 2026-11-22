@@ -20,6 +20,11 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
+import 'package:sync_pai/features/catalog/domain/services/recommendation_engine.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
+import 'package:sync_pai/features/catalog/presentation/widgets/for_you_recommendations_shelf.dart';
+import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/anime_reviews_provider.dart';
 import 'package:sync_pai/features/anime_details/data/datasources/shikimori_remote_datasource.dart';
 import 'package:sync_pai/features/anime_details/domain/entities/anime_rating_aggregate.dart';
@@ -2685,6 +2690,39 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             onReleaseSelected: _onRelatedReleaseSelected,
                             onShowAllComments: () => setState(() => _currentTabIndex = 2),
                           ),
+                        const SizedBox(height: 18),
+                        ListenableBuilder(
+                          listenable: RecommendationEngine.instance,
+                          builder: (context, _) {
+                            final catalogTitles = getIt.isRegistered<CatalogCubit>()
+                                ? (getIt<CatalogCubit>().state is CatalogLoaded
+                                    ? (getIt<CatalogCubit>().state as CatalogLoaded).titles
+                                    : const <AnimeTitle>[])
+                                : const <AnimeTitle>[];
+                            if (catalogTitles.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            final entries = getIt.isRegistered<AnimeListCubit>()
+                                ? getIt<AnimeListCubit>().state.allEntries
+                                : const <UserAnimeEntry>[];
+                            final history = getIt.isRegistered<WatchHistoryCubit>()
+                                ? getIt<WatchHistoryCubit>().state.history
+                                : const <WatchHistoryItem>[];
+                            final similar = RecommendationEngine.instance.recommendSimilarTo(
+                              target: _currentTitle,
+                              catalogPool: catalogTitles,
+                              userEntries: entries,
+                              watchHistory: history,
+                            );
+                            return ForYouRecommendationsShelf(
+                              title: 'Похожее по вайбу',
+                              picks: similar,
+                              onTitleTap: (anime) {
+                                context.pushNamed('details', extra: anime);
+                              },
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),

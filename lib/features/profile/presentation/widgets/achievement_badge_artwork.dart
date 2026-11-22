@@ -715,3 +715,4 @@ class _GeometricEmblemPainter extends CustomPainter {
   bool shouldRepaint(covariant _GeometricEmblemPainter oldDelegate) =>
       oldDelegate.assetKey != assetKey;
 }
+

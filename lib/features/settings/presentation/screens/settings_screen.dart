@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/network/syncpai_poster_cache_manager.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/smart_mirror_interceptor.dart';
 import '../../../../core/services/app_updater_service.dart';
@@ -1073,6 +1074,47 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               _buildDivider(),
 
+              // 3.5. Реакции Пай-тян в интерфейсе
+              BlocBuilder<SettingsCubit, SettingsState>(
+                bloc: getIt.isRegistered<SettingsCubit>()
+                    ? getIt<SettingsCubit>()
+                    : null,
+                builder: (context, sState) {
+                  return SwitchListTile(
+                    key: const ValueKey('settings_pai_reactions_switch'),
+                    secondary: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF35D9D5).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Color(0xFF35D9D5),
+                        size: 20,
+                      ),
+                    ),
+                    title: const Text(
+                      'Реакции Пай-тян в интерфейсе',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Живые подсказки при достижениях, просмотре и в комнатах',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    value: sState.paiCompanionReactionsEnabled,
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      if (getIt.isRegistered<SettingsCubit>()) {
+                        getIt<SettingsCubit>()
+                            .setPaiCompanionReactionsEnabled(val);
+                      }
+                    },
+                  );
+                },
+              ),
+              _buildDivider(),
+
               // 4. Кнопки «Примерить зимнюю тему» и «Сбросить тему»
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1483,6 +1525,48 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
                     onTap: () => _pickAndImportAnixart(context, profile.id),
+                  ),
+                  _buildDivider(),
+                  StatefulBuilder(
+                    builder: (context, setPosterCacheState) {
+                      return FutureBuilder<double>(
+                        future: SyncPaiPosterCacheManager.getDiskUsageMb(),
+                        builder: (context, snap) {
+                          final mbStr = (snap.data ?? 0.0).toStringAsFixed(1);
+                          return ListTile(
+                            key: const ValueKey('settings_clear_poster_cache_tile'),
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: themePrimary.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.image_outlined, color: themePrimary, size: 20),
+                            ),
+                            title: Text(
+                              'Очистить кэш обложек ($mbStr МБ)',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            subtitle: const Text(
+                              'Лимит 30 дней / до 2500 постеров на диске',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            ),
+                            trailing: const Icon(Icons.cleaning_services_outlined, color: AppColors.textSecondary, size: 18),
+                            onTap: () async {
+                              await SyncPaiPosterCacheManager.clearPosterCache();
+                              setPosterCacheState(() {});
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Кэш обложек очищен'),
+                                  ),
+                                );
+                              }
+                            },
+                          );
+                        },
+                      );
+                    },
                   ),
                   _buildDivider(),
                   ListTile(

@@ -42,5 +42,42 @@ class TelegramLauncher {
       }
     }
   }
+
+  static Future<void> openBotStart(
+    BuildContext context,
+    String startParam, {
+    String? fallbackMessage,
+  }) async {
+    final encoded = Uri.encodeComponent(startParam);
+    final tgUri = Uri.parse('tg://resolve?domain=syncpai_bot&start=$encoded');
+    final webUri = Uri.parse('https://t.me/syncpai_bot?start=$encoded');
+
+    bool launched = false;
+    try {
+      if (await canLaunchUrl(tgUri)) {
+        launched = await launchUrl(tgUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+
+    if (!launched) {
+      try {
+        launched = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+
+    if (!launched) {
+      await Clipboard.setData(const ClipboardData(text: '@syncpai_bot'));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              fallbackMessage ?? 'Бот @syncpai_bot скопирован — откройте его в Telegram',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 }
 

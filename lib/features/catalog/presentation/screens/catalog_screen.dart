@@ -19,11 +19,15 @@ import 'package:sync_pai/core/widgets/view_mode_toggle.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
 import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
 import 'package:sync_pai/core/widgets/mascot/sync_pai_mascot.dart';
+import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
+import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
+import 'package:sync_pai/features/catalog/domain/services/recommendation_engine.dart';
 import 'package:sync_pai/features/catalog/services/catalog_prefetch_service.dart';
+import '../widgets/for_you_recommendations_shelf.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -569,6 +573,44 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 8),
                   child: const WrappedPromoBanner(),
+                ),
+              ),
+
+              // 2.5. Персональная лента рекомендаций «Для тебя»
+              SliverToBoxAdapter(
+                child: ListenableBuilder(
+                  listenable: RecommendationEngine.instance,
+                  builder: (context, _) {
+                    final catState = context.watch<CatalogCubit>().state;
+                    if (catState is! CatalogLoaded || catState.titles.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    final entries = getIt.isRegistered<AnimeListCubit>()
+                        ? context.watch<AnimeListCubit>().state.allEntries
+                        : const <UserAnimeEntry>[];
+                    final history = getIt.isRegistered<WatchHistoryCubit>()
+                        ? context.watch<WatchHistoryCubit>().state.history
+                        : const <WatchHistoryItem>[];
+                    if (entries.isEmpty && history.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    final picks = RecommendationEngine.instance.generateForYouFeed(
+                      catalogPool: catState.titles,
+                      userEntries: entries,
+                      watchHistory: history,
+                    );
+                    return ForYouRecommendationsShelf(
+                      title: 'Для тебя',
+                      picks: picks,
+                      onTitleTap: (anime) {
+                        if (widget.onTitleSelected != null) {
+                          widget.onTitleSelected!(anime);
+                        } else {
+                          context.pushNamed('details', extra: anime);
+                        }
+                      },
+                    );
+                  },
                 ),
               ),
 

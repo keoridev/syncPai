@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_settings.dart';
+import '../../data/services/catalog_persistent_store.dart';
 import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
 import '../../domain/usecases/search_catalog_usecase.dart';
@@ -21,15 +22,15 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   Timer? _searchDebounceTimer;
   Timer? _filterDebounceTimer;
-  CancelToken? _activeCancelToken;
+  CancelToken? _foregroundCancelToken;
   List<AnimeTitle> _cachedUpdates = [];
 
-  CancelToken _resetCancelToken(String reason) {
-    if (_activeCancelToken != null && !_activeCancelToken!.isCancelled) {
-      _activeCancelToken!.cancel(reason);
+  CancelToken _resetForegroundCancelToken(String reason) {
+    if (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled) {
+      _foregroundCancelToken!.cancel(reason);
     }
-    _activeCancelToken = CancelToken();
-    return _activeCancelToken!;
+    _foregroundCancelToken = CancelToken();
+    return _foregroundCancelToken!;
   }
 
   // In-Memory кэш: Ключ - название категории/жанра (например, 'Экшен', 'Все'), Значение - список тайтлов
@@ -186,7 +187,7 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     _pageMap[cleanCategory] = 1;
     _filterDebounceTimer?.cancel();
-    _resetCancelToken('Filter changed');
+    _resetForegroundCancelToken('Filter changed');
     _fetchCatalog(category: cleanCategory, isLoadMore: false);
   }
 
@@ -210,10 +211,11 @@ class CatalogCubit extends Cubit<CatalogState> {
           sort: sortBy.name,
           status: statusFilter,
           cancelToken: cancelToken,
-        );
+        ).timeout(const Duration(seconds: 10));
         if (entities.isNotEmpty) {
           fetchedTitles = entities.map((e) => e.toAnimeTitle()).toList();
         }
+        return fetchedTitles;
       } catch (e) {
         if (e is DioException && CancelToken.isCancel(e)) rethrow;
       }
@@ -240,15 +242,37 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
     } else {
       if (state is! CatalogLoaded) {
-        emit(const CatalogLoading());
+        final localSnapshot = CatalogPersistentStore.instance.queryLocal(
+          genre: cleanCategory == 'Все' ? null : cleanCategory,
+        );
+        if (localSnapshot.isNotEmpty) {
+          emit(CatalogLoaded(
+            titles: localSnapshot,
+            filteredTitles: localSnapshot,
+            selectedGenres:
+                cleanCategory == 'Все' ? const <String>{} : {cleanCategory},
+            sortBy: CatalogSort.updates,
+            matchAllGenres: false,
+            statusFilter: null,
+            searchQuery: '',
+            isSearching: false,
+            viewMode: _currentViewMode,
+            gridDensity: _currentGridDensity,
+            currentPage: 1,
+            hasMore: true,
+            isLoadingMore: true,
+          ));
+        } else {
+          emit(const CatalogLoading());
+        }
       }
     }
 
     final cancelToken = isLoadMore
-        ? (_activeCancelToken != null && !_activeCancelToken!.isCancelled
-            ? _activeCancelToken!
-            : _resetCancelToken('Load more catalog'))
-        : _resetCancelToken('New catalog fetch');
+        ? (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled
+            ? _foregroundCancelToken!
+            : _resetForegroundCancelToken('Load more catalog'))
+        : _resetForegroundCancelToken('New catalog fetch');
     final requestId = ++_requestId;
     try {
       int page = isLoadMore ? (_pageMap[cleanCategory] ?? 1) + 1 : 1;
@@ -261,7 +285,12 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       final List<AnimeTitle> accumulated = isLoadMore
           ? List<AnimeTitle>.from(_cache[cleanCategory] ?? [])
-          : <AnimeTitle>[];
+          : (cleanCategory != 'Все'
+              ? CatalogPersistentStore.instance
+                  .queryLocal()
+                  .where((t) => matchesGenreOrAlias(t, cleanCategory))
+                  .toList()
+              : <AnimeTitle>[]);
       final existingIds = accumulated.map((t) => t.id).toSet();
 
       bool hasMore = true;
@@ -317,6 +346,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       _cachedUpdates = filtered;
 
       CatalogPrefetchService.instance.putCache(cleanCategory, accumulated);
+      unawaited(CatalogPersistentStore.instance.mergeAndPersist(accumulated));
       CatalogPrefetchService.instance.startPrefetchQueue();
 
       emit(CatalogLoaded(
@@ -345,8 +375,8 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (isLoadMore) {
         _isLoadingMore = false;
       }
-      if (identical(_activeCancelToken, cancelToken)) {
-        _activeCancelToken = null;
+      if (identical(_foregroundCancelToken, cancelToken)) {
+        _foregroundCancelToken = null;
       }
     }
   }
@@ -442,6 +472,7 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   Future<void> performSearch(String query) async {
     final requestId = ++_requestId;
+    final cancelToken = _resetForegroundCancelToken('Search query');
     if (state is CatalogLoaded) {
       emit((state as CatalogLoaded).copyWith(isSearching: true, searchQuery: query));
     } else {
@@ -455,18 +486,24 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (useCase != null) {
         try {
-          final entities = await useCase(query, limit: 40);
+          final entities = await useCase(
+            query,
+            limit: 40,
+            cancelToken: cancelToken,
+          );
           if (entities.isNotEmpty) {
             results = entities.map((e) => e.toAnimeTitle()).toList();
           }
-        } catch (_) {}
+        } catch (e) {
+          if (e is DioException && CancelToken.isCancel(e)) return;
+        }
       }
 
-      if (results.isEmpty) {
+      if (results.isEmpty && !cancelToken.isCancelled) {
         results = await searchTitles(query, limit: 40);
       }
 
-      if (requestId != _requestId) return;
+      if (requestId != _requestId || cancelToken.isCancelled) return;
 
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final genres = current?.selectedGenres ?? const {};
@@ -565,10 +602,10 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
 
     final cancelToken = isLoadMore
-        ? (_activeCancelToken != null && !_activeCancelToken!.isCancelled
-            ? _activeCancelToken!
-            : _resetCancelToken('Load more filtered catalog'))
-        : _resetCancelToken('Filter changed');
+        ? (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled
+            ? _foregroundCancelToken!
+            : _resetForegroundCancelToken('Load more filtered catalog'))
+        : _resetForegroundCancelToken('Filter changed');
     final requestId = ++_requestId;
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
@@ -677,8 +714,8 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (isLoadMore) {
         _isLoadingMore = false;
       }
-      if (identical(_activeCancelToken, cancelToken)) {
-        _activeCancelToken = null;
+      if (identical(_foregroundCancelToken, cancelToken)) {
+        _foregroundCancelToken = null;
       }
     }
   }
@@ -860,6 +897,38 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
+  /// Гибридная проверка жанра/тега по жанрам, описанию и алиасам (Сёнен, Сэйнэн, Исекай, Школа, Мистика).
+  static bool matchesGenreOrAlias(AnimeTitle title, String rawGenre) {
+    String norm(String s) => s.toLowerCase().replaceAll('ё', 'е').replaceAll('-', ' ').trim();
+    final g = norm(rawGenre);
+    if (g.isEmpty || g == 'все') return true;
+
+    final titleGenres = title.genres.map(norm).toList();
+    final desc = norm(title.description);
+
+    const aliases = <String, List<String>>{
+      'сенен': ['сенен', 'shounen', 'shonen'],
+      'сэйнэн': ['сэйнэн', 'сейнен', 'seinen'],
+      'сейнен': ['сэйнэн', 'сейнен', 'seinen'],
+      'исекай': ['исекай', 'isekai', 'другой мир', 'перерожд'],
+      'школа': ['школа', 'школьн', 'академ'],
+      'мистика': ['мистика', 'сверхъестеств', 'призрак', 'демон'],
+      'психология': ['психология', 'психологическое'],
+      'психологическое': ['психология', 'психологическое'],
+    };
+
+    final keywords = aliases[g] ?? [g];
+    for (final kw in keywords) {
+      if (titleGenres.any((tg) => tg.contains(kw) || kw.contains(tg))) {
+        return true;
+      }
+      if (desc.isNotEmpty && desc.contains(kw)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Комплексный движок фильтрации и сортировки
   List<AnimeTitle> _applyFiltersAndSorting(
     List<AnimeTitle> list, {
@@ -872,19 +941,18 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     String norm(String s) => s.toLowerCase().replaceAll('ё', 'е').replaceAll('-', ' ').trim();
 
-    // 1. Фильтр по жанрам
+    // 1. Фильтр по жанрам (с учётом алиасов и ключевых слов для демографических тегов)
     if (genres.isNotEmpty) {
       final cleanGenres = genres.map(norm).toSet();
       result = result.where((title) {
-        final titleGenres = title.genres.map(norm).toList();
-        if (titleGenres.isEmpty) {
-          // Если у тайтла не распарсен локальный список жанров, доверяем серверному ответу AniLibria
+        if (title.genres.isEmpty && title.description.isEmpty) {
+          // Если у тайтла нет локальных жанров и описания, доверяем серверному ответу AniLibria
           return true;
         }
         if (matchAll) {
-          return cleanGenres.every((sg) => titleGenres.any((tg) => tg.contains(sg) || sg.contains(tg)));
+          return cleanGenres.every((sg) => matchesGenreOrAlias(title, sg));
         } else {
-          return cleanGenres.any((sg) => titleGenres.any((tg) => tg.contains(sg) || sg.contains(tg)));
+          return cleanGenres.any((sg) => matchesGenreOrAlias(title, sg));
         }
       }).toList();
     }
@@ -951,10 +1019,10 @@ class CatalogCubit extends Cubit<CatalogState> {
   Future<void> close() {
     _searchDebounceTimer?.cancel();
     _filterDebounceTimer?.cancel();
-    if (_activeCancelToken != null && !_activeCancelToken!.isCancelled) {
-      _activeCancelToken!.cancel('Cubit closed');
+    if (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled) {
+      _foregroundCancelToken!.cancel('Cubit closed');
     }
-    _activeCancelToken = null;
+    _foregroundCancelToken = null;
     return super.close();
   }
 }

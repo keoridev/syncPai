@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../../core/network/network_status_helper.dart';
+import '../../../../core/services/mascot_companion_service.dart';
 import '../../data/repositories/sync_room_repository_impl.dart';
 import '../../domain/entities/sync_event.dart';
 import '../../domain/entities/sync_protocol.dart';
@@ -140,6 +141,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
           ),
         ],
       ));
+      MascotCompanionService.instance.onWatchPartyJoined();
     } catch (e) {
       if (isClosed) return;
       if (e is PostgrestException) {
@@ -238,6 +240,7 @@ class SyncRoomCubit extends Cubit<SyncRoomState> {
           ),
         ],
       ));
+      MascotCompanionService.instance.onWatchPartyFriendJoined(peerName);
     } catch (e) {
       if (isClosed) return;
       _safeEmit(SyncRoomError(e.toString().replaceAll('Exception: ', '')));

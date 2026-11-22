@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/services/device_performance_service.dart';
+import '../../../../core/services/mascot_companion_service.dart';
 import 'settings_state.dart';
 
 class SettingsCubit extends Cubit<SettingsState> {
@@ -29,6 +30,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const String _keyDefaultQuality = 'settings_default_quality';
   static const String _keyHasSeenPlayerOnboarding =
       'settings_has_seen_player_onboarding';
+  static const String _keyPaiReactions = 'pai_companion_reactions_enabled';
 
   Future<SharedPreferences> _getPrefs() async {
     if (_injectedPrefs != null) return _injectedPrefs;
@@ -58,6 +60,8 @@ class SettingsCubit extends Cubit<SettingsState> {
       final quality = prefs.getString(_keyDefaultQuality) ?? '1080p FHD';
       final hasSeenOnboarding =
           prefs.getBool(_keyHasSeenPlayerOnboarding) ?? false;
+      final paiReactions = prefs.getBool(_keyPaiReactions) ?? true;
+      MascotCompanionService.instance.setEnabled(paiReactions);
 
       Map<String, bool> visibility = PlayerHudPresets.visibilityFor(preset);
       final rawVis = prefs.getString(_keyPlayerButtonVisibility);
@@ -89,7 +93,17 @@ class SettingsCubit extends Cubit<SettingsState> {
         liquidGlassEffects: liquid,
         defaultQuality: quality,
         hasSeenPlayerOnboarding: hasSeenOnboarding,
+        paiCompanionReactionsEnabled: paiReactions,
       ));
+    } catch (_) {}
+  }
+
+  Future<void> setPaiCompanionReactionsEnabled(bool enabled) async {
+    emit(state.copyWith(paiCompanionReactionsEnabled: enabled));
+    MascotCompanionService.instance.setEnabled(enabled);
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setBool(_keyPaiReactions, enabled);
     } catch (_) {}
   }
 

@@ -292,11 +292,36 @@ class CustomizationTierPolicy {
   static bool canUseHeroArtwork(SupporterTier userTier) =>
       hasTier(userTier, SupporterTier.vip);
 
-  /// Бесплатные пресеты витрины иллюстраций (Пай-тян)
+  /// Бесплатные пресеты витрины иллюстраций (Пай-тян + парные диптихи)
   static const Set<String> freeArtworkIds = {
     'pai_chill',
     'pai_winter',
+    'duo_sunset_left',
+    'duo_sunset_right',
+    'duo_neon_left',
+    'duo_neon_right',
   };
+
+  /// Парные диптихи уровня Plus / Duo Pack
+  static const Set<String> plusDuoArtworkIds = {
+    'duo_cosmic_left',
+    'duo_cosmic_right',
+    'duo_sakura_left',
+    'duo_sakura_right',
+  };
+
+  static bool isDuoShowcase(String? artworkUrl) =>
+      artworkUrl != null && artworkUrl.startsWith('duo_');
+
+  static String partnerSideForDuoTheme(String themeId) {
+    if (themeId.endsWith('_left')) {
+      return '${themeId.substring(0, themeId.length - 5)}_right';
+    }
+    if (themeId.endsWith('_right')) {
+      return '${themeId.substring(0, themeId.length - 6)}_left';
+    }
+    return themeId;
+  }
 
   static SupporterTier requiredTierForArtwork(String artworkUrl) {
     if (artworkUrl.isEmpty || freeArtworkIds.contains(artworkUrl)) {
@@ -305,7 +330,7 @@ class CustomizationTierPolicy {
     if (artworkUrl == 'pai_hacker_art' || isBugHunterCosmetic(artworkUrl)) {
       return SupporterTier.free;
     }
-    if (artworkUrl == 'pai_celebrate') {
+    if (artworkUrl == 'pai_celebrate' || plusDuoArtworkIds.contains(artworkUrl)) {
       return SupporterTier.supporter;
     }
     if (artworkUrl.startsWith('live:')) {
@@ -324,7 +349,7 @@ class CustomizationTierPolicy {
     if (artworkUrl == 'pai_hacker_art') {
       return unlockedBadges.contains('bug_hunter');
     }
-    if (artworkUrl == 'pai_celebrate') {
+    if (artworkUrl == 'pai_celebrate' || plusDuoArtworkIds.contains(artworkUrl)) {
       return hasTier(userTier, SupporterTier.supporter);
     }
     if (artworkUrl.startsWith('live:')) {

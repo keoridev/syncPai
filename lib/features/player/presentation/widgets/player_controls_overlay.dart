@@ -817,6 +817,10 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                 final isSelectedVisible = settingsState.isHudButtonVisible(selectedId);
                 final canMoveLeft = idx > 0;
                 final canMoveRight = idx >= 0 && idx < order.length - 1;
+                final selectedTitle = kDefaultPlayerHudButtons
+                    .where((b) => b.id == selectedId)
+                    .map((b) => b.label)
+                    .firstOrNull ?? selectedId;
                 return Container(
                   key: const ValueKey('hud_selected_quick_bar'),
                   margin: const EdgeInsets.only(top: 4),
@@ -828,10 +832,21 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [
-                      TextButton(
+                      Text(
+                        selectedTitle,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextButton.icon(
                         key: const ValueKey('hud_move_left_btn'),
                         style: TextButton.styleFrom(
                           foregroundColor: canMoveLeft ? Colors.white : Colors.white30,
@@ -849,13 +864,13 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                                 );
                               }
                             : null,
-                        child: const Text(
-                          '◀️ Влево',
+                        icon: const Icon(Icons.chevron_left_rounded, size: 16),
+                        label: const Text(
+                          'Влево',
                           style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      TextButton(
+                      TextButton.icon(
                         key: const ValueKey('hud_toggle_vis_btn'),
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF35D9D5),
@@ -872,12 +887,17 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                                 );
                               }
                             : null,
-                        child: Text(
-                          isSelectedVisible ? '👁 Скрыть' : '👁 Показать',
+                        icon: Icon(
+                          isSelectedVisible
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 15,
+                        ),
+                        label: Text(
+                          isSelectedVisible ? 'Скрыть' : 'Показать',
                           style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                         ),
                       ),
-                      const SizedBox(width: 4),
                       TextButton(
                         key: const ValueKey('hud_move_right_btn'),
                         style: TextButton.styleFrom(
@@ -896,9 +916,16 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                                 );
                               }
                             : null,
-                        child: const Text(
-                          'Вправо ▶️',
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Вправо',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                            ),
+                            SizedBox(width: 2),
+                            Icon(Icons.chevron_right_rounded, size: 16),
+                          ],
                         ),
                       ),
                     ],

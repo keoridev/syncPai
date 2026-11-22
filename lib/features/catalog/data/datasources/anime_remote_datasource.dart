@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../domain/entities/episode_item.dart';
 import '../models/anime_catalog_model.dart';
@@ -45,16 +47,40 @@ abstract class AnimeRemoteDataSource {
   Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title});
 }
 
+class _CachedCatalogPage {
+  final List<AnimeCatalogModel> items;
+  final DateTime cachedAt;
+
+  const _CachedCatalogPage({
+    required this.items,
+    required this.cachedAt,
+  });
+}
+
 class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   final Dio _dio;
 
+  static const Duration _catalogCacheTtl = Duration(minutes: 2);
+  final Map<String, Future<List<AnimeCatalogModel>>> _inFlightRequests = {};
+  final Map<String, _CachedCatalogPage> _catalogCache = {};
+
   static const String _catalogUrl = 'https://anilibria.top/api/v1/anime/catalog/releases';
+  static const String _genresReferenceUrl = 'https://anilibria.top/api/v1/anime/catalog/references/genres';
   static const String _searchUrl = 'https://anilibria.top/api/v1/app/search/releases';
   static const String _releaseUrl = 'https://anilibria.top/api/v1/anime/releases';
 
   static const String _fallbackCatalogUrl = 'https://api.anilibria.app/api/v1/anime/catalog/releases';
+  static const String _fallbackGenresReferenceUrl = 'https://api.anilibria.app/api/v1/anime/catalog/references/genres';
   static const String _fallbackSearchUrl = 'https://api.anilibria.app/api/v1/app/search/releases';
   static const String _fallbackReleaseUrl = 'https://api.anilibria.app/api/v1/anime/releases';
+
+  static const String _prefGenresKey = 'anilibria_genre_references_v1';
+  static const String _prefGenresTsKey = 'anilibria_genre_references_ts_v1';
+  static const Duration _genresCacheTtl = Duration(days: 7);
+
+  final Map<String, int> _liveGenreNameToId = {};
+  bool _hasLiveGenreReferences = false;
+  Future<void>? _genresSyncInFlight;
 
   AniLibertyAnimeRemoteDataSourceImpl({
     Dio? customDio,
@@ -119,6 +145,111 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     'самураи': 35,
   };
 
+  static String normalizeGenreKey(String raw) =>
+      raw.trim().toLowerCase().replaceAll('ё', 'е').replaceAll('э', 'е');
+
+  /// Синхронизация актуального справочника жанров AniLibria (кэш 7 дней в SharedPreferences).
+  Future<void> syncGenreReferences({bool force = false}) {
+    if (_genresSyncInFlight != null && !force) return _genresSyncInFlight!;
+    final future = _syncGenreReferencesInternal(force: force).whenComplete(() {
+      _genresSyncInFlight = null;
+    });
+    _genresSyncInFlight = future;
+    return future;
+  }
+
+  Future<void> _syncGenreReferencesInternal({bool force = false}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!force) {
+        final rawJson = prefs.getString(_prefGenresKey);
+        final ts = prefs.getInt(_prefGenresTsKey) ?? 0;
+        final isFresh = DateTime.now().millisecondsSinceEpoch - ts <
+            _genresCacheTtl.inMilliseconds;
+        if (rawJson != null && rawJson.isNotEmpty && isFresh) {
+          final decoded = jsonDecode(rawJson);
+          if (decoded is Map) {
+            _liveGenreNameToId.clear();
+            for (final entry in decoded.entries) {
+              final id = int.tryParse('${entry.value}');
+              if (id != null) {
+                _liveGenreNameToId[normalizeGenreKey('${entry.key}')] = id;
+              }
+            }
+            if (_liveGenreNameToId.isNotEmpty) {
+              _hasLiveGenreReferences = true;
+              return;
+            }
+          }
+        }
+      }
+
+      dynamic data;
+      try {
+        final res = await _dio
+            .get(_genresReferenceUrl)
+            .timeout(const Duration(seconds: 6));
+        data = res.data;
+      } catch (_) {
+        final fallback = await _dio
+            .get(_fallbackGenresReferenceUrl)
+            .timeout(const Duration(seconds: 6));
+        data = fallback.data;
+      }
+
+      final List<dynamic> list = data is List
+          ? data
+          : (data is Map && data['data'] is List ? data['data'] as List : const []);
+      final parsed = <String, int>{};
+      for (final item in list) {
+        if (item is Map) {
+          final id = (item['id'] as num?)?.toInt();
+          final name = item['name']?.toString() ?? '';
+          if (id != null && name.trim().isNotEmpty) {
+            parsed[normalizeGenreKey(name)] = id;
+          }
+        }
+      }
+      if (parsed.isNotEmpty) {
+        _liveGenreNameToId
+          ..clear()
+          ..addAll(parsed);
+        _hasLiveGenreReferences = true;
+        await prefs.setString(_prefGenresKey, jsonEncode(parsed));
+        await prefs.setInt(
+          _prefGenresTsKey,
+          DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+    } catch (_) {
+      // В оффлайне используем встроенный fallback-словарь _genreNameToId
+    }
+  }
+
+  /// Разрешение ID жанра: при наличии живого справочника берём только валидные серверные ID,
+  /// чтобы не отправлять несуществующий ID (например, для «Исекай»).
+  int? resolveGenreId(String rawGenre) {
+    final key = normalizeGenreKey(rawGenre);
+    if (_hasLiveGenreReferences) {
+      return _liveGenreNameToId[key] ?? int.tryParse(key);
+    }
+    return _genreNameToId[key] ?? int.tryParse(key);
+  }
+
+  @visibleForTesting
+  void setLiveGenreReferencesForTest(Map<String, int> map) {
+    _liveGenreNameToId
+      ..clear()
+      ..addEntries(map.entries.map((e) => MapEntry(normalizeGenreKey(e.key), e.value)));
+    _hasLiveGenreReferences = true;
+  }
+
+  @visibleForTesting
+  void clearCatalogRequestCache() {
+    _inFlightRequests.clear();
+    _catalogCache.clear();
+  }
+
   @override
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
@@ -129,18 +260,38 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     String? status,
     CancelToken? cancelToken,
   }) async {
+    if (cancelToken != null && cancelToken.isCancelled) {
+      throw DioException.requestCancelled(
+        requestOptions: RequestOptions(path: _catalogUrl),
+        reason: cancelToken.cancelError,
+      );
+    }
+
+    if (!_hasLiveGenreReferences &&
+        genres != null &&
+        genres.trim().isNotEmpty &&
+        genres.trim() != 'Все') {
+      await syncGenreReferences();
+    }
+
+    // Нормализуем стандартные запросы (limit <= 40) к единому пулу limit=40,
+    // чтобы дедуплицировать одновременные запросы виджетов и предзагрузки.
+    final int fetchLimit = limit <= 40 ? 40 : limit;
+    final String normalizedSort =
+        (sort == null || sort.trim().isEmpty) ? 'updates' : sort.trim();
+
     final queryParams = <String, dynamic>{
       'page': page,
-      'limit': limit,
+      'limit': fetchLimit,
     };
     if (genres != null && genres.trim().isNotEmpty && genres.trim() != 'Все') {
       final parts = genres
           .split(RegExp(r'[,;]+'))
-          .map((s) => s.trim().toLowerCase().replaceAll('ё', 'е'))
+          .map(normalizeGenreKey)
           .where((s) => s.isNotEmpty);
       final ids = <int>[];
       for (final p in parts) {
-        final id = _genreNameToId[p] ?? int.tryParse(p);
+        final id = resolveGenreId(p);
         if (id != null && !ids.contains(id)) {
           ids.add(id);
         }
@@ -154,22 +305,20 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       queryParams['f[years][from_year]'] = year.trim();
       queryParams['f[years][to_year]'] = year.trim();
     }
-    if (sort != null && sort.isNotEmpty) {
-      switch (sort) {
-        case 'yearDesc':
-          queryParams['f[sorting]'] = 'YEAR_DESC';
-          break;
-        case 'yearAsc':
-          queryParams['f[sorting]'] = 'YEAR_ASC';
-          break;
-        case 'rating':
-          queryParams['f[sorting]'] = 'RATING_DESC';
-          break;
-        case 'updates':
-        default:
-          queryParams['f[sorting]'] = 'FRESH_AT_DESC';
-          break;
-      }
+    switch (normalizedSort) {
+      case 'yearDesc':
+        queryParams['f[sorting]'] = 'YEAR_DESC';
+        break;
+      case 'yearAsc':
+        queryParams['f[sorting]'] = 'YEAR_ASC';
+        break;
+      case 'rating':
+        queryParams['f[sorting]'] = 'RATING_DESC';
+        break;
+      case 'updates':
+      default:
+        queryParams['f[sorting]'] = 'FRESH_AT_DESC';
+        break;
     }
     if (status != null && status.isNotEmpty) {
       if (status == 'ongoing') {
@@ -179,12 +328,59 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       }
     }
 
+    final dedupKey = 'p=$page|l=$fetchLimit'
+        '|g=${queryParams['f[genres]'] ?? ''}'
+        '|y=${queryParams['f[years][from_year]'] ?? ''}'
+        '|s=${queryParams['f[sorting]'] ?? ''}'
+        '|st=${queryParams['f[publish_statuses]'] ?? ''}';
+
+    // 1. Мгновенная отдача из единого 40-элементного кэша (в 0мс)
+    final cached = _catalogCache[dedupKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.cachedAt) < _catalogCacheTtl) {
+      final items = cached.items;
+      return limit < items.length ? items.take(limit).toList() : items;
+    }
+
+    // 2. Дедупликация активного in-flight запроса с изолированной обработкой CancelToken
+    final Future<List<AnimeCatalogModel>> inFlightFuture =
+        _inFlightRequests.putIfAbsent(dedupKey, () {
+      return _executeCatalogFetch(queryParams).then((items) {
+        if (items.isNotEmpty) {
+          _catalogCache[dedupKey] = _CachedCatalogPage(
+            items: items,
+            cachedAt: DateTime.now(),
+          );
+        }
+        return items;
+      }).whenComplete(() {
+        _inFlightRequests.remove(dedupKey);
+      });
+    });
+
+    final List<AnimeCatalogModel> result;
+    if (cancelToken != null) {
+      result = await Future.any([
+        inFlightFuture,
+        cancelToken.whenCancel.then((err) => throw err),
+      ]);
+    } else {
+      result = await inFlightFuture;
+    }
+
+    return limit < result.length ? result.take(limit).toList() : result;
+  }
+
+  Future<List<AnimeCatalogModel>> _executeCatalogFetch(
+    Map<String, dynamic> queryParams,
+  ) async {
     try {
-      final response = await _dio.get(
-        _catalogUrl,
-        queryParameters: queryParams,
-        cancelToken: cancelToken,
-      );
+      final response = await _dio
+          .get(
+            _catalogUrl,
+            queryParameters: queryParams,
+          )
+          .timeout(const Duration(seconds: 10));
       final parsed = await _parseReleasesAsync(response.data);
       if (parsed.isNotEmpty) {
         return parsed;
@@ -194,11 +390,12 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     } catch (_) {}
 
     try {
-      final fallbackRes = await _dio.get(
-        _fallbackCatalogUrl,
-        queryParameters: queryParams,
-        cancelToken: cancelToken,
-      );
+      final fallbackRes = await _dio
+          .get(
+            _fallbackCatalogUrl,
+            queryParameters: queryParams,
+          )
+          .timeout(const Duration(seconds: 10));
       return await _parseReleasesAsync(fallbackRes.data);
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;

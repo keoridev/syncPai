@@ -8,6 +8,7 @@ import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
 import '../../services/import_poster_enricher.dart';
 import '../../../profile/domain/services/achievement_service.dart';
+import '../../../../core/services/mascot_companion_service.dart';
 import 'anime_list_state.dart';
 
 class AnimeListCubit extends Cubit<AnimeListState> {
@@ -100,6 +101,10 @@ class AnimeListCubit extends Cubit<AnimeListState> {
       updatedList.insert(0, entry);
     }
     unawaited(AchievementService.instance.checkCollectorCount(updatedList.length));
+    if (status == AnimeListStatus.watching ||
+        status == AnimeListStatus.completed) {
+      MascotCompanionService.instance.onCollectionAdded(status.labelRu, titleRu);
+    }
     emit(state.copyWith(
       allEntries: updatedList,
       stats: UserAnimeStats.compute(updatedList),

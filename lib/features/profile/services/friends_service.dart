@@ -723,4 +723,230 @@ class FriendsService {
     final rand = Random.secure();
     return List.generate(8, (_) => chars[rand.nextInt(chars.length)]).join();
   }
+
+  /// Отправить жалобу на профиль пользователя в admin Telegram-бот (public.bug_reports, category = 'user_report')
+  static Future<bool> reportUser({
+    required String targetUserId,
+    required String targetUsername,
+    required String reason,
+    String? details,
+  }) async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null) return false;
+
+    final fullDescription = [
+      'Жалоба на пользователя: $targetUsername ($targetUserId)',
+      'Причина: $reason',
+      if (details != null && details.trim().isNotEmpty) 'Комментарий: ${details.trim()}',
+    ].join('\n');
+
+    try {
+      await client.from('bug_reports').insert({
+        'user_id': currentUid,
+        'username': targetUsername,
+        'category': 'user_report',
+        'description': fullDescription,
+        'status': 'pending',
+      });
+      return true;
+    } catch (_) {
+      try {
+        await client.from('bug_reports').insert({
+          'user_id': currentUid,
+          'username': targetUsername,
+          'description': '[USER_REPORT] $fullDescription',
+          'status': 'pending',
+        });
+        return true;
+      } catch (e) {
+        debugPrint('FriendsService reportUser error: $e');
+        return false;
+      }
+    }
+  }
+
+  /// Загрузить полный профиль друга (для FriendProfileSheet / Duo)
+  static Future<Map<String, dynamic>?> fetchFriendFullProfile(String friendId) async {
+    final client = _supabaseClient;
+    if (client == null || friendId.trim().isEmpty) return null;
+    try {
+      final row = await client
+          .from('profiles')
+          .select()
+          .eq('id', friendId)
+          .maybeSingle();
+      return row;
+    } catch (e) {
+      debugPrint('FriendsService fetchFriendFullProfile error: $e');
+      return null;
+    }
+  }
+
+  static const String _localDuoKey = 'syncpai_local_duo_state_v1';
+
+  /// Отправить парный запрос (Duo / Couple) другу
+  static Future<bool> sendDuoRequest(String friendId, {String duoThemeId = 'duo_sunset_left'}) async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null || currentUid == null) return false;
+    try {
+      await client.from('duo_requests').upsert({
+        'sender_id': currentUid,
+        'receiver_id': friendId,
+        'duo_theme_id': duoThemeId,
+        'status': 'pending',
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      return true;
+    } catch (_) {
+      // Если таблица duo_requests ещё не создана, сохраняем локальный запрос / применяем мягко
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          '${_localDuoKey}_pending',
+          jsonEncode({'partner_id': friendId, 'duo_theme_id': duoThemeId}),
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  /// Получить входящие парные запросы (Duo)
+  static Future<List<Map<String, dynamic>>> getIncomingDuoRequests() async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null || currentUid == null) return const [];
+    try {
+      final rows = await client
+          .from('duo_requests')
+          .select('id, sender_id, duo_theme_id, created_at')
+          .eq('receiver_id', currentUid)
+          .eq('status', 'pending');
+      if (rows.isEmpty) return const [];
+      final senderIds = rows.map((r) => '${r['sender_id']}').toList();
+      final profiles = await client
+          .from('profiles')
+          .select(_profileSelectColumns)
+          .inFilter('id', senderIds);
+      final byId = {for (final p in profiles) '${p['id']}': p};
+      return rows.map((r) {
+        final sid = '${r['sender_id']}';
+        return {
+          ...r,
+          'sender_profile': byId[sid] ?? <String, dynamic>{'id': sid, 'username': 'Пользователь'},
+        };
+      }).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Принять или активировать парный режим с другом
+  static Future<bool> linkDuoPartner({
+    required String partnerId,
+    required String myThemeId,
+  }) async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    if (client != null && currentUid != null) {
+      try {
+        await client.from('profiles').update({
+          'partner_id': partnerId,
+          'duo_theme_id': myThemeId,
+          'duo_since': nowIso,
+          'artwork_url': myThemeId,
+        }).eq('id', currentUid);
+
+        try {
+          await client
+              .from('duo_requests')
+              .update({'status': 'accepted'})
+              .or('and(sender_id.eq.$currentUid,receiver_id.eq.$partnerId),and(sender_id.eq.$partnerId,receiver_id.eq.$currentUid)');
+        } catch (_) {}
+      } catch (e) {
+        debugPrint('FriendsService linkDuoPartner error: $e');
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _localDuoKey,
+        jsonEncode({
+          'partner_id': partnerId,
+          'duo_theme_id': myThemeId,
+          'duo_since': nowIso,
+        }),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Разорвать парный режим
+  static Future<bool> unlinkDuoPartner() async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client != null && currentUid != null) {
+      try {
+        await client.from('profiles').update({
+          'partner_id': null,
+          'duo_theme_id': null,
+          'duo_since': null,
+        }).eq('id', currentUid);
+      } catch (e) {
+        debugPrint('FriendsService unlinkDuoPartner error: $e');
+      }
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_localDuoKey);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Статистика совместного просмотра с партнёром (серии и часы в Watch Together)
+  static Future<({int sharedEpisodes, double sharedHours})> fetchSharedWatchStats(
+    String partnerId,
+  ) async {
+    final client = _supabaseClient;
+    final currentUid = client?.auth.currentUser?.id;
+    if (client == null || currentUid == null) {
+      return (sharedEpisodes: 0, sharedHours: 0.0);
+    }
+    try {
+      final myHistory = await client
+          .from('watch_history')
+          .select('anime_id, episode_number')
+          .eq('user_id', currentUid)
+          .limit(200);
+      final partnerHistory = await client
+          .from('watch_history')
+          .select('anime_id, episode_number')
+          .eq('user_id', partnerId)
+          .limit(200);
+      final mySet = {
+        for (final row in myHistory) '${row['anime_id']}_${row['episode_number']}',
+      };
+      int shared = 0;
+      for (final row in partnerHistory) {
+        if (mySet.contains('${row['anime_id']}_${row['episode_number']}')) {
+          shared++;
+        }
+      }
+      return (
+        sharedEpisodes: shared,
+        sharedHours: double.parse((shared * 24 / 60).toStringAsFixed(1)),
+      );
+    } catch (_) {
+      return (sharedEpisodes: 0, sharedHours: 0.0);
+    }
+  }
 }

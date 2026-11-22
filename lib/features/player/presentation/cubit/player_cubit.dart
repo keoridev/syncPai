@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
+import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/services/presence_service.dart';
 import 'package:sync_pai/features/profile/domain/services/achievement_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
@@ -70,6 +71,7 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   DateTime? _lastPosSavedAt;
   String? _prefetchedEpisodeKey;
+  final Set<String> _completed90Episodes = {};
 
   void _savePlaybackPosition(Duration pos, Duration dur) {
     if (pos.inSeconds < 2) return;
@@ -289,6 +291,24 @@ class PlayerCubit extends Cubit<PlayerState> {
             );
           }
         }
+        if (state.duration.inSeconds > 10 &&
+            pos.inSeconds >= (state.duration.inSeconds * 0.9)) {
+          final epKey = '${state.title.id}_${state.episode.episode}';
+          if (_completed90Episodes.add(epKey)) {
+            final episodes = state.title.episodes;
+            final currentIdx = episodes
+                .indexWhere((e) => e.episode == state.episode.episode);
+            final hasNext = currentIdx >= 0 &&
+                currentIdx + 1 < episodes.length;
+            final nextEpNum =
+                hasNext ? episodes[currentIdx + 1].episode : null;
+            MascotCompanionService.instance.onEpisodeNearEnd(
+              animeTitle: state.title.displayTitle,
+              nextEpisode: nextEpNum,
+              onNextEpisode: hasNext ? () => playNextEpisode() : null,
+            );
+          }
+        }
         // Троттлинг: обновляем позицию в Bloc не чаще чем раз в 250 мс для защиты FPS
         if ((pos - _lastEmittedPos).abs() >= const Duration(milliseconds: 250)) {
           _lastEmittedPos = pos;
@@ -390,6 +410,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     if (state.isSyncRoom && !state.isHost) return;
 
     unawaited(AchievementService.instance.recordOpeningSkipped());
+    MascotCompanionService.instance.onOpeningSkipped();
     final opening = state.effectiveOpening;
     if (opening != null) {
       seek(opening.stopDuration);

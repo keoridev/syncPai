@@ -25,6 +25,7 @@ import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../../services/friends_service.dart';
 import 'badge_details_sheet.dart';
+import 'duo_pairing_widgets.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'pai_chan_artwork_banner.dart';
 
@@ -299,7 +300,14 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   tileColor: scheme.surfaceContainer,
                   onTap: () {
                     Navigator.of(ctx).pop();
-                    context.pushNamed('anime-details', pathParameters: {'id': favId});
+                    context.pushNamed(
+                      'details',
+                      queryParameters: {'id': favId},
+                      extra: {
+                        'id': favId,
+                        'russianTitle': _resolveArtworkTitle(),
+                      },
+                    );
                   },
                 ),
               ),
@@ -398,6 +406,11 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 // 1. STEAM HEADER: КВАДРАТНЫЙ АВАТАР 84×84 + ПРАВЫЙ БЛОК ИНФЫ
                 // ============================================================
                 _buildProfileHeaderRow(context, accent),
+
+                if (widget.profile.hasPartner) ...[
+                  const SizedBox(height: 12),
+                  _buildDuoPartnerBadge(context),
+                ],
 
                 const SizedBox(height: 18),
 
@@ -1376,12 +1389,57 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     );
   }
 
+  Widget _buildDuoPartnerBadge(BuildContext context) {
+    final partnerId = widget.profile.partnerId ?? '';
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        FriendsService.fetchFriendFullProfile(partnerId),
+        FriendsService.fetchSharedWatchStats(partnerId),
+      ]),
+      builder: (context, snapshot) {
+        final partnerData = snapshot.data?[0] as Map<String, dynamic>?;
+        final stats = snapshot.data != null
+            ? snapshot.data![1] as ({int sharedEpisodes, double sharedHours})
+            : (sharedEpisodes: 0, sharedHours: 0.0);
+        final partnerName =
+            (partnerData?['username'] ?? 'Партнёр').toString().trim();
+        final partnerAvatar = partnerData?['avatar_url']?.toString();
+        final matchPercent = computeDuoGenreMatchPercent(const [], const []);
+
+        return DuoBadgePill(
+          partnerName: partnerName.isEmpty ? 'Партнёр' : partnerName,
+          daysTogether: widget.profile.daysInDuo,
+          sharedEpisodes: stats.sharedEpisodes,
+          sharedHours: stats.sharedHours,
+          onTap: () => showDuoCompatibilityCardSheet(
+            context,
+            myName: widget.profile.username,
+            myAvatarUrl: widget.profile.avatarUrl,
+            partnerName: partnerName.isEmpty ? 'Партнёр' : partnerName,
+            partnerAvatarUrl: partnerAvatar,
+            daysTogether: widget.profile.daysInDuo,
+            matchPercent: matchPercent,
+            sharedEpisodes: stats.sharedEpisodes,
+            sharedHours: stats.sharedHours,
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildArtworkMediaLayer(
     String imageUrl, {
     required double width,
     required double height,
   }) {
     final trimmed = imageUrl.trim();
+    if (trimmed.startsWith('duo_')) {
+      return DuoDiptychBanner(
+        themeId: trimmed,
+        width: width,
+        height: height,
+      );
+    }
     if (trimmed.startsWith('pai_')) {
       return PaiChanArtworkBanner(
         artworkId: trimmed,

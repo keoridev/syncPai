@@ -1,3 +1,79 @@
+/// Контекстные выражения Пай-тян для живых реакций в интерфейсе.
+enum MascotExpression {
+  cozyNight(
+    id: 'cozy_night',
+    title: 'Ночной марафон',
+    assetPath: 'assets/mascot/general/mascot_sleeping.png',
+    defaultMessage: 'Ночной марафон? Устраивайтесь поудобнее.',
+  ),
+  cheering(
+    id: 'cheering',
+    title: 'Восторг',
+    assetPath: 'assets/mascot/general/mascot_happy.png',
+    defaultMessage: 'Отличный результат! Так держать.',
+  ),
+  speedster(
+    id: 'speedster',
+    title: 'Мастер перемотки',
+    assetPath: 'assets/mascot/loading_success/mascot_uploading.png',
+    defaultMessage: 'Молниеносный пропуск! Летим к сюжету.',
+  ),
+  popcornWatch(
+    id: 'popcorn_watch',
+    title: 'Киносеанс с друзьями',
+    assetPath: 'assets/mascot/watch_party/mascot_friends_joined.png',
+    defaultMessage: 'Отличная компания для просмотра!',
+  ),
+  curiousSearch(
+    id: 'curious_search',
+    title: 'Поиск годноты',
+    assetPath: 'assets/mascot/empty_states/mascot_empty_search.png',
+    defaultMessage: 'Ищем подходящие тайтлы...',
+  ),
+  proudCollector(
+    id: 'proud_collector',
+    title: 'Пополнение коллекции',
+    assetPath: 'assets/mascot/loading_success/mascot_favorite_added.png',
+    defaultMessage: 'Коллекция пополнена новым тайтлом!',
+  ),
+  afkDozing(
+    id: 'afk_dozing',
+    title: 'Режим ожидания',
+    assetPath: 'assets/mascot/general/mascot_sleeping.png',
+    defaultMessage: 'Режим ожидания... Коснитесь экрана, чтобы продолжить.',
+  );
+
+  final String id;
+  final String title;
+  final String assetPath;
+  final String defaultMessage;
+
+  const MascotExpression({
+    required this.id,
+    required this.title,
+    required this.assetPath,
+    required this.defaultMessage,
+  });
+
+  MascotState toMascotState() {
+    switch (this) {
+      case MascotExpression.cozyNight:
+      case MascotExpression.afkDozing:
+        return MascotState.sleeping;
+      case MascotExpression.cheering:
+        return MascotState.happy;
+      case MascotExpression.speedster:
+        return MascotState.uploading;
+      case MascotExpression.popcornWatch:
+        return MascotState.friendsJoined;
+      case MascotExpression.curiousSearch:
+        return MascotState.emptySearch;
+      case MascotExpression.proudCollector:
+        return MascotState.favoriteAdded;
+    }
+  }
+}
+
 /// Категории состояний маскота SyncPai
 enum MascotCategory {
   general('Основное', 'General'),

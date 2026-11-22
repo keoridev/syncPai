@@ -12,6 +12,7 @@ import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../domain/entities/friend_models.dart';
 import '../../services/friends_service.dart';
+import 'friend_action_sheet.dart';
 import 'friend_invite_dialog.dart';
 import 'qr_invite_sheet.dart';
 import 'qr_scanner_sheet.dart';
@@ -673,15 +674,27 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
             ? '$friendCode • $baseStatus'
             : baseStatus.toString();
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerLow,
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
-          ),
-          child: Row(
+            onTap: () => showFriendActionSheet(
+              context,
+              friend: friend,
+              accentColor: accent,
+              onFriendsChanged: () {
+                _loadFriends();
+                widget.onFriendsChanged?.call();
+              },
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
             children: [
               Stack(
                 children: [
@@ -808,6 +821,8 @@ class _FriendsManagementViewState extends State<FriendsManagementView> with Sing
               ),
             ],
           ),
+        ),
+        ),
         );
       },
     );

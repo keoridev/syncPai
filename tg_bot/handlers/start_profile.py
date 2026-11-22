@@ -72,13 +72,64 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     tg_id = message.from_user.id
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
-    # Проверка deep link: /start link_SP-XXXXXX или /start bug_SP-XXXXXX
+    # Проверка deep link: /start link_SP-XXXXXX, /start bug_SP-XXXXXX, /start gift_SP-XXXXXX, /start buy_duo
     args = (command.args or "").strip()
     if args.startswith("bug_"):
         from handlers.bug_report import start_bug_report_flow
 
         friend_token = args.removeprefix("bug_").strip()
         await start_bug_report_flow(message, state, friend_token=friend_token)
+        return
+
+    if args.startswith("gift_"):
+        gift_token = args.removeprefix("gift_").strip()
+        if gift_token:
+            found = supabase_client.get_profile_by_code_or_tag(gift_token)
+            if found:
+                uname = html.escape(str(found.get("username") or "Пользователь"))
+                raw_tag = str(found.get("tag") or "")
+                tag = html.escape(f"#{raw_tag.lstrip('#')}" if raw_tag else "")
+                fcode = html.escape(str(found.get("friend_code") or gift_token))
+                recipient_display = f"{uname}{tag}"
+                await state.update_data(
+                    gift_recipient_id=found["id"],
+                    gift_recipient_name=recipient_display,
+                    gift_recipient_code=fcode,
+                    gift_recipient_tg_id=found.get("telegram_id"),
+                )
+                await send_or_edit_card(
+                    message,
+                    card_key="support",
+                    caption=(
+                        f"<b>Подарок для {recipient_display}</b>\n"
+                        f"• Код дружбы: <code>{fcode}</code>\n\n"
+                        f"Выбери уровень подписки, который хочешь подарить:"
+                    ),
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="Plus — 55 ⭐ (99 сом)", callback_data="gift_tier_supporter")],
+                        [InlineKeyboardButton(text="Pro — 110 ⭐ (199 сом)", callback_data="gift_tier_vip")],
+                        [InlineKeyboardButton(text="Founders (Навсегда) — 270 ⭐ (490 сом)", callback_data="gift_tier_producer")],
+                        [InlineKeyboardButton(text="← Назад к тарифам", callback_data="show_tiers")],
+                    ]),
+                )
+                return
+
+    if args == "buy_duo":
+        await send_or_edit_card(
+            message,
+            card_key="support",
+            caption=(
+                "<b>Парный пак (Duo) — SyncPai</b>\n\n"
+                "• Анимированные парные диптихи и пульсирующие кольца\n"
+                "• Автоматическая синхронизация оформления для обоих партнёров\n"
+                "• Стоимость: <b>85 ⭐ (149 сом)</b>\n\n"
+                "Оформить можно через SyncPai Plus или напрямую через Telegram Stars:"
+            ),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть тарифы (от 55 ⭐)", callback_data="show_tiers")],
+                [InlineKeyboardButton(text="← Меню", callback_data="cancel_action")],
+            ]),
+        )
         return
 
     if args.startswith("link_"):

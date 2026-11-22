@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../../core/network/syncpai_poster_cache_manager.dart';
 import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -97,6 +98,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                                 tag: '${heroTagPrefix ?? 'anime-poster'}-${title.id}',
                                 child: CachedNetworkImage(
                                   imageUrl: wrapCorsSafeUrl(posterUrl),
+                                  cacheKey: posterUrl,
+                                  cacheManager: SyncPaiPosterCacheManager.instance,
                                   memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(360),
                                   maxWidthDiskCache: 480,
                                   fit: BoxFit.cover,
@@ -110,6 +113,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                                     if (fallbackPoster.isNotEmpty && fallbackPoster != posterUrl) {
                                       return CachedNetworkImage(
                                         imageUrl: wrapCorsSafeUrl(fallbackPoster),
+                                        cacheKey: fallbackPoster,
+                                        cacheManager: SyncPaiPosterCacheManager.instance,
                                         memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(360),
                                         maxWidthDiskCache: 480,
                                         fit: BoxFit.cover,

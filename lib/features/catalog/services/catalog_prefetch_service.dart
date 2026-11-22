@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
@@ -46,6 +47,7 @@ class CatalogPrefetchService {
 
   final Map<String, _PrefetchEntry> _memoryCache = {};
   Timer? _startupTimer;
+  CancelToken _prefetchCancelToken = CancelToken();
   bool _isQueueRunning = false;
   DateTime? _lastQueueRun;
 
@@ -166,21 +168,38 @@ class CatalogPrefetchService {
       return;
     }
 
+    if (_prefetchCancelToken.isCancelled) {
+      _prefetchCancelToken = CancelToken();
+    }
+
     _startupTimer?.cancel();
     _startupTimer = Timer(startupDelay, () {
       _runQueue();
     });
   }
 
+  /// Останавливает фоновую очередь предзагрузки только при полном завершении работы
+  void dispose() {
+    _startupTimer?.cancel();
+    _startupTimer = null;
+    if (!_prefetchCancelToken.isCancelled) {
+      _prefetchCancelToken.cancel('CatalogPrefetchService disposed');
+    }
+    _isQueueRunning = false;
+  }
+
   Future<void> _runQueue() async {
-    if (_isQueueRunning) return;
+    if (_isQueueRunning || _prefetchCancelToken.isCancelled) return;
     _isQueueRunning = true;
     _lastQueueRun = DateTime.now();
 
     try {
       for (final bucket in prefetchBuckets) {
+        if (_prefetchCancelToken.isCancelled) break;
+
         // 1. Пауза очереди, если сейчас активен просмотр видео в плеере
         while (WinterThemeService.instance.isVideoPlayerActive) {
+          if (_prefetchCancelToken.isCancelled) return;
           await Future.delayed(const Duration(seconds: 2));
         }
 
@@ -189,8 +208,10 @@ class CatalogPrefetchService {
           continue;
         }
 
-        // 3. Выполняем сетевой запрос для категории
+        // 3. Выполняем последовательный сетевой запрос со своим независимым _prefetchCancelToken
         final titles = await _fetchBucketData(bucket);
+        if (_prefetchCancelToken.isCancelled) break;
+
         if (titles.isNotEmpty) {
           await putCache(bucket, titles);
 
@@ -237,10 +258,11 @@ class CatalogPrefetchService {
 
         final entities = await useCase(
           page: 1,
-          limit: 20,
+          limit: 40,
           genres: genres,
           sort: sort,
           status: status,
+          cancelToken: _prefetchCancelToken,
         );
 
         if (entities.isNotEmpty) {
@@ -250,8 +272,10 @@ class CatalogPrefetchService {
 
       // Fallback на getUpdates
       if (getIt.isRegistered<GetUpdates>()) {
-        return await getIt<GetUpdates>()(page: 1, limit: 20);
+        return await getIt<GetUpdates>()(page: 1, limit: 40);
       }
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return [];
     } catch (_) {}
 
     return [];

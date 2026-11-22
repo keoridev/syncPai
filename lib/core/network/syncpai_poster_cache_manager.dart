@@ -63,3 +63,4 @@ class SyncPaiPosterCacheManager extends CacheManager with ImageCacheManager {
     }
   }
 }
+

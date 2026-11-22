@@ -3105,16 +3105,13 @@ class _GlassCard extends StatelessWidget {
         padding: margin,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-            child: onTap != null
-                ? InkWell(
-                    onTap: onTap,
-                    borderRadius: BorderRadius.circular(20),
-                    child: cardContent,
-                  )
-                : cardContent,
-          ),
+          child: onTap != null
+              ? InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(20),
+                  child: cardContent,
+                )
+              : cardContent,
         ),
       ),
     );

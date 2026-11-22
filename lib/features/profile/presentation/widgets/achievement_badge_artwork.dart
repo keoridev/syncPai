@@ -343,36 +343,38 @@ class _AchievementBadgeArtworkState extends State<AchievementBadgeArtwork>
       );
     }
 
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          medallionCore,
-          if (!widget.isUnlocked)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F1420),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.16),
-                    width: 1,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            medallionCore,
+            if (!widget.isUnlocked)
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F1420),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    size: 12,
+                    color: Color(0xFF94A3B8),
                   ),
                 ),
-                child: const Icon(
-                  Icons.lock_rounded,
-                  size: 12,
-                  color: Color(0xFF94A3B8),
-                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

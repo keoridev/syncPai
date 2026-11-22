@@ -98,6 +98,8 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                                       imageUrl: wrapCorsSafeUrl(poster),
                                       cacheKey: poster,
                                       cacheManager: SyncPaiPosterCacheManager.instance,
+                                      memCacheWidth: 360,
+                                      maxWidthDiskCache: 480,
                                       fit: BoxFit.cover,
                                       placeholder: (_, __) => Container(
                                         color: const Color(0xFF141824),

@@ -108,17 +108,18 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
     final mascotHeight = math.min(h * 0.94, 190.0);
     final mascotWidth = math.min(w * 0.48, mascotHeight);
 
-    return Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: spec.gradient,
+    return RepaintBoundary(
+      child: Container(
+        width: w,
+        height: h,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: spec.gradient,
+          ),
         ),
-      ),
-      child: AnimatedBuilder(
+        child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
           final t = _controller.value;
@@ -348,6 +349,7 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
             ],
           );
         },
+      ),
       ),
     );
   }

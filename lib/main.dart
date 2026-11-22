@@ -49,7 +49,8 @@ void main() async {
   };
 
   MediaKit.ensureInitialized();
-  await CatalogPersistentStore.instance.init();
+  PaintingBinding.instance.imageCache.maximumSize = 300;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 120 * 1024 * 1024;
 
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     try {
@@ -89,7 +90,11 @@ void main() async {
 
   await configureDependencies();
 
-  await DevicePerformanceService.instance.init();
+  await Future.wait([
+    DevicePerformanceService.instance.init(),
+    CatalogPersistentStore.instance.init(),
+    MascotCompanionService.instance.init(),
+  ]);
 
   runApp(const SyncPaiApp());
 }

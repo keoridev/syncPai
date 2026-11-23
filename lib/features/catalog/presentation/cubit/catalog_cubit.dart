@@ -43,7 +43,24 @@ class CatalogCubit extends Cubit<CatalogState> {
   bool _isLoadingMore = false;
 
   final Map<String, List<AnimeTitle>> _pageCache = {};
+  final Map<String, List<AnimeTitle>> _tabMemoryCache = {};
+  String _activeFilterKey = 'all|updates|||false';
   int _requestId = 0;
+
+  String _buildFilterKey({
+    required Set<String> genres,
+    required CatalogSort sortBy,
+    String? statusFilter,
+    String? typeFilter,
+    bool matchAll = false,
+  }) {
+    final sortedGenres = genres
+        .map((g) => g.trim().toLowerCase())
+        .where((g) => g.isNotEmpty && g != 'все')
+        .toList()
+      ..sort();
+    return '${sortedGenres.isEmpty ? "all" : sortedGenres.join(",")}|${sortBy.name}|${statusFilter ?? ""}|${typeFilter ?? ""}|$matchAll';
+  }
   double _scrollOffset = 0.0;
   late CatalogViewMode _currentViewMode;
   late CatalogGridDensity _currentGridDensity;
@@ -116,6 +133,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       _pageMap.clear();
       _hasMoreMap.clear();
       _pageCache.clear();
+      _tabMemoryCache.clear();
     } else if (state is CatalogLoaded && (state as CatalogLoaded).titles.length >= 12) {
       return;
     }
@@ -123,6 +141,10 @@ class CatalogCubit extends Cubit<CatalogState> {
     final currentCategory = (state is CatalogLoaded && (state as CatalogLoaded).selectedGenres.isNotEmpty)
         ? (state as CatalogLoaded).selectedGenres.first
         : 'Все';
+    _activeFilterKey = _buildFilterKey(
+      genres: currentCategory == 'Все' ? const {} : {currentCategory},
+      sortBy: CatalogSort.updates,
+    );
 
     await _fetchCatalog(category: currentCategory, isLoadMore: false);
   }
@@ -143,7 +165,17 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
     }
 
-    // 1. Проверяем наличие в двухуровневом сервисе предзагрузки (In-Memory + Disk)
+    final currentForKey = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+    final nextGenresForKey = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
+    _activeFilterKey = _buildFilterKey(
+      genres: nextGenresForKey,
+      sortBy: currentForKey?.sortBy ?? CatalogSort.updates,
+      statusFilter: currentForKey?.statusFilter,
+      typeFilter: currentForKey?.typeFilter,
+      matchAll: currentForKey?.matchAllGenres ?? false,
+    );
+
+    // 1. Проверяем наличие в двухуровневом кэше (In-Memory)
     final prefetched = CatalogPrefetchService.instance.getCached(cleanCategory);
     if (prefetched != null && prefetched.isNotEmpty && !_cache.containsKey(cleanCategory)) {
       _cache[cleanCategory] = prefetched;
@@ -190,16 +222,25 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    // 0ms: мгновенно фильтруем уже загруженный кэш в памяти, пока API обновляется
+    // 0ms: мгновенно фильтруем локальный индекс (не смешивая с текущей лентой другого фильтра), пока API обновляется
     final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
+      final localSource = cleanCategory == 'Все'
+          ? current.titles
+          : CatalogPersistentStore.instance.queryLocal(
+              genre: cleanCategory,
+              status: current.statusFilter,
+              type: current.typeFilter,
+              sort: current.sortBy.name,
+            );
       final instantFiltered = _applyFiltersAndSorting(
-        current.titles,
+        localSource,
         genres: genres,
         sortBy: current.sortBy,
         matchAll: current.matchAllGenres,
         statusFilter: current.statusFilter,
+        typeFilter: current.typeFilter,
       );
       emit(current.copyWith(
         selectedGenres: genres,
@@ -301,6 +342,7 @@ class CatalogCubit extends Cubit<CatalogState> {
             : _resetForegroundCancelToken('Load more catalog'))
         : _resetForegroundCancelToken('New catalog fetch');
     final requestId = ++_requestId;
+    final requestFilterKey = _activeFilterKey;
     int page = isLoadMore ? (_pageMap[cleanCategory] ?? 1) + 1 : 1;
     final genreParam = cleanCategory == 'Все' ? null : cleanCategory;
     final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
@@ -344,7 +386,12 @@ class CatalogCubit extends Cubit<CatalogState> {
           cancelToken: cancelToken,
         );
 
-        if (requestId != _requestId || cancelToken.isCancelled) return;
+        if (requestId != _requestId ||
+            requestFilterKey != _activeFilterKey ||
+            cancelToken.isCancelled ||
+            isClosed) {
+          return;
+        }
 
         pagesFetched++;
         hasMore = pageItems.isNotEmpty && pageItems.length >= 10;
@@ -369,7 +416,12 @@ class CatalogCubit extends Cubit<CatalogState> {
         page++;
       }
 
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          requestFilterKey != _activeFilterKey ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        return;
+      }
 
       if (accumulated.isEmpty && state is CatalogLoaded && (state as CatalogLoaded).titles.isNotEmpty) {
         emit((state as CatalogLoaded).copyWith(hasMore: false, isLoadingMore: false));
@@ -401,13 +453,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       );
 
       _cache[cleanCategory] = mergedTitles;
+      _tabMemoryCache[requestFilterKey] = mergedFiltered;
       _pageMap[cleanCategory] = page;
       _hasMoreMap[cleanCategory] = hasMore;
       _cachedUpdates = mergedFiltered;
 
       CatalogPrefetchService.instance.putCache(cleanCategory, mergedTitles);
       unawaited(CatalogPersistentStore.instance.mergeAndPersist(mergedTitles));
-      CatalogPrefetchService.instance.startPrefetchQueue();
 
       emit(CatalogLoaded(
         titles: mergedTitles,
@@ -675,6 +727,15 @@ class CatalogCubit extends Cubit<CatalogState> {
     bool matchAll = false,
     bool isLoadMore = false,
   }) async {
+    final requestFilterKey = _buildFilterKey(
+      genres: genres,
+      sortBy: sortBy,
+      statusFilter: statusFilter,
+      typeFilter: typeFilter,
+      matchAll: matchAll,
+    );
+    _activeFilterKey = requestFilterKey;
+
     // 0. Если это сброс на дефолт (без жанров, свежие обновления, статус Все, тип Все) и есть кэш — отдаем сразу
     if (!isLoadMore &&
         genres.isEmpty &&
@@ -712,13 +773,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       type: typeFilter,
     );
 
-    // 1. Быстрое чтение из In-Memory кэша (только при первичном переключении)
-    if (!isLoadMore && _pageCache.containsKey(cacheKey) && _pageCache[cacheKey]!.isNotEmpty) {
-      final cached = _pageCache[cacheKey]!;
-      _cachedUpdates = cached;
+    // 1. Быстрое чтение из изолированного по вкладкам In-Memory кэша (только при первичном переключении)
+    final tabCached = _tabMemoryCache[requestFilterKey] ?? _pageCache[cacheKey];
+    if (!isLoadMore && tabCached != null && tabCached.isNotEmpty) {
+      _cachedUpdates = tabCached;
       emit(CatalogLoaded(
-        titles: cached,
-        filteredTitles: cached,
+        titles: tabCached,
+        filteredTitles: tabCached,
         selectedGenres: genres,
         sortBy: sortBy,
         matchAllGenres: matchAll,
@@ -729,7 +790,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
         currentPage: _pageMap[cacheKey] ?? 1,
-        hasMore: _hasMoreMap[cacheKey] ?? (cached.length >= 12),
+        hasMore: _hasMoreMap[cacheKey] ?? (tabCached.length >= 12),
         isLoadingMore: false,
       ));
       return;
@@ -773,11 +834,10 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
       final localInstant = !isLoadMore ? queryLocalMatches() : const <AnimeTitle>[];
-      final sourceForInstant =
-          localInstant.isNotEmpty ? localInstant : current.titles;
+      // Никогда не подмешиваем элементы из предыдущей вкладки («Все») при переключении фильтра
       final instantFiltered = !isLoadMore
           ? _applyFiltersAndSorting(
-              sourceForInstant,
+              localInstant,
               genres: genres,
               sortBy: sortBy,
               matchAll: matchAll,
@@ -795,6 +855,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         clearTypeFilter: typeFilter == null,
         searchQuery: '',
         isSearching: false,
+        titles: isLoadMore ? current.titles : instantFiltered,
         filteredTitles: instantFiltered,
         isLoadingMore: true,
       ));
@@ -806,10 +867,11 @@ class CatalogCubit extends Cubit<CatalogState> {
       int page = isLoadMore ? (_pageMap[cacheKey] ?? 1) + 1 : 1;
       final List<AnimeTitle> accumulated = isLoadMore
           ? List<AnimeTitle>.from(
-              _pageCache[cacheKey] ??
+              _tabMemoryCache[requestFilterKey] ??
+                  _pageCache[cacheKey] ??
                   (state is CatalogLoaded ? (state as CatalogLoaded).titles : const []),
             )
-          : queryLocalMatches();
+          : <AnimeTitle>[];
       final existingIds = accumulated.map((t) => t.id).toSet();
 
       bool hasMore = true;
@@ -829,7 +891,12 @@ class CatalogCubit extends Cubit<CatalogState> {
           cancelToken: cancelToken,
         );
 
-        if (requestId != _requestId || cancelToken.isCancelled) return;
+        if (requestId != _requestId ||
+            requestFilterKey != _activeFilterKey ||
+            cancelToken.isCancelled ||
+            isClosed) {
+          return;
+        }
 
         pagesFetched++;
         hasMore = pageItems.isNotEmpty && pageItems.length >= 10;
@@ -888,6 +955,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       _hasMoreMap[cacheKey] = hasMore;
       if (stableFiltered.isNotEmpty) {
         _pageCache[cacheKey] = stableFiltered;
+        _tabMemoryCache[requestFilterKey] = stableFiltered;
         CatalogPrefetchService.instance.putCache(cacheKey, stableFiltered);
         unawaited(CatalogPersistentStore.instance.mergeAndPersist(stableTitles));
       }
@@ -1083,31 +1151,6 @@ class CatalogCubit extends Cubit<CatalogState> {
         filteredTitles: filtered,
       ));
     } else {
-      // Моментальная выдача из кэша для «Популярное» (рейтинг)
-      if (sort == CatalogSort.rating &&
-          current.selectedGenres.isEmpty &&
-          current.statusFilter == null &&
-          current.typeFilter == null) {
-        final cached = CatalogPrefetchService.instance.getCached('popular');
-        if (cached != null && cached.isNotEmpty) {
-          emit(current.copyWith(
-            sortBy: sort,
-            filteredTitles: cached,
-            titles: cached,
-          ));
-          if (CatalogPrefetchService.instance.isStale('popular')) {
-            _fetchFilteredCatalog(
-              genres: current.selectedGenres,
-              sortBy: sort,
-              statusFilter: current.statusFilter,
-              typeFilter: current.typeFilter,
-              matchAll: current.matchAllGenres,
-            );
-          }
-          return;
-        }
-      }
-
       _fetchFilteredCatalog(
         genres: current.selectedGenres,
         sortBy: sort,
@@ -1158,31 +1201,6 @@ class CatalogCubit extends Cubit<CatalogState> {
         filteredTitles: filtered,
       ));
     } else {
-      // Моментальная выдача из кэша для онгоингов
-      if (status == 'ongoing' &&
-          current.selectedGenres.isEmpty &&
-          current.sortBy == CatalogSort.updates &&
-          current.typeFilter == null) {
-        final cached = CatalogPrefetchService.instance.getCached('ongoing');
-        if (cached != null && cached.isNotEmpty) {
-          emit(current.copyWith(
-            statusFilter: status,
-            filteredTitles: cached,
-            titles: cached,
-          ));
-          if (CatalogPrefetchService.instance.isStale('ongoing')) {
-            _fetchFilteredCatalog(
-              genres: current.selectedGenres,
-              sortBy: current.sortBy,
-              statusFilter: status,
-              typeFilter: current.typeFilter,
-              matchAll: current.matchAllGenres,
-            );
-          }
-          return;
-        }
-      }
-
       _fetchFilteredCatalog(
         genres: current.selectedGenres,
         sortBy: current.sortBy,
@@ -1271,38 +1289,54 @@ class CatalogCubit extends Cubit<CatalogState> {
       }).toList();
     }
 
-    // 2. Фильтр по формату (Фильмы)
+    // 2. Строгий фильтр по формату (Фильмы)
     if (typeFilter != null && typeFilter.isNotEmpty) {
-      final wanted = typeFilter.toLowerCase();
+      final wanted = typeFilter.trim().toLowerCase();
       result = result.where((t) {
-        final kind = (t.kind ?? '').toLowerCase();
-        if (kind.isEmpty) return true;
+        final kind = (t.kind ?? '').trim().toLowerCase();
+        if (kind.isEmpty) return false;
         if (wanted == 'movie') {
-          return kind.contains('movie') ||
-              kind.contains('фильм') ||
-              kind.contains('full');
+          return kind == 'movie' ||
+              kind.contains('movie') ||
+              kind.contains('фильм');
         }
-        return kind.contains(wanted);
+        return kind == wanted || kind.contains(wanted);
       }).toList();
     }
 
-    // 3. Фильтр по статусу
+    // 3. Строгий фильтр по статусу
     if (statusFilter != null && statusFilter.isNotEmpty) {
+      bool isOngoingTitle(AnimeTitle t) {
+        final s = t.status.toLowerCase();
+        return s.contains('онгоинг') ||
+            s.contains('выходит') ||
+            s.contains('ongoing') ||
+            s.contains('в работе') ||
+            s.contains('процесс');
+      }
+
+      bool isAnnouncedTitle(AnimeTitle t) {
+        final s = t.status.toLowerCase();
+        return s.contains('анонс') ||
+            s.contains('anons') ||
+            s.contains('скоро') ||
+            s.contains('in_production');
+      }
+
       if (statusFilter == 'ongoing') {
-        result = result.where((t) {
-          final s = t.status.toLowerCase();
-          return s.contains('онгоинг') || s.contains('выходит') || s.contains('ongoing') || s.contains('процесс');
-        }).toList();
+        result = result
+            .where((t) => isOngoingTitle(t) && !isAnnouncedTitle(t))
+            .toList();
       } else if (statusFilter == 'released') {
-        result = result.where((t) {
-          final s = t.status.toLowerCase();
-          return s.contains('завершен') || s.contains('вышел') || s.contains('released') || s.contains('completed');
-        }).toList();
+        result = result
+            .where((t) => !isOngoingTitle(t) && !isAnnouncedTitle(t))
+            .toList();
       } else if (statusFilter == 'anons' || statusFilter == 'anonses') {
-        result = result.where((t) {
-          final s = t.status.toLowerCase();
-          return s.contains('анонс') || s.contains('anons') || s.contains('скоро') || (t.episodes.isEmpty && (t.episodesTotal ?? 0) == 0);
-        }).toList();
+        result = result
+            .where((t) =>
+                isAnnouncedTitle(t) ||
+                (t.episodes.isEmpty && (t.episodesTotal ?? 0) == 0))
+            .toList();
       }
     }
 

@@ -9,6 +9,18 @@ import '../../domain/entities/anime_title.dart';
 String _encodeCatalogJson(List<Map<String, dynamic>> payload) =>
     jsonEncode(payload);
 
+List<AnimeTitle> _decodeCatalogJson(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! List) return const [];
+  final parsed = <AnimeTitle>[];
+  for (final item in decoded) {
+    if (item is Map) {
+      parsed.add(AnimeTitle.fromJson(Map<String, dynamic>.from(item)));
+    }
+  }
+  return parsed;
+}
+
 /// Персистентное локальное хранилище метаданных каталога (Stale-While-Revalidate).
 /// Отдаёт кэшированные релизы за 0 мс при запуске и переключении категорий,
 /// а при поступлении свежей дельты (новые серии, обновлённые постеры) бесшовно сливает и сохраняет индекс.
@@ -52,17 +64,12 @@ class CatalogPersistentStore {
       if (file == null || !await file.exists()) return;
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return;
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        for (final item in decoded) {
-          if (item is Map) {
-            final title = AnimeTitle.fromJson(Map<String, dynamic>.from(item));
-            if (!_byId.containsKey(title.id)) {
-              _orderedIds.add(title.id);
-            }
-            _byId[title.id] = title;
-          }
+      final parsed = await compute(_decodeCatalogJson, raw);
+      for (final title in parsed) {
+        if (!_byId.containsKey(title.id)) {
+          _orderedIds.add(title.id);
         }
+        _byId[title.id] = title;
       }
     } catch (e) {
       debugPrint('[CatalogPersistentStore] init error: $e');
@@ -99,32 +106,35 @@ class CatalogPersistentStore {
       }
       if (cleanStatus != null && cleanStatus.isNotEmpty) {
         final st = t.status.toLowerCase();
-        if (cleanStatus == 'ongoing' &&
-            !st.contains('ongoing') &&
-            !st.contains('выходит') &&
-            !st.contains('онгоинг')) {
+        final isOngoing = st.contains('ongoing') ||
+            st.contains('выходит') ||
+            st.contains('онгоинг') ||
+            st.contains('в работе') ||
+            st.contains('процесс');
+        final isAnnounced = st.contains('anons') ||
+            st.contains('анонс') ||
+            st.contains('скоро') ||
+            st.contains('in_production');
+        if (cleanStatus == 'ongoing' && (!isOngoing || isAnnounced)) {
           continue;
         }
-        if (cleanStatus == 'released' &&
-            (st.contains('ongoing') ||
-                st.contains('онгоинг') ||
-                st.contains('anons') ||
-                st.contains('анонс'))) {
+        if (cleanStatus == 'released' && (isOngoing || isAnnounced)) {
           continue;
         }
         if ((cleanStatus == 'anons' || cleanStatus == 'anonses') &&
-            !st.contains('anons') &&
-            !st.contains('анонс') &&
-            !st.contains('скоро')) {
+            !isAnnounced &&
+            !(t.episodes.isEmpty && (t.episodesTotal ?? 0) == 0)) {
           continue;
         }
       }
       if (cleanType != null && cleanType.isNotEmpty) {
-        final kind = (t.kind ?? '').toLowerCase();
-        if (cleanType == 'movie' &&
-            !kind.contains('movie') &&
-            !kind.contains('фильм') &&
-            !kind.contains('full')) {
+        final kind = (t.kind ?? '').trim().toLowerCase();
+        if (cleanType == 'movie') {
+          final isMovie = kind == 'movie' ||
+              kind.contains('movie') ||
+              kind.contains('фильм');
+          if (!isMovie) continue;
+        } else if (kind != cleanType) {
           continue;
         }
       }
@@ -132,7 +142,11 @@ class CatalogPersistentStore {
     }
 
     if (sort == 'rating') {
-      results.sort((a, b) => (b.score ?? 0).compareTo(a.score ?? 0));
+      results.sort((a, b) {
+        final cmp = (b.score ?? 0).compareTo(a.score ?? 0);
+        if (cmp != 0) return cmp;
+        return (b.episodesTotal ?? 0).compareTo(a.episodesTotal ?? 0);
+      });
     } else if (sort == 'yearDesc') {
       results.sort((a, b) => (b.year ?? 0).compareTo(a.year ?? 0));
     } else if (sort == 'yearAsc') {
@@ -178,7 +192,11 @@ class CatalogPersistentStore {
     }
 
     if (changed) {
-      _schedulePersistToDisk();
+      if (_overrideFile != null) {
+        await _persistToDisk();
+      } else {
+        _schedulePersistToDisk();
+      }
     }
     return changed;
   }

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/network/syncpai_poster_cache_manager.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/services/recommendation_engine.dart';
+import 'anime_poster_card.dart';
 
 /// Горизонтальная полка рекомендаций («Для тебя» или «Похожее по вайбу»)
 /// с фиксированной геометрией карточек, бейджем в верхнем левом углу
@@ -15,6 +17,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
   final ValueChanged<AnimeTitle> onTitleTap;
   final ValueChanged<AnimeTitle>? onDismissPick;
   final bool showBottomDivider;
+  final Map<int, AnimeListStatus> userAnimeListsMap;
 
   const ForYouRecommendationsShelf({
     super.key,
@@ -23,6 +26,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
     required this.onTitleTap,
     this.onDismissPick,
     this.showBottomDivider = true,
+    this.userAnimeListsMap = const {},
   });
 
   @override
@@ -181,6 +185,15 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (userAnimeListsMap[anime.id] != null)
+                              Positioned(
+                                left: 8,
+                                bottom: 8,
+                                child: UserListStatusPill(
+                                  status: userAnimeListsMap[anime.id]!,
+                                  isCompact: true,
+                                ),
+                              ),
                           ],
                         ),
                       ),

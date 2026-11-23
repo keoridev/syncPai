@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../services/avatar_upload_service.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/utils/telegram_launcher.dart';
@@ -110,6 +111,7 @@ class _SteamProfileCustomizerSheetState
   String? _selectedFavAnimePoster;
   String? _selectedArtworkUrl;
   String? _selectedArtworkTitle;
+  Uint8List? _pendingAvatarBytes;
 
   late TextEditingController _customUrlController;
   late TextEditingController _customAvatarUrlController;
@@ -429,6 +431,7 @@ class _SteamProfileCustomizerSheetState
     context.read<AuthCubit>().updateProfile(
           username: widget.profile.username,
           avatarUrl: effectiveAvatar,
+          avatarBytes: _pendingAvatarBytes,
           frameId: sanitized.frameId,
           backgroundId: sanitized.backgroundId,
           customTitle: sanitized.customTitle,
@@ -1481,25 +1484,28 @@ class _SteamProfileCustomizerSheetState
               if (result != null && result.files.isNotEmpty) {
                 final file = result.files.first;
                 final appDir = await getApplicationDocumentsDirectory();
-                final ext = file.extension ?? 'jpg';
                 final targetPath =
-                    '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                    '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
                 final targetFile = File(targetPath);
 
-                String effectiveChosenPath = '';
-                if (file.bytes != null && file.bytes!.isNotEmpty) {
-                  await targetFile.writeAsBytes(file.bytes!, flush: true);
-                  if (await targetFile.exists()) {
-                    effectiveChosenPath = targetFile.path;
-                  }
-                } else if (file.path != null && file.path!.isNotEmpty) {
+                Uint8List? rawBytes = file.bytes;
+                if ((rawBytes == null || rawBytes.isEmpty) &&
+                    file.path != null &&
+                    file.path!.isNotEmpty) {
                   final srcFile = File(file.path!);
                   if (await srcFile.exists()) {
-                    await srcFile.copy(targetPath);
-                    effectiveChosenPath =
-                        targetFile.existsSync() ? targetFile.path : file.path!;
-                  } else {
-                    effectiveChosenPath = file.path!;
+                    rawBytes = await srcFile.readAsBytes();
+                  }
+                }
+
+                String effectiveChosenPath = '';
+                Uint8List? compressedBytes;
+                if (rawBytes != null && rawBytes.isNotEmpty) {
+                  compressedBytes =
+                      AvatarUploadService.compressAvatarToJpeg(rawBytes);
+                  await targetFile.writeAsBytes(compressedBytes, flush: true);
+                  if (await targetFile.exists()) {
+                    effectiveChosenPath = targetFile.path;
                   }
                 }
 
@@ -1512,6 +1518,7 @@ class _SteamProfileCustomizerSheetState
                     );
                   }
                   setState(() {
+                    _pendingAvatarBytes = compressedBytes;
                     _selectedAvatar = effectiveChosenPath;
                     _customAvatarUrlController.text = effectiveChosenPath;
                   });

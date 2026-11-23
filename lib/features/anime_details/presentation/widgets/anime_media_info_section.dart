@@ -44,12 +44,14 @@ class AnimeMediaInfoSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. «В списках у людей» (Anixart / Shikimori статус-бар)
-        UserListsDistributionWidget(
-          stats: userStats,
-          isLoading: isLoadingStats,
-        ),
-        const SizedBox(height: 20),
+        // 1. «В списках у людей» (показываем только при загрузке или наличии реальной статистики Supabase/Shikimori)
+        if (isLoadingStats || userStats.total > 0) ...[
+          UserListsDistributionWidget(
+            stats: userStats,
+            isLoading: isLoadingStats,
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // 2. «Связанные релизы» (Сезоны, Фильмы, Спин-оффы)
         if (relatedReleases.isNotEmpty) ...[

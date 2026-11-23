@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../profile/domain/entities/steam_profile_customization.dart';
 import '../../../profile/presentation/cubit/profile_cubit.dart';
+import '../../../profile/services/avatar_upload_service.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../utils/auth_error_formatter.dart';
@@ -67,6 +69,8 @@ class AuthCubit extends Cubit<AuthState> {
     String? countryFlag,
     String? countryName,
     String? avatarShape,
+    Uint8List? avatarBytes,
+    Future<String?> Function(Uint8List bytes, String userId)? avatarUploader,
   }) async {
     final previousProfile =
         state is Authenticated ? (state as Authenticated).profile : null;
@@ -103,7 +107,7 @@ class AuthCubit extends Cubit<AuthState> {
         avatarShape: avatarShape ?? previousProfile.avatarShape,
       );
 
-      // Мгновенное (0ms) оптимистичное обновление AuthCubit и ProfileCubit
+      // Мгновенное (0ms) оптимистичное обновление AuthCubit и ProfileCubit (с локальным превью до конца загрузки)
       emit(Authenticated(optimistic));
       if (getIt.isRegistered<ProfileCubit>()) {
         getIt<ProfileCubit>().applyOptimisticProfile(optimistic);
@@ -111,9 +115,31 @@ class AuthCubit extends Cubit<AuthState> {
     }
 
     try {
+      String? effectiveAvatarUrl = avatarUrl;
+      final uploadUid = previousProfile?.id ?? '';
+      if (avatarBytes != null && avatarBytes.isNotEmpty) {
+        final uploaded = avatarUploader != null
+            ? await avatarUploader(avatarBytes, uploadUid)
+            : await AvatarUploadService.uploadAvatarBytes(
+                bytes: avatarBytes,
+                userIdOverride: uploadUid.isNotEmpty ? uploadUid : null,
+              );
+        if (uploaded != null && uploaded.isNotEmpty) {
+          effectiveAvatarUrl = uploaded;
+        }
+      } else if (AvatarUploadService.isLocalFilePath(avatarUrl)) {
+        final uploaded = await AvatarUploadService.uploadLocalAvatarFile(
+          avatarUrl!,
+          userIdOverride: uploadUid.isNotEmpty ? uploadUid : null,
+        );
+        if (uploaded != null && uploaded.isNotEmpty) {
+          effectiveAvatarUrl = uploaded;
+        }
+      }
+
       final updated = await repository.updateProfile(
         username: username,
-        avatarUrl: avatarUrl,
+        avatarUrl: effectiveAvatarUrl,
         frameId: frameId,
         backgroundId: backgroundId,
         customTitle: customTitle,

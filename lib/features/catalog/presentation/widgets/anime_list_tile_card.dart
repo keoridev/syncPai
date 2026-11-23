@@ -5,7 +5,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_decorations.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../domain/entities/anime_title.dart';
+import 'anime_poster_card.dart';
 
 /// Карточка аниме для режима «Целый список» (List view).
 /// Оптимизирована для 60-120 FPS через RepaintBoundary и низкое потребление GPU.
@@ -13,12 +15,14 @@ class AnimeListTileCard extends StatelessWidget {
   final AnimeTitle title;
   final VoidCallback onTap;
   final double? watchProgress;
+  final AnimeListStatus? userListStatus;
 
   const AnimeListTileCard({
     super.key,
     required this.title,
     required this.onTap,
     this.watchProgress,
+    this.userListStatus,
   });
 
   @override
@@ -93,6 +97,17 @@ class AnimeListTileCard extends StatelessWidget {
                           ),
                         ),
                       ),
+
+                      // Бейдж личного статуса пользователя
+                      if (userListStatus != null)
+                        Positioned(
+                          left: AppDimensions.spacingSm,
+                          top: AppDimensions.spacingSm,
+                          child: UserListStatusPill(
+                            status: userListStatus!,
+                            isCompact: true,
+                          ),
+                        ),
 
                       // Бейдж серий внизу постера
                       if (title.latestEpisode != null)

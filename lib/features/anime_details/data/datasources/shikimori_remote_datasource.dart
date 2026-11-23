@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../anime_lists/services/lists_sync_service.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../domain/entities/anime_rating_aggregate.dart';
 import '../../domain/entities/anime_review.dart';
@@ -49,6 +51,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   final AnimeReviewsRepository? _reviewsRepository;
   final Duration _minRequestInterval;
   final Duration _retry429Delay;
+  final Future<UserListsStats> Function(AnimeTitle title, int? shikimoriId)?
+      _communityStatsLoader;
 
   static const String _baseUrl = 'https://shikimori.one/api';
   static const String _graphqlUrl = 'https://shikimori.one/api/graphql';
@@ -62,6 +66,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     AnimeReviewsRepository? reviewsRepository,
     Duration minRequestInterval = const Duration(milliseconds: 350),
     Duration retry429Delay = const Duration(milliseconds: 1200),
+    Future<UserListsStats> Function(AnimeTitle title, int? shikimoriId)?
+        communityStatsLoader,
   })  : _dio = customDio ??
             Dio(
               BaseOptions(
@@ -78,7 +84,31 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             ),
         _reviewsRepository = reviewsRepository,
         _minRequestInterval = minRequestInterval,
-        _retry429Delay = retry429Delay;
+        _retry429Delay = retry429Delay,
+        _communityStatsLoader = communityStatsLoader;
+
+  Future<UserListsStats> _fetchSupabaseCommunityStats(
+    AnimeTitle title, {
+    int? shikimoriId,
+  }) async {
+    if (_communityStatsLoader != null) {
+      try {
+        return await _communityStatsLoader(title, shikimoriId);
+      } catch (_) {
+        return const UserListsStats();
+      }
+    }
+    try {
+      final client = Supabase.instance.client;
+      return await ListsSyncService.fetchCommunityStats(
+        client,
+        animeId: title.id,
+        shikimoriId: shikimoriId ?? title.shikimoriId,
+      );
+    } catch (_) {
+      return const UserListsStats();
+    }
+  }
 
   /// Последовательная очередь запросов к Shikimori с минимальным интервалом 350 мс
   /// и однократным ретраем через 1200 мс при HTTP 429.
@@ -141,10 +171,16 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         .getReviews(animeKey)
         .catchError((_) => <AnimeReview>[]);
     final edgeCacheFuture = AnimeMetaCacheService.instance.getFresh(title);
+    final supabaseStatsFuture = _fetchSupabaseCommunityStats(title);
 
-    final preResults = await Future.wait<dynamic>([edgeCacheFuture, syncPaiFuture]);
+    final preResults = await Future.wait<dynamic>([
+      edgeCacheFuture,
+      syncPaiFuture,
+      supabaseStatsFuture,
+    ]);
     final edgeHit = preResults[0] as AnimeMetaCacheEntry?;
     final syncPaiReviews = preResults[1] as List<AnimeReview>;
+    var supabaseStats = preResults[2] as UserListsStats;
 
     if (edgeHit != null && edgeHit.userStats.total > 0) {
       final combinedReviews = <AnimeReview>[
@@ -160,7 +196,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         shikimoriId: edgeHit.shikimoriId ?? title.shikimoriId,
         relatedReleases: edgeHit.relatedReleases,
         videos: edgeHit.videos,
-        userStats: edgeHit.userStats,
+        userStats: supabaseStats.merge(edgeHit.userStats),
         scoreDistribution: edgeHit.scoreDistribution,
       );
     }
@@ -184,6 +220,12 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         if (resolved.score != null && resolved.score! > 0) {
           rawScore = resolved.score!;
         }
+        if (shikimoriId != null && shikimoriId > 0) {
+          supabaseStats = await _fetchSupabaseCommunityStats(
+            title,
+            shikimoriId: shikimoriId,
+          );
+        }
       }
 
       if (shikimoriId != null && shikimoriId > 0) {
@@ -205,9 +247,14 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         });
         final topicReviews = results[2] as List<AnimeReview>;
         final related = results[3] as List<RelatedAnimeRelease>;
+        var shikiStats = details.stats;
+        if (shikiStats.total == 0) {
+          shikiStats = await _fetchStatusesStatsRest(shikimoriId);
+        }
+        final mergedUserStats = supabaseStats.merge(shikiStats);
         final media = (
           videos: details.videos,
-          stats: details.stats,
+          stats: mergedUserStats,
           scores: details.scores,
         );
         final screenshots = details.screenshots;
@@ -288,7 +335,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       aggregate: aggResult?.aggregate,
       relatedReleases: _generateFallbackFranchise(title, 8.8),
       videos: _generateFallbackVideos(title),
-      userStats: _generateFallbackStats(title),
+      userStats: supabaseStats,
       scoreDistribution: _generateFallbackScoreDistribution(8.8),
     );
   }
@@ -902,6 +949,52 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     );
   }
 
+  Future<UserListsStats> _fetchStatusesStatsRest(int shikimoriId) async {
+    try {
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get('/animes/$shikimoriId', options: _shikimoriOptions),
+      );
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return _parseRestStatusesStats(
+          (response.data as Map<String, dynamic>)['rates_statuses_stats'],
+        );
+      }
+    } catch (_) {}
+    return const UserListsStats();
+  }
+
+  static UserListsStats _parseRestStatusesStats(dynamic rawStats) {
+    if (rawStats is! List || rawStats.isEmpty) return const UserListsStats();
+    int watching = 0, planned = 0, onHold = 0, dropped = 0, completed = 0;
+    for (final s in rawStats) {
+      if (s is! Map<String, dynamic>) continue;
+      final name = '${s['name']}'.toLowerCase();
+      final val = s['value'] as int? ?? int.tryParse('${s['value'] ?? ''}') ?? 0;
+      // ВАЖНО: проверяем 'просмотр' (completed) ДО 'смотр' (watching), так как 'просмотрено' содержит 'смотр'
+      if (name == 'completed' || name.contains('просмотр')) {
+        completed = val;
+      } else if (name == 'watching' || name.contains('смотр')) {
+        watching = val;
+      } else if (name == 'planned' || name.contains('план') || name.contains('запланирован')) {
+        planned = val;
+      } else if (name == 'on_hold' || name.contains('отлож')) {
+        onHold = val;
+      } else if (name == 'dropped' || name.contains('брош')) {
+        dropped = val;
+      }
+    }
+    if (watching + planned + onHold + dropped + completed == 0) {
+      return const UserListsStats();
+    }
+    return UserListsStats(
+      watching: watching,
+      planned: planned,
+      onHold: onHold,
+      dropped: dropped,
+      completed: completed,
+    );
+  }
+
   Future<({List<AnimeVideoItem> videos, UserListsStats stats, List<ScoreDistributionItem> scores})> _fetchVideosAndStats(
     int shikimoriId,
     AnimeTitle title,
@@ -914,30 +1007,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         final data = response.data as Map<String, dynamic>;
 
         // 1. Статистика списков ("В списках у людей") с поддержкой русских и английских названий
-        UserListsStats stats = _generateFallbackStats(title);
-        final rawStats = data['rates_statuses_stats'];
-        if (rawStats is List && rawStats.isNotEmpty) {
-          int watching = 0, planned = 0, onHold = 0, dropped = 0, completed = 0;
-          for (final s in rawStats) {
-            if (s is! Map<String, dynamic>) continue;
-            final name = '${s['name']}'.toLowerCase();
-            final val = s['value'] as int? ?? 0;
-            if (name == 'watching' || name.contains('смотр')) watching = val;
-            if (name == 'planned' || name.contains('план') || name.contains('запланирован')) planned = val;
-            if (name == 'on_hold' || name.contains('отлож')) onHold = val;
-            if (name == 'dropped' || name.contains('брош')) dropped = val;
-            if (name == 'completed' || name.contains('просмотр')) completed = val;
-          }
-          if (watching + planned + onHold + dropped + completed > 0) {
-            stats = UserListsStats(
-              watching: watching,
-              planned: planned,
-              onHold: onHold,
-              dropped: dropped,
-              completed: completed,
-            );
-          }
-        }
+        final stats = _parseRestStatusesStats(data['rates_statuses_stats']);
 
         // 2. Распределение оценок (1..10)
         var scores = <ScoreDistributionItem>[];

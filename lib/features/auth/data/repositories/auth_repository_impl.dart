@@ -10,6 +10,7 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/network/api_constants.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../profile/domain/entities/steam_profile_customization.dart';
+import '../../../profile/services/avatar_upload_service.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../presentation/utils/auth_error_formatter.dart';
@@ -335,9 +336,25 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     final cloudUserId = activeUser.id;
+    String? cloudAvatarUrl = profile.avatarUrl;
+    if (AvatarUploadService.isLocalFilePath(cloudAvatarUrl)) {
+      final uploaded = await AvatarUploadService.uploadLocalAvatarFile(
+        cloudAvatarUrl!,
+        clientOverride: client,
+        userIdOverride: cloudUserId,
+      );
+      if (uploaded != null && uploaded.isNotEmpty) {
+        cloudAvatarUrl = uploaded;
+        await _saveLocalProfile(profile.copyWith(avatarUrl: uploaded));
+      } else {
+        // Не сохраняем локальные файловые пути устройства (/data/user/0/...) в облачный profiles.avatar_url
+        cloudAvatarUrl = null;
+      }
+    }
+
     final payload = <String, dynamic>{
       'username': profile.username,
-      'avatar_url': profile.avatarUrl,
+      if (cloudAvatarUrl != null) 'avatar_url': cloudAvatarUrl,
       'avatar_frame_id': profile.frameId ?? 'none',
       'background_url': profile.backgroundId ?? 'none',
       'custom_title': profile.customTitle,
@@ -361,7 +378,7 @@ class AuthRepositoryImpl implements AuthRepository {
       try {
         await client.from('profiles').update({
           'username': profile.username,
-          'avatar_url': profile.avatarUrl,
+          if (cloudAvatarUrl != null) 'avatar_url': cloudAvatarUrl,
           'avatar_frame_id': profile.frameId ?? 'none',
           'background_url': profile.backgroundId ?? 'none',
           'updated_at': DateTime.now().toUtc().toIso8601String(),

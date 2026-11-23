@@ -526,7 +526,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           : ShikimoriRemoteDataSourceImpl();
       final result = await shikiSource
           .getReviewsAndRatings(_currentTitle)
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 8));
       AnimeDetailsCache.putReviews(
         id: _currentTitle.id,
         fallbackTitle: _currentTitle,
@@ -1167,6 +1167,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                           posterUrl: title.posterMedium.isNotEmpty ? title.posterMedium : title.posterSmall,
                           status: status,
                           episodesTotal: title.episodesTotal,
+                          isUserInitiated: true,
                         );
                     Navigator.pop(sheetContext);
                   },
@@ -1229,6 +1230,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                     ? _currentTitle.posterMedium
                     : _currentTitle.posterSmall,
                 status: AnimeListStatus.planned,
+                isUserInitiated: true,
               );
             }
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2710,6 +2712,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                                       : _currentTitle.posterSmall,
                                                   status: AnimeListStatus.planned,
                                                   episodesTotal: _currentTitle.episodesTotal,
+                                                  isUserInitiated: true,
                                                 );
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               SnackBar(

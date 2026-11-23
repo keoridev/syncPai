@@ -6,6 +6,7 @@ import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/tv_focusable.dart';
+import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../domain/entities/anime_title.dart';
 
 /// Единая карточка аниме (`UnifiedAnimeCard` / `AnimePosterCard`) для Каталога и Моих списков.
@@ -28,6 +29,7 @@ class UnifiedAnimeCard extends StatelessWidget {
   final bool isSelected;
   final String? heroTagPrefix;
   final bool isCompact;
+  final AnimeListStatus? userListStatus;
 
   const UnifiedAnimeCard({
     super.key,
@@ -44,6 +46,7 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.isSelected = false,
     this.heroTagPrefix,
     this.isCompact = false,
+    this.userListStatus,
   });
 
   static const double posterRadius = 16.0;
@@ -256,6 +259,21 @@ class UnifiedAnimeCard extends StatelessWidget {
                                 ),
                               ),
 
+                            // Пилл личного статуса пользователя на постере (поиск, каталог, рекомендации)
+                            if (userListStatus != null)
+                              Positioned(
+                                left: 8,
+                                bottom: (watchProgress != null &&
+                                        watchProgress! > 0.0 &&
+                                        watchProgress! < 0.98)
+                                    ? 8
+                                    : 8,
+                                child: UserListStatusPill(
+                                  status: userListStatus!,
+                                  isCompact: isCompact,
+                                ),
+                              ),
+
                             // Тонкая полоска сохраненного прогресса просмотра
                             if (watchProgress != null &&
                                 watchProgress! > 0.0 &&
@@ -459,5 +477,73 @@ class AnimePosterCard extends UnifiedAnimeCard {
     super.isSelected,
     super.heroTagPrefix,
     super.isCompact,
+    super.userListStatus,
   });
+}
+
+class UserListStatusPill extends StatelessWidget {
+  final AnimeListStatus status;
+  final bool isCompact;
+
+  const UserListStatusPill({
+    super.key,
+    required this.status,
+    this.isCompact = false,
+  });
+
+  static ({String label, Color color}) styleFor(AnimeListStatus status) {
+    switch (status) {
+      case AnimeListStatus.completed:
+        return (label: 'Просмотрено', color: const Color(0xFF10B981));
+      case AnimeListStatus.watching:
+        return (label: 'Смотрю', color: const Color(0xFF35D9D5));
+      case AnimeListStatus.planned:
+        return (label: 'В планах', color: const Color(0xFFF59E0B));
+      case AnimeListStatus.dropped:
+        return (label: 'Брошено', color: const Color(0xFF64748B));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cfg = styleFor(status);
+    return Container(
+      key: ValueKey('poster_user_status_${status.name}'),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 6.0 : 7.5,
+        vertical: isCompact ? 2.5 : 3.5,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xEB0B0E14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: cfg.color.withValues(alpha: 0.72),
+          width: 1.0,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: isCompact ? 5 : 6,
+            height: isCompact ? 5 : 6,
+            decoration: BoxDecoration(
+              color: cfg.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          SizedBox(width: isCompact ? 4 : 5),
+          Text(
+            cfg.label,
+            style: TextStyle(
+              fontSize: isCompact ? 9.5 : 10.5,
+              fontWeight: FontWeight.w700,
+              color: cfg.color,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

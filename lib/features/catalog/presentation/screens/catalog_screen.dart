@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/network/network_status_helper.dart';
+import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/app_avatar.dart';
@@ -21,6 +23,7 @@ import 'package:sync_pai/core/widgets/mascot/mascot_state.dart';
 import 'package:sync_pai/core/widgets/mascot/sync_pai_mascot.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
+import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
@@ -56,8 +59,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   late final ScrollController _scrollController;
   Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
+  bool _isForYouTabSelected = false;
 
   static const List<({String id, String label})> _quickTabs = [
+    (id: 'for_you', label: 'Для тебя'),
     (id: 'all', label: 'Все'),
     (id: 'ongoing', label: 'Онгоинги'),
     (id: 'popular', label: 'Популярное'),
@@ -67,6 +72,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   ];
 
   String? _activeQuickTabId(CatalogState state) {
+    if (_isForYouTabSelected && (state is! CatalogLoaded || state.searchQuery.isEmpty)) {
+      return 'for_you';
+    }
     if (state is! CatalogLoaded) return 'all';
     if (state.selectedGenres.isNotEmpty) return null;
     if (state.typeFilter == 'MOVIE' && state.statusFilter == null) {
@@ -85,16 +93,54 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return null;
   }
 
+  void _openForYouTab() {
+    if (!mounted) return;
+    if (_searchController.text.isNotEmpty) {
+      _searchController.clear();
+      context.read<CatalogCubit>().onSearchQueryChanged('');
+    }
+    setState(() {
+      _isForYouTabSelected = true;
+      _isSearchOpen = false;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _launchRandomChoice(List<AnimeTitle> pool) {
+    if (pool.isEmpty) return;
+    HapticFeedback.mediumImpact();
+    final pick = pool[math.Random().nextInt(pool.length)];
+    _openAnimeDetails(pick);
+  }
+
+  void _openAnimeDetails(AnimeTitle title) {
+    if (widget.onTitleSelected != null) {
+      widget.onTitleSelected!(title);
+    } else {
+      context.pushNamed('details', extra: title);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController()..addListener(_onScroll);
     context.read<CatalogCubit>().loadUpdates();
     CatalogPrefetchService.instance.startPrefetchQueue();
+    MascotCompanionService.instance.startCatalogBrowsingTimer(
+      onOpenForYou: _openForYouTab,
+    );
   }
 
   @override
   void dispose() {
+    MascotCompanionService.instance.stopCatalogBrowsingTimer();
     _scrollDebounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.removeListener(_onScroll);
@@ -103,11 +149,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _onScroll() {
+    if (_scrollController.hasClients) {
+      context.read<CatalogCubit>().setUserScrollOffset(
+            _scrollController.position.pixels,
+          );
+    }
+    MascotCompanionService.instance.reportCatalogInteraction(
+      onOpenForYou: _openForYouTab,
+    );
     _maybeTriggerLoadNextPage();
   }
 
   void _maybeTriggerLoadNextPage() {
-    if (!mounted || !_scrollController.hasClients) return;
+    if (!mounted || !_scrollController.hasClients || _isForYouTabSelected) return;
     final cubitState = context.read<CatalogCubit>().state;
     if (cubitState is! CatalogLoaded ||
         cubitState.isLoadingMore ||
@@ -213,6 +267,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   controller: _searchController,
                                   autofocus: true,
                                   onChanged: (query) {
+                                    if (_isForYouTabSelected && query.trim().isNotEmpty) {
+                                      setState(() => _isForYouTabSelected = false);
+                                    }
                                     context.read<CatalogCubit>().onSearchQueryChanged(query);
                                   },
                                   onClear: () {
@@ -638,68 +695,80 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 ),
 
-              // 2.5. Персональная лента рекомендаций «Для тебя»
-              SliverToBoxAdapter(
-                child: ListenableBuilder(
-                  listenable: RecommendationEngine.instance,
-                  builder: (context, _) {
-                    final catState = context.watch<CatalogCubit>().state;
-                    if (catState is! CatalogLoaded || catState.titles.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    final entries = getIt.isRegistered<AnimeListCubit>()
-                        ? context.watch<AnimeListCubit>().state.allEntries
-                        : const <UserAnimeEntry>[];
-                    final history = getIt.isRegistered<WatchHistoryCubit>()
-                        ? context.watch<WatchHistoryCubit>().state.history
-                        : const <WatchHistoryItem>[];
-                    if (entries.isEmpty && history.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    final picks = RecommendationEngine.instance.generateForYouFeed(
-                      catalogPool: catState.titles,
-                      userEntries: entries,
-                      watchHistory: history,
-                    );
-                    return ForYouRecommendationsShelf(
-                      title: 'Для тебя',
-                      picks: picks,
-                      onTitleTap: (anime) {
-                        if (widget.onTitleSelected != null) {
-                          widget.onTitleSelected!(anime);
-                        } else {
-                          context.pushNamed('details', extra: anime);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
+              // 2.5. Персональная лента рекомендаций «Для тебя» (скрывается, когда активна открытая вкладка «Для тебя»)
+              if (!_isForYouTabSelected)
+                SliverToBoxAdapter(
+                  child: ListenableBuilder(
+                    listenable: RecommendationEngine.instance,
+                    builder: (context, _) {
+                      final catState = context.watch<CatalogCubit>().state;
+                      if (catState is! CatalogLoaded || catState.titles.isEmpty || catState.searchQuery.isNotEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      final history = getIt.isRegistered<WatchHistoryCubit>()
+                          ? context.watch<WatchHistoryCubit>().state.history
+                          : const <WatchHistoryItem>[];
 
-              // 3. Единая строка фильтров (Один горизонтальный скролл чипов + компактная кнопка фильтра слева)
+                      Widget buildShelf(List<UserAnimeEntry> entries) {
+                        if (entries.isEmpty && history.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        final userListsMap = <int, AnimeListStatus>{
+                          for (final e in entries) e.animeId: e.status,
+                        };
+                        final picks = RecommendationEngine.instance.generateForYouFeed(
+                          catalogPool: catState.titles,
+                          userEntries: entries,
+                          watchHistory: history,
+                        );
+                        return ForYouRecommendationsShelf(
+                          title: 'Для тебя',
+                          picks: picks,
+                          userAnimeListsMap: userListsMap,
+                          onTitleTap: _openAnimeDetails,
+                        );
+                      }
+
+                      if (getIt.isRegistered<AnimeListCubit>()) {
+                        return BlocBuilder<AnimeListCubit, AnimeListState>(
+                          bloc: getIt<AnimeListCubit>(),
+                          builder: (context, listState) => buildShelf(listState.allEntries),
+                        );
+                      }
+                      return buildShelf(const <UserAnimeEntry>[]);
+                    },
+                  ),
+                ),
+
+              // 3. Современные borderless-вкладки с анимированным подчёркиванием + кнопка фильтров
               SliverToBoxAdapter(
                 child: BlocBuilder<CatalogCubit, CatalogState>(
                   builder: (context, state) {
                     final activeTabId = _activeQuickTabId(state);
-                    final hasFilters = state is CatalogLoaded &&
+                    final hasFilters = !_isForYouTabSelected &&
+                        state is CatalogLoaded &&
                         (state.selectedGenres.isNotEmpty ||
                             state.sortBy != CatalogSort.updates ||
                             state.statusFilter != null ||
                             state.typeFilter != null);
 
                     return SizedBox(
-                      height: 38,
+                      height: 40,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
                         padding: EdgeInsets.only(
                           left: horizontalPad,
-                          right: horizontalPad + 18,
+                          right: horizontalPad + 16,
                         ),
                         children: [
-                          // Компактная кнопка расширенных фильтров
+                          // Borderless-кнопка расширенных фильтров слева
                           InkWell(
+                            key: const ValueKey('catalog_filter_button'),
                             onTap: () {
+                              if (_isForYouTabSelected) {
+                                setState(() => _isForYouTabSelected = false);
+                              }
                               final currentState = state is CatalogLoaded
                                   ? state
                                   : (context.read<CatalogCubit>().state is CatalogLoaded
@@ -709,85 +778,98 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 CatalogFilterSheet.show(context, currentState);
                               }
                             },
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              height: 36,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              decoration: BoxDecoration(
-                                color: hasFilters
-                                    ? themePrimary.withValues(alpha: 0.22)
-                                    : Colors.white.withValues(alpha: 0.05),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: hasFilters ? themePrimary : Colors.white.withValues(alpha: 0.10),
-                                  width: 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                              child: Stack(
+                                clipBehavior: Clip.none,
                                 children: [
                                   Icon(
                                     Icons.tune_rounded,
-                                    size: 15,
-                                    color: hasFilters ? themePrimaryLight : AppColors.textSecondary,
+                                    size: 20,
+                                    color: hasFilters
+                                        ? const Color(0xFFFF6B4A)
+                                        : const Color(0xFF7E8A9A),
                                   ),
-                                  if (hasFilters) ...[
-                                    const SizedBox(width: 4),
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color: themePrimary,
-                                        shape: BoxShape.circle,
+                                  if (hasFilters)
+                                    Positioned(
+                                      top: -2,
+                                      right: -2,
+                                      child: Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFFF6B4A),
+                                          shape: BoxShape.circle,
+                                        ),
                                       ),
                                     ),
-                                  ],
                                 ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 14),
 
-                          // Надёжные статусные/форматные вкладки AniLibria v1
+                          // Чистые borderless текстовые вкладки с анимированным подчёркиванием
                           ..._quickTabs.map((tab) {
                             final isSelected = activeTabId == tab.id;
 
                             return Padding(
-                              padding: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.only(right: 20),
                               child: InkWell(
                                 key: ValueKey('catalog_quick_tab_${tab.id}'),
                                 onTap: () {
+                                  MascotCompanionService.instance.reportCatalogInteraction(
+                                    onOpenForYou: _openForYouTab,
+                                  );
                                   if (_searchController.text.isNotEmpty) {
                                     _searchController.clear();
+                                    context.read<CatalogCubit>().onSearchQueryChanged('');
                                   }
                                   if (_isSearchOpen) {
                                     setState(() => _isSearchOpen = false);
                                   }
-                                  context.read<CatalogCubit>().selectQuickTab(tab.id);
+                                  if (tab.id == 'for_you') {
+                                    setState(() => _isForYouTabSelected = true);
+                                  } else {
+                                    if (_isForYouTabSelected) {
+                                      setState(() => _isForYouTabSelected = false);
+                                    }
+                                    context.read<CatalogCubit>().selectQuickTab(tab.id);
+                                  }
                                 },
-                                borderRadius: BorderRadius.circular(10),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? themePrimary
-                                        : Colors.white.withValues(alpha: 0.05),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? themePrimary
-                                          : Colors.white.withValues(alpha: 0.08),
-                                      width: 1.0,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    tab.label,
-                                    style: TextStyle(
-                                      color: isSelected ? AppColors.onColor(themePrimary) : AppColors.textSecondary,
-                                      fontSize: 12.5,
-                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                    ),
+                                borderRadius: BorderRadius.circular(6),
+                                splashColor: Colors.white.withValues(alpha: 0.06),
+                                highlightColor: Colors.transparent,
+                                child: IntrinsicWidth(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 6),
+                                        child: Text(
+                                          tab.label,
+                                          style: TextStyle(
+                                            color: isSelected
+                                                ? const Color(0xFFFFFFFF)
+                                                : const Color(0xFF7E8A9A),
+                                            fontSize: 14.0,
+                                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                            letterSpacing: -0.1,
+                                          ),
+                                        ),
+                                      ),
+                                      AnimatedContainer(
+                                        duration: const Duration(milliseconds: 220),
+                                        curve: Curves.easeOutCubic,
+                                        height: 2.5,
+                                        width: isSelected ? 26 : 0,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFF6B4A),
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -802,36 +884,39 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
               const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
-              // 4. Сетка аниме (2 колонки) / Список с высокой производительностью
+              // 4. Открытая секция «Для тебя» ЛИБО сетка/список каталога и поиска со статус-пиллами
               BlocBuilder<CatalogCubit, CatalogState>(
                 builder: (context, state) {
-                  final isListMode = (state is CatalogLoaded && state.viewMode == CatalogViewMode.list);
-                  if (state is CatalogLoading ||
-                      (state is CatalogLoaded && state.filteredTitles.isEmpty && state.isLoadingMore)) {
-                    return _buildSliverLoadingGrid(
-                      horizontalPad,
-                      isListMode: isListMode,
-                      screenWidth: screenWidth,
-                    );
-                  }
+                  Widget buildMainSliver(List<UserAnimeEntry> entries) {
+                    final userListsMap = <int, AnimeListStatus>{
+                      for (final e in entries) e.animeId: e.status,
+                    };
 
-                  if (state is CatalogError) {
-                    return SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 40,
-                        ),
-                        child: Center(
-                          child: _buildErrorState(context, state.message),
-                        ),
-                      ),
-                    );
-                  }
+                    if (_isForYouTabSelected && state is CatalogLoaded && state.searchQuery.isEmpty) {
+                      return _buildOpenForYouSectionSliver(
+                        context,
+                        state: state,
+                        entries: entries,
+                        userListsMap: userListsMap,
+                        screenWidth: screenWidth,
+                        isDesktop: isDesktop,
+                        horizontalPad: horizontalPad,
+                      );
+                    }
 
-                  if (state is CatalogLoaded) {
-                    final titles = state.filteredTitles;
-                    if (titles.isEmpty) {
+                    final isListMode = (state is CatalogLoaded && state.viewMode == CatalogViewMode.list);
+                    if (state is CatalogLoading ||
+                        (state is CatalogLoaded &&
+                            state.filteredTitles.isEmpty &&
+                            (state.isSearching || state.isLoadingMore))) {
+                      return _buildSliverLoadingGrid(
+                        horizontalPad,
+                        isListMode: isListMode,
+                        screenWidth: screenWidth,
+                      );
+                    }
+
+                    if (state is CatalogError) {
                       return SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -839,26 +924,71 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             vertical: 40,
                           ),
                           child: Center(
-                            child: _buildEmptyState(context),
+                            child: _buildErrorState(context, state.message),
                           ),
                         ),
                       );
                     }
 
-                    if (state.viewMode == CatalogViewMode.list) {
+                    if (state is CatalogLoaded) {
+                      final titles = state.filteredTitles;
+                      if (titles.isEmpty) {
+                        return SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 40,
+                            ),
+                            child: Center(
+                              child: _buildEmptyState(context, state),
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (state.viewMode == CatalogViewMode.list) {
+                        return SliverPadding(
+                          padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final title = titles[index];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: AnimeListTileCard(
+                                    key: ValueKey(title.id),
+                                    title: title,
+                                    userListStatus: userListsMap[title.id],
+                                    onTap: () => _openAnimeDetails(title),
+                                  ),
+                                );
+                              },
+                              childCount: titles.length,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final mobileCols = state.gridDensity.mobileColumns;
+                      final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
+                      final gridDelegate = _resolveCatalogGridDelegate(
+                        screenWidth: screenWidth,
+                        mobileCols: mobileCols,
+                      );
+
                       return SliverPadding(
-                        padding: EdgeInsets.symmetric(horizontal: horizontalPad),
-                        sliver: SliverList(
+                        padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
+                        sliver: SliverGrid(
+                          gridDelegate: gridDelegate,
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final title = titles[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: AnimeListTileCard(
-                                  key: ValueKey(title.id),
-                                  title: title,
-                                  onTap: () => widget.onTitleSelected?.call(title),
-                                ),
+                              return AnimePosterCard(
+                                key: ValueKey(title.id),
+                                title: title,
+                                isCompact: !isDesktop && screenWidth < 600 && mobileCols == 3,
+                                userListStatus: userListsMap[title.id],
+                                onTap: () => _openAnimeDetails(title),
                               );
                             },
                             childCount: titles.length,
@@ -867,61 +997,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       );
                     }
 
-                    // Единая адаптивная сетка (Catalog == My Lists):
-                    // Desktop: maxCrossAxisExtent: 215, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.62
-                    // Mobile (width < 600): horizontal: 14, crossAxisSpacing: 12 (2 cols) / 8 (3 cols), mainAxisSpacing: 14 / 12, childAspectRatio: 0.56 (2 cols) / 0.50 (3 cols)
-                    final mobileCols = state.gridDensity.mobileColumns;
-                    final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
-                    final SliverGridDelegate gridDelegate = screenWidth >= 900
-                        ? const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 215,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio: 0.62,
-                          )
-                        : (screenWidth >= 600
-                            ? const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                childAspectRatio: 0.64,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 14,
-                              )
-                            : SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: mobileCols,
-                                childAspectRatio: mobileCols == 3 ? 0.50 : 0.56,
-                                crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
-                                mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
-                              ));
-
-                    return SliverPadding(
-                      padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
-                      sliver: SliverGrid(
-                        gridDelegate: gridDelegate,
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final title = titles[index];
-                            return AnimePosterCard(
-                              key: ValueKey(title.id),
-                              title: title,
-                              isCompact: !isDesktop && screenWidth < 600 && mobileCols == 3,
-                              onTap: () => widget.onTitleSelected?.call(title),
-                            );
-                          },
-                          childCount: titles.length,
-                        ),
-                      ),
-                    );
+                    return const SliverToBoxAdapter(child: SizedBox.shrink());
                   }
 
-                  return const SliverToBoxAdapter(child: SizedBox.shrink());
+                  if (getIt.isRegistered<AnimeListCubit>()) {
+                    return BlocBuilder<AnimeListCubit, AnimeListState>(
+                      bloc: getIt<AnimeListCubit>(),
+                      builder: (context, listState) =>
+                          buildMainSliver(listState.allEntries),
+                    );
+                  }
+                  return buildMainSliver(const <UserAnimeEntry>[]);
                 },
               ),
 
-              // 5. Индикатор бесконечного скролла
+              // 5. Индикатор бесконечного скролла (только при активной догрузке следующей страницы и непустом списке)
               BlocBuilder<CatalogCubit, CatalogState>(
                 builder: (context, state) {
-                  if (state is CatalogLoaded && !state.hasReachedMax) {
+                  if (!_isForYouTabSelected &&
+                      state is CatalogLoaded &&
+                      state.isLoadingMore &&
+                      state.hasMore &&
+                      state.filteredTitles.isNotEmpty) {
                     return const SliverToBoxAdapter(
+                      key: ValueKey('catalog_bottom_pagination_spinner'),
                       child: Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
                         child: Center(
@@ -946,6 +1045,225 @@ class _CatalogScreenState extends State<CatalogScreen> {
     ),
   ),
 ),
+    );
+  }
+
+  SliverGridDelegate _resolveCatalogGridDelegate({
+    required double screenWidth,
+    required int mobileCols,
+  }) {
+    if (screenWidth >= 900) {
+      return const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 215,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.62,
+      );
+    }
+    if (screenWidth >= 600) {
+      return const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.64,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 14,
+      );
+    }
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: mobileCols,
+      childAspectRatio: mobileCols == 3 ? 0.50 : 0.56,
+      crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
+      mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
+    );
+  }
+
+  Widget _buildOpenForYouSectionSliver(
+    BuildContext context, {
+    required CatalogLoaded state,
+    required List<UserAnimeEntry> entries,
+    required Map<int, AnimeListStatus> userListsMap,
+    required double screenWidth,
+    required bool isDesktop,
+    required double horizontalPad,
+  }) {
+    final history = getIt.isRegistered<WatchHistoryCubit>()
+        ? context.watch<WatchHistoryCubit>().state.history
+        : const <WatchHistoryItem>[];
+    final picks = RecommendationEngine.instance.generateForYouFeed(
+      catalogPool: state.titles,
+      userEntries: entries,
+      watchHistory: history,
+      limit: 24,
+    );
+
+    final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
+    final mobileCols = state.gridDensity.mobileColumns;
+    final gridDelegate = _resolveCatalogGridDelegate(
+      screenWidth: screenWidth,
+      mobileCols: mobileCols,
+    );
+
+    // Если персональная подборка готова — группируем в открытую витрину с тегами причин
+    if (picks.isNotEmpty) {
+      const hookOrder = [
+        (hook: RecommendationHook.zeigarnik, title: 'Продолжить просмотр'),
+        (hook: RecommendationHook.postFinaleEcho, title: 'После просмотренного'),
+        (hook: RecommendationHook.plannedResurface, title: 'Из вашего «В планах»'),
+        (hook: RecommendationHook.coreTaste, title: 'Точное совпадение по вкусу'),
+        (hook: RecommendationHook.circadianDiscovery, title: 'Настроение момента'),
+      ];
+
+      final sections = <Widget>[];
+      for (final section in hookOrder) {
+        final sectionPicks = picks.where((p) => p.hook == section.hook).toList();
+        if (sectionPicks.isEmpty) continue;
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10, top: 8),
+            child: Row(
+              children: [
+                Text(
+                  section.title,
+                  style: AppTypography.titleMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${sectionPicks.length}',
+                  style: AppTypography.caption.copyWith(
+                    color: const Color(0xFF7E8A9A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        sections.add(
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: gridDelegate,
+            itemCount: sectionPicks.length,
+            itemBuilder: (context, index) {
+              final pick = sectionPicks[index];
+              return AnimePosterCard(
+                key: ValueKey('for_you_open_${pick.anime.id}'),
+                title: pick.anime,
+                isCompact: !isDesktop && screenWidth < 600 && mobileCols == 3,
+                statusBadgeText: pick.reasonTag,
+                userListStatus: userListsMap[pick.anime.id],
+                onTap: () => _openAnimeDetails(pick.anime),
+              );
+            },
+          ),
+        );
+        sections.add(const SizedBox(height: 12));
+      }
+
+      return SliverPadding(
+        key: const ValueKey('catalog_open_for_you_view'),
+        padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
+        sliver: SliverList(
+          delegate: SliverChildListDelegate([
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Персональная подборка',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _launchRandomChoice(
+                      picks.map((e) => e.anime).toList(),
+                    ),
+                    icon: const Icon(Icons.shuffle_rounded, size: 16, color: Color(0xFFFF6B4A)),
+                    label: const Text(
+                      'Случайный выбор',
+                      style: TextStyle(
+                        color: Color(0xFFFF6B4A),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...sections,
+          ]),
+        ),
+      );
+    }
+
+    // Холодный старт: показываем открытую подборку из доступного каталога + кнопку случайного выбора
+    final fallbackPool = state.titles.take(16).toList();
+    return SliverPadding(
+      key: const ValueKey('catalog_open_for_you_view'),
+      padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),
+      sliver: SliverList(
+        delegate: SliverChildListDelegate([
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131720),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.auto_awesome_rounded, color: Color(0xFFFF6B4A), size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Добавьте пару аниме в списки — здесь соберётся личная витрина под ваш вкус.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _launchRandomChoice(fallbackPool),
+                  child: const Text(
+                    'Случайное',
+                    style: TextStyle(
+                      color: Color(0xFFFF6B4A),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: gridDelegate,
+            itemCount: fallbackPool.length,
+            itemBuilder: (context, index) {
+              final title = fallbackPool[index];
+              return AnimePosterCard(
+                key: ValueKey('for_you_starter_${title.id}'),
+                title: title,
+                isCompact: !isDesktop && screenWidth < 600 && mobileCols == 3,
+                userListStatus: userListsMap[title.id],
+                onTap: () => _openAnimeDetails(title),
+              );
+            },
+          ),
+        ]),
+      ),
     );
   }
 
@@ -1044,13 +1362,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, [CatalogLoaded? loadedState]) {
+    final isSearch = loadedState != null && loadedState.searchQuery.trim().isNotEmpty;
     return Center(
       child: SyncPaiMascot(
         state: MascotState.emptySearch,
-        message: 'Ничего не найдено',
-        description: 'Попробуйте изменить поисковый запрос или сбросить фильтры',
+        message: isSearch ? 'По запросу ничего не найдено' : 'Ничего не найдено',
+        description: isSearch
+            ? 'Попробуйте другое название или проверьте раскладку'
+            : 'Попробуйте изменить поисковый запрос или сбросить фильтры',
         action: OutlinedButton.icon(
+          key: const ValueKey('catalog_empty_reset_btn'),
           style: OutlinedButton.styleFrom(
             side: BorderSide(color: Theme.of(context).colorScheme.primary),
             foregroundColor: AppColors.textPrimary,
@@ -1064,10 +1386,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
             if (_isSearchOpen) {
               setState(() => _isSearchOpen = false);
             }
-            context.read<CatalogCubit>().resetAllFilters();
+            if (isSearch) {
+              context.read<CatalogCubit>().onSearchQueryChanged('');
+            } else {
+              context.read<CatalogCubit>().resetAllFilters();
+            }
           },
-          icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
-          label: const Text('Сбросить фильтры', style: TextStyle(fontWeight: FontWeight.w600)),
+          icon: Icon(
+            isSearch ? Icons.search_off_rounded : Icons.filter_alt_off_rounded,
+            size: 16,
+          ),
+          label: Text(
+            isSearch ? 'Сбросить поиск' : 'Сбросить фильтры',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );

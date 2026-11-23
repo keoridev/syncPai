@@ -18,6 +18,16 @@ class UserListsStats extends Equatable {
 
   int get total => watching + planned + onHold + dropped + completed;
 
+  UserListsStats merge(UserListsStats other) {
+    return UserListsStats(
+      watching: watching + other.watching,
+      planned: planned + other.planned,
+      onHold: onHold + other.onHold,
+      dropped: dropped + other.dropped,
+      completed: completed + other.completed,
+    );
+  }
+
   @override
   List<Object?> get props => [watching, planned, onHold, dropped, completed];
 }

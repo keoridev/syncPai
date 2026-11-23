@@ -1247,8 +1247,11 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bool isDesktopOS = !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    final bool isWide = isDesktopOS || MediaQuery.sizeOf(context).width >= 800;
     final bool isHackerPanorama = artworkUrl.trim() == 'pai_hacker_art';
-    final double showcaseHeight = isHackerPanorama ? 195.0 : (isDesktopOS ? 360.0 : 200.0);
+    final double showcaseHeight = isHackerPanorama
+        ? (isWide ? 245.0 : 195.0)
+        : (isDesktopOS ? 360.0 : 200.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

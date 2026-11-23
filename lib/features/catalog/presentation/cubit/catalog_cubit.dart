@@ -44,8 +44,32 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   final Map<String, List<AnimeTitle>> _pageCache = {};
   int _requestId = 0;
+  double _scrollOffset = 0.0;
   late CatalogViewMode _currentViewMode;
   late CatalogGridDensity _currentGridDensity;
+
+  /// Сохраняет текущий скролл экрана, чтобы фоновые обновления не сдвигали видимые карточки.
+  void setUserScrollOffset(double pixels) {
+    _scrollOffset = pixels < 0 ? 0.0 : pixels;
+  }
+
+  /// Безопасное слияние свежих данных со списком на экране без перестановки верхних видимых карточек.
+  static List<AnimeTitle> mergePreservingVisibleOrder({
+    required List<AnimeTitle> currentVisible,
+    required List<AnimeTitle> incoming,
+  }) {
+    if (currentVisible.isEmpty) return List<AnimeTitle>.from(incoming);
+    final incomingById = <int, AnimeTitle>{for (final item in incoming) item.id: item};
+    final merged = <AnimeTitle>[];
+    for (final existing in currentVisible) {
+      final updated = incomingById.remove(existing.id);
+      merged.add(updated ?? existing);
+    }
+    if (incomingById.isNotEmpty) {
+      merged.addAll(incomingById.values);
+    }
+    return merged;
+  }
 
   String? _formatGenres(Set<String> genres) {
     final clean = genres
@@ -323,7 +347,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         if (requestId != _requestId || cancelToken.isCancelled) return;
 
         pagesFetched++;
-        hasMore = pageItems.length >= 10;
+        hasMore = pageItems.isNotEmpty && pageItems.length >= 10;
 
         for (final item in pageItems) {
           if (existingIds.add(item.id)) {
@@ -352,18 +376,42 @@ class CatalogCubit extends Cubit<CatalogState> {
         return;
       }
 
-      _cache[cleanCategory] = accumulated;
+      final prevLoaded = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+      final sameVisibleScope = prevLoaded != null &&
+          (prevLoaded.titles.length >= 12 || _scrollOffset > 40.0) &&
+          prevLoaded.searchQuery.isEmpty &&
+          prevLoaded.sortBy == sort &&
+          prevLoaded.statusFilter == statusFilter &&
+          prevLoaded.typeFilter == null &&
+          prevLoaded.selectedGenres.length == genres.length &&
+          prevLoaded.selectedGenres.containsAll(genres);
+
+      final List<AnimeTitle> mergedTitles = (sameVisibleScope || (isLoadMore && prevLoaded != null && prevLoaded.titles.isNotEmpty))
+          ? mergePreservingVisibleOrder(
+              currentVisible: prevLoaded.titles,
+              incoming: accumulated,
+            )
+          : accumulated;
+      final List<AnimeTitle> mergedFiltered = _applyFiltersAndSorting(
+        mergedTitles,
+        genres: genres,
+        sortBy: sort,
+        matchAll: matchAll,
+        statusFilter: statusFilter,
+      );
+
+      _cache[cleanCategory] = mergedTitles;
       _pageMap[cleanCategory] = page;
       _hasMoreMap[cleanCategory] = hasMore;
-      _cachedUpdates = filtered;
+      _cachedUpdates = mergedFiltered;
 
-      CatalogPrefetchService.instance.putCache(cleanCategory, accumulated);
-      unawaited(CatalogPersistentStore.instance.mergeAndPersist(accumulated));
+      CatalogPrefetchService.instance.putCache(cleanCategory, mergedTitles);
+      unawaited(CatalogPersistentStore.instance.mergeAndPersist(mergedTitles));
       CatalogPrefetchService.instance.startPrefetchQueue();
 
       emit(CatalogLoaded(
-        titles: accumulated,
-        filteredTitles: filtered,
+        titles: mergedTitles,
+        filteredTitles: mergedFiltered,
         selectedGenres: genres,
         sortBy: sort,
         matchAllGenres: matchAll,
@@ -416,6 +464,13 @@ class CatalogCubit extends Cubit<CatalogState> {
     } finally {
       if (isLoadMore) {
         _isLoadingMore = false;
+      }
+      if (!isClosed &&
+          requestId == _requestId &&
+          !cancelToken.isCancelled &&
+          state is CatalogLoaded &&
+          (state as CatalogLoaded).isLoadingMore) {
+        emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
       }
       if (identical(_foregroundCancelToken, cancelToken)) {
         _foregroundCancelToken = null;
@@ -507,6 +562,8 @@ class CatalogCubit extends Cubit<CatalogState> {
         emit(current.copyWith(
           searchQuery: '',
           isSearching: false,
+          isLoadingMore: false,
+          hasMore: _hasMoreMap['Все'] ?? (_cachedUpdates.length >= 10),
           filteredTitles: filtered,
           titles: _cachedUpdates,
         ));
@@ -523,7 +580,12 @@ class CatalogCubit extends Cubit<CatalogState> {
     final requestId = ++_requestId;
     final cancelToken = _resetForegroundCancelToken('Search query');
     if (state is CatalogLoaded) {
-      emit((state as CatalogLoaded).copyWith(isSearching: true, searchQuery: query));
+      emit((state as CatalogLoaded).copyWith(
+        isSearching: true,
+        isLoadingMore: false,
+        hasMore: false,
+        searchQuery: query,
+      ));
     } else {
       emit(const CatalogLoading());
     }
@@ -577,12 +639,31 @@ class CatalogCubit extends Cubit<CatalogState> {
         statusFilter: status,
         searchQuery: query,
         isSearching: false,
+        hasMore: false,
+        isLoadingMore: false,
         viewMode: _currentViewMode,
         gridDensity: _currentGridDensity,
       ));
     } catch (e) {
-      if (requestId != _requestId) return;
+      if (requestId != _requestId || cancelToken.isCancelled) return;
       emit(CatalogError('Поиск не удался: $e'));
+    } finally {
+      if (!isClosed &&
+          requestId == _requestId &&
+          !cancelToken.isCancelled &&
+          state is CatalogLoaded) {
+        final cur = state as CatalogLoaded;
+        if (cur.isSearching || cur.isLoadingMore || cur.hasMore) {
+          emit(cur.copyWith(
+            isSearching: false,
+            isLoadingMore: false,
+            hasMore: false,
+          ));
+        }
+      }
+      if (identical(_foregroundCancelToken, cancelToken)) {
+        _foregroundCancelToken = null;
+      }
     }
   }
 
@@ -751,7 +832,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         if (requestId != _requestId || cancelToken.isCancelled) return;
 
         pagesFetched++;
-        hasMore = pageItems.length >= 10;
+        hasMore = pageItems.isNotEmpty && pageItems.length >= 10;
 
         for (final item in pageItems) {
           if (existingIds.add(item.id)) {
@@ -776,18 +857,44 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (requestId != _requestId || cancelToken.isCancelled) return;
 
-      _cachedUpdates = filtered;
+      final prevLoaded = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+      final sameVisibleScope = prevLoaded != null &&
+          (prevLoaded.titles.length >= 12 || _scrollOffset > 40.0) &&
+          prevLoaded.searchQuery.isEmpty &&
+          prevLoaded.sortBy == sortBy &&
+          prevLoaded.statusFilter == statusFilter &&
+          prevLoaded.typeFilter == typeFilter &&
+          prevLoaded.selectedGenres.length == genres.length &&
+          prevLoaded.selectedGenres.containsAll(genres);
+
+      final List<AnimeTitle> stableTitles =
+          (sameVisibleScope || _scrollOffset > 40.0 && sameVisibleScope)
+              ? mergePreservingVisibleOrder(
+                  currentVisible: prevLoaded.titles,
+                  incoming: accumulated,
+                )
+              : accumulated;
+      final List<AnimeTitle> stableFiltered = _applyFiltersAndSorting(
+        stableTitles,
+        genres: genres,
+        sortBy: sortBy,
+        matchAll: matchAll,
+        statusFilter: statusFilter,
+        typeFilter: typeFilter,
+      );
+
+      _cachedUpdates = stableFiltered;
       _pageMap[cacheKey] = page;
       _hasMoreMap[cacheKey] = hasMore;
-      if (filtered.isNotEmpty) {
-        _pageCache[cacheKey] = filtered;
-        CatalogPrefetchService.instance.putCache(cacheKey, filtered);
-        unawaited(CatalogPersistentStore.instance.mergeAndPersist(accumulated));
+      if (stableFiltered.isNotEmpty) {
+        _pageCache[cacheKey] = stableFiltered;
+        CatalogPrefetchService.instance.putCache(cacheKey, stableFiltered);
+        unawaited(CatalogPersistentStore.instance.mergeAndPersist(stableTitles));
       }
 
       emit(CatalogLoaded(
-        titles: accumulated,
-        filteredTitles: filtered,
+        titles: stableTitles,
+        filteredTitles: stableFiltered,
         selectedGenres: genres,
         sortBy: sortBy,
         matchAllGenres: matchAll,
@@ -837,6 +944,13 @@ class CatalogCubit extends Cubit<CatalogState> {
     } finally {
       if (isLoadMore) {
         _isLoadingMore = false;
+      }
+      if (!isClosed &&
+          requestId == _requestId &&
+          !cancelToken.isCancelled &&
+          state is CatalogLoaded &&
+          (state as CatalogLoaded).isLoadingMore) {
+        emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
       }
       if (identical(_foregroundCancelToken, cancelToken)) {
         _foregroundCancelToken = null;

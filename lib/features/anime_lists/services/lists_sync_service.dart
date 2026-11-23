@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../anime_details/domain/entities/user_lists_stats.dart';
 import '../domain/entities/user_anime_entry.dart';
 
 /// Сервис синхронизации пользовательских списков аниме с таблицей `public.user_anime_lists`.
@@ -94,6 +95,67 @@ class ListsSyncService {
     } catch (e) {
       debugPrint('[ListsSyncService] Fetch skipped: $e');
       return const [];
+    }
+  }
+
+  /// Агрегирует реальную статистику сообщества по `public.user_anime_lists` для аниме.
+  static Future<UserListsStats> fetchCommunityStats(
+    SupabaseClient client, {
+    required int animeId,
+    int? shikimoriId,
+  }) async {
+    if (_tableUnavailable) return const UserListsStats();
+    final ids = <int>{
+      if (animeId > 0) animeId,
+      if (shikimoriId != null && shikimoriId > 0) shikimoriId,
+    }.toList();
+    if (ids.isEmpty) return const UserListsStats();
+
+    try {
+      final List<dynamic> rows = await client
+          .from('user_anime_lists')
+          .select('category')
+          .inFilter('anime_id', ids);
+
+      int watching = 0, planned = 0, onHold = 0, dropped = 0, completed = 0;
+      for (final row in rows) {
+        if (row is! Map<String, dynamic>) continue;
+        final cat = '${row['category'] ?? row['status'] ?? ''}'.trim().toLowerCase();
+        switch (cat) {
+          case 'watching':
+            watching++;
+            break;
+          case 'planned':
+            planned++;
+            break;
+          case 'onhold':
+          case 'on_hold':
+            onHold++;
+            break;
+          case 'dropped':
+            dropped++;
+            break;
+          case 'completed':
+            completed++;
+            break;
+        }
+      }
+      return UserListsStats(
+        watching: watching,
+        planned: planned,
+        onHold: onHold,
+        dropped: dropped,
+        completed: completed,
+      );
+    } on PostgrestException catch (e) {
+      if (e.code == 'PGRST205') {
+        _tableUnavailable = true;
+      }
+      debugPrint('[ListsSyncService] Community stats skipped (${e.code}): ${e.message}');
+      return const UserListsStats();
+    } catch (e) {
+      debugPrint('[ListsSyncService] Community stats error: $e');
+      return const UserListsStats();
     }
   }
 }

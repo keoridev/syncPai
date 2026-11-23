@@ -1590,6 +1590,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                 lastEpisode: widget.state.episode.episode,
                 positionMs: widget.state.position.inMilliseconds,
                 episodesTotal: title.episodesTotal,
+                isUserInitiated: true,
               );
             }
           },

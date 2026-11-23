@@ -226,7 +226,8 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
     final w = widget.width;
     final h = widget.height;
     final isCompact = h < 120 || w < 220;
-    final effectiveHeight = isCompact ? h : (h > 195.0 ? 195.0 : h);
+    final isDesktop = MediaQuery.sizeOf(context).width >= 800;
+    final double effectiveHeight = isCompact ? h : (isDesktop ? 245.0 : 195.0);
 
     return ClipRRect(
       borderRadius: const BorderRadius.all(Radius.circular(16)),
@@ -236,7 +237,7 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Фоновый слой: панорама ночного кибер-мегаполиса с плавным ±4px панорамированием
+            // 1. Фоновый слой: панорама ночного кибер-мегаполиса с акцентом сверху на голову/наушники Пай-тян
             AnimatedBuilder(
               animation: _panController,
               builder: (context, child) {
@@ -255,7 +256,7 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
                 width: w,
                 height: effectiveHeight,
                 fit: BoxFit.cover,
-                alignment: Alignment.centerRight,
+                alignment: const Alignment(0.0, -0.35),
                 errorBuilder: (_, __, ___) => DecoratedBox(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
@@ -323,29 +324,30 @@ class _PaiChanArtworkBannerState extends State<PaiChanArtworkBanner>
               ),
             ),
 
-            // 3. Передний интерфейсный слой: полупрозрачная матовая лента внизу (32px)
+            // 3. Передний интерфейсный слой: мягкая нижняя виньетка (44px) для чёткой подписи
             if (!isCompact)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 0,
-                height: 32,
+                height: 44,
                 child: ClipRect(
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
                     child: Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      height: 44,
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      alignment: Alignment.bottomLeft,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                           colors: [
-                            const Color(0xFF0C1018).withValues(alpha: 0.90),
-                            const Color(0xFF0C1018).withValues(alpha: 0.45),
+                            const Color(0xFF0C1018).withValues(alpha: 0.94),
+                            const Color(0xFF0C1018).withValues(alpha: 0.56),
                             Colors.transparent,
                           ],
-                          stops: const [0.0, 0.55, 1.0],
+                          stops: const [0.0, 0.58, 1.0],
                         ),
                       ),
                       child: const Row(

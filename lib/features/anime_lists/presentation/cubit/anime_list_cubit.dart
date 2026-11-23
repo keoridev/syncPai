@@ -66,8 +66,10 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     int lastEpisode = 1,
     int positionMs = 0,
     int? episodesTotal,
+    bool isUserInitiated = false,
   }) async {
     final existing = state.getEntryFor(animeId);
+    final previousStatus = existing?.status;
     final entry = (existing != null)
         ? existing.copyWith(
             status: status,
@@ -101,8 +103,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
       updatedList.insert(0, entry);
     }
     unawaited(AchievementService.instance.checkCollectorCount(updatedList.length));
-    if (status == AnimeListStatus.watching ||
-        status == AnimeListStatus.completed) {
+    if (isUserInitiated && previousStatus != status) {
       MascotCompanionService.instance.onCollectionAdded(status.labelRu, titleRu);
     }
     emit(state.copyWith(

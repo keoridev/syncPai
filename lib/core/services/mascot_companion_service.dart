@@ -40,20 +40,25 @@ class MascotCompanionService extends ChangeNotifier {
   static const String prefEnabledKey = 'pai_companion_reactions_enabled';
   static const Duration toastDuration = Duration(milliseconds: 3500);
   static const Duration afkTimeout = Duration(seconds: 90);
+  static const Duration indecisionTimeout = Duration(seconds: 180);
 
   StreamSubscription<AchievementBadge>? _achievementSub;
   Timer? _dismissTimer;
   Timer? _afkTimer;
+  Timer? _indecisionTimer;
 
   bool _enabled = true;
   bool _dailyGreetingShown = false;
   bool _isAfkActive = false;
   bool _isPlayerActive = false;
+  bool _indecisionHelperShownThisSession = false;
+  VoidCallback? _onOpenForYouCallback;
   PaiCompanionReaction? _currentReaction;
 
   bool get enabled => _enabled;
   bool get isAfkActive => _isAfkActive;
   bool get isPlayerActive => _isPlayerActive;
+  bool get indecisionHelperShownThisSession => _indecisionHelperShownThisSession;
   PaiCompanionReaction? get currentReaction => _currentReaction;
 
   bool get _isTestEnv {
@@ -90,6 +95,7 @@ class MascotCompanionService extends ChangeNotifier {
     if (active) {
       _afkTimer?.cancel();
       _afkTimer = null;
+      stopCatalogBrowsingTimer();
       if (_isAfkActive || _currentReaction != null) {
         _isAfkActive = false;
         _currentReaction = null;
@@ -100,6 +106,50 @@ class MascotCompanionService extends ChangeNotifier {
       _isAfkActive = false;
       _restartAfkTimer();
     }
+  }
+
+  /// Запускает 3-минутный таймер помощи при выборе аниме в каталоге (один раз за сессию).
+  void startCatalogBrowsingTimer({
+    VoidCallback? onOpenForYou,
+    Duration timeout = indecisionTimeout,
+  }) {
+    if (onOpenForYou != null) {
+      _onOpenForYouCallback = onOpenForYou;
+    }
+    if (!_enabled || _isPlayerActive || _indecisionHelperShownThisSession) {
+      return;
+    }
+    if (_indecisionTimer?.isActive ?? false) return;
+    _indecisionTimer = Timer(timeout, _triggerCatalogIndecisionHelper);
+  }
+
+  /// Фиксирует скролл или переключение вкладок в каталоге без запуска видео.
+  void reportCatalogInteraction({VoidCallback? onOpenForYou}) {
+    if (onOpenForYou != null) {
+      _onOpenForYouCallback = onOpenForYou;
+    }
+    startCatalogBrowsingTimer(onOpenForYou: _onOpenForYouCallback);
+  }
+
+  /// Останавливает и сбрасывает таймер 3-минутного выбора (при выходе из каталога или запуске плеера).
+  void stopCatalogBrowsingTimer() {
+    _indecisionTimer?.cancel();
+    _indecisionTimer = null;
+  }
+
+  void _triggerCatalogIndecisionHelper() {
+    _indecisionTimer = null;
+    if (!_enabled || _isPlayerActive || _indecisionHelperShownThisSession) {
+      return;
+    }
+    _indecisionHelperShownThisSession = true;
+    showReaction(
+      expression: MascotExpression.curiousSearch,
+      message:
+          'Нечего выбрать? Загляните в подборку «Для тебя» или запустите случайный выбор.',
+      actionLabel: 'Открыть подборки',
+      onAction: _onOpenForYouCallback,
+    );
   }
 
   /// Фиксирует активность пользователя: сбрасывает 90-секундный AFK-таймер и
@@ -275,10 +325,14 @@ class MascotCompanionService extends ChangeNotifier {
   void resetForTest() {
     _dismissTimer?.cancel();
     _afkTimer?.cancel();
+    _indecisionTimer?.cancel();
+    _indecisionTimer = null;
     _enabled = true;
     _dailyGreetingShown = false;
     _isAfkActive = false;
     _isPlayerActive = false;
+    _indecisionHelperShownThisSession = false;
+    _onOpenForYouCallback = null;
     _currentReaction = null;
   }
 
@@ -287,6 +341,7 @@ class MascotCompanionService extends ChangeNotifier {
     _achievementSub?.cancel();
     _dismissTimer?.cancel();
     _afkTimer?.cancel();
+    _indecisionTimer?.cancel();
     super.dispose();
   }
 }

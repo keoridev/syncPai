@@ -123,6 +123,7 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
               posterUrl: clip.posterUrl,
               status: AnimeListStatus.planned,
               lastEpisode: clip.episodeNumber,
+              isUserInitiated: true,
             );
           } else {
             await listCubit.removeAnime(clip.animeId);

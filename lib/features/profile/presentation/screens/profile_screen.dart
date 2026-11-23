@@ -27,6 +27,7 @@ import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../services/avatar_upload_service.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../wrapped/presentation/widgets/wrapped_promo_banner.dart';
@@ -293,6 +294,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       text: (profile.avatarUrl?.startsWith('http') == true) ? profile.avatarUrl : '',
     );
     String selectedAvatar = profile.avatarUrl ?? 'cat';
+    Uint8List? pickedAvatarBytes;
 
     showModalBottomSheet(
       context: context,
@@ -393,18 +395,25 @@ class _ProfileScreenState extends State<ProfileScreen>
                         if (result != null && result.files.isNotEmpty) {
                           final file = result.files.first;
                           final appDir = await getApplicationDocumentsDirectory();
-                          final ext = file.extension ?? 'jpg';
-                          final targetPath = '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                          final targetPath = '${appDir.path}/custom_avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
                           final targetFile = File(targetPath);
-                          if (file.bytes != null) {
-                            await targetFile.writeAsBytes(file.bytes!);
-                          } else if (file.path != null) {
-                            await File(file.path!).copy(targetPath);
+
+                          Uint8List? rawBytes = file.bytes;
+                          if ((rawBytes == null || rawBytes.isEmpty) && file.path != null) {
+                            final src = File(file.path!);
+                            if (await src.exists()) {
+                              rawBytes = await src.readAsBytes();
+                            }
                           }
-                          setSheetState(() {
-                            selectedAvatar = targetPath;
-                            avatarUrlController.text = targetPath;
-                          });
+                          if (rawBytes != null && rawBytes.isNotEmpty) {
+                            final compressed = AvatarUploadService.compressAvatarToJpeg(rawBytes);
+                            await targetFile.writeAsBytes(compressed, flush: true);
+                            setSheetState(() {
+                              pickedAvatarBytes = compressed;
+                              selectedAvatar = targetPath;
+                              avatarUrlController.text = targetPath;
+                            });
+                          }
                         }
                       } catch (e) {
                         debugPrint('Error picking avatar file: $e');
@@ -523,6 +532,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         context.read<AuthCubit>().updateProfile(
                               username: newName,
                               avatarUrl: finalAvatar,
+                              avatarBytes: pickedAvatarBytes,
                             );
                         Navigator.pop(sheetContext);
                       }

@@ -695,6 +695,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                           status: status,
                           lastEpisode: entry.lastEpisode,
                           episodesTotal: entry.episodesTotal,
+                          isUserInitiated: true,
                         );
                     Navigator.pop(ctx);
                   },

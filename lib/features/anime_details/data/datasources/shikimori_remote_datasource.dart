@@ -66,6 +66,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
+                followRedirects: true,
+                maxRedirects: 5,
                 connectTimeout: const Duration(seconds: 4),
                 receiveTimeout: const Duration(seconds: 4),
                 headers: {
@@ -119,6 +121,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   }
 
   Options get _shikimoriOptions => Options(
+        followRedirects: true,
+        maxRedirects: 5,
         headers: {
           if (!kIsWeb) 'User-Agent': _userAgent,
           'Accept': 'application/json',
@@ -428,7 +432,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 .replaceAll('/preview/', '/original/');
             final rawPUrl = rawImg.startsWith('http')
                 ? rawImg
-                : (rawImg.isNotEmpty ? 'https://shikimori.io$rawImg' : '');
+                : (rawImg.isNotEmpty ? 'https://shikimori.one$rawImg' : '');
             final pUrl = wrapCorsSafeUrl(rawPUrl);
 
             final yNum = n['year'] as int?;
@@ -524,7 +528,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
               .replaceAll('/preview/', '/original/');
           final rawPosterUrl = rawPoster.startsWith('http')
               ? rawPoster
-              : (rawPoster.isNotEmpty ? 'https://shikimori.io$rawPoster' : '');
+              : (rawPoster.isNotEmpty ? 'https://shikimori.one$rawPoster' : '');
           final posterUrl = wrapCorsSafeUrl(rawPosterUrl);
 
           final airedOn = animeMap['aired_on'] as String?;
@@ -588,7 +592,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 final rawP = imgMap?['preview'] as String? ?? imgMap?['original'] as String? ?? '';
                 final pUrl = rawP.startsWith('http')
                     ? rawP
-                    : (rawP.isNotEmpty ? 'https://shikimori.io$rawP' : '');
+                    : (rawP.isNotEmpty ? 'https://shikimori.one$rawP' : '');
 
                 final aired = aMap['aired_on'] as String?;
                 final y = aired != null && aired.length >= 4 ? '${aired.substring(0, 4)} год' : null;
@@ -1148,7 +1152,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           if (item is Map) {
             final original = item['original'] as String? ?? item['preview'] as String? ?? '';
             if (original.isNotEmpty) {
-              final fullUrl = original.startsWith('http') ? original : 'https://shikimori.io$original';
+              final fullUrl = original.startsWith('http') ? original : 'https://shikimori.one$original';
               list.add(fullUrl);
             }
           }

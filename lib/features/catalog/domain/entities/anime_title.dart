@@ -23,11 +23,13 @@ class AnimeTitle extends Equatable {
   final String? shikimoriUrl;
   final int? shikimoriId;
   final double? score;
+  final String? kind;
 
   const AnimeTitle({
     required this.id,
     this.shikimoriId,
     this.score,
+    this.kind,
     required this.code,
     required this.russianTitle,
     required this.englishTitle,
@@ -86,6 +88,7 @@ class AnimeTitle extends Equatable {
     int? id,
     int? shikimoriId,
     double? score,
+    String? kind,
     String? code,
     String? russianTitle,
     String? englishTitle,
@@ -109,6 +112,7 @@ class AnimeTitle extends Equatable {
       id: id ?? this.id,
       shikimoriId: shikimoriId ?? this.shikimoriId,
       score: score ?? this.score,
+      kind: kind ?? this.kind,
       code: code ?? this.code,
       russianTitle: russianTitle ?? this.russianTitle,
       englishTitle: englishTitle ?? this.englishTitle,
@@ -134,6 +138,7 @@ class AnimeTitle extends Equatable {
         'id': id,
         'shikimoriId': shikimoriId,
         'score': score,
+        'kind': kind,
         'code': code,
         'russianTitle': russianTitle,
         'englishTitle': englishTitle,
@@ -158,6 +163,7 @@ class AnimeTitle extends Equatable {
         id: json['id'] as int? ?? 0,
         shikimoriId: json['shikimoriId'] as int?,
         score: (json['score'] as num?)?.toDouble(),
+        kind: json['kind'] as String?,
         code: json['code'] as String? ?? '',
         russianTitle: json['russianTitle'] as String? ?? '',
         englishTitle: json['englishTitle'] as String? ?? '',
@@ -205,5 +211,6 @@ class AnimeTitle extends Equatable {
         trailerUrl,
         shikimoriUrl,
         score,
+        kind,
       ];
 }

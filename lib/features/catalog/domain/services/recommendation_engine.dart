@@ -49,6 +49,38 @@ class UserTasteVector {
     }
     return best;
   }
+
+  bool get hasPositiveGenres => genreWeights.values.any((w) => w > 0.0);
+
+  int sharedPositiveGenreCount(List<String> genres) {
+    if (genres.isEmpty || genreWeights.isEmpty) return 0;
+    final seen = <String>{};
+    int count = 0;
+    for (final g in genres) {
+      final key = g.trim().toLowerCase();
+      if (key.isEmpty || !seen.add(key)) continue;
+      if ((genreWeights[key] ?? 0.0) > 0.0) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  bool get isSoftSliceOfLifeProfile {
+    const soft = {'романтика', 'повседневность', 'комедия', 'школа'};
+    const heavyAction = {
+      'экшен',
+      'экшн',
+      'боевые искусства',
+      'сёнен',
+      'сенен',
+    };
+    final positive = genreWeights.entries.where((e) => e.value > 0.0).toList();
+    if (positive.isEmpty) return false;
+    final hasAnyAction = positive.any((e) => heavyAction.contains(e.key));
+    if (hasAnyAction) return false;
+    return positive.every((e) => soft.contains(e.key));
+  }
 }
 
 /// Карточка рекомендации с психологическим триггером и текстовой причиной.
@@ -219,6 +251,27 @@ class RecommendationEngine extends ChangeNotifier {
     );
   }
 
+  static const Set<String> _heavyActionGenres = {
+    'экшен',
+    'экшн',
+    'боевые искусства',
+    'сёнен',
+    'сенен',
+  };
+
+  static double _heavyActionPenalty(AnimeTitle candidate, UserTasteVector vector) {
+    if (!vector.isSoftSliceOfLifeProfile) return 0.0;
+    final totalEps = math.max(
+      candidate.episodesTotal ?? 0,
+      candidate.episodes.length,
+    );
+    if (totalEps <= 50) return 0.0;
+    final isHeavyAction = candidate.genres.any(
+      (g) => _heavyActionGenres.contains(g.trim().toLowerCase()),
+    );
+    return isHeavyAction ? -6.0 : 0.0;
+  }
+
   /// Формирование персонализированной ленты «Для тебя» по правилу 70 / 20 / 10 + Zeigarnik + Post-Finale Echo.
   List<RecommendedAnimePick> generateForYouFeed({
     required List<AnimeTitle> catalogPool,
@@ -279,6 +332,12 @@ class RecommendationEngine extends ChangeNotifier {
             usedIds.contains(candidate.id)) {
           continue;
         }
+        if (vector.hasPositiveGenres &&
+            vector.sharedPositiveGenreCount(candidate.genres) < 1) {
+          continue;
+        }
+        final penalty = _heavyActionPenalty(candidate, vector);
+        if (penalty < 0) continue;
         final cGenres =
             candidate.genres.map((g) => g.trim().toLowerCase()).toSet();
         final overlap = targetGenres.intersection(cGenres).length;
@@ -287,7 +346,10 @@ class RecommendationEngine extends ChangeNotifier {
             (candidate.year! - lastCompletedAnime!.year!).abs() <= 3;
 
         if (overlap >= 2 || (targetGenres.isEmpty && sameEra) || overlap >= 1 && sameEra) {
-          final s = overlap * 3.0 + (sameEra ? 1.5 : 0.0) + (candidate.score ?? 7.0) * 0.4;
+          final s = overlap * 3.0 +
+              (sameEra ? 1.5 : 0.0) +
+              (candidate.score ?? 7.0) * 0.4 +
+              penalty;
           echoCandidates.add((anime: candidate, score: s));
         }
       }
@@ -349,11 +411,15 @@ class RecommendationEngine extends ChangeNotifier {
           usedIds.contains(candidate.id)) {
         continue;
       }
+      final penalty = _heavyActionPenalty(candidate, vector);
+      if (penalty < 0) continue;
       final hasBoostGenre = candidate.genres.any(
         (g) => circadianInfo.genres.contains(g.trim().toLowerCase()),
       );
       if (hasBoostGenre) {
-        final s = (candidate.score ?? 7.2) + vector.scoreGenres(candidate.genres) * 0.3;
+        final s = (candidate.score ?? 7.2) +
+            vector.scoreGenres(candidate.genres) * 0.3 +
+            penalty;
         circadianCandidates.add((anime: candidate, score: s));
       }
     }
@@ -379,8 +445,14 @@ class RecommendationEngine extends ChangeNotifier {
           usedIds.contains(candidate.id)) {
         continue;
       }
+      if (vector.hasPositiveGenres &&
+          vector.sharedPositiveGenreCount(candidate.genres) < 1) {
+        continue;
+      }
       final tasteScore = vector.scoreGenres(candidate.genres);
-      final totalScore = tasteScore + ((candidate.score ?? 7.0) * 0.4);
+      final penalty = _heavyActionPenalty(candidate, vector);
+      if (penalty < 0) continue;
+      final totalScore = tasteScore + ((candidate.score ?? 7.0) * 0.4) + penalty;
       coreCandidates.add((
         anime: candidate,
         score: totalScore,
@@ -419,24 +491,36 @@ class RecommendationEngine extends ChangeNotifier {
       userEntries: userEntries,
       watchHistory: watchHistory,
     );
+    final blockedIds = <int>{target.id, ...vector.excludedIds};
+    for (final entry in userEntries) {
+      if (entry.status == AnimeListStatus.watching ||
+          entry.status == AnimeListStatus.completed ||
+          entry.status == AnimeListStatus.dropped) {
+        blockedIds.add(entry.animeId);
+      }
+    }
     final targetGenres =
-        target.genres.map((g) => g.trim().toLowerCase()).toSet();
+        target.genres.map((g) => g.trim().toLowerCase()).where((g) => g.isNotEmpty).toSet();
+    final minOverlap = targetGenres.length >= 2 ? 2 : targetGenres.length;
     final candidates = <({AnimeTitle anime, double score, int overlap})>[];
 
     for (final item in catalogPool) {
-      if (item.id == target.id || vector.excludedIds.contains(item.id)) {
+      if (blockedIds.contains(item.id)) {
         continue;
       }
-      final itemGenres = item.genres.map((g) => g.trim().toLowerCase()).toSet();
+      final itemGenres =
+          item.genres.map((g) => g.trim().toLowerCase()).where((g) => g.isNotEmpty).toSet();
       final overlap = targetGenres.intersection(itemGenres).length;
-      if (overlap == 0 && targetGenres.isNotEmpty) continue;
+      if (targetGenres.isNotEmpty && overlap < minOverlap) continue;
+      final penalty = _heavyActionPenalty(item, vector);
       final sameEra = target.year != null &&
           item.year != null &&
           (item.year! - target.year!).abs() <= 4;
       final score = overlap * 3.2 +
           (sameEra ? 1.2 : 0.0) +
           vector.scoreGenres(item.genres) * 0.25 +
-          (item.score ?? 7.0) * 0.3;
+          (item.score ?? 7.0) * 0.3 +
+          penalty;
       candidates.add((anime: item, score: score, overlap: overlap));
     }
 

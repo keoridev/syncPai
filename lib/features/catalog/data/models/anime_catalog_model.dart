@@ -242,6 +242,16 @@ class AnimeCatalogModel {
       }
     }
 
+    String? parsedKind = json['kind'] as String?;
+    if (parsedKind == null || parsedKind.trim().isEmpty) {
+      final rawType = json['type'];
+      if (rawType is Map) {
+        parsedKind = (rawType['value'] ?? rawType['code'] ?? rawType['description'])?.toString();
+      } else if (rawType is String && rawType.trim().isNotEmpty) {
+        parsedKind = rawType.trim();
+      }
+    }
+
     return AnimeCatalogModel(
       id: nativeId,
       shikimoriId: shikimoriId,
@@ -249,7 +259,7 @@ class AnimeCatalogModel {
       titleEn: titleEn,
       posterUrl: primaryPoster,
       fallbackPosterUrl: fallbackPoster,
-      kind: json['kind'] as String?,
+      kind: parsedKind,
       status: parsedStatus,
       score: (json['score'] as num?)?.toDouble() ?? 0.0,
       episodesTotal: (json['episodes_total'] as num?)?.toInt() ??

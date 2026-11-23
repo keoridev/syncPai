@@ -48,10 +48,12 @@ class MascotCompanionService extends ChangeNotifier {
   bool _enabled = true;
   bool _dailyGreetingShown = false;
   bool _isAfkActive = false;
+  bool _isPlayerActive = false;
   PaiCompanionReaction? _currentReaction;
 
   bool get enabled => _enabled;
   bool get isAfkActive => _isAfkActive;
+  bool get isPlayerActive => _isPlayerActive;
   PaiCompanionReaction? get currentReaction => _currentReaction;
 
   bool get _isTestEnv {
@@ -81,9 +83,29 @@ class MascotCompanionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Паузит/возобновляет AFK-таймер и скрывает неактуальные тосты при активном плеере.
+  void setPlayerActive(bool active) {
+    if (_isPlayerActive == active) return;
+    _isPlayerActive = active;
+    if (active) {
+      _afkTimer?.cancel();
+      _afkTimer = null;
+      if (_isAfkActive || _currentReaction != null) {
+        _isAfkActive = false;
+        _currentReaction = null;
+        _dismissTimer?.cancel();
+        notifyListeners();
+      }
+    } else {
+      _isAfkActive = false;
+      _restartAfkTimer();
+    }
+  }
+
   /// Фиксирует активность пользователя: сбрасывает 90-секундный AFK-таймер и
   /// мгновенно будит Пай-тян коротким приветствием, если она задремала.
   void reportUserActivity() {
+    if (_isPlayerActive) return;
     if (_isAfkActive) {
       _isAfkActive = false;
       if (_enabled) {
@@ -100,12 +122,12 @@ class MascotCompanionService extends ChangeNotifier {
 
   void _restartAfkTimer() {
     _afkTimer?.cancel();
-    if (!_enabled || _isTestEnv) return;
+    if (!_enabled || _isTestEnv || _isPlayerActive) return;
     _afkTimer = Timer(afkTimeout, _triggerAfkDozing);
   }
 
   void _triggerAfkDozing() {
-    if (!_enabled) return;
+    if (!_enabled || _isPlayerActive) return;
     _isAfkActive = true;
     _dismissTimer?.cancel();
     _currentReaction = PaiCompanionReaction(
@@ -124,8 +146,9 @@ class MascotCompanionService extends ChangeNotifier {
     String? actionLabel,
     VoidCallback? onAction,
     bool autoDismiss = true,
+    bool isPlayerAction = false,
   }) {
-    if (!_enabled) return;
+    if (!_enabled || (_isPlayerActive && !isPlayerAction)) return;
     _isAfkActive = false;
     _dismissTimer?.cancel();
     _currentReaction = PaiCompanionReaction(
@@ -167,6 +190,7 @@ class MascotCompanionService extends ChangeNotifier {
     showReaction(
       expression: MascotExpression.speedster,
       message: 'Опенинг пропущен! Летим дальше к сюжету.',
+      isPlayerAction: true,
     );
   }
 
@@ -182,6 +206,7 @@ class MascotCompanionService extends ChangeNotifier {
           : 'Серия просмотрена! Переходим к следующей?',
       actionLabel: onNextEpisode != null ? 'След. серия' : null,
       onAction: onNextEpisode,
+      isPlayerAction: true,
     );
   }
 
@@ -253,6 +278,7 @@ class MascotCompanionService extends ChangeNotifier {
     _enabled = true;
     _dailyGreetingShown = false;
     _isAfkActive = false;
+    _isPlayerActive = false;
     _currentReaction = null;
   }
 

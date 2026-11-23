@@ -113,6 +113,34 @@ void main() {
       expect(nextTapped, isTrue);
       expect(find.byKey(const ValueKey('pai_companion_toast_card')), findsNothing);
     });
+
+    test('setPlayerActive suppresses unsolicited/AFK toasts but allows explicit skip/next actions', () {
+      final service = MascotCompanionService.instance;
+      service.showReaction(
+        expression: MascotExpression.cozyNight,
+        message: 'Привет!',
+      );
+      expect(service.currentReaction, isNotNull);
+
+      service.setPlayerActive(true);
+      expect(service.isPlayerActive, isTrue);
+      expect(service.currentReaction, isNull);
+      expect(service.isAfkActive, isFalse);
+
+      // Unsolicited reaction is suppressed while player is active
+      service.onWatchPartyFriendJoined('Alex');
+      expect(service.currentReaction, isNull);
+
+      // Explicit opening skip & episode near-end actions still show
+      service.onOpeningSkipped();
+      expect(service.currentReaction?.expression, MascotExpression.speedster);
+
+      service.onEpisodeNearEnd(animeTitle: 'Frieren', nextEpisode: 7);
+      expect(service.currentReaction?.expression, MascotExpression.cheering);
+
+      service.setPlayerActive(false);
+      expect(service.isPlayerActive, isFalse);
+    });
   });
 }
 

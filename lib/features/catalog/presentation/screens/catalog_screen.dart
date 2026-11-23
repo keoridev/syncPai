@@ -57,18 +57,33 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
 
-  static const List<String> _popularGenres = [
-    'Все',
-    'Сёнэн',
-    'Экшен',
-    'Комедия',
-    'Романтика',
-    'Фэнтези',
-    'Детектив',
-    'Драма',
-    'Приключения',
-    'Повседневность',
+  static const List<({String id, String label})> _quickTabs = [
+    (id: 'all', label: 'Все'),
+    (id: 'ongoing', label: 'Онгоинги'),
+    (id: 'popular', label: 'Популярное'),
+    (id: 'released', label: 'Завершённые'),
+    (id: 'movies', label: 'Фильмы'),
+    (id: 'anons', label: 'Анонсы'),
   ];
+
+  String? _activeQuickTabId(CatalogState state) {
+    if (state is! CatalogLoaded) return 'all';
+    if (state.selectedGenres.isNotEmpty) return null;
+    if (state.typeFilter == 'MOVIE' && state.statusFilter == null) {
+      return 'movies';
+    }
+    if (state.typeFilter != null) return null;
+    if (state.statusFilter == 'ongoing') return 'ongoing';
+    if (state.statusFilter == 'released') return 'released';
+    if (state.statusFilter == 'anons') return 'anons';
+    if (state.statusFilter == null && state.sortBy == CatalogSort.rating) {
+      return 'popular';
+    }
+    if (state.statusFilter == null && state.sortBy == CatalogSort.updates) {
+      return 'all';
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -88,15 +103,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients) return;
+    _maybeTriggerLoadNextPage();
+  }
+
+  void _maybeTriggerLoadNextPage() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final cubitState = context.read<CatalogCubit>().state;
+    if (cubitState is! CatalogLoaded ||
+        cubitState.isLoadingMore ||
+        !cubitState.hasMore ||
+        cubitState.searchQuery.isNotEmpty) {
+      return;
+    }
     final pos = _scrollController.position;
-    if (pos.pixels <= 0 || pos.maxScrollExtent <= 0) return;
-    // Pre-fetch следующей страницы при достижении 70% прокрутки
-    if (pos.pixels >= pos.maxScrollExtent * 0.70) {
+    if (pos.extentAfter < 600) {
       if (_scrollDebounceTimer?.isActive ?? false) return;
-      _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      _scrollDebounceTimer = Timer(const Duration(milliseconds: 80), () {
         if (mounted) {
-          context.read<CatalogCubit>().loadMore();
+          context.read<CatalogCubit>().loadNextPage();
         }
       });
     }
@@ -119,7 +143,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
       listenWhen: (prev, curr) {
         if (curr is CatalogLoaded) {
           if (prev is! CatalogLoaded) return true;
-          return prev.searchQuery != curr.searchQuery;
+          return prev.searchQuery != curr.searchQuery ||
+              prev.isLoadingMore != curr.isLoadingMore ||
+              prev.filteredTitles.length != curr.filteredTitles.length;
         }
         return false;
       },
@@ -132,6 +158,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
               text: state.searchQuery,
               selection: TextSelection.collapsed(offset: state.searchQuery.length),
             );
+          }
+          if (!state.isLoadingMore && state.hasMore && state.searchQuery.isEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _maybeTriggerLoadNextPage();
+            });
           }
         }
       },
@@ -649,13 +680,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
               SliverToBoxAdapter(
                 child: BlocBuilder<CatalogCubit, CatalogState>(
                   builder: (context, state) {
-                    final selectedGenres = state is CatalogLoaded
-                        ? state.selectedGenres
-                        : const <String>{};
+                    final activeTabId = _activeQuickTabId(state);
                     final hasFilters = state is CatalogLoaded &&
                         (state.selectedGenres.isNotEmpty ||
                             state.sortBy != CatalogSort.updates ||
-                            state.statusFilter != null);
+                            state.statusFilter != null ||
+                            state.typeFilter != null);
 
                     return SizedBox(
                       height: 38,
@@ -718,16 +748,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ),
                           const SizedBox(width: 8),
 
-                          // Горизонтальный скролл чипов жанров
-                          ..._popularGenres.map((genre) {
-                            final isAll = genre == 'Все';
-                            final isSelected = isAll
-                                ? selectedGenres.where((g) => g.toLowerCase() != 'все').isEmpty
-                                : selectedGenres.any((g) => g.toLowerCase() == genre.toLowerCase());
+                          // Надёжные статусные/форматные вкладки AniLibria v1
+                          ..._quickTabs.map((tab) {
+                            final isSelected = activeTabId == tab.id;
 
                             return Padding(
                               padding: const EdgeInsets.only(right: 8),
                               child: InkWell(
+                                key: ValueKey('catalog_quick_tab_${tab.id}'),
                                 onTap: () {
                                   if (_searchController.text.isNotEmpty) {
                                     _searchController.clear();
@@ -735,11 +763,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   if (_isSearchOpen) {
                                     setState(() => _isSearchOpen = false);
                                   }
-                                  if (isAll) {
-                                    context.read<CatalogCubit>().clearGenres();
-                                  } else {
-                                    context.read<CatalogCubit>().onCategoryChanged(genre);
-                                  }
+                                  context.read<CatalogCubit>().selectQuickTab(tab.id);
                                 },
                                 borderRadius: BorderRadius.circular(10),
                                 child: AnimatedContainer(
@@ -758,7 +782,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                     ),
                                   ),
                                   child: Text(
-                                    genre,
+                                    tab.label,
                                     style: TextStyle(
                                       color: isSelected ? AppColors.onColor(themePrimary) : AppColors.textSecondary,
                                       fontSize: 12.5,
@@ -1034,8 +1058,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: () {
-            context.read<CatalogCubit>().clearGenres();
-            context.read<CatalogCubit>().onSearchQueryChanged('');
+            if (_searchController.text.isNotEmpty) {
+              _searchController.clear();
+            }
+            if (_isSearchOpen) {
+              setState(() => _isSearchOpen = false);
+            }
+            context.read<CatalogCubit>().resetAllFilters();
           },
           icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
           label: const Text('Сбросить фильтры', style: TextStyle(fontWeight: FontWeight.w600)),

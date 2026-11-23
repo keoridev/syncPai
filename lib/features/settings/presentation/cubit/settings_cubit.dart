@@ -24,6 +24,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const String _keyPlayerButtonVisibility =
       'settings_player_button_visibility';
   static const String _keyPlayerButtonOrder = 'settings_player_button_order';
+  static const String _keyPlayerHudLayoutV2 = 'settings_player_hud_layout_v2';
   static const String _keyAutoSkipOpenings = 'settings_auto_skip_openings';
   static const String _keyAutoPauseOnLeave = 'settings_auto_pause_on_leave';
   static const String _keyLiquidGlass = 'settings_liquid_glass';
@@ -82,12 +83,32 @@ class SettingsCubit extends Cubit<SettingsState> {
         order = [...savedOrder, ...missing];
       }
 
+      Map<String, PlayerHudButtonConfig> hudLayout =
+          Map<String, PlayerHudButtonConfig>.from(
+        PlayerHud2DPresets.classicLayout(),
+      );
+      final rawLayout = prefs.getString(_keyPlayerHudLayoutV2);
+      if (rawLayout != null && rawLayout.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawLayout) as Map<String, dynamic>;
+          for (final entry in decoded.entries) {
+            if (entry.value is Map<String, dynamic>) {
+              hudLayout[entry.key] = PlayerHudButtonConfig.fromJson(
+                entry.value as Map<String, dynamic>,
+                fallbackId: entry.key,
+              );
+            }
+          }
+        } catch (_) {}
+      }
+
       emit(state.copyWith(
         gridColumnCount: cols,
         isListView: isList,
         playerHudPreset: preset,
         playerButtonVisibility: visibility,
         playerButtonOrder: order,
+        hudLayout: hudLayout,
         autoSkipOpenings: autoSkip,
         autoPauseOnLeave: autoPause,
         liquidGlassEffects: liquid,
@@ -141,11 +162,36 @@ class SettingsCubit extends Cubit<SettingsState> {
     final visibility = preset == PlayerHudPreset.custom
         ? state.playerButtonVisibility
         : PlayerHudPresets.visibilityFor(preset);
+    final updatedLayout = _syncHudLayoutFromPreset(preset);
     emit(state.copyWith(
       playerHudPreset: preset,
       playerButtonVisibility: visibility,
+      hudLayout: updatedLayout,
     ));
     await _persistPlayerHud(preset, visibility, state.playerButtonOrder);
+    await persistHudLayout();
+  }
+
+  Map<String, PlayerHudButtonConfig> _syncHudLayoutFromPreset(
+    PlayerHudPreset preset,
+  ) {
+    if (preset == PlayerHudPreset.custom) return state.hudLayout;
+    final base = PlayerHud2DPresets.classicLayout();
+    if (preset == PlayerHudPreset.minimal) {
+      return {
+        for (final e in base.entries)
+          e.key: e.value.copyWith(
+            visible: e.key == 'play_pause' ||
+                e.key == 'skip_intro' ||
+                e.key == 'quality_dub' ||
+                e.key == 'lock_screen' ||
+                e.key == 'fullscreen',
+          ),
+      };
+    }
+    return {
+      for (final e in base.entries) e.key: e.value.copyWith(visible: true),
+    };
   }
 
   Future<void> togglePlayerButton(String id, bool visible) async {
@@ -158,15 +204,90 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
     final updated = Map<String, bool>.from(state.playerButtonVisibility)
       ..[id] = visible;
+    final updatedLayout = Map<String, PlayerHudButtonConfig>.from(state.hudLayout);
+    for (final mappedId in _mapped2DIdsForLegacyId(id)) {
+      final prev = updatedLayout[mappedId] ?? state.hudConfigFor(mappedId);
+      updatedLayout[mappedId] = prev.copyWith(visible: visible);
+    }
     emit(state.copyWith(
       playerHudPreset: PlayerHudPreset.custom,
       playerButtonVisibility: updated,
+      hudLayout: updatedLayout,
     ));
     await _persistPlayerHud(
       PlayerHudPreset.custom,
       updated,
       state.playerButtonOrder,
     );
+    await persistHudLayout();
+  }
+
+  List<String> _mapped2DIdsForLegacyId(String id) {
+    switch (id) {
+      case 'seek_10s':
+        return const ['seek_back', 'seek_forward'];
+      case 'skip_op_ed':
+        return const ['skip_intro'];
+      case 'quality':
+        return const ['quality_dub'];
+      case 'pip':
+        return const ['pip_mode'];
+      default:
+        return state.hudLayout.containsKey(id) ? [id] : const [];
+    }
+  }
+
+  /// Обновление 2D-координат, масштаба или видимости конкретной кнопки HUD.
+  Future<void> updateHudButtonConfig(
+    String id, {
+    double? nx,
+    double? ny,
+    double? scale,
+    bool? visible,
+    bool persist = true,
+  }) async {
+    final prev = state.hudConfigFor(id);
+    final next = prev.copyWith(
+      nx: nx,
+      ny: ny,
+      scale: scale,
+      visible: visible,
+    );
+    if (next == prev) return;
+    final updatedLayout = Map<String, PlayerHudButtonConfig>.from(state.hudLayout)
+      ..[id] = next;
+    emit(state.copyWith(
+      playerHudPreset: PlayerHudPreset.custom,
+      hudLayout: updatedLayout,
+    ));
+    if (persist) {
+      await persistHudLayout();
+    }
+  }
+
+  /// Применение встроенной 2D-раскладки («Классика» / «Под правую руку»).
+  Future<void> applyHud2DPreset(HudLayoutPresetType preset) async {
+    final layout = Map<String, PlayerHudButtonConfig>.from(
+      PlayerHud2DPresets.forPreset(preset),
+    );
+    emit(state.copyWith(
+      playerHudPreset: preset == HudLayoutPresetType.classic
+          ? PlayerHudPreset.standard
+          : PlayerHudPreset.custom,
+      hudLayout: layout,
+    ));
+    await persistHudLayout();
+  }
+
+  Future<void> persistHudLayout() async {
+    try {
+      final prefs = await _getPrefs();
+      final encoded = jsonEncode({
+        for (final e in state.hudLayout.entries) e.key: e.value.toJson(),
+      });
+      await prefs.setString(_keyPlayerHudLayoutV2, encoded);
+      await prefs.setString(_keyPlayerHudPreset, state.playerHudPreset.name);
+    } catch (_) {}
   }
 
   Future<void> reorderPlayerButtons(
@@ -194,12 +315,17 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> resetPlayerHudToDefault() async {
     final defaultOrder = PlayerHudPresets.defaultOrder();
     final defaultVis = PlayerHudPresets.visibilityFor(PlayerHudPreset.standard);
+    final defaultLayout = Map<String, PlayerHudButtonConfig>.from(
+      PlayerHud2DPresets.classicLayout(),
+    );
     emit(state.copyWith(
       playerHudPreset: PlayerHudPreset.standard,
       playerButtonVisibility: defaultVis,
       playerButtonOrder: defaultOrder,
+      hudLayout: defaultLayout,
     ));
     await _persistPlayerHud(PlayerHudPreset.standard, defaultVis, defaultOrder);
+    await persistHudLayout();
   }
 
   Future<void> _persistPlayerHud(

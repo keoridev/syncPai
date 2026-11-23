@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/theme/app_theme.dart';
 import 'package:sync_pai/features/catalog/data/datasources/anime_remote_datasource.dart';
 import 'package:sync_pai/features/catalog/data/services/catalog_persistent_store.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
@@ -11,6 +15,7 @@ import 'package:sync_pai/features/catalog/domain/usecases/get_updates.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/search_titles.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
+import 'package:sync_pai/features/catalog/presentation/widgets/catalog_filter_sheet.dart';
 
 class _FailingCatalogRepository implements CatalogRepository {
   @override
@@ -200,6 +205,160 @@ void main() {
       await cubit.close();
       await CatalogPersistentStore.instance.clear();
     });
+
+    test('getCatalog passes f[types]=MOVIE and anons falls back to IS_ANNOUNCED',
+        () async {
+      final adapter = _AnonsAndMoviesAdapter();
+      final dio = Dio()..httpClientAdapter = adapter;
+      final ds = AniLibertyAnimeRemoteDataSourceImpl(customDio: dio);
+
+      final movies = await ds.getCatalog(
+        page: 1,
+        types: 'MOVIE',
+        sort: 'rating',
+      );
+      expect(movies, isNotEmpty);
+      expect(movies.first.kind, 'MOVIE');
+      final movieReq = adapter.requests
+          .firstWhere((r) => r.queryParameters['f[types]'] == 'MOVIE');
+      expect(movieReq.queryParameters['f[sorting]'], 'RATING_DESC');
+
+      final anons = await ds.getCatalog(page: 1, status: 'anons');
+      expect(anons, isNotEmpty);
+      expect(
+        adapter.requests.any(
+          (r) => r.queryParameters['f[publish_statuses]'] == 'IS_IN_PRODUCTION',
+        ),
+        isTrue,
+      );
+      expect(
+        adapter.requests.any(
+          (r) => r.queryParameters['f[publish_statuses]'] == 'IS_ANNOUNCED',
+        ),
+        isTrue,
+      );
+    });
+
+    test('CatalogCubit.selectQuickTab never emits CatalogError on failing backend',
+        () async {
+      final repo = _FailingCatalogRepository();
+      final cubit = CatalogCubit(
+        getUpdates: GetUpdates(repo),
+        searchTitles: SearchTitles(repo),
+      );
+      cubit.emit(const CatalogLoaded(titles: [], filteredTitles: []));
+
+      for (final tab in const [
+        'all',
+        'ongoing',
+        'popular',
+        'released',
+        'movies',
+        'anons',
+      ]) {
+        cubit.selectQuickTab(tab);
+        await Future.delayed(const Duration(milliseconds: 25));
+        expect(cubit.state, isA<CatalogLoaded>());
+      }
+      await cubit.close();
+    });
+
+    testWidgets(
+        'CatalogFilterSheet loads live genres sorted alphabetically from AnimeRemoteDataSource',
+        (tester) async {
+      final adapter = _GenreRefMockAdapter();
+      final dio = Dio()..httpClientAdapter = adapter;
+      final ds = AniLibertyAnimeRemoteDataSourceImpl(customDio: dio);
+      await tester.runAsync(() => ds.syncGenreReferences(force: true));
+
+      if (getIt.isRegistered<AnimeRemoteDataSource>()) {
+        await getIt.unregister<AnimeRemoteDataSource>();
+      }
+      getIt.registerSingleton<AnimeRemoteDataSource>(ds);
+
+      final repo = _FailingCatalogRepository();
+      final cubit = CatalogCubit(
+        getUpdates: GetUpdates(repo),
+        searchTitles: SearchTitles(repo),
+      );
+      const state = CatalogLoaded(titles: [], filteredTitles: []);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.cinemaDark,
+          home: BlocProvider<CatalogCubit>.value(
+            value: cubit,
+            child: const Scaffold(
+              body: CatalogFilterSheet(currentState: state),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Жанры из живого ответа (/references/genres) отрендерены в алфавитном порядке
+      expect(find.widgetWithText(FilterChip, 'Мистика'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Психология'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Фэнтези'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Школа'), findsOneWidget);
+      expect(ds.liveGenres.map((e) => e.name).toList(), [
+        'Мистика',
+        'Психология',
+        'Сэйнэн',
+        'Сёнен',
+        'Фэнтези',
+        'Школа',
+      ]);
+
+      await cubit.close();
+      await getIt.unregister<AnimeRemoteDataSource>();
+    });
   });
+}
+
+class _AnonsAndMoviesAdapter implements HttpClientAdapter {
+  final List<RequestOptions> requests = [];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    if (options.queryParameters['f[publish_statuses]'] == 'IS_IN_PRODUCTION') {
+      return ResponseBody.fromString(
+        jsonEncode({'data': []}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/json; charset=utf-8'],
+        },
+      );
+    }
+    return ResponseBody.fromString(
+      jsonEncode({
+        'data': [
+          {
+            'id': 55,
+            'alias': 'test-movie',
+            'name': {'main': 'Тест Фильм', 'english': 'Test Movie'},
+            'type': {'value': 'MOVIE', 'description': 'Фильм'},
+            'poster': {'src': 'https://example.com/55.jpg'},
+            'year': 2026,
+            'genres': [
+              {'id': 8, 'name': 'Драма'},
+            ],
+          },
+        ],
+      }),
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['application/json; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 

@@ -16,7 +16,7 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
   final SyncPaiReviewsDataSource _syncPaiDataSource;
   final ReviewsCacheManager _cacheManager;
 
-  static const String _shikimoriBaseUrl = 'https://shikimori.io/api';
+  static const String _shikimoriBaseUrl = 'https://shikimori.one/api';
 
   AnimeReviewsRepositoryImpl({
     Dio? dio,
@@ -27,6 +27,8 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
             Dio(
               BaseOptions(
                 baseUrl: _shikimoriBaseUrl,
+                followRedirects: true,
+                maxRedirects: 5,
                 connectTimeout: const Duration(seconds: 2),
                 receiveTimeout: const Duration(seconds: 2),
                 headers: {

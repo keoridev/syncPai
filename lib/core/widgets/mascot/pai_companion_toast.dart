@@ -17,7 +17,9 @@ class PaiCompanionToast extends StatelessWidget {
       builder: (context, _) {
         final service = MascotCompanionService.instance;
         final reaction = service.currentReaction;
-        if (!service.enabled || reaction == null) {
+        if (!service.enabled ||
+            reaction == null ||
+            (service.isPlayerActive && reaction.isAfk)) {
           return const SizedBox.shrink();
         }
 

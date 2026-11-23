@@ -3925,6 +3925,7 @@ class _CountingMockAnimeCatalogRepository implements AnimeCatalogRepository {
     String? year,
     String? sort,
     String? status,
+    String? types,
     CancelToken? cancelToken,
   }) async {
     onGetCatalog?.call();
@@ -3965,6 +3966,7 @@ class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
     String? year,
     String? sort,
     String? status,
+    String? types,
     CancelToken? cancelToken,
   }) async {
     return [

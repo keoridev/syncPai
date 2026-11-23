@@ -210,14 +210,7 @@ class AppAvatar extends StatelessWidget {
       }
       try {
         final candidate = File(filePath);
-        if (candidate.existsSync() ||
-            filePath.startsWith('/') ||
-            filePath.contains(':\\') ||
-            filePath.contains(':/') ||
-            cleanUrl.contains('custom_avatar') ||
-            cleanUrl.contains('cache') ||
-            cleanUrl.contains('storage') ||
-            cleanUrl.contains('Documents')) {
+        if (candidate.existsSync()) {
           resolvedLocalFile = candidate;
         }
       } catch (_) {}

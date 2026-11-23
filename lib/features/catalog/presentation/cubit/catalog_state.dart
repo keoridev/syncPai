@@ -37,7 +37,8 @@ class CatalogLoaded extends CatalogState {
   final Set<String> selectedGenres;
   final CatalogSort sortBy;
   final bool matchAllGenres;
-  final String? statusFilter; // 'ongoing' | 'released' | null (все)
+  final String? statusFilter; // 'ongoing' | 'released' | 'anons' | null (все)
+  final String? typeFilter; // 'MOVIE' | null (все)
   final String searchQuery;
   final bool isSearching;
   final CatalogViewMode viewMode;
@@ -53,6 +54,7 @@ class CatalogLoaded extends CatalogState {
     this.sortBy = CatalogSort.updates,
     this.matchAllGenres = false,
     this.statusFilter,
+    this.typeFilter,
     this.searchQuery = '',
     this.isSearching = false,
     this.viewMode = CatalogViewMode.grid,
@@ -76,6 +78,8 @@ class CatalogLoaded extends CatalogState {
     bool? matchAllGenres,
     String? statusFilter,
     bool clearStatusFilter = false,
+    String? typeFilter,
+    bool clearTypeFilter = false,
     String? searchQuery,
     bool? isSearching,
     CatalogViewMode? viewMode,
@@ -102,6 +106,7 @@ class CatalogLoaded extends CatalogState {
       sortBy: sortBy ?? this.sortBy,
       matchAllGenres: matchAllGenres ?? this.matchAllGenres,
       statusFilter: clearStatusFilter ? null : (statusFilter ?? this.statusFilter),
+      typeFilter: clearTypeFilter ? null : (typeFilter ?? this.typeFilter),
       searchQuery: searchQuery ?? this.searchQuery,
       isSearching: isSearching ?? this.isSearching,
       viewMode: viewMode ?? this.viewMode,
@@ -120,6 +125,7 @@ class CatalogLoaded extends CatalogState {
         sortBy,
         matchAllGenres,
         statusFilter,
+        typeFilter,
         searchQuery,
         isSearching,
         viewMode,

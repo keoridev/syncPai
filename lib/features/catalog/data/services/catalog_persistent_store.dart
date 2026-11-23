@@ -72,12 +72,16 @@ class CatalogPersistentStore {
   List<AnimeTitle> queryLocal({
     String? genre,
     String? status,
+    String? type,
     String sort = 'updates',
     int limit = 40,
   }) {
     if (_byId.isEmpty) return const [];
-    final cleanGenre = genre?.trim().toLowerCase();
+    String norm(String s) =>
+        s.trim().toLowerCase().replaceAll('ё', 'е').replaceAll('э', 'е');
+    final cleanGenre = genre != null ? norm(genre) : null;
     final cleanStatus = status?.trim().toLowerCase();
+    final cleanType = type?.trim().toLowerCase();
 
     final results = <AnimeTitle>[];
     for (final id in _orderedIds) {
@@ -86,17 +90,37 @@ class CatalogPersistentStore {
       if (cleanGenre != null &&
           cleanGenre.isNotEmpty &&
           cleanGenre != 'все') {
-        final hasGenre = t.genres.any(
-          (g) => g.trim().toLowerCase() == cleanGenre,
-        );
+        final hasGenre = t.genres.any((g) => norm(g) == cleanGenre);
         if (!hasGenre) continue;
       }
       if (cleanStatus != null && cleanStatus.isNotEmpty) {
         final st = t.status.toLowerCase();
-        if (cleanStatus == 'ongoing' && !st.contains('ongoing') && !st.contains('выходит') && !st.contains('онгоинг')) {
+        if (cleanStatus == 'ongoing' &&
+            !st.contains('ongoing') &&
+            !st.contains('выходит') &&
+            !st.contains('онгоинг')) {
           continue;
         }
-        if (cleanStatus == 'released' && (st.contains('ongoing') || st.contains('онгоинг'))) {
+        if (cleanStatus == 'released' &&
+            (st.contains('ongoing') ||
+                st.contains('онгоинг') ||
+                st.contains('anons') ||
+                st.contains('анонс'))) {
+          continue;
+        }
+        if ((cleanStatus == 'anons' || cleanStatus == 'anonses') &&
+            !st.contains('anons') &&
+            !st.contains('анонс') &&
+            !st.contains('скоро')) {
+          continue;
+        }
+      }
+      if (cleanType != null && cleanType.isNotEmpty) {
+        final kind = (t.kind ?? '').toLowerCase();
+        if (cleanType == 'movie' &&
+            !kind.contains('movie') &&
+            !kind.contains('фильм') &&
+            !kind.contains('full')) {
           continue;
         }
       }

@@ -61,6 +61,7 @@ import 'package:sync_pai/features/torrents/presentation/widgets/torrent_releases
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_state.dart';
 import 'package:sync_pai/features/kodik/presentation/widgets/voiceover_selector_sheet.dart';
+import 'package:sync_pai/features/main/presentation/screens/main_screen.dart';
 
 /// In-Memory LRU кэш с 30-минутным TTL для мгновенного повторного открытия деталей аниме (0ms)
 class CachedAnimeDetails {
@@ -276,6 +277,243 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         ),
       );
     }
+  }
+
+  void _openCatalogWithGenre(String genre) {
+    final cleanGenre = genre.trim();
+    if (cleanGenre.isEmpty) return;
+    HapticFeedback.selectionClick();
+    CatalogCubit? cubit;
+    if (getIt.isRegistered<CatalogCubit>()) {
+      cubit = getIt<CatalogCubit>();
+    } else {
+      try {
+        cubit = context.read<CatalogCubit>();
+      } catch (_) {}
+    }
+    cubit?.applyFilterSheet(
+      genres: {cleanGenre},
+      sortBy: CatalogSort.updates,
+      matchAll: false,
+      statusFilter: null,
+      typeFilter: null,
+    );
+    MainScreen.switchToTab(0);
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    } else {
+      try {
+        GoRouter.of(context).go('/');
+      } catch (_) {}
+    }
+  }
+
+  String? _formatTitleType(String? rawKind) {
+    final clean = (rawKind ?? '').trim();
+    if (clean.isEmpty) return null;
+    switch (clean.toLowerCase()) {
+      case 'tv':
+      case 'tv_series':
+        return 'ТВ';
+      case 'movie':
+      case 'full':
+        return 'Фильм';
+      case 'ova':
+        return 'OVA';
+      case 'ona':
+        return 'ONA';
+      case 'special':
+        return 'Спешл';
+      default:
+        return clean;
+    }
+  }
+
+  Widget _buildMetadataRow(
+    BuildContext context,
+    AnimeTitle title, {
+    bool compact = false,
+    bool withShadows = false,
+  }) {
+    final typeLabel = _formatTitleType(title.kind);
+    final scoreValue = (title.score != null && title.score! > 0)
+        ? title.score!
+        : (_aggregate?.shikimoriScore ??
+            _aggregate?.syncpaiScore ??
+            _aggregate?.malScore);
+
+    final shadows = withShadows
+        ? const [
+            Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
+          ]
+        : null;
+
+    final metaStyle = AppTypography.labelMedium.copyWith(
+      color: AppColors.textSecondary,
+      fontWeight: FontWeight.w500,
+      fontSize: compact ? 12.0 : 13.0,
+      shadows: shadows,
+    );
+
+    final dot = Text(
+      '•',
+      style: TextStyle(color: AppColors.textMuted, shadows: shadows),
+    );
+
+    final parts = <Widget>[];
+    if (title.status.isNotEmpty) {
+      parts.add(
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 9,
+            vertical: 3,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            title.status,
+            style: AppTypography.badge.copyWith(
+              color: AppColors.primaryLight,
+              fontSize: compact ? 10.5 : 11.0,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final textTokens = <String>[
+      if (title.year != null) '${title.year}',
+      if (typeLabel != null) typeLabel,
+      if (title.episodesBadgeText.isNotEmpty) title.episodesBadgeText,
+    ];
+
+    for (var i = 0; i < textTokens.length; i++) {
+      if (parts.isNotEmpty) parts.add(dot);
+      parts.add(Text(textTokens[i], style: metaStyle));
+    }
+
+    if (scoreValue != null) {
+      if (parts.isNotEmpty) parts.add(dot);
+      parts.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.star_rounded,
+              color: const Color(0xFFFFC107),
+              size: compact ? 14 : 15,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              scoreValue.toStringAsFixed(1),
+              style: metaStyle.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 6,
+      children: parts,
+    );
+  }
+
+  Widget _buildGenrePills(BuildContext context, AnimeTitle title) {
+    final genres = title.genres.map((g) => g.trim()).where((g) => g.isNotEmpty).toList();
+    if (genres.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: genres.map((genre) {
+        return Material(
+          color: const Color(0xFF191F2B),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            key: ValueKey('details_genre_pill_$genre'),
+            onTap: () => _openCatalogWithGenre(genre),
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                genre,
+                style: AppTypography.labelMedium.copyWith(
+                  color: AppColors.textPrimary.withValues(alpha: 0.92),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildExpandableSynopsis(BuildContext context, String description) {
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      height: 1.55,
+      fontSize: 13.5,
+      color: AppColors.textSecondary,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: description, style: bodyStyle),
+          maxLines: 4,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: constraints.maxWidth > 0 ? constraints.maxWidth : 300);
+
+        final needsToggle = painter.didExceedMaxLines || _isDescriptionExpanded;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: needsToggle
+                  ? () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded)
+                  : null,
+              child: Text(
+                description,
+                maxLines: _isDescriptionExpanded ? null : 4,
+                overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                style: bodyStyle,
+              ),
+            ),
+            if (needsToggle) ...[
+              const SizedBox(height: 6),
+              InkWell(
+                key: const ValueKey('details_synopsis_toggle'),
+                onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    _isDescriptionExpanded ? 'Свернуть' : 'Развернуть описание',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.primaryLight,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _loadShikimoriReviews({bool silent = false}) async {
@@ -1385,51 +1623,8 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Метаданные: Статус • Год • Серии
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    if (title.status.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.4),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Text(
-                          title.status,
-                          style: AppTypography.badge.copyWith(
-                            color: AppColors.primaryLight,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    if (title.year != null) ...[
-                      Text(
-                        '${title.year}',
-                        style: AppTypography.labelMedium.copyWith(
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Text('•', style: TextStyle(color: AppColors.textMuted)),
-                    ],
-                    Text(
-                      title.episodesBadgeText,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                // Метаданные: Статус • Год • Тип • Серии • Рейтинг
+                _buildMetadataRow(context, title),
 
                 const SizedBox(height: 10),
 
@@ -1461,52 +1656,17 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   ),
                 ],
 
-                // Жанры
+                // Кликабельные тональные плашки жанров
                 if (title.genres.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    title.genres.join(' • '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
+                  const SizedBox(height: 12),
+                  _buildGenrePills(context, title),
                 ],
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
 
-                // Описание
+                // Описание (до 4 строк с кнопкой Развернуть описание / Свернуть)
                 if (title.description.isNotEmpty) ...[
-                  GestureDetector(
-                    onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
-                    child: Text(
-                      title.description,
-                      maxLines: _isDescriptionExpanded ? null : 3,
-                      overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                      style: AppTypography.bodyMedium.copyWith(
-                        height: 1.5,
-                        fontSize: 13.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  if (title.description.length > 120) ...[
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
-                      child: Text(
-                        _isDescriptionExpanded ? 'Свернуть' : 'Подробнее',
-                        style: AppTypography.labelMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
-                  ],
+                  _buildExpandableSynopsis(context, title.description),
                   const SizedBox(height: 14),
                 ],
 
@@ -2053,54 +2213,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // Метаданные: Статус • Год • Серии
-                                        Wrap(
-                                          crossAxisAlignment: WrapCrossAlignment.center,
-                                          spacing: 8,
-                                          runSpacing: 4,
-                                          children: [
-                                            if (title.status.isNotEmpty) ...[
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 3,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.primary.withValues(alpha: 0.18),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: AppColors.primary.withValues(alpha: 0.4),
-                                                    width: 0.8,
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  title.status,
-                                                  style: AppTypography.badge.copyWith(
-                                                    color: AppColors.primaryLight,
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                            if (title.year != null) ...[
-                                              Text(
-                                                '${title.year}',
-                                                style: AppTypography.labelMedium.copyWith(
-                                                  color: AppColors.textSecondary,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                              const Text('•', style: TextStyle(color: AppColors.textMuted)),
-                                            ],
-                                            Text(
-                                              title.episodesBadgeText,
-                                              style: AppTypography.labelMedium.copyWith(
-                                                color: AppColors.textSecondary,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
+                                        // Метаданные: Статус • Год • Тип • Серии • Рейтинг
+                                        _buildMetadataRow(
+                                          context,
+                                          title,
+                                          compact: true,
+                                          withShadows: true,
                                         ),
 
                                         const SizedBox(height: 8),
@@ -2140,24 +2258,6 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                             ),
                                           ),
                                         ],
-
-                                        // Жанры через точку без серых плашек с глубокой тенью
-                                        if (title.genres.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            title.genres.join(' • '),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: AppTypography.bodySmall.copyWith(
-                                              color: AppColors.textSecondary,
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w400,
-                                              shadows: const [
-                                                Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 1)),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
                                       ],
                                     ),
                                   ),
@@ -2168,6 +2268,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                         ),
                       ),
                     ),
+
+                    // Кликабельные плашки жанров (под постером и названием)
+                    if (title.genres.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                            12.0,
+                            MediaQuery.sizeOf(context).width <= 360 ? 12.0 : AppDimensions.spacingXl,
+                            4.0,
+                          ),
+                          child: _buildGenrePills(context, title),
+                        ),
+                      ),
 
                     // 2. Блок действий: Главная кнопка «Смотреть» во всю ширину + аккуратный ряд действий с подписями
                     SliverToBoxAdapter(
@@ -2202,7 +2316,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                         ),
                       ),
 
-                    // Описание тайтла (мобильное раскрывающееся)
+                    // Описание тайтла (мобильное раскрывающееся, 4 строки)
                     if (title.description.isNotEmpty)
                       SliverToBoxAdapter(
                         child: Padding(
@@ -2222,43 +2336,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _isDescriptionExpanded = !_isDescriptionExpanded;
-                                  });
-                                },
-                                child: Text(
-                                  title.description,
-                                  maxLines: _isDescriptionExpanded ? null : 3,
-                                  overflow: _isDescriptionExpanded
-                                      ? TextOverflow.visible
-                                      : TextOverflow.ellipsis,
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    height: 1.55,
-                                    fontSize: 13.5,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                              if (title.description.length > 120) ...[
-                                const SizedBox(height: 4),
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _isDescriptionExpanded = !_isDescriptionExpanded;
-                                    });
-                                  },
-                                  child: Text(
-                                    _isDescriptionExpanded ? 'Свернуть' : 'Подробнее',
-                                    style: AppTypography.labelMedium.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              _buildExpandableSynopsis(context, title.description),
                             ],
                           ),
                         ),

@@ -32,6 +32,16 @@ class MainScreen extends StatefulWidget {
     this.onTitleSelected,
   });
 
+  static _MainScreenState? _activeState;
+
+  /// Переключить активный таб главного экрана (например, на Каталог при клике на жанр).
+  static bool switchToTab(int index) {
+    final state = _activeState;
+    if (state == null || !state.mounted) return false;
+    state.switchTab(index);
+    return true;
+  }
+
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -43,6 +53,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    MainScreen._activeState = this;
     _currentIndex = widget.initialTab.clamp(0, 4);
     _pageController = PageController(initialPage: _currentIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) => _triggerDailyGreeting());
@@ -71,6 +82,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    if (identical(MainScreen._activeState, this)) {
+      MainScreen._activeState = null;
+    }
     _pageController.dispose();
     super.dispose();
   }

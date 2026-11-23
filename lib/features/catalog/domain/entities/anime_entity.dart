@@ -81,6 +81,7 @@ class AnimeEntity extends Equatable {
       id: releaseId,
       shikimoriId: shikimoriId > 0 ? shikimoriId : null,
       score: score > 0 ? score : null,
+      kind: kind,
       code: titleEn.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
       russianTitle: titleRu,
       englishTitle: titleEn,

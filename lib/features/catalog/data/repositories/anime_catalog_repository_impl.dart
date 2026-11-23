@@ -19,6 +19,7 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
     String? year,
     String? sort,
     String? status,
+    String? types,
     CancelToken? cancelToken,
   }) async {
     try {
@@ -29,6 +30,7 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
         year: year,
         sort: sort,
         status: status,
+        types: types,
         cancelToken: cancelToken,
       );
       return models.map((m) => m.toDomain()).toList();

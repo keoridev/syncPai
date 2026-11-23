@@ -14,6 +14,7 @@ class GetCatalogUseCase {
     String? year,
     String? sort,
     String? status,
+    String? types,
     CancelToken? cancelToken,
   }) {
     return repository.getCatalog(
@@ -23,6 +24,7 @@ class GetCatalogUseCase {
       year: year,
       sort: sort,
       status: status,
+      types: types,
       cancelToken: cancelToken,
     );
   }

@@ -247,6 +247,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         ? resolvedUid
         : '${isHost ? "host" : "guest"}_${_random.nextInt(999999)}';
     unawaited(PresenceService.instance.setWatchingActivity(title.russianTitle, episode.episode));
+    MascotCompanionService.instance.setPlayerActive(true);
 
     _initPlayer();
     if (state.isSyncRoom) {
@@ -2238,6 +2239,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   Future<void> close() async {
     if (_isDisposing) return;
     _isDisposing = true;
+    MascotCompanionService.instance.setPlayerActive(false);
     unawaited(PresenceService.instance.clearWatchingActivity());
     unawaited(DiscordRpcService.instance.setBrowsing());
 

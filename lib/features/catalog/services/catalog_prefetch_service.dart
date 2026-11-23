@@ -38,11 +38,9 @@ class CatalogPrefetchService {
   static const List<String> prefetchBuckets = [
     'ongoing',
     'popular',
+    'released',
     'movies',
-    'Экшен',
-    'Фэнтези',
-    'Романтика',
-    'Приключения',
+    'anons',
   ];
 
   final Map<String, _PrefetchEntry> _memoryCache = {};
@@ -240,6 +238,7 @@ class CatalogPrefetchService {
         String? status;
         String? sort;
         String? genres;
+        String? types;
 
         switch (bucket) {
           case 'ongoing':
@@ -248,8 +247,15 @@ class CatalogPrefetchService {
           case 'popular':
             sort = 'rating';
             break;
+          case 'released':
+            status = 'released';
+            break;
+          case 'anons':
+            status = 'anons';
+            break;
           case 'movies':
-            genres = 'Фильм';
+            types = 'MOVIE';
+            sort = 'rating';
             break;
           default:
             genres = bucket;
@@ -262,6 +268,7 @@ class CatalogPrefetchService {
           genres: genres,
           sort: sort,
           status: status,
+          types: types,
           cancelToken: _prefetchCancelToken,
         );
 

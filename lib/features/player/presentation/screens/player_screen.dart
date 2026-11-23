@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/network_status_helper.dart';
+import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
@@ -34,6 +35,7 @@ import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import 'package:sync_pai/features/player/services/global_mini_player_service.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
+import 'package:sync_pai/features/settings/presentation/cubit/settings_state.dart';
 import '../widgets/player_onboarding_overlay.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
 import '../widgets/auto_next_episode_banner.dart';
@@ -271,6 +273,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       WinterThemeService.instance.enterVideoPlayer();
+      MascotCompanionService.instance.setPlayerActive(true);
       _recordInitialWatchHistory();
       _recordPlaybackInAnimeList();
 
@@ -556,6 +559,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     Future.microtask(() {
       WinterThemeService.instance.exitVideoPlayer();
+      MascotCompanionService.instance.setPlayerActive(false);
       if (isDesktopOS) {
         DesktopTitleBar.isFullScreenNotifier.value = false;
       }
@@ -824,7 +828,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
                       // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
                       IgnorePointer(
-                        ignoring: state.isHudEditMode,
+                        ignoring: state.isHudEditMode || state.isScreenLocked,
                         child: DoubleTapSeekOverlay(
                           onTap: () => _cubit.toggleControls(),
                         onSeekRelative: (seconds) {
@@ -1524,7 +1528,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   Widget _buildSkipOverlay(PlayerState state) {
-    if (state.isScreenLocked || state.errorMessage != null) {
+    if (state.errorMessage != null || state.isHudEditMode) {
       return const SizedBox.shrink();
     }
 
@@ -1535,10 +1539,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final curEpNum = state.episode.episode;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final bottomOffset = MediaQuery.paddingOf(context).bottom +
-        (state.areControlsVisible ? (isLandscape ? 82.0 : 142.0) : 28.0);
+        (state.areControlsVisible && !state.isScreenLocked
+            ? (isLandscape ? 82.0 : 142.0)
+            : 28.0);
     final primaryAccent = Theme.of(context).colorScheme.primary;
 
-    // 1. Минималистичная кнопка пропуска опенинга в стиле Netflix (с авто-сворачиванием через 5 сек)
+    // 1. Минималистичная кнопка пропуска опенинга в стиле Netflix (доступна даже при блокировке экрана)
     final isOpening = op != null &&
         curSec >= op.start &&
         curSec <= op.stop &&
@@ -1563,60 +1569,72 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
       _lastControlsVisible = state.areControlsVisible;
 
-      return Positioned(
-        bottom: bottomOffset,
-        right: 18,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            key: const ValueKey('player_skip_intro_pill'),
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              _cubit.seek(op.stopDuration);
-            },
-            borderRadius: BorderRadius.circular(18),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOutCubic,
-              height: 36,
-              padding: EdgeInsets.symmetric(
-                horizontal: _skipPillCollapsed ? 9 : 14,
-              ),
-              decoration: BoxDecoration(
-                color: const Color.fromRGBO(15, 20, 30, 0.78),
+      final skipCfg = getIt.isRegistered<SettingsCubit>()
+          ? getIt<SettingsCubit>().state.hudConfigFor('skip_intro')
+          : const PlayerHudButtonConfig(id: 'skip_intro', nx: 0.85, ny: 0.72);
+      if (!skipCfg.visible && !state.isScreenLocked) {
+        return const SizedBox.shrink();
+      }
+
+      return SafeArea(
+        child: Align(
+          alignment: Alignment(skipCfg.nx * 2.0 - 1.0, skipCfg.ny * 2.0 - 1.0),
+          child: Transform.scale(
+            scale: skipCfg.scale,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: const ValueKey('player_skip_intro_pill'),
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  _cubit.seek(op.stopDuration);
+                  MascotCompanionService.instance.onOpeningSkipped();
+                },
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.skip_next_rounded,
-                    color: Colors.white,
-                    size: 18,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  height: 36,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: _skipPillCollapsed ? 9 : 14,
                   ),
-                  AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 200),
-                    crossFadeState: _skipPillCollapsed
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    firstChild: const Padding(
-                      padding: EdgeInsets.only(left: 6),
-                      child: Text(
-                        'Пропустить',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5,
-                        ),
-                      ),
+                  decoration: BoxDecoration(
+                    color: const Color.fromRGBO(15, 20, 30, 0.78),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
+                      width: 1,
                     ),
-                    secondChild: const SizedBox.shrink(),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.skip_next_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        crossFadeState: _skipPillCollapsed
+                            ? CrossFadeState.showSecond
+                            : CrossFadeState.showFirst,
+                        firstChild: const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Text(
+                            'Пропустить',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                        secondChild: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -1625,7 +1643,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
     _lastControlsVisible = state.areControlsVisible;
 
-    // 2. Умная кнопка пропуска эндинга / перехода к следующей серии с 10-секундным отсчетом
+    // 2. Умная кнопка пропуска эндинга / перехода к следующей серии (работает и в последние 90 сек, и при блокировке экрана)
     if (_dismissedEndingEpisode == curEpNum) {
       return const SizedBox.shrink();
     }
@@ -1640,8 +1658,67 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final isInEndingSegment = ed != null && curSec >= ed.start && curSec <= ed.stop;
     final isEndOfEpisodeCountdown =
         totalSec > 60 && (totalSec - curSec) <= 10 && (totalSec - curSec) > 0;
+    final isLast90Seconds =
+        hasNext && totalSec > 90 && (totalSec - curSec) <= 90 && (totalSec - curSec) > 0;
 
-    if (!isPreEndingCountdown && !isInEndingSegment && !isEndOfEpisodeCountdown) {
+    if (state.isScreenLocked) {
+      final canShowLockedNext = hasNext &&
+          nextEp != null &&
+          (isPreEndingCountdown ||
+              isInEndingSegment ||
+              isEndOfEpisodeCountdown ||
+              isLast90Seconds);
+      if (!canShowLockedNext) {
+        return const SizedBox.shrink();
+      }
+      return Positioned(
+        bottom: bottomOffset,
+        right: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const ValueKey('player_locked_next_episode_pill'),
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              _cubit.playNextEpisode(nextEp);
+            },
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF12151E).withValues(alpha: 0.90),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: primaryAccent.withValues(alpha: 0.65),
+                  width: 1.2,
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.skip_next_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 6),
+                  Text(
+                    'След. серия',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!isPreEndingCountdown &&
+        !isInEndingSegment &&
+        !isEndOfEpisodeCountdown &&
+        !isLast90Seconds) {
       return const SizedBox.shrink();
     }
 
@@ -1654,20 +1731,29 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       countdownSec = (ed.start - curSec).clamp(1, 10);
     } else if (isEndOfEpisodeCountdown) {
       countdownSec = (totalSec - curSec).clamp(1, 10);
-    } else {
-      final elapsedInEnding = curSec - ed!.start;
+    } else if (isInEndingSegment) {
+      final elapsedInEnding = curSec - ed.start;
       countdownSec = (10 - (elapsedInEnding % 10)).clamp(1, 10);
+    } else {
+      countdownSec = (totalSec - curSec).clamp(1, 90);
     }
 
-    final countdownProgress = ((10 - countdownSec) / 10.0).clamp(0.0, 1.0);
+    final countdownProgress = (!isPreEndingCountdown &&
+            !isInEndingSegment &&
+            !isEndOfEpisodeCountdown &&
+            isLast90Seconds)
+        ? ((90 - (totalSec - curSec)) / 90.0).clamp(0.0, 1.0)
+        : ((10 - countdownSec) / 10.0).clamp(0.0, 1.0);
 
     final String buttonLabel;
     if (isPreEndingCountdown) {
       buttonLabel = 'До эндинга • $countdownSecс';
     } else if (hasPostCredits) {
       buttonLabel = 'Пропустить эндинг • $countdownSecс';
-    } else if (hasNext) {
+    } else if (hasNext && (isInEndingSegment || isEndOfEpisodeCountdown)) {
       buttonLabel = 'Следующая серия • $countdownSecс';
+    } else if (hasNext && isLast90Seconds) {
+      buttonLabel = 'След. серия';
     } else {
       buttonLabel = 'Пропустить эндинг • $countdownSecс';
     }

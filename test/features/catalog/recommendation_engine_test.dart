@@ -220,6 +220,71 @@ void main() {
       expect(dismissedItem?.id, 10);
       expect(RecommendationEngine.instance.hiddenIds.contains(10), isTrue);
     });
+
+    test('filters out >50ep battle shounen for soft slice-of-life viewer and enforces strict genre overlap', () {
+      final engine = RecommendationEngine.instance;
+      const bleach = AnimeTitle(
+        id: 101,
+        code: 'bleach',
+        russianTitle: 'Блич',
+        englishTitle: 'Bleach',
+        description: 'История о проводнике душ и сражениях с пустыми.',
+        status: 'Завершён',
+        posterOriginal: '',
+        posterMedium: '',
+        posterSmall: '',
+        genres: ['Экшен', 'Боевые искусства', 'Сёнен'],
+        episodesTotal: 366,
+        score: 9.1,
+      );
+      final horimiya = _makeTitle(102, 'Хоримия', genres: ['Романтика', 'Школа'], score: 8.6);
+      final zeroOverlap = _makeTitle(103, 'Триллер дня', genres: ['Детектив', 'Триллер'], score: 9.4);
+
+      final softTarget = _makeTitle(200, 'Кланнад', genres: ['Романтика', 'Повседневность', 'Школа']);
+      final feedWithSoft = engine.generateForYouFeed(
+        catalogPool: [softTarget, bleach, horimiya, zeroOverlap],
+        userEntries: [
+          UserAnimeEntry(
+            id: 'e1',
+            userId: 'u1',
+            animeId: 200,
+            titleRu: 'Кланнад',
+            status: AnimeListStatus.completed,
+            score: 9.5,
+            updatedAt: DateTime(2026, 11, 20),
+          ),
+        ],
+        watchHistory: const [],
+        now: DateTime(2026, 11, 22, 19, 0),
+      );
+
+      expect(feedWithSoft.any((p) => p.anime.id == 101), isFalse);
+      expect(feedWithSoft.any((p) => p.anime.id == 103), isFalse);
+      expect(feedWithSoft.any((p) => p.anime.id == 102), isTrue);
+
+      // recommendSimilarTo requires >=2 overlapping genres and excludes watching/completed/dropped
+      final oneOverlap = _makeTitle(104, 'Экшен с романтикой', genres: ['Романтика', 'Меха']);
+      final watchingSoft = _makeTitle(105, 'Смотрю сейчас', genres: ['Романтика', 'Повседневность', 'Школа']);
+      final validSimilar = _makeTitle(106, 'Корзинка фруктов', genres: ['Романтика', 'Школа', 'Повседневность']);
+
+      final similar = engine.recommendSimilarTo(
+        target: softTarget,
+        catalogPool: [softTarget, bleach, oneOverlap, watchingSoft, validSimilar],
+        userEntries: [
+          UserAnimeEntry(
+            id: 'e2',
+            userId: 'u1',
+            animeId: 105,
+            titleRu: 'Смотрю сейчас',
+            status: AnimeListStatus.watching,
+            updatedAt: DateTime(2026, 11, 21),
+          ),
+        ],
+        watchHistory: const [],
+      );
+
+      expect(similar.map((p) => p.anime.id).toList(), [106]);
+    });
   });
 }
 

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../app/di/injection.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../data/datasources/anime_remote_datasource.dart';
 import '../cubit/catalog_cubit.dart';
 import '../cubit/catalog_state.dart';
 
@@ -37,33 +39,36 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
   late CatalogSort _sortBy;
   late bool _matchAll;
   late String? _status;
+  late List<String> _availableGenres;
+  bool _isLoadingGenres = false;
 
-  static const List<String> allGenres = [
-    'Экшен',
-    'Приключения',
-    'Комедия',
-    'Драма',
-    'Фэнтези',
-    'Романтика',
-    'Сёнэн',
-    'Мистика',
-    'Фантастика',
-    'Психология',
-    'Триллер',
-    'Повседневность',
-    'Сверхъестественное',
-    'Детектив',
-    'Спорт',
-    'Меха',
-    'Музыка',
-    'Игры',
-    'Школа',
-    'Сэйнэн',
-    'Магия',
-    'Киберпанк',
-    'Ужасы',
+  static const List<String> _fallbackGenres = [
+    'Боевые искусства',
+    'Вампиры',
     'Военное',
+    'Демоны',
+    'Детектив',
+    'Драма',
+    'Игры',
     'Исторический',
+    'Киберпанк',
+    'Комедия',
+    'Магия',
+    'Меха',
+    'Мистика',
+    'Музыка',
+    'Повседневность',
+    'Приключения',
+    'Психология',
+    'Романтика',
+    'Сверхъестественное',
+    'Спорт',
+    'Триллер',
+    'Ужасы',
+    'Фантастика',
+    'Фэнтези',
+    'Школа',
+    'Экшен',
   ];
 
   @override
@@ -76,6 +81,39 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
     _sortBy = widget.currentState.sortBy;
     _matchAll = widget.currentState.matchAllGenres;
     _status = widget.currentState.statusFilter;
+    final ds = getIt.isRegistered<AnimeRemoteDataSource>()
+        ? getIt<AnimeRemoteDataSource>()
+        : null;
+    _availableGenres = _buildGenreList(ds?.liveGenres ?? const []);
+    if (ds != null && ds.liveGenres.isEmpty) {
+      _loadLiveGenres(ds);
+    }
+  }
+
+  List<String> _buildGenreList(List<CatalogGenreRef> liveRefs) {
+    final base = liveRefs.isNotEmpty
+        ? liveRefs.map((e) => e.name.trim()).where((n) => n.isNotEmpty).toList()
+        : List<String>.from(_fallbackGenres);
+    final seenLower = base.map((e) => e.toLowerCase()).toSet();
+    for (final selected in _selectedGenres) {
+      if (seenLower.add(selected.toLowerCase())) {
+        base.add(selected);
+      }
+    }
+    base.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return base;
+  }
+
+  Future<void> _loadLiveGenres(AnimeRemoteDataSource ds) async {
+    _isLoadingGenres = true;
+    final fetched = await ds.syncGenreReferences();
+    if (!mounted) return;
+    setState(() {
+      _isLoadingGenres = false;
+      if (fetched.isNotEmpty) {
+        _availableGenres = _buildGenreList(fetched);
+      }
+    });
   }
 
   void _applyFilters() {
@@ -97,12 +135,7 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
       _status = null;
     });
     final cubit = context.read<CatalogCubit>();
-    cubit.applyFilterSheet(
-      genres: const {},
-      sortBy: CatalogSort.updates,
-      matchAll: false,
-      statusFilter: null,
-    );
+    cubit.resetAllFilters();
   }
 
   @override
@@ -314,6 +347,14 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          if (_isLoadingGenres) ...[
+                            const SizedBox(width: 8),
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 1.8),
+                            ),
+                          ],
                         ],
                       ),
                       // Переключатель «Все совпадают» / «Любой»
@@ -347,11 +388,11 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Сетка жанров с удобным мульти-выбором
+                  // Сетка жанров с удобным мульти-выбором (динамический справочник AniLibria)
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: allGenres.map((genre) {
+                    children: _availableGenres.map((genre) {
                       final isSelected = _selectedGenres.any(
                         (g) => g.toLowerCase() == genre.toLowerCase(),
                       );

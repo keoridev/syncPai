@@ -11,6 +11,7 @@ abstract class AnimeCatalogRepository {
     String? year,
     String? sort,
     String? status,
+    String? types,
     CancelToken? cancelToken,
   });
 

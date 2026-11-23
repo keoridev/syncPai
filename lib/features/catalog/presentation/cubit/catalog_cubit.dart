@@ -59,8 +59,9 @@ class CatalogCubit extends Cubit<CatalogState> {
     required String? genres,
     required CatalogSort sort,
     required String? status,
+    String? type,
   }) {
-    return '${genres ?? "all"}_${sort.name}_${status ?? "all"}';
+    return '${genres ?? "all"}_${sort.name}_${status ?? "all"}_${type ?? "all"}';
   }
 
   CatalogCubit({
@@ -91,7 +92,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       _pageMap.clear();
       _hasMoreMap.clear();
       _pageCache.clear();
-    } else if (state is CatalogLoaded && (state as CatalogLoaded).titles.isNotEmpty) {
+    } else if (state is CatalogLoaded && (state as CatalogLoaded).titles.length >= 12) {
       return;
     }
 
@@ -196,6 +197,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     required String? genreParam,
     required CatalogSort sortBy,
     required String? statusFilter,
+    String? typeFilter,
     required CancelToken cancelToken,
   }) async {
     List<AnimeTitle> fetchedTitles = [];
@@ -210,6 +212,7 @@ class CatalogCubit extends Cubit<CatalogState> {
           genres: genreParam,
           sort: sortBy.name,
           status: statusFilter,
+          types: typeFilter,
           cancelToken: cancelToken,
         ).timeout(const Duration(seconds: 10));
         if (entities.isNotEmpty) {
@@ -283,7 +286,10 @@ class CatalogCubit extends Cubit<CatalogState> {
     final genres = cleanCategory == 'Все' ? const <String>{} : {cleanCategory};
 
     final List<AnimeTitle> accumulated = isLoadMore
-        ? List<AnimeTitle>.from(_cache[cleanCategory] ?? [])
+        ? List<AnimeTitle>.from(
+            _cache[cleanCategory] ??
+                (state is CatalogLoaded ? (state as CatalogLoaded).titles : const []),
+          )
         : (cleanCategory != 'Все'
             ? CatalogPersistentStore.instance
                 .queryLocal()
@@ -292,14 +298,14 @@ class CatalogCubit extends Cubit<CatalogState> {
             : <AnimeTitle>[]);
     final existingIds = accumulated.map((t) => t.id).toSet();
 
-    try {
+    final bool isFilteredQuery = genres.isNotEmpty ||
+        statusFilter != null ||
+        (current?.searchQuery.trim().isNotEmpty ?? false);
 
+    try {
       bool hasMore = true;
       List<AnimeTitle> filtered = [];
       int pagesFetched = 0;
-      final bool isFilteredQuery = genres.isNotEmpty ||
-          statusFilter != null ||
-          (current?.searchQuery.trim().isNotEmpty ?? false);
       final int maxPagesToFetch = (!isLoadMore && isFilteredQuery) ? 3 : 1;
 
       // Auto-Fill Viewport Loop: только когда активен фильтр жанра/статуса/поиска и после фильтрации < 12 карточек,
@@ -341,6 +347,11 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (requestId != _requestId || cancelToken.isCancelled) return;
 
+      if (accumulated.isEmpty && state is CatalogLoaded && (state as CatalogLoaded).titles.isNotEmpty) {
+        emit((state as CatalogLoaded).copyWith(hasMore: false, isLoadingMore: false));
+        return;
+      }
+
       _cache[cleanCategory] = accumulated;
       _pageMap[cleanCategory] = page;
       _hasMoreMap[cleanCategory] = hasMore;
@@ -374,7 +385,7 @@ class CatalogCubit extends Cubit<CatalogState> {
               .toList()
           : CatalogPersistentStore.instance.queryLocal();
       final combinedFallback = accumulated.isNotEmpty ? accumulated : localFallback;
-      if (combinedFallback.isNotEmpty) {
+      if (combinedFallback.isNotEmpty || cleanCategory != 'Все' || isFilteredQuery || state is CatalogLoaded) {
         final fallbackFiltered = _applyFiltersAndSorting(
           combinedFallback,
           genres: genres,
@@ -412,6 +423,9 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
+  /// Алиас для бесконечного скролла следующей страницы.
+  Future<void> loadNextPage() => loadMore();
+
   /// Подгрузка следующей страницы каталога (AniLibria API v1) с pre-fetch
   Future<void> loadMore() async {
     if (state is! CatalogLoaded) return;
@@ -420,11 +434,15 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
 
-    if (current.selectedGenres.length > 1 || current.statusFilter != null) {
+    if (current.selectedGenres.length > 1 ||
+        current.statusFilter != null ||
+        current.typeFilter != null ||
+        current.sortBy != CatalogSort.updates) {
       await _fetchFilteredCatalog(
         genres: current.selectedGenres,
         sortBy: current.sortBy,
         statusFilter: current.statusFilter,
+        typeFilter: current.typeFilter,
         matchAll: current.matchAllGenres,
         isLoadMore: true,
       );
@@ -572,14 +590,16 @@ class CatalogCubit extends Cubit<CatalogState> {
     required Set<String> genres,
     required CatalogSort sortBy,
     String? statusFilter,
+    String? typeFilter,
     bool matchAll = false,
     bool isLoadMore = false,
   }) async {
-    // 0. Если это сброс на дефолт (без жанров, свежие обновления, статус Все) и есть кэш — отдаем сразу
+    // 0. Если это сброс на дефолт (без жанров, свежие обновления, статус Все, тип Все) и есть кэш — отдаем сразу
     if (!isLoadMore &&
         genres.isEmpty &&
         sortBy == CatalogSort.updates &&
         statusFilter == null &&
+        typeFilter == null &&
         _cache.containsKey('Все') &&
         _cache['Все']!.isNotEmpty) {
       final cached = _cache['Все']!;
@@ -591,6 +611,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: CatalogSort.updates,
         matchAllGenres: false,
         statusFilter: null,
+        typeFilter: null,
         searchQuery: '',
         isSearching: false,
         viewMode: _currentViewMode,
@@ -603,7 +624,12 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
 
     final genreStr = _formatGenres(genres);
-    final cacheKey = _buildCacheKey(genres: genreStr, sort: sortBy, status: statusFilter);
+    final cacheKey = _buildCacheKey(
+      genres: genreStr,
+      sort: sortBy,
+      status: statusFilter,
+      type: typeFilter,
+    );
 
     // 1. Быстрое чтение из In-Memory кэша (только при первичном переключении)
     if (!isLoadMore && _pageCache.containsKey(cacheKey) && _pageCache[cacheKey]!.isNotEmpty) {
@@ -616,6 +642,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sortBy,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        typeFilter: typeFilter,
         searchQuery: '',
         isSearching: false,
         viewMode: _currentViewMode,
@@ -638,15 +665,43 @@ class CatalogCubit extends Cubit<CatalogState> {
             : _resetForegroundCancelToken('Load more filtered catalog'))
         : _resetForegroundCancelToken('Filter changed');
     final requestId = ++_requestId;
+
+    List<AnimeTitle> queryLocalMatches() {
+      if (genres.length == 1) {
+        return CatalogPersistentStore.instance.queryLocal(
+          genre: genres.first,
+          status: statusFilter,
+          type: typeFilter,
+          sort: sortBy.name,
+        );
+      }
+      final base = CatalogPersistentStore.instance.queryLocal(
+        status: statusFilter,
+        type: typeFilter,
+        sort: sortBy.name,
+        limit: 80,
+      );
+      if (genres.isEmpty) return base;
+      return base
+          .where((t) => matchAll
+              ? genres.every((g) => matchesGenreOrAlias(t, g))
+              : genres.any((g) => matchesGenreOrAlias(t, g)))
+          .toList();
+    }
+
     if (state is CatalogLoaded) {
       final current = state as CatalogLoaded;
+      final localInstant = !isLoadMore ? queryLocalMatches() : const <AnimeTitle>[];
+      final sourceForInstant =
+          localInstant.isNotEmpty ? localInstant : current.titles;
       final instantFiltered = !isLoadMore
           ? _applyFiltersAndSorting(
-              current.titles,
+              sourceForInstant,
               genres: genres,
               sortBy: sortBy,
               matchAll: matchAll,
               statusFilter: statusFilter,
+              typeFilter: typeFilter,
             )
           : current.filteredTitles;
       emit(current.copyWith(
@@ -655,6 +710,10 @@ class CatalogCubit extends Cubit<CatalogState> {
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
         clearStatusFilter: statusFilter == null,
+        typeFilter: typeFilter,
+        clearTypeFilter: typeFilter == null,
+        searchQuery: '',
+        isSearching: false,
         filteredTitles: instantFiltered,
         isLoadingMore: true,
       ));
@@ -665,21 +724,18 @@ class CatalogCubit extends Cubit<CatalogState> {
     try {
       int page = isLoadMore ? (_pageMap[cacheKey] ?? 1) + 1 : 1;
       final List<AnimeTitle> accumulated = isLoadMore
-          ? List<AnimeTitle>.from(_pageCache[cacheKey] ?? [])
-          : (genres.isNotEmpty
-              ? CatalogPersistentStore.instance
-                  .queryLocal()
-                  .where((t) => matchAll
-                      ? genres.every((g) => matchesGenreOrAlias(t, g))
-                      : genres.any((g) => matchesGenreOrAlias(t, g)))
-                  .toList()
-              : CatalogPersistentStore.instance.queryLocal());
+          ? List<AnimeTitle>.from(
+              _pageCache[cacheKey] ??
+                  (state is CatalogLoaded ? (state as CatalogLoaded).titles : const []),
+            )
+          : queryLocalMatches();
       final existingIds = accumulated.map((t) => t.id).toSet();
 
       bool hasMore = true;
       List<AnimeTitle> filtered = [];
       int pagesFetched = 0;
-      final bool isFilteredQuery = genres.isNotEmpty || statusFilter != null;
+      final bool isFilteredQuery =
+          genres.isNotEmpty || statusFilter != null || typeFilter != null;
       final int maxPagesToFetch = (!isLoadMore && isFilteredQuery) ? 3 : 1;
 
       while (pagesFetched < maxPagesToFetch && hasMore) {
@@ -688,6 +744,7 @@ class CatalogCubit extends Cubit<CatalogState> {
           genreParam: genreStr,
           sortBy: sortBy,
           statusFilter: statusFilter,
+          typeFilter: typeFilter,
           cancelToken: cancelToken,
         );
 
@@ -708,6 +765,7 @@ class CatalogCubit extends Cubit<CatalogState> {
           sortBy: sortBy,
           matchAll: matchAll,
           statusFilter: statusFilter,
+          typeFilter: typeFilter,
         );
 
         if (!isFilteredQuery || filtered.length >= 12 || !hasMore || pagesFetched >= maxPagesToFetch) {
@@ -724,6 +782,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (filtered.isNotEmpty) {
         _pageCache[cacheKey] = filtered;
         CatalogPrefetchService.instance.putCache(cacheKey, filtered);
+        unawaited(CatalogPersistentStore.instance.mergeAndPersist(accumulated));
       }
 
       emit(CatalogLoaded(
@@ -733,6 +792,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sortBy,
         matchAllGenres: matchAll,
         statusFilter: statusFilter,
+        typeFilter: typeFilter,
         searchQuery: '',
         isSearching: false,
         viewMode: _currentViewMode,
@@ -743,22 +803,20 @@ class CatalogCubit extends Cubit<CatalogState> {
       ));
     } catch (e) {
       if (requestId != _requestId || cancelToken.isCancelled) return;
-      final localFallback = genres.isNotEmpty
-          ? CatalogPersistentStore.instance
-              .queryLocal()
-              .where((t) => matchAll
-                  ? genres.every((g) => matchesGenreOrAlias(t, g))
-                  : genres.any((g) => matchesGenreOrAlias(t, g)))
-              .toList()
-          : CatalogPersistentStore.instance.queryLocal();
-      if (localFallback.isNotEmpty) {
-        final fallbackFiltered = _applyFiltersAndSorting(
-          localFallback,
-          genres: genres,
-          sortBy: sortBy,
-          matchAll: matchAll,
-          statusFilter: statusFilter,
-        );
+      final localFallback = queryLocalMatches();
+      final fallbackFiltered = _applyFiltersAndSorting(
+        localFallback,
+        genres: genres,
+        sortBy: sortBy,
+        matchAll: matchAll,
+        statusFilter: statusFilter,
+        typeFilter: typeFilter,
+      );
+      if (isLoadMore && state is CatalogLoaded) {
+        emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
+      } else {
+        // Никогда не показываем CatalogError при переключении вкладок/жанров:
+        // отдаем локальный кэш или пустой список с кнопкой «Сбросить фильтры».
         emit(CatalogLoaded(
           titles: localFallback,
           filteredTitles: fallbackFiltered,
@@ -766,6 +824,7 @@ class CatalogCubit extends Cubit<CatalogState> {
           sortBy: sortBy,
           matchAllGenres: matchAll,
           statusFilter: statusFilter,
+          typeFilter: typeFilter,
           searchQuery: '',
           isSearching: false,
           viewMode: _currentViewMode,
@@ -774,10 +833,6 @@ class CatalogCubit extends Cubit<CatalogState> {
           hasMore: false,
           isLoadingMore: false,
         ));
-      } else if (isLoadMore && state is CatalogLoaded) {
-        emit((state as CatalogLoaded).copyWith(isLoadingMore: false));
-      } else {
-        emit(CatalogError(e.toString()));
       }
     } finally {
       if (isLoadMore) {
@@ -818,9 +873,52 @@ class CatalogCubit extends Cubit<CatalogState> {
         genres: nextGenres,
         sortBy: current.sortBy,
         statusFilter: current.statusFilter,
+        typeFilter: current.typeFilter,
         matchAll: current.matchAllGenres,
       );
     }
+  }
+
+  /// Быстрое переключение вкладок каталога (Все / Онгоинги / Популярное / Завершённые / Фильмы / Анонсы)
+  void selectQuickTab(String tabId) {
+    CatalogSort sort = CatalogSort.updates;
+    String? statusFilter;
+    String? typeFilter;
+
+    switch (tabId) {
+      case 'ongoing':
+        statusFilter = 'ongoing';
+        break;
+      case 'popular':
+        sort = CatalogSort.rating;
+        break;
+      case 'released':
+        statusFilter = 'released';
+        break;
+      case 'movies':
+        typeFilter = 'MOVIE';
+        sort = CatalogSort.rating;
+        break;
+      case 'anons':
+        statusFilter = 'anons';
+        break;
+      case 'all':
+      default:
+        break;
+    }
+
+    _fetchFilteredCatalog(
+      genres: const {},
+      sortBy: sort,
+      statusFilter: statusFilter,
+      typeFilter: typeFilter,
+      matchAll: false,
+    );
+  }
+
+  /// Полный сброс всех фильтров (жанры, статус, формат, сортировка, поиск) к вкладке «Все»
+  void resetAllFilters() {
+    selectQuickTab('all');
   }
 
   /// Единовременное пакетное применение всех параметров фильтрации из шторки (Filter Sheet)
@@ -829,6 +927,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     required CatalogSort sortBy,
     required bool matchAll,
     String? statusFilter,
+    String? typeFilter,
   }) {
     if (state is! CatalogLoaded) return;
     final cleanGenres = genres
@@ -840,6 +939,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       genres: cleanGenres,
       sortBy: sortBy,
       statusFilter: statusFilter,
+      typeFilter: typeFilter,
       matchAll: matchAll,
     );
   }
@@ -862,6 +962,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: sort,
         matchAll: current.matchAllGenres,
         statusFilter: current.statusFilter,
+        typeFilter: current.typeFilter,
       );
       emit(current.copyWith(
         sortBy: sort,
@@ -869,7 +970,10 @@ class CatalogCubit extends Cubit<CatalogState> {
       ));
     } else {
       // Моментальная выдача из кэша для «Популярное» (рейтинг)
-      if (sort == CatalogSort.rating && current.selectedGenres.isEmpty && current.statusFilter == null) {
+      if (sort == CatalogSort.rating &&
+          current.selectedGenres.isEmpty &&
+          current.statusFilter == null &&
+          current.typeFilter == null) {
         final cached = CatalogPrefetchService.instance.getCached('popular');
         if (cached != null && cached.isNotEmpty) {
           emit(current.copyWith(
@@ -882,6 +986,7 @@ class CatalogCubit extends Cubit<CatalogState> {
               genres: current.selectedGenres,
               sortBy: sort,
               statusFilter: current.statusFilter,
+              typeFilter: current.typeFilter,
               matchAll: current.matchAllGenres,
             );
           }
@@ -893,6 +998,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         genres: current.selectedGenres,
         sortBy: sort,
         statusFilter: current.statusFilter,
+        typeFilter: current.typeFilter,
         matchAll: current.matchAllGenres,
       );
     }
@@ -909,6 +1015,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       sortBy: current.sortBy,
       matchAll: matchAll,
       statusFilter: current.statusFilter,
+      typeFilter: current.typeFilter,
     );
 
     emit(current.copyWith(
@@ -917,7 +1024,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     ));
   }
 
-  /// Установить фильтр статуса: 'ongoing', 'released' или null
+  /// Установить фильтр статуса: 'ongoing', 'released', 'anons' или null
   void setStatusFilter(String? status) {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
@@ -929,6 +1036,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         sortBy: current.sortBy,
         matchAll: current.matchAllGenres,
         statusFilter: status,
+        typeFilter: current.typeFilter,
       );
       emit(current.copyWith(
         statusFilter: status,
@@ -937,7 +1045,10 @@ class CatalogCubit extends Cubit<CatalogState> {
       ));
     } else {
       // Моментальная выдача из кэша для онгоингов
-      if (status == 'ongoing' && current.selectedGenres.isEmpty && current.sortBy == CatalogSort.updates) {
+      if (status == 'ongoing' &&
+          current.selectedGenres.isEmpty &&
+          current.sortBy == CatalogSort.updates &&
+          current.typeFilter == null) {
         final cached = CatalogPrefetchService.instance.getCached('ongoing');
         if (cached != null && cached.isNotEmpty) {
           emit(current.copyWith(
@@ -950,6 +1061,7 @@ class CatalogCubit extends Cubit<CatalogState> {
               genres: current.selectedGenres,
               sortBy: current.sortBy,
               statusFilter: status,
+              typeFilter: current.typeFilter,
               matchAll: current.matchAllGenres,
             );
           }
@@ -961,6 +1073,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         genres: current.selectedGenres,
         sortBy: current.sortBy,
         statusFilter: status,
+        typeFilter: current.typeFilter,
         matchAll: current.matchAllGenres,
       );
     }
@@ -1022,6 +1135,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     required CatalogSort sortBy,
     required bool matchAll,
     String? statusFilter,
+    String? typeFilter,
   }) {
     var result = List<AnimeTitle>.from(list);
 
@@ -1043,7 +1157,22 @@ class CatalogCubit extends Cubit<CatalogState> {
       }).toList();
     }
 
-    // 2. Фильтр по статусу
+    // 2. Фильтр по формату (Фильмы)
+    if (typeFilter != null && typeFilter.isNotEmpty) {
+      final wanted = typeFilter.toLowerCase();
+      result = result.where((t) {
+        final kind = (t.kind ?? '').toLowerCase();
+        if (kind.isEmpty) return true;
+        if (wanted == 'movie') {
+          return kind.contains('movie') ||
+              kind.contains('фильм') ||
+              kind.contains('full');
+        }
+        return kind.contains(wanted);
+      }).toList();
+    }
+
+    // 3. Фильтр по статусу
     if (statusFilter != null && statusFilter.isNotEmpty) {
       if (statusFilter == 'ongoing') {
         result = result.where((t) {
@@ -1063,7 +1192,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
     }
 
-    // 3. Сортировка
+    // 4. Сортировка
     switch (sortBy) {
       case CatalogSort.updates:
         // Сохраняем порядок обновлений AniLibria
@@ -1086,12 +1215,17 @@ class CatalogCubit extends Cubit<CatalogState> {
         });
         break;
       case CatalogSort.rating:
-        // Сортировка по количеству серий и полноте франшизы
-        result.sort((a, b) {
-          final scA = (a.episodes.length * 10) + (a.episodesTotal ?? 0);
-          final scB = (b.episodes.length * 10) + (b.episodesTotal ?? 0);
-          return scB.compareTo(scA);
-        });
+        // Если оценки заполнены (например, из кэша/Shikimori), сортируем по рейтингу; иначе сохраняем RATING_DESC порядок сервера
+        final hasScores = result.any((t) => (t.score ?? 0) > 0);
+        if (hasScores) {
+          result.sort((a, b) {
+            final cmp = (b.score ?? 0).compareTo(a.score ?? 0);
+            if (cmp != 0) return cmp;
+            final scA = (a.episodes.length * 10) + (a.episodesTotal ?? 0);
+            final scB = (b.episodes.length * 10) + (b.episodesTotal ?? 0);
+            return scB.compareTo(scA);
+          });
+        }
         break;
       case CatalogSort.alphabetical:
         result.sort((a, b) => a.displayTitle.toLowerCase().compareTo(b.displayTitle.toLowerCase()));

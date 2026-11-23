@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'core/theme/cubit/theme_cubit.dart';
 import 'core/widgets/desktop_title_bar.dart';
 import 'features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
+import 'features/catalog/data/datasources/anime_remote_datasource.dart';
 import 'features/catalog/data/services/catalog_persistent_store.dart';
 import 'features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'features/settings/presentation/cubit/settings_cubit.dart';
@@ -94,6 +96,9 @@ void main() async {
     CatalogPersistentStore.instance.init(),
     MascotCompanionService.instance.init(),
   ]);
+  if (getIt.isRegistered<AnimeRemoteDataSource>()) {
+    unawaited(getIt<AnimeRemoteDataSource>().syncGenreReferences());
+  }
 
   runApp(const SyncPaiApp());
 }

@@ -1140,9 +1140,6 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     final curIdx = allEpisodes.indexWhere((e) => e.episode == state.episode.episode);
     final hasNext = curIdx >= 0 && curIdx < allEpisodes.length - 1;
 
-    final curStr = _formatDuration(state.position);
-    final totalStr = _formatDuration(state.duration);
-
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -1159,24 +1156,33 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // 1. Первая строка: только одна полоса прогресса (SeekBar) на всю ширину без цифр под ней
-          PlayerProgressBar(
-            position: state.position,
-            duration: state.duration,
-            buffer: state.buffer,
-            onSeek: (pos) => widget.cubit.seek(pos),
-            isLocked: state.isSyncRoom && !state.isHost,
-            onLockedTap: () {
-              widget.cubit.showGuestPlaybackLockedNotice();
-              _triggerFlash(
-                icon: Icons.lock_clock_rounded,
-                label: 'Воспроизведением управляет хост',
-              );
-            },
-            opening: state.effectiveOpening,
-            ending: state.effectiveEnding,
-            heatmap: state.heatmap,
-            isBuffering: state.isBuffering,
-            showTimestamps: false,
+          BlocSelector<PlayerCubit, PlayerState, ({Duration pos, Duration dur, Duration buf, bool isBuf})>(
+            bloc: widget.cubit,
+            selector: (s) => (
+              pos: s.position,
+              dur: s.duration,
+              buf: s.buffer,
+              isBuf: s.isBuffering,
+            ),
+            builder: (context, timing) => PlayerProgressBar(
+              position: timing.pos,
+              duration: timing.dur,
+              buffer: timing.buf,
+              onSeek: (pos) => widget.cubit.seek(pos),
+              isLocked: state.isSyncRoom && !state.isHost,
+              onLockedTap: () {
+                widget.cubit.showGuestPlaybackLockedNotice();
+                _triggerFlash(
+                  icon: Icons.lock_clock_rounded,
+                  label: 'Воспроизведением управляет хост',
+                );
+              },
+              opening: widget.cubit.state.effectiveOpening,
+              ending: widget.cubit.state.effectiveEnding,
+              heatmap: widget.cubit.state.heatmap,
+              isBuffering: timing.isBuf,
+              showTimestamps: false,
+            ),
           ),
           const SizedBox(height: 2),
 
@@ -1266,13 +1272,20 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
               const SizedBox(width: 8),
 
               // Крупный таймкод 01:58 / 24:00
-              Text(
-                '$curStr / $totalStr',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  fontFeatures: [FontFeature.tabularFigures()],
+              BlocSelector<PlayerCubit, PlayerState, ({int curSec, int totalSec})>(
+                bloc: widget.cubit,
+                selector: (s) => (
+                  curSec: s.position.inSeconds,
+                  totalSec: s.duration.inSeconds,
+                ),
+                builder: (context, t) => Text(
+                  '${_formatDuration(Duration(seconds: t.curSec))} / ${_formatDuration(Duration(seconds: t.totalSec))}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
 

@@ -14,6 +14,7 @@ import '../../../shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../../sync_room/presentation/screens/watch_together_screen.dart';
 import '../../../sync_room/presentation/widgets/floating_room_overlay.dart';
 import '../../../watch_history/domain/repositories/watch_history_repository.dart';
+import '../../../winter_theme/presentation/widgets/background_snow_layer.dart';
 
 /// Главный экран приложения со связкой 5 разделов:
 /// 1. Каталог (Релизы, поиск, просмотр аниме)
@@ -168,6 +169,11 @@ class _MainScreenState extends State<MainScreen> {
       extendBody: true,
       body: Stack(
         children: [
+          const Positioned.fill(
+            child: BackgroundSnowLayer(
+              key: ValueKey('main_background_snow_layer'),
+            ),
+          ),
           isWide
               ? Row(
                   children: [

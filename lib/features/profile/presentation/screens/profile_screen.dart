@@ -736,7 +736,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return BlocProvider<ProfileCubit>.value(
       value: _profileCubit,
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0B0E14) : scheme.surface,
+        backgroundColor: Colors.transparent,
         body: BlocBuilder<ProfileCubit, ProfileState>(
           bloc: _profileCubit,
         builder: (context, state) {

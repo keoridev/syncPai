@@ -277,36 +277,53 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Метка Опенинга / Эндинга при перемотке по точкам
-                          if (inOpening || inEnding)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: (inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF))
-                                    .withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    inOpening ? Icons.music_note_rounded : Icons.queue_music_rounded,
-                                    size: 11,
-                                    color: inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    inOpening ? 'Опенинг' : 'Эндинг',
-                                    style: TextStyle(
-                                      color: inOpening ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          // Метка главы: Опенинг / Эндинг / Серия
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (inOpening
+                                      ? const Color(0xFFFFB300)
+                                      : inEnding
+                                          ? const Color(0xFF00E5FF)
+                                          : Colors.white)
+                                  .withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(6),
                             ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  inOpening
+                                      ? Icons.music_note_rounded
+                                      : inEnding
+                                          ? Icons.queue_music_rounded
+                                          : Icons.movie_outlined,
+                                  size: 11,
+                                  color: inOpening
+                                      ? const Color(0xFFFFB300)
+                                      : inEnding
+                                          ? const Color(0xFF00E5FF)
+                                          : Colors.white70,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  inOpening
+                                      ? 'Опенинг'
+                                      : (inEnding ? 'Эндинг' : 'Серия'),
+                                  style: TextStyle(
+                                    color: inOpening
+                                        ? const Color(0xFFFFB300)
+                                        : inEnding
+                                            ? const Color(0xFF00E5FF)
+                                            : Colors.white70,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,

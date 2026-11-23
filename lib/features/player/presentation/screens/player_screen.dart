@@ -25,6 +25,7 @@ import 'package:sync_pai/features/sync_room/presentation/widgets/reaction_overla
 import 'package:sync_pai/features/sync_room/services/active_room_service.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/winter_theme/domain/services/winter_theme_service.dart';
+import 'package:sync_pai/features/winter_theme/presentation/widgets/background_snow_layer.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -94,8 +95,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _lastControlsVisible = false;
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
+  bool _pinchHandledInGesture = false;
   int? _dismissedOpeningEpisode;
   int? _dismissedEndingEpisode;
+  int? _lastSkipEpisodeNum;
 
   void _minimizePlayer({bool alreadyPopping = false}) {
     if (_handedOffToMiniPlayer || _isDisposed) return;
@@ -557,9 +560,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final epNameToSave = _cubit.state.episode.name;
     final titleToSave = widget.title;
 
+    final handedOff = _handedOffToMiniPlayer;
     Future.microtask(() {
       WinterThemeService.instance.exitVideoPlayer();
-      MascotCompanionService.instance.setPlayerActive(false);
+      if (!handedOff) {
+        MascotCompanionService.instance.setPlayerActive(false);
+      }
       if (isDesktopOS) {
         DesktopTitleBar.isFullScreenNotifier.value = false;
       }
@@ -572,8 +578,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       );
     });
 
-    // Освобождаем wakelock, восстанавливаем ориентацию и системные панели
-    if (!kIsWeb) {
+    // Освобождаем wakelock (только если не свернули в мини-плеер), восстанавливаем ориентацию и системные панели
+    if (!kIsWeb && !handedOff) {
       try {
         WakelockPlus.disable();
       } catch (_) {}
@@ -735,8 +741,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   previous.activeQuickPhrase != current.activeQuickPhrase ||
                   previous.roomCode != current.roomCode ||
                   previous.peerPresence != current.peerPresence ||
-                  previous.position.inSeconds != current.position.inSeconds ||
-                  previous.duration.inSeconds != current.duration.inSeconds ||
+                  previous.errorMessage != current.errorMessage ||
+                  previous.isHudEditMode != current.isHudEditMode ||
                   previous.isChatOverlayVisible != current.isChatOverlayVisible ||
                   previous.isVoiceMuted != current.isVoiceMuted ||
                   previous.isTalking != current.isTalking ||
@@ -774,15 +780,38 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     videoController: _videoController,
                     onBack: _handleExit,
                     onSaveProgress: _saveWatchProgress,
-                    skipOverlay: _buildSkipOverlay(state),
+                    skipOverlay: _buildReactiveSkipOverlay(),
                   );
                   if (!state.isSyncRoom || state.roomCode == null) {
-                    return desktop;
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        desktop,
+                        if (!state.isScreenLocked)
+                          const Positioned.fill(
+                            child: BackgroundSnowLayer(
+                              key: ValueKey('player_snow_layer'),
+                              flakeCount: 25,
+                              opacity: 0.48,
+                              forPlayer: true,
+                            ),
+                          ),
+                      ],
+                    );
                   }
                   return Stack(
                     fit: StackFit.expand,
                     children: [
                       desktop,
+                      if (!state.isScreenLocked)
+                        const Positioned.fill(
+                          child: BackgroundSnowLayer(
+                            key: ValueKey('player_snow_layer'),
+                            flakeCount: 25,
+                            opacity: 0.48,
+                            forPlayer: true,
+                          ),
+                        ),
                       ..._buildSyncRoomReactionWidgets(state),
                     ],
                   );
@@ -827,9 +856,37 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       ),
 
                       // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
+                      if (!state.isScreenLocked)
+                        const Positioned.fill(
+                          child: BackgroundSnowLayer(
+                            key: ValueKey('player_snow_layer'),
+                            flakeCount: 25,
+                            opacity: 0.48,
+                            forPlayer: true,
+                          ),
+                        ),
+
                       IgnorePointer(
                         ignoring: state.isHudEditMode || state.isScreenLocked,
-                        child: DoubleTapSeekOverlay(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onScaleStart: (_) => _pinchHandledInGesture = false,
+                          onScaleUpdate: (details) {
+                            if (details.pointerCount < 2 || _pinchHandledInGesture) {
+                              return;
+                            }
+                            if (details.scale > 1.15 && state.videoFit != BoxFit.cover) {
+                              _pinchHandledInGesture = true;
+                              _cubit.setVideoFit(BoxFit.cover);
+                              _showCenterOsd('Экран: На весь экран');
+                            } else if (details.scale < 0.85 &&
+                                state.videoFit != BoxFit.contain) {
+                              _pinchHandledInGesture = true;
+                              _cubit.setVideoFit(BoxFit.contain);
+                              _showCenterOsd('Экран: По размеру');
+                            }
+                          },
+                          child: DoubleTapSeekOverlay(
                           onTap: () => _cubit.toggleControls(),
                         onSeekRelative: (seconds) {
                           _cubit.seekRelative(seconds);
@@ -867,9 +924,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                             : state.title.posterSmall),
                     isLocked: false,
                     onLockedTap: () {},
-                    onLongPressStart: () => _cubit.start2xFastForward(),
-                    onLongPressEnd: () => _cubit.stop2xFastForward(),
-                    onFastForwardRateChanged: (rate) => _cubit.setFastForwardRate(rate),
+                    seekStepSeconds: getIt.isRegistered<SettingsCubit>()
+                        ? getIt<SettingsCubit>().state.seekStepSeconds
+                        : 10,
+                    swipeSensitivity: getIt.isRegistered<SettingsCubit>()
+                        ? getIt<SettingsCubit>().state.gestureSwipeSensitivity
+                        : 1.0,
+                    onLongPressStart: state.isSyncRoom ? null : () => _cubit.start2xFastForward(),
+                    onLongPressEnd: state.isSyncRoom ? null : () => _cubit.stop2xFastForward(),
+                    onFastForwardRateChanged:
+                        state.isSyncRoom ? null : (rate) => _cubit.setFastForwardRate(rate),
+                        ),
                         ),
                       ),
 
@@ -1177,7 +1242,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
 
                   // Плавающая кнопка пропуска опенинга и эндинга + таймер обратного отсчета до эндинга (рендерится поверх контролов)
-                  _buildSkipOverlay(state),
+                  _buildReactiveSkipOverlay(),
 
                   if (state.isSyncRoom && state.roomCode != null)
                     ..._buildSyncRoomReactionWidgets(state),
@@ -1527,6 +1592,35 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     ];
   }
 
+  Widget _buildReactiveSkipOverlay() {
+    return BlocSelector<
+        PlayerCubit,
+        PlayerState,
+        ({
+          int posSec,
+          int durSec,
+          int episode,
+          bool controlsVisible,
+          bool screenLocked,
+          bool hudEditMode,
+          int? countdown,
+          String? errorMessage,
+        })>(
+      bloc: _cubit,
+      selector: (s) => (
+        posSec: s.position.inSeconds,
+        durSec: s.duration.inSeconds,
+        episode: s.episode.episode,
+        controlsVisible: s.areControlsVisible,
+        screenLocked: s.isScreenLocked,
+        hudEditMode: s.isHudEditMode,
+        countdown: s.autoNextCountdown,
+        errorMessage: s.errorMessage,
+      ),
+      builder: (context, _) => _buildSkipOverlay(_cubit.state),
+    );
+  }
+
   Widget _buildSkipOverlay(PlayerState state) {
     if (state.errorMessage != null || state.isHudEditMode) {
       return const SizedBox.shrink();
@@ -1537,6 +1631,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final curSec = state.position.inSeconds;
     final totalSec = state.duration.inSeconds;
     final curEpNum = state.episode.episode;
+    if (_lastSkipEpisodeNum != curEpNum) {
+      _lastSkipEpisodeNum = curEpNum;
+      _dismissedOpeningEpisode = null;
+      _dismissedEndingEpisode = null;
+    }
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final bottomOffset = MediaQuery.paddingOf(context).bottom +
         (state.areControlsVisible && !state.isScreenLocked

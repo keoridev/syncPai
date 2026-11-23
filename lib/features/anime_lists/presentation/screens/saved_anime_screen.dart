@@ -934,7 +934,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
             }
           },
           child: Scaffold(
-            backgroundColor: AppColors.background,
+            backgroundColor: Colors.transparent,
             bottomNavigationBar: _isSelectionMode
                 ? _buildBatchEditBar(context, entries)
                 : null,

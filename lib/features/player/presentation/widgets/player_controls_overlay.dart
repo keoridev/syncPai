@@ -59,8 +59,15 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
   String? _selectedEditButtonId;
   double _rawDragNx = 0.5;
   double _rawDragNy = 0.5;
-  bool _snapXActive = false;
-  bool _snapYActive = false;
+  bool _isDraggingHud = false;
+  late final ValueNotifier<Map<String, PlayerHudButtonConfig>> _draftLayout;
+  final ValueNotifier<({bool snapX, bool snapY, double? guideNx, double? guideNy})>
+      _snapGuides = ValueNotifier((
+    snapX: false,
+    snapY: false,
+    guideNx: null,
+    guideNy: null,
+  ));
 
   PlayerCubit get cubit => widget.cubit;
   PlayerState get state => widget.state;
@@ -71,31 +78,81 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
   String? get syncPeerName => widget.syncPeerName;
 
   @override
+  void initState() {
+    super.initState();
+    final initial = getIt.isRegistered<SettingsCubit>()
+        ? getIt<SettingsCubit>().state.hudLayout
+        : const SettingsState().hudLayout;
+    _draftLayout = ValueNotifier(Map<String, PlayerHudButtonConfig>.from(initial));
+  }
+
+  @override
+  void dispose() {
+    _draftLayout.dispose();
+    _snapGuides.dispose();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(covariant PlayerControlsOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.state.isHudEditMode && !widget.state.isHudEditMode) {
       _selectedEditButtonId = null;
-      _snapXActive = false;
-      _snapYActive = false;
+      _isDraggingHud = false;
+      _snapGuides.value = (
+        snapX: false,
+        snapY: false,
+        guideNx: null,
+        guideNy: null,
+      );
     }
   }
 
+  static const Set<String> _topRowButtonIds = {
+    'lock_screen',
+    'speed',
+    'quality_dub',
+    'pip_mode',
+  };
+
+  static const Set<String> _bottomRowButtonIds = {
+    'next_episode',
+    'fullscreen',
+  };
+
+  bool _isDockedInTopBar(PlayerHudButtonConfig cfg) =>
+      _topRowButtonIds.contains(cfg.id) && (cfg.ny - 0.08).abs() <= 0.04;
+
+  bool _isDockedInBottomBar(PlayerHudButtonConfig cfg) =>
+      _bottomRowButtonIds.contains(cfg.id) && (cfg.ny - 0.82).abs() <= 0.05;
+
   void _onDragStart(PlayerHudButtonConfig config) {
-    setState(() {
-      _selectedEditButtonId = config.id;
-      _rawDragNx = config.nx;
-      _rawDragNy = config.ny;
-      _snapXActive = (config.nx - 0.5).abs() <= 0.001;
-      _snapYActive = (config.ny - 0.5).abs() <= 0.001;
-    });
+    if (PlayerHudButtonConfig.isLockedCenterControl(config.id)) {
+      if (_selectedEditButtonId != config.id) {
+        setState(() => _selectedEditButtonId = config.id);
+      }
+      return;
+    }
+    _isDraggingHud = true;
+    _rawDragNx = config.nx;
+    _rawDragNy = config.ny;
+    _snapGuides.value = (
+      snapX: (config.nx - 0.5).abs() <= 0.001,
+      snapY: (config.ny - 0.5).abs() <= 0.001,
+      guideNx: null,
+      guideNy: null,
+    );
+    if (_selectedEditButtonId != config.id) {
+      setState(() => _selectedEditButtonId = config.id);
+    }
   }
 
   void _onDragUpdate(
     String id,
     DragUpdateDetails details,
     Size canvasSize,
-    SettingsCubit? settingsCubit,
   ) {
+    if (PlayerHudButtonConfig.isLockedCenterControl(id)) return;
     final spanW = canvasSize.width > 96
         ? canvasSize.width - 48
         : canvasSize.width.clamp(1.0, double.infinity);
@@ -110,34 +167,84 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         .clamp(PlayerHudButtonConfig.minNy, PlayerHudButtonConfig.maxNy)
         .toDouble();
 
-    final nextSnapX = (_rawDragNx - 0.5).abs() <= 0.02;
-    final nextSnapY = (_rawDragNy - 0.5).abs() <= 0.02;
-    if ((nextSnapX && !_snapXActive) || (nextSnapY && !_snapYActive)) {
+    const step = 0.02;
+    const snapThreshold = 0.02;
+
+    double effectiveNx = ((_rawDragNx / step).round() * step)
+        .clamp(PlayerHudButtonConfig.minNx, PlayerHudButtonConfig.maxNx)
+        .toDouble();
+    double effectiveNy = ((_rawDragNy / step).round() * step)
+        .clamp(PlayerHudButtonConfig.minNy, PlayerHudButtonConfig.maxNy)
+        .toDouble();
+
+    final currentMap = _draftLayout.value;
+    double? guideNx;
+    double? guideNy;
+    final nextSnapX = (_rawDragNx - 0.5).abs() <= snapThreshold;
+    final nextSnapY = (_rawDragNy - 0.5).abs() <= snapThreshold;
+
+    if (nextSnapX) {
+      effectiveNx = 0.5;
+    } else {
+      double bestDx = snapThreshold + 0.001;
+      for (final other in currentMap.values) {
+        if (other.id == id || !other.visible) continue;
+        final dx = (_rawDragNx - other.nx).abs();
+        if (dx <= snapThreshold && dx < bestDx) {
+          bestDx = dx;
+          effectiveNx = other.nx;
+          guideNx = other.nx;
+        }
+      }
+    }
+
+    if (nextSnapY) {
+      effectiveNy = 0.5;
+    } else {
+      double bestDy = snapThreshold + 0.001;
+      for (final other in currentMap.values) {
+        if (other.id == id || !other.visible) continue;
+        final dy = (_rawDragNy - other.ny).abs();
+        if (dy <= snapThreshold && dy < bestDy) {
+          bestDy = dy;
+          effectiveNy = other.ny;
+          guideNy = other.ny;
+        }
+      }
+    }
+
+    final prevGuides = _snapGuides.value;
+    if ((nextSnapX && !prevGuides.snapX) ||
+        (nextSnapY && !prevGuides.snapY) ||
+        (guideNx != null && prevGuides.guideNx != guideNx) ||
+        (guideNy != null && prevGuides.guideNy != guideNy)) {
       HapticFeedback.selectionClick();
     }
 
-    final effectiveNx = nextSnapX ? 0.5 : _rawDragNx;
-    final effectiveNy = nextSnapY ? 0.5 : _rawDragNy;
-
-    setState(() {
-      _snapXActive = nextSnapX;
-      _snapYActive = nextSnapY;
-    });
-
-    settingsCubit?.updateHudButtonConfig(
-      id,
-      nx: effectiveNx,
-      ny: effectiveNy,
-      persist: false,
+    _snapGuides.value = (
+      snapX: nextSnapX,
+      snapY: nextSnapY,
+      guideNx: guideNx,
+      guideNy: guideNy,
     );
+
+    final prevBtn = currentMap[id] ?? PlayerHudButtonConfig(id: id, nx: 0.5, ny: 0.5);
+    final nextBtn = prevBtn.copyWith(nx: effectiveNx, ny: effectiveNy);
+    if (nextBtn != prevBtn) {
+      _draftLayout.value = Map<String, PlayerHudButtonConfig>.from(currentMap)
+        ..[id] = nextBtn;
+    }
   }
 
   void _onDragEnd(SettingsCubit? settingsCubit) {
-    setState(() {
-      _snapXActive = false;
-      _snapYActive = false;
-    });
-    settingsCubit?.persistHudLayout();
+    _isDraggingHud = false;
+    _snapGuides.value = (
+      snapX: false,
+      snapY: false,
+      guideNx: null,
+      guideNy: null,
+    );
+    settingsCubit?.applyHudLayout(_draftLayout.value);
   }
 
   @override
@@ -159,6 +266,11 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
 
     Widget buildWithSettings(SettingsState settingsState) {
+      if (!_isDraggingHud && _draftLayout.value != settingsState.hudLayout) {
+        _draftLayout.value = Map<String, PlayerHudButtonConfig>.from(
+          settingsState.hudLayout,
+        );
+      }
       final isVisibleOverlay = state.areControlsVisible || state.isHudEditMode;
 
       return IgnorePointer(
@@ -176,10 +288,11 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                 : (details) {
                     final screenWidth = MediaQuery.of(context).size.width;
                     final dx = details.globalPosition.dx;
+                    final step = settingsState.seekStepSeconds;
                     if (dx < screenWidth * 0.38) {
-                      cubit.seekRelative(-10);
+                      cubit.seekRelative(-step);
                     } else if (dx > screenWidth * 0.62) {
-                      cubit.seekRelative(10);
+                      cubit.seekRelative(step);
                     } else {
                       cubit.togglePlayPause();
                     }
@@ -193,7 +306,8 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                     final screenWidth = MediaQuery.of(context).size.width;
                     final isLeft = details.globalPosition.dx < (screenWidth / 2);
                     final screenHeight = MediaQuery.of(context).size.height;
-                    final delta = -deltaPx / (screenHeight * 0.65);
+                    final delta = (-deltaPx / (screenHeight * 0.65)) *
+                        settingsState.gestureSwipeSensitivity;
                     if (isLeft) {
                       cubit.setBrightness(
                         (state.brightness + delta).clamp(0.05, 1.0),
@@ -227,10 +341,25 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       constraints.maxHeight,
                     );
 
+                    // В портретной ориентации (вне режима 2D-редактора) используем аккуратный док-макет,
+                    // чтобы кнопки не сжимались и не улетали в чёрные полосы леттербоксинга.
+                    if (!isLandscape && !state.isHudEditMode) {
+                      return _buildPortraitDockedLayout(
+                        context,
+                        settingsState: settingsState,
+                        isShort: isShort,
+                        isGuestInSync: isGuestInSync,
+                        allEpisodes: allEpisodes,
+                        currentIndex: currentIndex,
+                        hasPrevEpisode: hasPrevEpisode,
+                        hasNextEpisode: hasNextEpisode,
+                      );
+                    }
+
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        // 1. ВЕРХНИЙ БАР (назад, название, статусы Watch Together, настройки)
+                        // 1. ВЕРХНИЙ БАР (назад, название, статусы Watch Together, топ-ряд кнопок и настройки)
                         Positioned(
                           top: 0,
                           left: 0,
@@ -242,36 +371,47 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                               child: _buildTopHeaderBar(
                                 context,
                                 isLandscape: isLandscape,
+                                settingsState: settingsState,
+                                allEpisodes: allEpisodes,
+                                currentIndex: currentIndex,
+                                hasPrevEpisode: hasPrevEpisode,
+                                hasNextEpisode: hasNextEpisode,
                               ),
                             ),
                           ),
                         ),
 
-                        // 2. НИЖНИЙ БАР (таймлайн, быстрые фразы, реакции комнаты)
-                        if (state.errorMessage == null || state.isPlaying)
+                        // 2. НИЖНИЙ БАР (таймлайн, нижний ряд кнопок, быстрые фразы, реакции комнаты — скрыт в режиме настройки HUD)
+                        if (!state.isHudEditMode &&
+                            (state.errorMessage == null || state.isPlaying))
                           Positioned(
                             bottom: 0,
                             left: 0,
                             right: 0,
-                            child: IgnorePointer(
-                              ignoring: state.isHudEditMode,
-                              child: Opacity(
-                                opacity: state.isHudEditMode ? 0.32 : 1.0,
-                                child: _buildBottomBar(
-                                  context,
-                                  isLandscape: isLandscape,
-                                  isShort: isShort,
-                                  isGuestInSync: isGuestInSync,
-                                ),
-                              ),
+                            child: _buildBottomBar(
+                              context,
+                              isLandscape: isLandscape,
+                              isShort: isShort,
+                              isGuestInSync: isGuestInSync,
+                              settingsState: settingsState,
+                              allEpisodes: allEpisodes,
+                              currentIndex: currentIndex,
+                              hasPrevEpisode: hasPrevEpisode,
+                              hasNextEpisode: hasNextEpisode,
                             ),
                           ),
 
-                        // 3. ВЫРАВНИВАЮЩАЯ СЕТКА И ЦЕНТРАЛЬНЫЕ МАГНИТНЫЕ ЛИНИИ В РЕЖИМЕ НАСТРОЙКИ
+                        // 3. ВЫРАВНИВАЮЩАЯ СЕТКА И МАГНИТНЫЕ ЛИНИИ В РЕЖИМЕ НАСТРОЙКИ
                         if (state.isHudEditMode)
-                          PlayerHudEditGridOverlay(
-                            snapXActive: _snapXActive,
-                            snapYActive: _snapYActive,
+                          ValueListenableBuilder<
+                              ({bool snapX, bool snapY, double? guideNx, double? guideNy})>(
+                            valueListenable: _snapGuides,
+                            builder: (context, guides, _) => PlayerHudEditGridOverlay(
+                              snapXActive: guides.snapX,
+                              snapYActive: guides.snapY,
+                              snapGuideNx: guides.guideNx,
+                              snapGuideNy: guides.guideNy,
+                            ),
                           ),
 
                         // 4. КНОПКА ЗАПРОСА ПАУЗЫ ДЛЯ УЧАСТНИКА КОМНАТЫ (не хост)
@@ -281,21 +421,30 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                             child: _buildGuestPauseButton(context),
                           ),
 
-                        // 5. СВОБОДНЫЙ 2D-ХОЛСТ КНОПОК HUD (позиционирование nx/ny + scale)
-                        ..._buildFreeFormHudButtons(
-                          context,
-                          settingsState: settingsState,
-                          settingsCubit: settingsCubit,
-                          canvasSize: canvasSize,
-                          isLandscape: isLandscape,
-                          isGuestInSync: isGuestInSync,
-                          allEpisodes: allEpisodes,
-                          currentIndex: currentIndex,
-                          hasPrevEpisode: hasPrevEpisode,
-                          hasNextEpisode: hasNextEpisode,
+                        // 5. СВОБОДНЫЙ 2D-ХОЛСТ КНОПОК HUD (60/120 FPS через ValueNotifier)
+                        RepaintBoundary(
+                          child: ValueListenableBuilder<Map<String, PlayerHudButtonConfig>>(
+                            valueListenable: _draftLayout,
+                            builder: (context, draftMap, _) => Stack(
+                              fit: StackFit.expand,
+                              children: _buildFreeFormHudButtons(
+                                context,
+                                hudLayout: draftMap,
+                                settingsCubit: settingsCubit,
+                                canvasSize: canvasSize,
+                                isLandscape: isLandscape,
+                                isGuestInSync: isGuestInSync,
+                                allEpisodes: allEpisodes,
+                                currentIndex: currentIndex,
+                                hasPrevEpisode: hasPrevEpisode,
+                                hasNextEpisode: hasNextEpisode,
+                                seekStepSeconds: settingsState.seekStepSeconds,
+                              ),
+                            ),
+                          ),
                         ),
 
-                        // 6. ПЛАВАЮЩИЙ ИНСПЕКТОР ВЫБРАННОЙ КНОПКИ И ПРЕСЕТОВ (TOP-CENTER)
+                        // 6. ПЛАВАЮЩИЙ ИНСПЕКТОР ВЫБРАННОЙ КНОПКИ И ПРЕСЕТОВ (ВНИЗУ НА МЕСТЕ ТАЙМЛАЙНА)
                         if (state.isHudEditMode)
                           PlayerHudInspectorPill(
                             settingsCubit: settingsCubit,
@@ -304,6 +453,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                             onSelectButton: (id) =>
                                 setState(() => _selectedEditButtonId = id),
                             onDone: () {
+                              settingsCubit?.applyHudLayout(_draftLayout.value);
                               setState(() => _selectedEditButtonId = null);
                               cubit.setHudEditMode(false);
                             },
@@ -331,9 +481,43 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
   Widget _buildTopHeaderBar(
     BuildContext context, {
     required bool isLandscape,
+    SettingsState? settingsState,
+    List<EpisodeItem> allEpisodes = const [],
+    int currentIndex = 0,
+    bool hasPrevEpisode = false,
+    bool hasNextEpisode = false,
   }) {
     final title = state.title;
     final ep = state.episode;
+    final dockedTopControls = <Widget>[];
+    if (isLandscape && !state.isHudEditMode && settingsState != null) {
+      final topConfigs = [
+        for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode'])
+          settingsState.hudConfigFor(id),
+      ].where((c) => c.visible && _isDockedInTopBar(c)).toList()
+        ..sort((a, b) => a.nx.compareTo(b.nx));
+
+      for (final cfg in topConfigs) {
+        final w = _buildSingle2DControl(
+          context,
+          id: cfg.id,
+          isLandscape: isLandscape,
+          allEpisodes: allEpisodes,
+          currentIndex: currentIndex,
+          hasPrevEpisode: hasPrevEpisode,
+          hasNextEpisode: hasNextEpisode,
+          seekStepSeconds: settingsState.seekStepSeconds,
+        );
+        if (w != null) {
+          dockedTopControls.add(
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Transform.scale(scale: cfg.scale, child: w),
+            ),
+          );
+        }
+      }
+    }
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -382,6 +566,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
               ],
             ),
           ),
+          if (isLandscape && !state.isSyncRoom) const Spacer(flex: 1),
           const SizedBox(width: 4),
           Flexible(
             child: SingleChildScrollView(
@@ -521,6 +706,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                     SyncBadge(status: syncStatus!, peerName: syncPeerName),
                     const SizedBox(width: 4),
                   ],
+                  ...dockedTopControls,
                   IconButton(
                     key: const ValueKey('hud_action_settings_gear'),
                     tooltip: 'Настройки плеера',
@@ -543,6 +729,93 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPortraitDockedLayout(
+    BuildContext context, {
+    required SettingsState settingsState,
+    required bool isShort,
+    required bool isGuestInSync,
+    required List<EpisodeItem> allEpisodes,
+    required int currentIndex,
+    required bool hasPrevEpisode,
+    required bool hasNextEpisode,
+  }) {
+    Widget? control(String id) {
+      if (!settingsState.hudConfigFor(id).visible) return null;
+      return _buildSingle2DControl(
+        context,
+        id: id,
+        isLandscape: false,
+        allEpisodes: allEpisodes,
+        currentIndex: currentIndex,
+        hasPrevEpisode: hasPrevEpisode,
+        hasNextEpisode: hasNextEpisode,
+        seekStepSeconds: settingsState.seekStepSeconds,
+      );
+    }
+
+    final topRightControls = <Widget>[
+      for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode'])
+        if (control(id) case final w?) w,
+    ];
+    final skipIntro = control('skip_intro');
+
+    return Column(
+      key: const ValueKey('player_portrait_docked_layout'),
+      children: [
+        _buildTopHeaderBar(context, isLandscape: false),
+        if (topRightControls.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: topRightControls,
+              ),
+            ),
+          ),
+        Expanded(
+          child: Center(
+            child: isGuestInSync
+                ? _buildGuestPauseButton(context)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (control('seek_back') case final w?) w,
+                      const SizedBox(width: 24),
+                      if (control('play_pause') case final w?) w,
+                      const SizedBox(width: 24),
+                      if (control('seek_forward') case final w?) w,
+                    ],
+                  ),
+          ),
+        ),
+        if (skipIntro != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 16, bottom: 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: skipIntro,
+            ),
+          ),
+        _buildBottomBar(
+          context,
+          isLandscape: false,
+          isShort: isShort,
+          isGuestInSync: isGuestInSync,
+          settingsState: settingsState,
+          allEpisodes: allEpisodes,
+          currentIndex: currentIndex,
+          hasPrevEpisode: hasPrevEpisode,
+          hasNextEpisode: hasNextEpisode,
+        ),
+      ],
     );
   }
 
@@ -581,7 +854,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
 
   List<Widget> _buildFreeFormHudButtons(
     BuildContext context, {
-    required SettingsState settingsState,
+    required Map<String, PlayerHudButtonConfig> hudLayout,
     required SettingsCubit? settingsCubit,
     required Size canvasSize,
     required bool isLandscape,
@@ -590,16 +863,24 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     required int currentIndex,
     required bool hasPrevEpisode,
     required bool hasNextEpisode,
+    int seekStepSeconds = 10,
   }) {
     final widgets = <Widget>[];
     final hasError = state.errorMessage != null;
 
     for (final meta in kPlayerHud2DButtons) {
-      final config = settingsState.hudConfigFor(meta.id);
+      final config = (hudLayout[meta.id] ??
+              PlayerHud2DPresets.classicLayout()[meta.id] ??
+              PlayerHudButtonConfig(id: meta.id, nx: 0.5, ny: 0.5))
+          .clamped();
       if (!config.visible) continue;
 
       if (!state.isHudEditMode) {
         if (meta.id == 'skip_intro') continue;
+        if (isLandscape &&
+            (_isDockedInTopBar(config) || _isDockedInBottomBar(config))) {
+          continue;
+        }
         if (hasError &&
             (meta.id == 'play_pause' ||
                 meta.id == 'seek_back' ||
@@ -623,6 +904,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         currentIndex: currentIndex,
         hasPrevEpisode: hasPrevEpisode,
         hasNextEpisode: hasNextEpisode,
+        seekStepSeconds: seekStepSeconds,
       );
       if (button == null) continue;
 
@@ -637,7 +919,6 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             config.id,
             details,
             canvasSize,
-            settingsCubit,
           ),
           onDragEnd: () => _onDragEnd(settingsCubit),
           child: button,
@@ -648,6 +929,30 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     return widgets;
   }
 
+  IconData _seekBackIconFor(int step) {
+    switch (step) {
+      case 5:
+        return Icons.replay_5_rounded;
+      case 30:
+        return Icons.replay_30_rounded;
+      case 10:
+      default:
+        return Icons.replay_10_rounded;
+    }
+  }
+
+  IconData _seekForwardIconFor(int step) {
+    switch (step) {
+      case 5:
+        return Icons.forward_5_rounded;
+      case 30:
+        return Icons.forward_30_rounded;
+      case 10:
+      default:
+        return Icons.forward_10_rounded;
+    }
+  }
+
   Widget? _buildSingle2DControl(
     BuildContext context, {
     required String id,
@@ -656,6 +961,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     required int currentIndex,
     required bool hasPrevEpisode,
     required bool hasNextEpisode,
+    int seekStepSeconds = 10,
   }) {
     switch (id) {
       case 'play_pause':
@@ -697,19 +1003,85 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         );
 
       case 'seek_back':
-        return IconButton(
-          key: const ValueKey('hud_center_seek_back'),
-          iconSize: isLandscape ? 32 : 40,
-          icon: const Icon(Icons.replay_10_rounded, color: AppColors.textPrimary),
-          onPressed: () => cubit.seekRelative(-10),
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            key: const ValueKey('hud_center_seek_back'),
+            tooltip: 'Назад $seekStepSeconds сек',
+            iconSize: isLandscape ? 32 : 38,
+            icon: seekStepSeconds == 15
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        Icons.replay_rounded,
+                        color: Colors.white,
+                        size: isLandscape ? 32 : 38,
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: Text(
+                          '15',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Icon(_seekBackIconFor(seekStepSeconds), color: Colors.white),
+            onPressed: () => cubit.seekRelative(-seekStepSeconds),
+          ),
         );
 
       case 'seek_forward':
-        return IconButton(
-          key: const ValueKey('hud_center_seek_forward'),
-          iconSize: isLandscape ? 32 : 40,
-          icon: const Icon(Icons.forward_10_rounded, color: AppColors.textPrimary),
-          onPressed: () => cubit.seekRelative(10),
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            key: const ValueKey('hud_center_seek_forward'),
+            tooltip: 'Вперёд $seekStepSeconds сек',
+            iconSize: isLandscape ? 32 : 38,
+            icon: seekStepSeconds == 15
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        Icons.forward_5_rounded,
+                        color: Colors.transparent,
+                        size: isLandscape ? 32 : 38,
+                      ),
+                      Transform.flip(
+                        flipX: true,
+                        child: Icon(
+                          Icons.replay_rounded,
+                          color: Colors.white,
+                          size: isLandscape ? 32 : 38,
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: Text(
+                          '15',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Icon(_seekForwardIconFor(seekStepSeconds), color: Colors.white),
+            onPressed: () => cubit.seekRelative(seekStepSeconds),
+          ),
         );
 
       case 'skip_intro':
@@ -928,8 +1300,52 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     required bool isLandscape,
     required bool isShort,
     required bool isGuestInSync,
+    SettingsState? settingsState,
+    List<EpisodeItem> allEpisodes = const [],
+    int currentIndex = 0,
+    bool hasPrevEpisode = false,
+    bool hasNextEpisode = false,
   }) {
     final ep = state.episode;
+    Widget? dockedNextEp;
+    Widget? dockedFullscreen;
+    if (!state.isHudEditMode && settingsState != null) {
+      final nextCfg = settingsState.hudConfigFor('next_episode');
+      if (!isGuestInSync &&
+          nextCfg.visible &&
+          (!isLandscape || _isDockedInBottomBar(nextCfg))) {
+        final w = _buildSingle2DControl(
+          context,
+          id: 'next_episode',
+          isLandscape: isLandscape,
+          allEpisodes: allEpisodes,
+          currentIndex: currentIndex,
+          hasPrevEpisode: hasPrevEpisode,
+          hasNextEpisode: hasNextEpisode,
+          seekStepSeconds: settingsState.seekStepSeconds,
+        );
+        if (w != null) {
+          dockedNextEp = Transform.scale(scale: nextCfg.scale, child: w);
+        }
+      }
+      final fsCfg = settingsState.hudConfigFor('fullscreen');
+      if (fsCfg.visible && (!isLandscape || _isDockedInBottomBar(fsCfg))) {
+        final w = _buildSingle2DControl(
+          context,
+          id: 'fullscreen',
+          isLandscape: isLandscape,
+          allEpisodes: allEpisodes,
+          currentIndex: currentIndex,
+          hasPrevEpisode: hasPrevEpisode,
+          hasNextEpisode: hasNextEpisode,
+          seekStepSeconds: settingsState.seekStepSeconds,
+        );
+        if (w != null) {
+          dockedFullscreen = Transform.scale(scale: fsCfg.scale, child: w);
+        }
+      }
+    }
+
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: (isLandscape || isShort) ? 16 : AppDimensions.spacingXl,
@@ -938,43 +1354,65 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (state.isSyncRoom &&
-              ep.opening != null &&
-              state.position.inSeconds >= ep.opening!.start &&
-              state.position.inSeconds < ep.opening!.stop)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: state.hasVotedCoopSkip
-                        ? AppColors.syncActive
-                        : AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: state.coopSkipVotes > 0 ? 6 : 2,
-                    shadowColor: AppColors.primary.withValues(alpha: 0.6),
-                  ),
-                  icon: const Icon(Icons.fast_forward_rounded, size: 16),
-                  label: Text(
-                    state.coopSkipVotes > 0
-                        ? 'Друг хочет скипнуть! (${state.coopSkipVotes}/2)'
-                        : 'Пропустить опенинг (0/2)',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                  onPressed: () => cubit.voteCoopSkip(),
-                ),
+          if (dockedNextEp != null || dockedFullscreen != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  dockedNextEp ?? const SizedBox.shrink(),
+                  dockedFullscreen ?? const SizedBox.shrink(),
+                ],
               ),
+            ),
+          if (state.isSyncRoom && ep.opening != null)
+            BlocSelector<PlayerCubit, PlayerState, ({int sec, int votes, bool voted})>(
+              bloc: cubit,
+              selector: (s) => (
+                sec: s.position.inSeconds,
+                votes: s.coopSkipVotes,
+                voted: s.hasVotedCoopSkip,
+              ),
+              builder: (context, coop) {
+                if (coop.sec < ep.opening!.start || coop.sec >= ep.opening!.stop) {
+                  return const SizedBox.shrink();
+                }
+                return Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: AppDimensions.spacingSm),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: coop.voted
+                            ? AppColors.syncActive
+                            : AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: coop.votes > 0 ? 6 : 2,
+                        shadowColor: AppColors.primary.withValues(alpha: 0.6),
+                      ),
+                      icon: const Icon(Icons.fast_forward_rounded, size: 16),
+                      label: Text(
+                        coop.votes > 0
+                            ? 'Друг хочет скипнуть! (${coop.votes}/2)'
+                            : 'Пропустить опенинг (0/2)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onPressed: () => cubit.voteCoopSkip(),
+                    ),
+                  ),
+                );
+              },
             ),
 
           if (state.isSyncRoom && !(isLandscape || isShort))
@@ -1013,17 +1451,26 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
               ),
             ),
 
-          PlayerProgressBar(
-            position: state.position,
-            duration: state.duration,
-            buffer: state.buffer,
-            heatmap: state.heatmap,
-            opening: state.effectiveOpening,
-            ending: state.effectiveEnding,
-            isBuffering: state.isBuffering,
-            onSeek: (pos) => cubit.seek(pos),
-            isLocked: isGuestInSync,
-            onLockedTap: () => cubit.showGuestPlaybackLockedNotice(),
+          BlocSelector<PlayerCubit, PlayerState, ({Duration pos, Duration dur, Duration buf, bool isBuf})>(
+            bloc: cubit,
+            selector: (s) => (
+              pos: s.position,
+              dur: s.duration,
+              buf: s.buffer,
+              isBuf: s.isBuffering,
+            ),
+            builder: (context, timing) => PlayerProgressBar(
+              position: timing.pos,
+              duration: timing.dur,
+              buffer: timing.buf,
+              heatmap: cubit.state.heatmap,
+              opening: cubit.state.effectiveOpening,
+              ending: cubit.state.effectiveEnding,
+              isBuffering: timing.isBuf,
+              onSeek: (pos) => cubit.seek(pos),
+              isLocked: isGuestInSync,
+              onLockedTap: () => cubit.showGuestPlaybackLockedNotice(),
+            ),
           ),
 
           if (isGuestInSync)

@@ -12,6 +12,8 @@ import '../../../../core/widgets/desktop_title_bar.dart';
 import '../../../kodik/domain/entities/kodik_translation.dart';
 import '../../../kodik/presentation/cubit/kodik_cubit.dart';
 import '../../../kodik/presentation/cubit/kodik_state.dart';
+import '../../../settings/presentation/cubit/settings_cubit.dart';
+import '../../../settings/presentation/cubit/settings_state.dart';
 import '../../../sync_room/presentation/widgets/room_audio_settings_section.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
@@ -323,6 +325,10 @@ class PlayerSettingsSheet extends StatelessWidget {
                           );
                         }).toList(),
                       ),
+                      const SizedBox(height: 20),
+
+                      // 3.1. ШАГ ПЕРЕМОТКИ (5с / 10с / 15с / 30с) И ЧУВСТВИТЕЛЬНОСТЬ СВАЙПОВ
+                      _buildSeekAndGestureSettingsSection(context, primary),
                       const SizedBox(height: 20),
 
                       // 4. МАСШТАБ КАДРА (ASPECT RATIO / FIT)
@@ -764,6 +770,170 @@ class PlayerSettingsSheet extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSeekAndGestureSettingsSection(
+    BuildContext context,
+    Color primary,
+  ) {
+    final settingsCubit =
+        getIt.isRegistered<SettingsCubit>() ? getIt<SettingsCubit>() : null;
+
+    Widget buildSection(SettingsState settingsState) {
+      const seekSteps = [5, 10, 15, 30];
+      const sensitivityPresets = [
+        (0.6, 'Низкая (0.6x)'),
+        (1.0, 'Обычная (1.0x)'),
+        (1.5, 'Высокая (1.5x)'),
+      ];
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ШАГ ПЕРЕМОТКИ',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textMuted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (int i = 0; i < seekSteps.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    key: ValueKey('player_seek_step_${seekSteps[i]}'),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      settingsCubit?.setSeekStepSeconds(seekSteps[i]);
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: settingsState.seekStepSeconds == seekSteps[i]
+                            ? primary
+                            : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: settingsState.seekStepSeconds == seekSteps[i]
+                              ? primary
+                              : Colors.white.withValues(alpha: 0.1),
+                          width: 1.2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${seekSteps[i]} сек',
+                        style: TextStyle(
+                          color: settingsState.seekStepSeconds == seekSteps[i]
+                              ? Colors.white
+                              : AppColors.textPrimary,
+                          fontWeight:
+                              settingsState.seekStepSeconds == seekSteps[i]
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'ЧУВСТВИТЕЛЬНОСТЬ СВАЙПОВ (ЯРКОСТЬ И ЗВУК)',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textMuted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (int i = 0; i < sensitivityPresets.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    key: ValueKey(
+                      'player_swipe_sens_${sensitivityPresets[i].$1}',
+                    ),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      settingsCubit?.setGestureSwipeSensitivity(
+                        sensitivityPresets[i].$1,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: (settingsState.gestureSwipeSensitivity -
+                                        sensitivityPresets[i].$1)
+                                    .abs() <
+                                0.05
+                            ? primary
+                            : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: (settingsState.gestureSwipeSensitivity -
+                                          sensitivityPresets[i].$1)
+                                      .abs() <
+                                  0.05
+                              ? primary
+                              : Colors.white.withValues(alpha: 0.1),
+                          width: 1.2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        sensitivityPresets[i].$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: (settingsState.gestureSwipeSensitivity -
+                                          sensitivityPresets[i].$1)
+                                      .abs() <
+                                  0.05
+                              ? Colors.white
+                              : AppColors.textPrimary,
+                          fontWeight: (settingsState.gestureSwipeSensitivity -
+                                          sensitivityPresets[i].$1)
+                                      .abs() <
+                                  0.05
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      );
+    }
+
+    if (settingsCubit == null) {
+      return buildSection(const SettingsState());
+    }
+    return BlocBuilder<SettingsCubit, SettingsState>(
+      bloc: settingsCubit,
+      builder: (context, s) => buildSection(s),
     );
   }
 }

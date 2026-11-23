@@ -87,7 +87,8 @@ class PaiCompanionToast extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Пай-тян • ${reaction.expression.title}',
+                          reaction.title ??
+                              'Пай-тян • ${reaction.expression.title}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -151,11 +152,27 @@ class PaiCompanionToast extends StatelessWidget {
           ),
         );
 
+        final swipeableCard = Dismissible(
+          key: ValueKey(
+            'pai_toast_dismissible_${reaction.createdAt.microsecondsSinceEpoch}',
+          ),
+          direction: DismissDirection.horizontal,
+          onDismissed: (_) => service.dismissCurrentToast(),
+          child: GestureDetector(
+            onVerticalDragEnd: (details) {
+              if ((details.primaryVelocity ?? 0) > 150) {
+                service.dismissCurrentToast();
+              }
+            },
+            child: card,
+          ),
+        );
+
         if (isDesktop) {
           return Positioned(
             right: 20,
             bottom: 20,
-            child: card,
+            child: swipeableCard,
           );
         }
 
@@ -163,7 +180,7 @@ class PaiCompanionToast extends StatelessWidget {
           top: topPadding + 10,
           left: 14,
           right: 14,
-          child: Center(child: card),
+          child: Center(child: swipeableCard),
         );
       },
     );

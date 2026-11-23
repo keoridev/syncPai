@@ -13,7 +13,6 @@ class SmartMirrorInterceptor extends Interceptor {
   static const List<String> apiMirrors = [
     'https://anilibria.top/api/v1',
     'https://api.anilibria.app/api/v1',
-    'https://anilibria.tv/api/v1',
   ];
 
   static const List<String> cdnMirrors = [
@@ -55,6 +54,7 @@ class SmartMirrorInterceptor extends Interceptor {
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionError ||
         statusCode == 403 ||
+        statusCode == 410 ||
         statusCode == 502 ||
         statusCode == 503 ||
         statusCode == 504;
@@ -64,6 +64,7 @@ class SmartMirrorInterceptor extends Interceptor {
 
       final newOptions = err.requestOptions;
       newOptions.extra['retry_count'] = 1;
+      newOptions.extra['disable_retry'] = true;
       newOptions.baseUrl = activeApiMirror;
 
       log('[SmartMirror] Перенаправление запроса через резервное зеркало $activeApiMirror');

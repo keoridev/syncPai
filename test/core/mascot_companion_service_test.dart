@@ -112,6 +112,22 @@ void main() {
       await tester.pump();
       expect(nextTapped, isTrue);
       expect(find.byKey(const ValueKey('pai_companion_toast_card')), findsNothing);
+
+      // 3. Swipe-to-dismiss (horizontal flick) immediately clears toast
+      service.showReaction(
+        expression: MascotExpression.cheering,
+        message: 'Свайпни меня!',
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('pai_companion_toast_card')), findsOneWidget);
+      await tester.fling(
+        find.byKey(const ValueKey('pai_companion_toast_card')),
+        const Offset(-400, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+      expect(service.currentReaction, isNull);
+      expect(find.byKey(const ValueKey('pai_companion_toast_card')), findsNothing);
     });
 
     test('setPlayerActive suppresses unsolicited/AFK toasts but allows explicit skip/next actions', () {

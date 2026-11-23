@@ -41,6 +41,8 @@ class DoubleTapSeekOverlay extends StatefulWidget {
   final VoidCallback? onLockedTap;
   final bool isScreenLocked;
   final VoidCallback? onScreenLockedTap;
+  final int seekStepSeconds;
+  final double swipeSensitivity;
 
   const DoubleTapSeekOverlay({
     super.key,
@@ -64,6 +66,8 @@ class DoubleTapSeekOverlay extends StatefulWidget {
     this.onLockedTap,
     this.isScreenLocked = false,
     this.onScreenLockedTap,
+    this.seekStepSeconds = 10,
+    this.swipeSensitivity = 1.0,
   });
 
   @override
@@ -295,7 +299,7 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                       widget.onTap();
                     }
                   },
-                  onDoubleTap: () => _triggerSeek(-10, true),
+                  onDoubleTap: () => _triggerSeek(-widget.seekStepSeconds, true),
                   onLongPressStart: _handleLongPressStart,
                   onLongPressMoveUpdate: _handleLongPressMoveUpdate,
                   onLongPressEnd: (_) => _handleLongPressEnd(),
@@ -306,7 +310,8 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                   },
                   onVerticalDragUpdate: (details) {
                     if (_activeGesture == _GestureType.brightness) {
-                      final delta = -details.primaryDelta! / (height * 0.65);
+                      final delta = (-details.primaryDelta! / (height * 0.65)) *
+                          widget.swipeSensitivity;
                       final newB = (_brightness + delta).clamp(0.05, 1.0);
                       setState(() => _brightness = newB);
                       widget.onBrightnessChanged?.call(newB);
@@ -354,7 +359,7 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                       widget.onTap();
                     }
                   },
-                  onDoubleTap: () => _triggerSeek(10, false),
+                  onDoubleTap: () => _triggerSeek(widget.seekStepSeconds, false),
                   onLongPressStart: _handleLongPressStart,
                   onLongPressMoveUpdate: _handleLongPressMoveUpdate,
                   onLongPressEnd: (_) => _handleLongPressEnd(),
@@ -365,7 +370,10 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                   },
                   onVerticalDragUpdate: (details) {
                     if (_activeGesture == _GestureType.volume) {
-                      final delta = (-details.primaryDelta! / (height * 0.65)) * 100.0;
+                      final delta =
+                          (-details.primaryDelta! / (height * 0.65)) *
+                              100.0 *
+                              widget.swipeSensitivity;
                       final newV = (_volume + delta).clamp(0.0, 100.0);
                       setState(() => _volume = newV);
                       widget.onVolumeChanged?.call(newV);

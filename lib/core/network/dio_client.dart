@@ -28,12 +28,17 @@ class DioClient {
       RetryInterceptor(
         dio: dio,
         logPrint: (message) => log('[DioRetry] $message'),
-        retries: 3,
+        retries: 2,
         retryDelays: const [
-          Duration(seconds: 1),
-          Duration(seconds: 2),
-          Duration(seconds: 3),
+          Duration(milliseconds: 500),
+          Duration(milliseconds: 1200),
         ],
+        retryEvaluator: (error, attempt) {
+          if (error.requestOptions.extra['disable_retry'] == true) {
+            return false;
+          }
+          return RetryInterceptor.defaultRetryEvaluator(error, attempt);
+        },
       ),
       InterceptorsWrapper(
         onRequest: (options, handler) {

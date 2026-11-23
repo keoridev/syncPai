@@ -780,7 +780,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(

@@ -44,6 +44,21 @@ class PlayerHudButtonConfig extends Equatable {
   final double scale;
   final bool visible;
 
+  static bool isLockedCenterControl(String id) =>
+      id == 'play_pause' || id == 'seek_back' || id == 'seek_forward';
+
+  static (double, double) lockedCenterCoords(String id) {
+    switch (id) {
+      case 'seek_back':
+        return (0.35, 0.50);
+      case 'seek_forward':
+        return (0.65, 0.50);
+      case 'play_pause':
+      default:
+        return (0.50, 0.50);
+    }
+  }
+
   const PlayerHudButtonConfig({
     required this.id,
     required this.nx,
@@ -52,13 +67,25 @@ class PlayerHudButtonConfig extends Equatable {
     this.visible = true,
   });
 
-  PlayerHudButtonConfig clamped() => PlayerHudButtonConfig(
+  PlayerHudButtonConfig clamped() {
+    if (isLockedCenterControl(id)) {
+      final (lx, ly) = lockedCenterCoords(id);
+      return PlayerHudButtonConfig(
         id: id,
-        nx: nx.clamp(minNx, maxNx).toDouble(),
-        ny: ny.clamp(minNy, maxNy).toDouble(),
+        nx: lx,
+        ny: ly,
         scale: scale.clamp(minScale, maxScale).toDouble(),
         visible: visible,
       );
+    }
+    return PlayerHudButtonConfig(
+      id: id,
+      nx: nx.clamp(minNx, maxNx).toDouble(),
+      ny: ny.clamp(minNy, maxNy).toDouble(),
+      scale: scale.clamp(minScale, maxScale).toDouble(),
+      visible: visible,
+    );
+  }
 
   PlayerHudButtonConfig copyWith({
     double? nx,
@@ -66,6 +93,16 @@ class PlayerHudButtonConfig extends Equatable {
     double? scale,
     bool? visible,
   }) {
+    if (isLockedCenterControl(id)) {
+      final (lx, ly) = lockedCenterCoords(id);
+      return PlayerHudButtonConfig(
+        id: id,
+        nx: lx,
+        ny: ly,
+        scale: (scale ?? this.scale).clamp(minScale, maxScale).toDouble(),
+        visible: visible ?? this.visible,
+      );
+    }
     return PlayerHudButtonConfig(
       id: id,
       nx: (nx ?? this.nx).clamp(minNx, maxNx).toDouble(),
@@ -136,27 +173,31 @@ String hud2DButtonLabel(String id) {
 
 class PlayerHud2DPresets {
   static Map<String, PlayerHudButtonConfig> classicLayout() => const {
+        // Top Bar Row (ny = 0.08)
+        'lock_screen': PlayerHudButtonConfig(id: 'lock_screen', nx: 0.66, ny: 0.08),
+        'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.73, ny: 0.08),
+        'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.80, ny: 0.08),
+        'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.87, ny: 0.08),
+        // Exact Center Transport Row (ny = 0.50 — locked)
+        'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.35, ny: 0.50),
         'play_pause': PlayerHudButtonConfig(id: 'play_pause', nx: 0.50, ny: 0.50),
-        'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.30, ny: 0.50),
-        'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.70, ny: 0.50),
-        'skip_intro': PlayerHudButtonConfig(id: 'skip_intro', nx: 0.85, ny: 0.72),
-        'next_episode': PlayerHudButtonConfig(id: 'next_episode', nx: 0.15, ny: 0.74),
-        'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.76, ny: 0.32),
-        'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.90, ny: 0.32),
-        'lock_screen': PlayerHudButtonConfig(id: 'lock_screen', nx: 0.09, ny: 0.32),
-        'fullscreen': PlayerHudButtonConfig(id: 'fullscreen', nx: 0.92, ny: 0.84),
-        'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.91, ny: 0.48),
+        'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.65, ny: 0.50),
+        // Bottom Controls Row (ny = 0.82, directly above seekbar)
+        'next_episode': PlayerHudButtonConfig(id: 'next_episode', nx: 0.13, ny: 0.82),
+        'fullscreen': PlayerHudButtonConfig(id: 'fullscreen', nx: 0.94, ny: 0.82),
+        // Contextual Pill
+        'skip_intro': PlayerHudButtonConfig(id: 'skip_intro', nx: 0.88, ny: 0.72),
       };
 
   static Map<String, PlayerHudButtonConfig> rightThumbLayout() => const {
         'play_pause': PlayerHudButtonConfig(
           id: 'play_pause',
-          nx: 0.84,
-          ny: 0.58,
+          nx: 0.50,
+          ny: 0.50,
           scale: 1.1,
         ),
-        'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.68, ny: 0.58),
-        'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.86, ny: 0.40),
+        'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.35, ny: 0.50),
+        'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.65, ny: 0.50),
         'skip_intro': PlayerHudButtonConfig(
           id: 'skip_intro',
           nx: 0.78,
@@ -295,6 +336,8 @@ class SettingsState extends Equatable {
   final String defaultQuality;
   final bool hasSeenPlayerOnboarding;
   final bool paiCompanionReactionsEnabled;
+  final int seekStepSeconds;
+  final double gestureSwipeSensitivity;
 
   const SettingsState({
     this.gridColumnCount = 3,
@@ -335,16 +378,16 @@ class SettingsState extends Equatable {
       'pip',
     ],
     this.hudLayout = const {
+      'lock_screen': PlayerHudButtonConfig(id: 'lock_screen', nx: 0.66, ny: 0.08),
+      'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.73, ny: 0.08),
+      'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.80, ny: 0.08),
+      'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.87, ny: 0.08),
+      'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.35, ny: 0.50),
       'play_pause': PlayerHudButtonConfig(id: 'play_pause', nx: 0.50, ny: 0.50),
-      'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.30, ny: 0.50),
-      'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.70, ny: 0.50),
-      'skip_intro': PlayerHudButtonConfig(id: 'skip_intro', nx: 0.85, ny: 0.72),
-      'next_episode': PlayerHudButtonConfig(id: 'next_episode', nx: 0.15, ny: 0.74),
-      'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.76, ny: 0.32),
-      'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.90, ny: 0.32),
-      'lock_screen': PlayerHudButtonConfig(id: 'lock_screen', nx: 0.09, ny: 0.32),
-      'fullscreen': PlayerHudButtonConfig(id: 'fullscreen', nx: 0.92, ny: 0.84),
-      'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.91, ny: 0.48),
+      'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.65, ny: 0.50),
+      'next_episode': PlayerHudButtonConfig(id: 'next_episode', nx: 0.13, ny: 0.82),
+      'fullscreen': PlayerHudButtonConfig(id: 'fullscreen', nx: 0.94, ny: 0.82),
+      'skip_intro': PlayerHudButtonConfig(id: 'skip_intro', nx: 0.88, ny: 0.72),
     },
     this.autoSkipOpenings = true,
     this.autoPauseOnLeave = true,
@@ -352,14 +395,17 @@ class SettingsState extends Equatable {
     this.defaultQuality = '1080p FHD',
     this.hasSeenPlayerOnboarding = false,
     this.paiCompanionReactionsEnabled = true,
+    this.seekStepSeconds = 10,
+    this.gestureSwipeSensitivity = 1.0,
   });
 
   bool isHudButtonVisible(String id) => playerButtonVisibility[id] ?? true;
 
   PlayerHudButtonConfig hudConfigFor(String id) {
-    return hudLayout[id] ??
+    final cfg = hudLayout[id] ??
         PlayerHud2DPresets.classicLayout()[id] ??
         PlayerHudButtonConfig(id: id, nx: 0.5, ny: 0.5);
+    return cfg.clamped();
   }
 
   List<PlayerHudButtonConfig> get hiddenHudButtons => [
@@ -380,6 +426,8 @@ class SettingsState extends Equatable {
     String? defaultQuality,
     bool? hasSeenPlayerOnboarding,
     bool? paiCompanionReactionsEnabled,
+    int? seekStepSeconds,
+    double? gestureSwipeSensitivity,
   }) {
     return SettingsState(
       gridColumnCount: gridColumnCount ?? this.gridColumnCount,
@@ -397,6 +445,9 @@ class SettingsState extends Equatable {
           hasSeenPlayerOnboarding ?? this.hasSeenPlayerOnboarding,
       paiCompanionReactionsEnabled:
           paiCompanionReactionsEnabled ?? this.paiCompanionReactionsEnabled,
+      seekStepSeconds: seekStepSeconds ?? this.seekStepSeconds,
+      gestureSwipeSensitivity:
+          gestureSwipeSensitivity ?? this.gestureSwipeSensitivity,
     );
   }
 
@@ -414,5 +465,7 @@ class SettingsState extends Equatable {
         defaultQuality,
         hasSeenPlayerOnboarding,
         paiCompanionReactionsEnabled,
+        seekStepSeconds,
+        gestureSwipeSensitivity,
       ];
 }

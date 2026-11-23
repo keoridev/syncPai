@@ -60,15 +60,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
   bool _isForYouTabSelected = false;
+  bool _showForYouShelf = false;
 
   static const List<({String id, String label})> _quickTabs = [
-    (id: 'for_you', label: 'Для тебя'),
     (id: 'all', label: 'Все'),
     (id: 'ongoing', label: 'Онгоинги'),
     (id: 'popular', label: 'Популярное'),
     (id: 'released', label: 'Завершённые'),
     (id: 'movies', label: 'Фильмы'),
     (id: 'anons', label: 'Анонсы'),
+    (id: 'for_you', label: 'Для тебя'),
   ];
 
   String? _activeQuickTabId(CatalogState state) {
@@ -100,6 +101,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context.read<CatalogCubit>().onSearchQueryChanged('');
     }
     setState(() {
+      _showForYouShelf = true;
       _isForYouTabSelected = true;
       _isSearchOpen = false;
     });
@@ -221,7 +223,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           top: !isDesktopOS,
           bottom: !isDesktopOS,
@@ -695,8 +697,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 ),
 
-              // 2.5. Персональная лента рекомендаций «Для тебя» (скрывается, когда активна открытая вкладка «Для тебя»)
-              if (!_isForYouTabSelected)
+              // 2.5. Персональная лента рекомендаций «Для тебя» (скрыта по умолчанию на главном экране и открывается по запросу)
+              if (_showForYouShelf && !_isForYouTabSelected)
                 SliverToBoxAdapter(
                   child: ListenableBuilder(
                     listenable: RecommendationEngine.instance,

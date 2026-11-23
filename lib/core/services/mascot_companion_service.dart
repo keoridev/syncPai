@@ -9,6 +9,7 @@ import '../widgets/mascot/mascot_state.dart';
 /// Данные всплывающей реакции Пай-тян.
 class PaiCompanionReaction {
   final MascotExpression expression;
+  final String? title;
   final String message;
   final String? badgeId;
   final String? actionLabel;
@@ -18,6 +19,7 @@ class PaiCompanionReaction {
 
   const PaiCompanionReaction({
     required this.expression,
+    this.title,
     required this.message,
     this.badgeId,
     this.actionLabel,
@@ -38,12 +40,12 @@ class MascotCompanionService extends ChangeNotifier {
   }
 
   static const String prefEnabledKey = 'pai_companion_reactions_enabled';
-  static const Duration toastDuration = Duration(milliseconds: 3500);
+  static const Duration toastDuration = Duration(seconds: 5);
   static const Duration afkTimeout = Duration(seconds: 90);
-  static const Duration indecisionTimeout = Duration(seconds: 180);
+  static const Duration indecisionTimeout = Duration(seconds: 150);
 
   StreamSubscription<AchievementBadge>? _achievementSub;
-  Timer? _dismissTimer;
+  Timer? _autoHideTimer;
   Timer? _afkTimer;
   Timer? _indecisionTimer;
 
@@ -99,7 +101,8 @@ class MascotCompanionService extends ChangeNotifier {
       if (_isAfkActive || _currentReaction != null) {
         _isAfkActive = false;
         _currentReaction = null;
-        _dismissTimer?.cancel();
+        _autoHideTimer?.cancel();
+        _autoHideTimer = null;
         notifyListeners();
       }
     } else {
@@ -145,9 +148,9 @@ class MascotCompanionService extends ChangeNotifier {
     _indecisionHelperShownThisSession = true;
     showReaction(
       expression: MascotExpression.curiousSearch,
-      message:
-          'Нечего выбрать? Загляните в подборку «Для тебя» или запустите случайный выбор.',
-      actionLabel: 'Открыть подборки',
+      title: 'Нечего посмотреть?',
+      message: 'Пай-тян подготовила подборку специально под твой вкус.',
+      actionLabel: 'Смотреть подборку',
       onAction: _onOpenForYouCallback,
     );
   }
@@ -179,7 +182,8 @@ class MascotCompanionService extends ChangeNotifier {
   void _triggerAfkDozing() {
     if (!_enabled || _isPlayerActive) return;
     _isAfkActive = true;
-    _dismissTimer?.cancel();
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _currentReaction = PaiCompanionReaction(
       expression: MascotExpression.afkDozing,
       message: MascotExpression.afkDozing.defaultMessage,
@@ -191,6 +195,7 @@ class MascotCompanionService extends ChangeNotifier {
 
   void showReaction({
     required MascotExpression expression,
+    String? title,
     required String message,
     String? badgeId,
     String? actionLabel,
@@ -199,10 +204,12 @@ class MascotCompanionService extends ChangeNotifier {
     bool isPlayerAction = false,
   }) {
     if (!_enabled || (_isPlayerActive && !isPlayerAction)) return;
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _isAfkActive = false;
-    _dismissTimer?.cancel();
     _currentReaction = PaiCompanionReaction(
       expression: expression,
+      title: title,
       message: message,
       badgeId: badgeId,
       actionLabel: actionLabel,
@@ -212,13 +219,15 @@ class MascotCompanionService extends ChangeNotifier {
     notifyListeners();
 
     if (autoDismiss) {
-      _dismissTimer = Timer(toastDuration, dismiss);
+      _autoHideTimer = Timer(toastDuration, dismissCurrentToast);
     }
   }
 
+  void dismissCurrentToast() => dismiss();
+
   void dismiss() {
-    _dismissTimer?.cancel();
-    _dismissTimer = null;
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _isAfkActive = false;
     if (_currentReaction != null) {
       _currentReaction = null;
@@ -323,7 +332,8 @@ class MascotCompanionService extends ChangeNotifier {
 
   @visibleForTesting
   void resetForTest() {
-    _dismissTimer?.cancel();
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _afkTimer?.cancel();
     _indecisionTimer?.cancel();
     _indecisionTimer = null;
@@ -339,7 +349,8 @@ class MascotCompanionService extends ChangeNotifier {
   @override
   void dispose() {
     _achievementSub?.cancel();
-    _dismissTimer?.cancel();
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _afkTimer?.cancel();
     _indecisionTimer?.cancel();
     super.dispose();

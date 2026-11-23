@@ -237,7 +237,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       _reviews = cached.reviews ?? AnimeReviewsProvider.getReviewsForTitle(_currentTitle);
       _aggregate = cached.aggregate;
       _portalScores = cached.portalScores;
-      _relatedReleases = cached.relatedReleases ?? [];
+      final rawRelated = (cached.relatedReleases ?? [])
+          .where((r) => !r.id.startsWith('rel_'))
+          .toList();
+      _relatedReleases = rawRelated.where((r) => !r.isCurrent).isNotEmpty
+          ? rawRelated
+          : [];
       _videos = cached.videos ?? [];
       _userStats = cached.userStats ?? const UserListsStats();
       _scoreDistribution = cached.scoreDistribution ?? [];
@@ -540,10 +545,19 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       );
       if (mounted) {
         setState(() {
+          if (_currentTitle.genres.isEmpty && result.genres.isNotEmpty) {
+            _currentTitle = _currentTitle.copyWith(genres: result.genres);
+            AnimeDetailsCache.putTitle(_currentTitle);
+          }
           _reviews = result.reviews;
           _aggregate = result.aggregate;
           _portalScores = result.portalScores;
-          _relatedReleases = result.relatedReleases;
+          _relatedReleases = result.relatedReleases
+              .where((r) => !r.id.startsWith('rel_'))
+              .toList();
+          if (_relatedReleases.where((r) => !r.isCurrent).isEmpty) {
+            _relatedReleases = const [];
+          }
           _videos = result.videos;
           _userStats = result.userStats;
           _scoreDistribution = result.scoreDistribution;
@@ -618,7 +632,10 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           }
 
           if (matched != null && mounted) {
-            context.pushNamed('details', extra: matched);
+            final enrichedMatch = (matched.genres.isEmpty && _currentTitle.genres.isNotEmpty)
+                ? matched.copyWith(genres: _currentTitle.genres)
+                : matched;
+            context.pushNamed('details', extra: enrichedMatch);
             return;
           }
         }
@@ -897,10 +914,34 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     if (needsMetadata && getIt.isRegistered<CatalogRepository>()) {
       unawaited(Future<void>(() async {
         try {
-          final fetchedDetails = await getIt<CatalogRepository>().getTitleDetails(
+          var fetchedDetails = await getIt<CatalogRepository>().getTitleDetails(
             id: releaseId,
             code: _currentTitle.code,
           );
+          if (fetchedDetails.genres.isEmpty &&
+              _currentTitle.genres.isEmpty &&
+              displayTitle.isNotEmpty) {
+            try {
+              final hits = await getIt<CatalogRepository>().searchTitles(
+                displayTitle,
+                limit: 3,
+              );
+              if (hits.isNotEmpty) {
+                final best = hits.firstWhere(
+                  (h) => h.genres.isNotEmpty,
+                  orElse: () => hits.first,
+                );
+                if (best.genres.isNotEmpty) {
+                  fetchedDetails = fetchedDetails.copyWith(
+                    genres: best.genres,
+                    description: fetchedDetails.description.isNotEmpty
+                        ? fetchedDetails.description
+                        : best.description,
+                  );
+                }
+              }
+            } catch (_) {}
+          }
           final resolvedEpisodes = _currentTitle.episodes.length > 1
               ? _currentTitle.episodes
               : (fetchedDetails.episodes.isNotEmpty

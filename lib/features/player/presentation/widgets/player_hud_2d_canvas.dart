@@ -8,11 +8,15 @@ import '../../../settings/presentation/cubit/settings_state.dart';
 class PlayerHudEditGridOverlay extends StatelessWidget {
   final bool snapXActive;
   final bool snapYActive;
+  final double? snapGuideNx;
+  final double? snapGuideNy;
 
   const PlayerHudEditGridOverlay({
     super.key,
     required this.snapXActive,
     required this.snapYActive,
+    this.snapGuideNx,
+    this.snapGuideNy,
   });
 
   @override
@@ -24,6 +28,8 @@ class PlayerHudEditGridOverlay extends StatelessWidget {
           painter: _HudGridPainter(
             snapXActive: snapXActive,
             snapYActive: snapYActive,
+            snapGuideNx: snapGuideNx,
+            snapGuideNy: snapGuideNy,
           ),
           child: const SizedBox.expand(),
         ),
@@ -35,10 +41,14 @@ class PlayerHudEditGridOverlay extends StatelessWidget {
 class _HudGridPainter extends CustomPainter {
   final bool snapXActive;
   final bool snapYActive;
+  final double? snapGuideNx;
+  final double? snapGuideNy;
 
   const _HudGridPainter({
     required this.snapXActive,
     required this.snapYActive,
+    this.snapGuideNx,
+    this.snapGuideNy,
   });
 
   @override
@@ -95,12 +105,27 @@ class _HudGridPainter extends CustomPainter {
           : Colors.white.withValues(alpha: 0.14)
       ..strokeWidth = snapYActive ? 1.8 : 0.9;
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), yGuidePaint);
+
+    // Магнитная направляющая выравнивания с соседней кнопкой по X / Y
+    final neighborGuidePaint = Paint()
+      ..color = const Color(0xFF35D9D5)
+      ..strokeWidth = 1.5;
+    if (snapGuideNx != null) {
+      final gx = size.width * snapGuideNx!;
+      canvas.drawLine(Offset(gx, 0), Offset(gx, size.height), neighborGuidePaint);
+    }
+    if (snapGuideNy != null) {
+      final gy = size.height * snapGuideNy!;
+      canvas.drawLine(Offset(0, gy), Offset(size.width, gy), neighborGuidePaint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _HudGridPainter oldDelegate) =>
       oldDelegate.snapXActive != snapXActive ||
-      oldDelegate.snapYActive != snapYActive;
+      oldDelegate.snapYActive != snapYActive ||
+      oldDelegate.snapGuideNx != snapGuideNx ||
+      oldDelegate.snapGuideNy != snapGuideNy;
 }
 
 /// Обёртка для любой свободной 2D-кнопки HUD: в обычном режиме позиционирует и масштабирует,
@@ -141,6 +166,8 @@ class PlayerHudDraggableButton extends StatelessWidget {
       );
     }
 
+    final isLockedCenter = PlayerHudButtonConfig.isLockedCenterControl(config.id);
+
     return Align(
       alignment: alignment,
       child: Transform.scale(
@@ -152,37 +179,38 @@ class PlayerHudDraggableButton extends StatelessWidget {
             HapticFeedback.selectionClick();
             onTapSelect();
           },
-          onPanStart: (_) {
-            HapticFeedback.lightImpact();
-            onDragStart();
-          },
-          onPanUpdate: onDragUpdate,
-          onPanEnd: (_) => onDragEnd(),
-          onPanCancel: onDragEnd,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFFFF6B4A).withValues(alpha: 0.18)
-                  : Colors.black.withValues(alpha: 0.30),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isSelected
-                    ? const Color(0xFFFF6B4A)
-                    : const Color(0xFF35D9D5).withValues(alpha: 0.45),
-                width: isSelected ? 2.0 : 1.0,
+          onPanStart: isLockedCenter
+              ? null
+              : (_) {
+                  HapticFeedback.lightImpact();
+                  onDragStart();
+                },
+          onPanUpdate: isLockedCenter ? null : onDragUpdate,
+          onPanEnd: isLockedCenter ? null : (_) => onDragEnd(),
+          onPanCancel: isLockedCenter ? null : onDragEnd,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: Center(
+              widthFactor: 1.0,
+              heightFactor: 1.0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? const Color(0xFFFF6B4A).withValues(alpha: 0.14)
+                      : Colors.black.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFFFF6B4A)
+                        : Colors.transparent,
+                    width: isSelected ? 1.5 : 0.0,
+                  ),
+                ),
+                child: IgnorePointer(child: child),
               ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFFFF6B4A).withValues(alpha: 0.35),
-                        blurRadius: 12,
-                      ),
-                    ]
-                  : null,
             ),
-            child: IgnorePointer(child: child),
           ),
         ),
       ),
@@ -215,35 +243,35 @@ class PlayerHudInspectorPill extends StatelessWidget {
     final hiddenButtons = settingsState.hiddenHudButtons;
 
     return Align(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.bottomCenter,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
+          constraints: const BoxConstraints(maxWidth: 780),
           child: Container(
             key: const ValueKey('hud_edit_mode_banner'),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F141E).withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(16),
+              color: const Color(0xFF0F141E).withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: const Color(0xFF35D9D5).withValues(alpha: 0.40),
+                color: const Color(0xFF35D9D5).withValues(alpha: 0.45),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.45),
+                  color: Colors.black.withValues(alpha: 0.50),
                   blurRadius: 16,
-                  offset: const Offset(0, 6),
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Верхний ряд: заголовок, пресеты «Классика» / «Под правую руку» и кнопка «Готово»
+                // Компактный нижний ряд: заголовок, пресеты, сброс, готово
                 Wrap(
                   spacing: 6,
-                  runSpacing: 6,
+                  runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   alignment: WrapAlignment.spaceBetween,
                   children: [
@@ -253,21 +281,21 @@ class PlayerHudInspectorPill extends StatelessWidget {
                         Icon(
                           Icons.open_with_rounded,
                           color: Color(0xFF35D9D5),
-                          size: 15,
+                          size: 14,
                         ),
-                        SizedBox(width: 6),
+                        SizedBox(width: 5),
                         Text(
                           'Режим настройки HUD',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
                     Wrap(
-                      spacing: 6,
+                      spacing: 5,
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
@@ -290,6 +318,48 @@ class PlayerHudInspectorPill extends StatelessWidget {
                               HudLayoutPresetType.rightThumb,
                             );
                           },
+                        ),
+                        InkWell(
+                          key: const ValueKey('wysiwyg_reset_btn'),
+                          borderRadius: BorderRadius.circular(9),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            settingsCubit?.applyHud2DPreset(
+                              HudLayoutPresetType.classic,
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.16),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.restart_alt_rounded,
+                                  size: 13,
+                                  color: Colors.white70,
+                                ),
+                                SizedBox(width: 3),
+                                Text(
+                                  'Сброс',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                         ElevatedButton.icon(
                           key: const ValueKey('wysiwyg_done_btn'),

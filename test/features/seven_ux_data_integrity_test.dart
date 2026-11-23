@@ -24,6 +24,7 @@ import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart'
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
 import 'package:sync_pai/features/catalog/presentation/screens/catalog_screen.dart';
 import 'package:sync_pai/features/catalog/presentation/widgets/anime_poster_card.dart';
+import 'package:sync_pai/features/catalog/presentation/widgets/for_you_recommendations_shelf.dart';
 
 class _StubCatalogRepo implements CatalogRepository {
   @override
@@ -260,18 +261,21 @@ void main() {
     );
     await tester.pump();
 
-    // Наличие вкладки «Для тебя» и всех 7 вкладок
+    // Наличие вкладки «Для тебя» и «Все», но верхняя горизонтальная карусель скрыта по умолчанию
     expect(find.byKey(const ValueKey('catalog_quick_tab_for_you')), findsOneWidget);
     expect(find.byKey(const ValueKey('catalog_quick_tab_all')), findsOneWidget);
+    expect(find.byType(ForYouRecommendationsShelf), findsNothing);
     // На карточке #1 в сетке отображается статус «Просмотрено»
     expect(find.text('Просмотрено'), findsWidgets);
 
-    // 3 минуты сёрфинга в каталоге -> Пай-тян предлагает подборку
-    await tester.pump(const Duration(minutes: 3));
+    // 2.5 минуты (150 сек) сёрфинга в каталоге -> Пай-тян предлагает подборку
+    await tester.pump(const Duration(seconds: 150));
     final reaction = MascotCompanionService.instance.currentReaction;
     expect(reaction, isNotNull);
     expect(reaction!.expression, MascotExpression.curiousSearch);
-    expect(reaction.actionLabel, 'Открыть подборки');
+    expect(reaction.title, 'Нечего посмотреть?');
+    expect(reaction.message, 'Пай-тян подготовила подборку специально под твой вкус.');
+    expect(reaction.actionLabel, 'Смотреть подборку');
     expect(MascotCompanionService.instance.indecisionHelperShownThisSession, isTrue);
 
     // Нажатие action открывает секцию «Для тебя»

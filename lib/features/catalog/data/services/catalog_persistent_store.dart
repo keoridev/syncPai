@@ -6,6 +6,9 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/anime_title.dart';
 
+String _encodeCatalogJson(List<Map<String, dynamic>> payload) =>
+    jsonEncode(payload);
+
 /// Персистентное локальное хранилище метаданных каталога (Stale-While-Revalidate).
 /// Отдаёт кэшированные релизы за 0 мс при запуске и переключении категорий,
 /// а при поступлении свежей дельты (новые серии, обновлённые постеры) бесшовно сливает и сохраняет индекс.
@@ -20,6 +23,7 @@ class CatalogPersistentStore {
   final List<int> _orderedIds = [];
   bool _initialized = false;
   File? _overrideFile;
+  Timer? _persistDebounceTimer;
 
   @visibleForTesting
   void setTestFile(File? file) {
@@ -174,9 +178,16 @@ class CatalogPersistentStore {
     }
 
     if (changed) {
-      await _persistToDisk();
+      _schedulePersistToDisk();
     }
     return changed;
+  }
+
+  void _schedulePersistToDisk() {
+    _persistDebounceTimer?.cancel();
+    _persistDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      unawaited(_persistToDisk());
+    });
   }
 
   Future<void> _persistToDisk() async {
@@ -186,18 +197,21 @@ class CatalogPersistentStore {
       if (!await file.parent.exists()) {
         await file.parent.create(recursive: true);
       }
-      final payload = _orderedIds
+      final snapshot = _orderedIds
           .map((id) => _byId[id])
           .whereType<AnimeTitle>()
           .map((t) => t.toJson())
           .toList();
-      await file.writeAsString(jsonEncode(payload), flush: true);
+      final encoded = await compute(_encodeCatalogJson, snapshot);
+      await file.writeAsString(encoded, flush: true);
     } catch (e) {
       debugPrint('[CatalogPersistentStore] persist error: $e');
     }
   }
 
   Future<void> clear() async {
+    _persistDebounceTimer?.cancel();
+    _persistDebounceTimer = null;
     _byId.clear();
     _orderedIds.clear();
     try {

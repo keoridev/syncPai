@@ -24,7 +24,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const String _keyPlayerButtonVisibility =
       'settings_player_button_visibility';
   static const String _keyPlayerButtonOrder = 'settings_player_button_order';
-  static const String _keyPlayerHudLayoutV2 = 'settings_player_hud_layout_v2';
+  static const String _keyPlayerHudLayoutV3 = 'player_hud_layout_v3';
   static const String _keyAutoSkipOpenings = 'settings_auto_skip_openings';
   static const String _keyAutoPauseOnLeave = 'settings_auto_pause_on_leave';
   static const String _keyLiquidGlass = 'settings_liquid_glass';
@@ -32,6 +32,9 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const String _keyHasSeenPlayerOnboarding =
       'settings_has_seen_player_onboarding';
   static const String _keyPaiReactions = 'pai_companion_reactions_enabled';
+  static const String _keySeekStepSeconds = 'settings_player_seek_step_seconds';
+  static const String _keyGestureSwipeSensitivity =
+      'settings_player_swipe_sensitivity';
 
   Future<SharedPreferences> _getPrefs() async {
     if (_injectedPrefs != null) return _injectedPrefs;
@@ -62,6 +65,9 @@ class SettingsCubit extends Cubit<SettingsState> {
       final hasSeenOnboarding =
           prefs.getBool(_keyHasSeenPlayerOnboarding) ?? false;
       final paiReactions = prefs.getBool(_keyPaiReactions) ?? true;
+      final seekStep = prefs.getInt(_keySeekStepSeconds) ?? 10;
+      final swipeSensitivity =
+          prefs.getDouble(_keyGestureSwipeSensitivity) ?? 1.0;
       MascotCompanionService.instance.setEnabled(paiReactions);
 
       Map<String, bool> visibility = PlayerHudPresets.visibilityFor(preset);
@@ -87,7 +93,7 @@ class SettingsCubit extends Cubit<SettingsState> {
           Map<String, PlayerHudButtonConfig>.from(
         PlayerHud2DPresets.classicLayout(),
       );
-      final rawLayout = prefs.getString(_keyPlayerHudLayoutV2);
+      final rawLayout = prefs.getString(_keyPlayerHudLayoutV3);
       if (rawLayout != null && rawLayout.isNotEmpty) {
         try {
           final decoded = jsonDecode(rawLayout) as Map<String, dynamic>;
@@ -115,7 +121,27 @@ class SettingsCubit extends Cubit<SettingsState> {
         defaultQuality: quality,
         hasSeenPlayerOnboarding: hasSeenOnboarding,
         paiCompanionReactionsEnabled: paiReactions,
+        seekStepSeconds: const {5, 10, 15, 30}.contains(seekStep) ? seekStep : 10,
+        gestureSwipeSensitivity: swipeSensitivity.clamp(0.4, 2.0),
       ));
+    } catch (_) {}
+  }
+
+  Future<void> setSeekStepSeconds(int seconds) async {
+    final valid = const {5, 10, 15, 30}.contains(seconds) ? seconds : 10;
+    emit(state.copyWith(seekStepSeconds: valid));
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setInt(_keySeekStepSeconds, valid);
+    } catch (_) {}
+  }
+
+  Future<void> setGestureSwipeSensitivity(double sensitivity) async {
+    final valid = sensitivity.clamp(0.4, 2.0);
+    emit(state.copyWith(gestureSwipeSensitivity: valid));
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setDouble(_keyGestureSwipeSensitivity, valid);
     } catch (_) {}
   }
 
@@ -265,6 +291,23 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
+  /// Применение целого 2D-макета (например, по завершении перетаскивания).
+  Future<void> applyHudLayout(
+    Map<String, PlayerHudButtonConfig> layout, {
+    bool persist = true,
+  }) async {
+    final clamped = <String, PlayerHudButtonConfig>{
+      for (final e in layout.entries) e.key: e.value.clamped(),
+    };
+    emit(state.copyWith(
+      playerHudPreset: PlayerHudPreset.custom,
+      hudLayout: clamped,
+    ));
+    if (persist) {
+      await persistHudLayout();
+    }
+  }
+
   /// Применение встроенной 2D-раскладки («Классика» / «Под правую руку»).
   Future<void> applyHud2DPreset(HudLayoutPresetType preset) async {
     final layout = Map<String, PlayerHudButtonConfig>.from(
@@ -285,7 +328,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       final encoded = jsonEncode({
         for (final e in state.hudLayout.entries) e.key: e.value.toJson(),
       });
-      await prefs.setString(_keyPlayerHudLayoutV2, encoded);
+      await prefs.setString(_keyPlayerHudLayoutV3, encoded);
       await prefs.setString(_keyPlayerHudPreset, state.playerHudPreset.name);
     } catch (_) {}
   }

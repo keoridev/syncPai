@@ -27,6 +27,7 @@ class ShikimoriRatingAndReviews {
   final List<AnimeVideoItem> videos;
   final UserListsStats userStats;
   final List<ScoreDistributionItem> scoreDistribution;
+  final List<String> genres;
 
   const ShikimoriRatingAndReviews({
     required this.portalScores,
@@ -37,6 +38,7 @@ class ShikimoriRatingAndReviews {
     this.videos = const [],
     this.userStats = const UserListsStats(),
     this.scoreDistribution = const [],
+    this.genres = const [],
   });
 }
 
@@ -194,10 +196,11 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             : AnimeReviewsProvider.getReviewsForTitle(title),
         aggregate: edgeHit.aggregate,
         shikimoriId: edgeHit.shikimoriId ?? title.shikimoriId,
-        relatedReleases: edgeHit.relatedReleases,
+        relatedReleases: _sanitizeRelatedReleases(edgeHit.relatedReleases),
         videos: edgeHit.videos,
         userStats: supabaseStats.merge(edgeHit.userStats),
         scoreDistribution: edgeHit.scoreDistribution,
+        genres: title.genres,
       );
     }
 
@@ -244,9 +247,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           UserListsStats stats,
           List<ScoreDistributionItem> scores,
           List<String> screenshots,
+          List<String> genres,
         });
         final topicReviews = results[2] as List<AnimeReview>;
-        final related = results[3] as List<RelatedAnimeRelease>;
+        final related = _sanitizeRelatedReleases(results[3] as List<RelatedAnimeRelease>);
         var shikiStats = details.stats;
         if (shikiStats.total == 0) {
           shikiStats = await _fetchStatusesStatsRest(shikimoriId);
@@ -311,6 +315,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           videos: media.videos,
           userStats: media.stats,
           scoreDistribution: media.scores,
+          genres: details.genres.isNotEmpty ? details.genres : title.genres,
         );
       } else {
         aggResult = await aggFuture;
@@ -319,7 +324,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       debugPrint('Shikimori API fetch failed (graceful fallback): $e');
     }
 
-    // Fallback: собственные отзывы SyncPai (если есть) + надёжные оффлайн-данные
+    // Fallback: собственные отзывы SyncPai (если есть) + надёжные оффлайн-данные (без фейковых сиквелов)
     final fallbackReviews = <AnimeReview>[
       ...syncPaiReviews,
       ...(aggResult?.reviews ?? AnimeReviewsProvider.getReviewsForTitle(title)),
@@ -333,10 +338,11 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       },
       reviews: fallbackReviews,
       aggregate: aggResult?.aggregate,
-      relatedReleases: _generateFallbackFranchise(title, 8.8),
+      relatedReleases: const [],
       videos: _generateFallbackVideos(title),
       userStats: supabaseStats,
       scoreDistribution: _generateFallbackScoreDistribution(8.8),
+      genres: title.genres,
     );
   }
 
@@ -408,12 +414,123 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     return AnimeReviewsProvider.getReviewsForTitle(title);
   }
 
+  /// Отфильтровывает синтетические заглушки (`rel_...`) и оставляет список только если есть реальные связанные релизы.
+  static List<RelatedAnimeRelease> _sanitizeRelatedReleases(
+    List<RelatedAnimeRelease> items,
+  ) {
+    final real = items
+        .where(
+          (r) =>
+              r.id.trim().isNotEmpty &&
+              !r.id.startsWith('rel_') &&
+              r.title.trim().isNotEmpty,
+        )
+        .toList();
+    final hasNonCurrent = real.any((r) => !r.isCurrent);
+    if (!hasNonCurrent || real.length < 2) {
+      return const [];
+    }
+    return real;
+  }
+
+  Future<List<RelatedAnimeRelease>> _fetchAniLibriaFranchise(
+    AnimeTitle currentTitle,
+    double currentScore,
+  ) async {
+    final releaseId = currentTitle.id;
+    if (releaseId <= 0 ||
+        currentTitle.code.startsWith('shikimori_') ||
+        currentTitle.code.startsWith('search:')) {
+      return const [];
+    }
+    try {
+      final res = await _dio.get(
+        'https://anilibria.top/api/v1/anime/franchises/release/$releaseId',
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
+      if (res.statusCode != 200 || res.data is! List || (res.data as List).isEmpty) {
+        return const [];
+      }
+      final franchises = res.data as List;
+      final firstFranchise = franchises.first;
+      if (firstFranchise is! Map) return const [];
+      final releasesList = firstFranchise['franchise_releases'];
+      if (releasesList is! List || releasesList.length < 2) return const [];
+
+      final results = <RelatedAnimeRelease>[];
+      final seenIds = <String>{};
+      for (final item in releasesList) {
+        if (item is! Map) continue;
+        final relObj = item['release'];
+        if (relObj is! Map) continue;
+        final rId = '${relObj['id'] ?? item['release_id'] ?? ''}';
+        if (rId.isEmpty || !seenIds.add(rId)) continue;
+        final nameMap = relObj['name'] as Map?;
+        final ruTitle = (nameMap?['main'] as String?)?.trim() ?? '';
+        final enTitle = (nameMap?['english'] as String?)?.trim() ?? '';
+        final titleStr = ruTitle.isNotEmpty ? ruTitle : enTitle;
+        if (titleStr.isEmpty) continue;
+
+        final yearVal = relObj['year'];
+        final yearStr = yearVal != null ? '$yearVal год' : null;
+        final typeMap = relObj['type'] as Map?;
+        final kindStr = (typeMap?['description'] as String?)?.trim() ??
+            (typeMap?['value'] as String?)?.trim() ??
+            'Сериал';
+        final posterMap = relObj['poster'] as Map?;
+        final optimizedMap = posterMap?['optimized'] as Map?;
+        final rawPoster = (optimizedMap?['src'] as String?) ??
+            (posterMap?['src'] as String?) ??
+            '';
+        final posterUrl = rawPoster.startsWith('http')
+            ? rawPoster
+            : (rawPoster.isNotEmpty ? 'https://anilibria.top$rawPoster' : '');
+        final isCur = rId == '$releaseId';
+        final orderNum = (item['sort_order'] as num?)?.toInt() ?? (results.length + 1);
+
+        results.add(
+          RelatedAnimeRelease(
+            id: rId,
+            title: titleStr,
+            originalTitle: enTitle.isNotEmpty ? enTitle : null,
+            year: yearStr,
+            rating: isCur && currentScore > 0
+                ? double.parse(
+                    (currentScore > 5.0 ? currentScore / 2 : currentScore)
+                        .toStringAsFixed(1),
+                  )
+                : null,
+            kind: kindStr,
+            posterUrl: posterUrl.isNotEmpty ? posterUrl : currentTitle.posterMedium,
+            relation: isCur
+                ? 'Текущий релиз'
+                : (orderNum == 1 ? 'Основная история' : 'Часть $orderNum'),
+            isCurrent: isCur,
+            resolvedTitle: isCur ? currentTitle : null,
+          ),
+        );
+      }
+      return _sanitizeRelatedReleases(results);
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<List<RelatedAnimeRelease>> _fetchRelatedReleases(
     int shikimoriId,
     AnimeTitle currentTitle,
     double currentScore,
   ) async {
     try {
+      // 0. Проверяем официальную франшизу AniLibria (/api/v1/anime/franchises/release/{id})
+      final anilibriaFranchise =
+          await _fetchAniLibriaFranchise(currentTitle, currentScore);
+      if (anilibriaFranchise.length > 1) {
+        return anilibriaFranchise;
+      }
       // 1. Приоритетный источник: официальный граф полной франшизы Shikimori (/franchise)
       // Предоставляет истинную каноничную цепочку сезонов и фильмов без посторонних тайтлов
       try {
@@ -528,8 +645,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             return a.title.compareTo(b.title);
           });
 
-          if (results.length > 1) {
-            return results;
+          final sanitized = _sanitizeRelatedReleases(results);
+          if (sanitized.length > 1) {
+            return sanitized;
           }
         }
       } catch (_) {}
@@ -690,15 +808,16 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           return a.title.compareTo(b.title);
         });
 
-        if (results.length > 1) {
-          return results;
+        final sanitized = _sanitizeRelatedReleases(results);
+        if (sanitized.length > 1) {
+          return sanitized;
         }
       }
     } catch (e) {
       debugPrint('Shikimori related fetch failed: $e');
     }
 
-    return _generateFallbackFranchise(currentTitle, currentScore);
+    return const [];
   }
 
   /// Нормализует название (удаляет «2 сезон», «Часть 2», теги в скобках) для точного поиска в Shikimori.
@@ -779,6 +898,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     UserListsStats stats,
     List<ScoreDistributionItem> scores,
     List<String> screenshots,
+    List<String> genres,
   })> _fetchAnimeDetailsGraphQL(
     int shikimoriId,
     AnimeTitle title,
@@ -789,6 +909,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           animes(ids: $ids, limit: 1) {
             id
             score
+            genres { russian name }
             statusesStats { status count }
             scoresStats { score count }
             screenshots { originalUrl }
@@ -926,11 +1047,26 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             }
           }
 
+          final genres = <String>[];
+          final rawGenres = anime['genres'];
+          if (rawGenres is List) {
+            for (final g in rawGenres) {
+              if (g is! Map) continue;
+              final ru = (g['russian'] as String?)?.trim() ?? '';
+              final en = (g['name'] as String?)?.trim() ?? '';
+              final label = ru.isNotEmpty ? ru : en;
+              if (label.isNotEmpty && !genres.contains(label)) {
+                genres.add(label);
+              }
+            }
+          }
+
           return (
             videos: videos,
             stats: stats,
             scores: scores,
             screenshots: screenshots,
+            genres: genres,
           );
         }
       }
@@ -946,6 +1082,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       stats: legacy.stats,
       scores: legacy.scores,
       screenshots: screenshots,
+      genres: title.genres,
     );
   }
 
@@ -1282,57 +1419,6 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       default:
         return 'Сериал';
     }
-  }
-
-  static List<RelatedAnimeRelease> _generateFallbackFranchise(AnimeTitle currentTitle, double currentScore) {
-    final fullTitle = currentTitle.displayTitle.trim();
-
-    // Регулярка для выявления номера сезона в названии: "Легенда о Белом Коте 3" -> base: "Легенда о Белом Коте", season: 3
-    final seasonMatch = RegExp(
-      r'^(.*?)\s*(\d+)(?:\s*(?:сезон|часть|th season|nd season|rd season))?$',
-      caseSensitive: false,
-    ).firstMatch(fullTitle);
-
-    final baseName = seasonMatch != null ? seasonMatch.group(1)!.trim() : fullTitle;
-    final currentSeasonNum = seasonMatch != null ? (int.tryParse(seasonMatch.group(2)!) ?? 1) : 1;
-
-    final releases = <RelatedAnimeRelease>[];
-    final startYear = currentTitle.year != null ? currentTitle.year! - ((currentSeasonNum - 1) * 2) : 2020;
-    final totalSeasons = (currentSeasonNum > 1) ? currentSeasonNum : 3;
-
-    final score5 = currentScore > 5.0 ? currentScore / 2 : currentScore;
-
-    for (int s = 1; s <= totalSeasons; s++) {
-      final isCur = (s == currentSeasonNum);
-      final seasonTitle = s == 1 ? baseName : '$baseName $s';
-      final year = startYear + ((s - 1) * 2);
-      final isUpcoming = year >= 2026;
-      final double? rating = isUpcoming && !isCur
-          ? null
-          : (isCur
-              ? (currentScore > 0 ? double.parse(score5.toStringAsFixed(1)) : null)
-              : double.parse((score5 - (0.05 * (s % 3))).clamp(3.8, 4.9).toStringAsFixed(1)));
-
-      releases.add(
-        RelatedAnimeRelease(
-          id: isCur ? '${currentTitle.id}' : 'rel_${baseName.hashCode.abs()}_$s',
-          title: seasonTitle,
-          year: '$year год',
-          rating: rating,
-          kind: 'Сериал',
-          posterUrl: isCur && currentTitle.posterMedium.isNotEmpty
-              ? currentTitle.posterMedium
-              : currentTitle.posterSmall.isNotEmpty
-                  ? currentTitle.posterSmall
-                  : currentTitle.posterOriginal,
-          relation: s == 1 ? 'Основная история' : 'Продолжение',
-          isCurrent: isCur,
-          resolvedTitle: isCur ? currentTitle : null,
-        ),
-      );
-    }
-
-    return releases;
   }
 
   static List<AnimeVideoItem> _generateFallbackVideos(AnimeTitle title) {

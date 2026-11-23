@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
@@ -52,6 +53,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   final List<StreamSubscription> _subscriptions = [];
   StreamSubscription<SyncPacket>? _packetSubscription;
   StreamSubscription<List<PeerPresence>>? _presenceSubscription;
+  StreamSubscription<void>? _becomingNoisySub;
   Timer? _controlsTimer;
   Timer? _heartbeatTimer;
   Timer? _countdownTimer;
@@ -62,6 +64,8 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _driftRateTimer;
   final List<DateTime> _recentBufferEvents = [];
   Duration _lastEmittedPos = Duration.zero;
+  DateTime? _lastBufferEmitAt;
+  final Set<Timer> _ephemeralTimers = {};
   final Random _random = Random();
 
   bool isAutoSkipOpening = false;
@@ -71,9 +75,20 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   DateTime? _lastPosSavedAt;
   String? _prefetchedEpisodeKey;
-  final Set<String> _completed90Episodes = {};
   int _streamRetryCount = 0;
+  int _loadGeneration = 0;
   Timer? _streamRetryTimer;
+
+  void _scheduleEphemeralTimer(Duration duration, VoidCallback callback) {
+    late final Timer timer;
+    timer = Timer(duration, () {
+      _ephemeralTimers.remove(timer);
+      if (!isClosed && !_isDisposing) {
+        callback();
+      }
+    });
+    _ephemeralTimers.add(timer);
+  }
 
   static bool isTransientStreamError(String error) {
     final lower = error.toLowerCase();
@@ -260,6 +275,20 @@ class PlayerCubit extends Cubit<PlayerState> {
       try {
         WakelockPlus.enable();
       } catch (_) {}
+      unawaited(
+        AudioSession.instance.then((session) {
+          if (isClosed || _isDisposing) return;
+          _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
+            if (!isClosed && !_isDisposing && state.isPlaying) {
+              if (state.isSyncRoom && !state.isHost) {
+                player.pause();
+              } else {
+                pause();
+              }
+            }
+          });
+        }).catchError((_) {}),
+      );
     }
 
     // 1. Аппаратное декодирование (GPU) и расширенные сетевые флаги libmpv
@@ -326,24 +355,6 @@ class PlayerCubit extends Cubit<PlayerState> {
             );
           }
         }
-        if (state.duration.inSeconds > 10 &&
-            pos.inSeconds >= (state.duration.inSeconds * 0.9)) {
-          final epKey = '${state.title.id}_${state.episode.episode}';
-          if (_completed90Episodes.add(epKey)) {
-            final episodes = state.title.episodes;
-            final currentIdx = episodes
-                .indexWhere((e) => e.episode == state.episode.episode);
-            final hasNext = currentIdx >= 0 &&
-                currentIdx + 1 < episodes.length;
-            final nextEpNum =
-                hasNext ? episodes[currentIdx + 1].episode : null;
-            MascotCompanionService.instance.onEpisodeNearEnd(
-              animeTitle: state.title.displayTitle,
-              nextEpisode: nextEpNum,
-              onNextEpisode: hasNext ? () => playNextEpisode() : null,
-            );
-          }
-        }
         // Троттлинг: обновляем позицию в Bloc не чаще чем раз в 250 мс для защиты FPS
         if ((pos - _lastEmittedPos).abs() >= const Duration(milliseconds: 250)) {
           _lastEmittedPos = pos;
@@ -370,6 +381,12 @@ class PlayerCubit extends Cubit<PlayerState> {
       }),
       player.stream.buffer.listen((buffer) {
         if (isClosed || _isDisposing) return;
+        final now = DateTime.now();
+        if (_lastBufferEmitAt != null &&
+            now.difference(_lastBufferEmitAt!) < const Duration(milliseconds: 500)) {
+          return;
+        }
+        _lastBufferEmitAt = now;
         emit(state.copyWith(buffer: buffer));
       }),
       player.stream.rate.listen((rate) {
@@ -380,7 +397,9 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (isClosed || _isDisposing) return;
         if (completed) {
           emit(state.copyWith(isPlaying: false));
-          playNextEpisode();
+          if (!state.isSyncRoom || state.isHost) {
+            playNextEpisode();
+          }
         }
       }),
       player.stream.error.listen((error) {
@@ -834,12 +853,10 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
 
         // Удаление стикера Пай-чан после завершения анимации (2.4 сек)
-        Timer(const Duration(milliseconds: 2400), () {
-          if (!isClosed) {
-            final filtered = List<FloatingReaction>.from(state.activeReactions)
-              ..removeWhere((r) => r.id == reactionId);
-            emit(state.copyWith(activeReactions: filtered));
-          }
+        _scheduleEphemeralTimer(const Duration(milliseconds: 2400), () {
+          final filtered = List<FloatingReaction>.from(state.activeReactions)
+            ..removeWhere((r) => r.id == reactionId);
+          emit(state.copyWith(activeReactions: filtered));
         });
         break;
 
@@ -1026,10 +1043,8 @@ class PlayerCubit extends Cubit<PlayerState> {
       pokeNudgeMessage: () => '🩴 $sender кинул в вас тапок! Возвращайтесь к просмотру!',
     ));
 
-    Timer(const Duration(seconds: 4), () {
-      if (!isClosed) {
-        emit(state.copyWith(pokeNudgeMessage: () => null));
-      }
+    _scheduleEphemeralTimer(const Duration(seconds: 4), () {
+      emit(state.copyWith(pokeNudgeMessage: () => null));
     });
   }
 
@@ -1117,6 +1132,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   final Set<String> _completed80Episodes = {};
 
   Future<void> _loadCurrentEpisodeStream({Duration? initialPosition}) async {
+    final int generation = ++_loadGeneration;
     final effectiveStart = initialPosition ?? _pendingInitialSeek;
     if (effectiveStart != null && effectiveStart > Duration.zero) {
       _pendingInitialSeek = effectiveStart;
@@ -1156,6 +1172,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         final kodik = getIt<KodikCubit>();
         if (!kodik.state.isAniLibriaActive) {
           final kodikStream = await kodik.getStreamForEpisode(state.episode.episode);
+          if (isClosed || _isDisposing || generation != _loadGeneration) return;
           if (kodikStream != null && kodikStream.isNotEmpty) {
             streamUrl = kodikStream;
           }
@@ -1163,6 +1180,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       } catch (_) {}
     }
 
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
     streamUrl ??= _getUrlForQuality(state.episode, state.selectedQuality);
 
     // Защита: отсекаем dummy-ссылки sample.com, которые приводят к падению декодера c2.mtk.avc.decoder
@@ -1177,6 +1195,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           state.title.id,
           title: state.title.displayTitle,
         );
+        if (isClosed || _isDisposing || generation != _loadGeneration) return;
         if (links.isNotEmpty) {
           final direct = links.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
           if (direct.isNotEmpty) {
@@ -1198,16 +1217,21 @@ class PlayerCubit extends Cubit<PlayerState> {
       } catch (_) {}
     }
 
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
+
     // Если прямая ссылка отсутствует или пуста — пробуем разрешить через Kodik (если доступен)
     if ((streamUrl == null || streamUrl.isEmpty) && getIt.isRegistered<KodikCubit>()) {
       try {
         final kodik = getIt<KodikCubit>();
         final resolvedKodik = await kodik.getStreamForEpisode(state.episode.episode);
+        if (isClosed || _isDisposing || generation != _loadGeneration) return;
         if (resolvedKodik != null && resolvedKodik.isNotEmpty && !resolvedKodik.contains('sample.com')) {
           streamUrl = resolvedKodik;
         }
       } catch (_) {}
     }
+
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
 
     if (streamUrl != null && streamUrl.isNotEmpty) {
       final trimmed = streamUrl.trim();
@@ -1270,6 +1294,7 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   /// Переключение студии озвучки Kodik / AniLibria прямо из плеера
   Future<void> switchVoiceoverStudio(KodikTranslation studio) async {
+    final int generation = ++_loadGeneration;
     final currentPos = state.position;
     final wasPlaying = state.isPlaying;
 
@@ -1284,6 +1309,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           episodeNumber: state.episode.episode,
           quality: qualityStr,
         );
+        if (isClosed || _isDisposing || generation != _loadGeneration) return;
 
         if (streamUrl != null && streamUrl.isNotEmpty && !streamUrl.contains('sample.com')) {
           _pendingInitialSeek = currentPos;
@@ -1295,12 +1321,14 @@ class PlayerCubit extends Cubit<PlayerState> {
             ),
             play: wasPlaying,
           );
+          if (isClosed || _isDisposing || generation != _loadGeneration) return;
           _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
           return;
         }
       } catch (_) {}
     }
 
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
     // Если выбрана AniLibria или внешний поток Kodik вернул fallback — открываем основной поток с текущей позиции
     await _loadCurrentEpisodeStream(initialPosition: currentPos);
   }
@@ -1308,6 +1336,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   /// Переключение варианта озвучки или студии (AniLibria / Kodik / StudioBand)
   /// Обновляет источник воспроизведения без пересоздания всего экрана и с сохранением позиции
   Future<void> changeTranslation(TranslationEntity newTranslation) async {
+    final int generation = ++_loadGeneration;
     final currentPos = state.position;
     final wasPlaying = state.isPlaying;
     emit(state.copyWith(
@@ -1327,12 +1356,15 @@ class PlayerCubit extends Cubit<PlayerState> {
             ),
             play: wasPlaying,
           );
+          if (isClosed || _isDisposing || generation != _loadGeneration) return;
           _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
           return;
         } catch (e) {
-          emit(state.copyWith(
-            errorMessage: () => 'Ошибка переключения потока: $e',
-          ));
+          if (!isClosed && !_isDisposing && generation == _loadGeneration) {
+            emit(state.copyWith(
+              errorMessage: () => 'Ошибка переключения потока: $e',
+            ));
+          }
         }
       }
     } else {
@@ -1341,6 +1373,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         try {
           final kodik = getIt<KodikCubit>();
           final streamUrl = await kodik.getStreamForEpisode(state.episode.episode);
+          if (isClosed || _isDisposing || generation != _loadGeneration) return;
           if (streamUrl != null && streamUrl.isNotEmpty && !streamUrl.contains('sample.com')) {
             _pendingInitialSeek = currentPos;
             await player.open(
@@ -1351,12 +1384,15 @@ class PlayerCubit extends Cubit<PlayerState> {
               ),
               play: wasPlaying,
             );
+            if (isClosed || _isDisposing || generation != _loadGeneration) return;
             _loadedMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
             return;
           }
         } catch (_) {}
       }
     }
+
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
 
     // Fallback: поддерживаем непрерывное воспроизведение с текущей позиции
     final fallbackUrl = _getUrlForQuality(state.episode, state.selectedQuality);
@@ -1532,12 +1568,10 @@ class PlayerCubit extends Cubit<PlayerState> {
     final current = List<FloatingReaction>.from(state.activeReactions)..add(reaction);
     emit(state.copyWith(activeReactions: current, emojisSent: state.emojisSent + 1));
 
-    Timer(const Duration(milliseconds: 2400), () {
-      if (!isClosed) {
-        final remaining = List<FloatingReaction>.from(state.activeReactions)
-          ..removeWhere((r) => r.id == reactionId);
-        emit(state.copyWith(activeReactions: remaining));
-      }
+    _scheduleEphemeralTimer(const Duration(milliseconds: 2400), () {
+      final remaining = List<FloatingReaction>.from(state.activeReactions)
+        ..removeWhere((r) => r.id == reactionId);
+      emit(state.copyWith(activeReactions: remaining));
     });
 
     // 2. Обновляем тепловую карту эмоций на таймлайне
@@ -1872,8 +1906,8 @@ class PlayerCubit extends Cubit<PlayerState> {
       emit(state.copyWith(
         errorMessage: () => 'Запрос на паузу отправлен хосту',
       ));
-      Timer(const Duration(seconds: 3), () {
-        if (!isClosed && state.errorMessage == 'Запрос на паузу отправлен хосту') {
+      _scheduleEphemeralTimer(const Duration(seconds: 3), () {
+        if (state.errorMessage == 'Запрос на паузу отправлен хосту') {
           emit(state.copyWith(errorMessage: () => null));
         }
       });
@@ -2148,6 +2182,8 @@ class PlayerCubit extends Cubit<PlayerState> {
       buffer: Duration.zero,
       isBuffering: true,
       bufferNotice: () => null,
+      autoNextCountdown: () => null,
+      nextEpisode: () => null,
     ));
 
     await _loadCurrentEpisodeStream();
@@ -2257,13 +2293,22 @@ class PlayerCubit extends Cubit<PlayerState> {
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();
     _quickPhraseTimer?.cancel();
+    _awayDurationTimer?.cancel();
+    _spoilerShieldTimer?.cancel();
     _bufferingFallbackTimer?.cancel();
     _driftRateTimer?.cancel();
+    for (final t in _ephemeralTimers) {
+      t.cancel();
+    }
+    _ephemeralTimers.clear();
     try {
       await _presenceSubscription?.cancel();
     } catch (_) {}
     try {
       await _packetSubscription?.cancel();
+    } catch (_) {}
+    try {
+      await _becomingNoisySub?.cancel();
     } catch (_) {}
 
     _savePlaybackPosition(state.position, state.duration);

@@ -753,7 +753,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   previous.hasVotedCoopSkip != current.hasVotedCoopSkip,
               listenWhen: (previous, current) =>
                   previous.errorMessage != current.errorMessage ||
-                  previous.episode.episode != current.episode.episode,
+                  previous.episode.episode != current.episode.episode ||
+                  previous.isHudEditMode != current.isHudEditMode,
               listener: (context, state) {
                 if (state.errorMessage != null) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -763,6 +764,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
+                }
+                final isMobilePlatform =
+                    !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+                if (isMobilePlatform) {
+                  if (state.isHudEditMode) {
+                    SystemChrome.setPreferredOrientations([
+                      DeviceOrientation.landscapeLeft,
+                      DeviceOrientation.landscapeRight,
+                    ]);
+                  } else {
+                    SystemChrome.setPreferredOrientations([
+                      DeviceOrientation.portraitUp,
+                      DeviceOrientation.portraitDown,
+                      DeviceOrientation.landscapeLeft,
+                      DeviceOrientation.landscapeRight,
+                    ]);
+                  }
                 }
                 _recordPlaybackInAnimeList(
                   episodeNum: state.episode.episode,

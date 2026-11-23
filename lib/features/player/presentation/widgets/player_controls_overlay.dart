@@ -113,6 +113,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     'speed',
     'quality_dub',
     'pip_mode',
+    'settings',
   };
 
   static const Set<String> _bottomRowButtonIds = {
@@ -236,7 +237,19 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     }
   }
 
-  void _onDragEnd(SettingsCubit? settingsCubit) {
+  void _onDragEnd(SettingsCubit? settingsCubit, Size canvasSize) {
+    final draggedId = _selectedEditButtonId;
+    if (draggedId != null && !PlayerHudButtonConfig.isLockedCenterControl(draggedId)) {
+      final map = _draftLayout.value;
+      final current = map[draggedId];
+      if (current != null) {
+        final nudged = _ensureMinSeparation(draggedId, current, map, canvasSize);
+        if (nudged != current) {
+          _draftLayout.value = Map<String, PlayerHudButtonConfig>.from(map)
+            ..[draggedId] = nudged;
+        }
+      }
+    }
     _isDraggingHud = false;
     _snapGuides.value = (
       snapX: false,
@@ -245,6 +258,53 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
       guideNy: null,
     );
     settingsCubit?.applyHudLayout(_draftLayout.value);
+  }
+
+  PlayerHudButtonConfig _ensureMinSeparation(
+    String id,
+    PlayerHudButtonConfig candidate,
+    Map<String, PlayerHudButtonConfig> layout,
+    Size canvasSize,
+  ) {
+    final spanW = canvasSize.width > 96 ? canvasSize.width - 48 : canvasSize.width;
+    final spanH = canvasSize.height > 96 ? canvasSize.height - 48 : canvasSize.height;
+    if (spanW <= 0 || spanH <= 0) return candidate;
+
+    const minDist = 52.0;
+    const minDistSq = minDist * minDist;
+
+    bool isFree(double nx, double ny) {
+      final cx = nx * spanW;
+      final cy = ny * spanH;
+      for (final other in layout.values) {
+        if (other.id == id || !other.visible) continue;
+        final dx = cx - (other.nx * spanW);
+        final dy = cy - (other.ny * spanH);
+        if ((dx * dx + dy * dy) < minDistSq) return false;
+      }
+      return true;
+    }
+
+    if (isFree(candidate.nx, candidate.ny)) return candidate;
+
+    const step = 0.02;
+    for (int ring = 1; ring <= 8; ring++) {
+      for (int ix = -ring; ix <= ring; ix++) {
+        for (int iy = -ring; iy <= ring; iy++) {
+          if (ix.abs() != ring && iy.abs() != ring) continue;
+          final testNx = (candidate.nx + ix * step)
+              .clamp(PlayerHudButtonConfig.minNx, PlayerHudButtonConfig.maxNx)
+              .toDouble();
+          final testNy = (candidate.ny + iy * step)
+              .clamp(PlayerHudButtonConfig.minNy, PlayerHudButtonConfig.maxNy)
+              .toDouble();
+          if (isFree(testNx, testNy)) {
+            return candidate.copyWith(nx: testNx, ny: testNy);
+          }
+        }
+      }
+    }
+    return candidate;
   }
 
   @override
@@ -341,9 +401,9 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       constraints.maxHeight,
                     );
 
-                    // В портретной ориентации (вне режима 2D-редактора) используем аккуратный док-макет,
-                    // чтобы кнопки не сжимались и не улетали в чёрные полосы леттербоксинга.
-                    if (!isLandscape && !state.isHudEditMode) {
+                    // В портретной ориентации всегда используем аккуратный док-макет
+                    // и никогда не рендерим 2D-редактор на узком вертикальном экране.
+                    if (!isLandscape) {
                       return _buildPortraitDockedLayout(
                         context,
                         settingsState: settingsState,
@@ -492,12 +552,13 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     final dockedTopControls = <Widget>[];
     if (isLandscape && !state.isHudEditMode && settingsState != null) {
       final topConfigs = [
-        for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode'])
+        for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode', 'settings'])
           settingsState.hudConfigFor(id),
       ].where((c) => c.visible && _isDockedInTopBar(c)).toList()
         ..sort((a, b) => a.nx.compareTo(b.nx));
 
-      for (final cfg in topConfigs) {
+      for (int i = 0; i < topConfigs.length; i++) {
+        final cfg = topConfigs[i];
         final w = _buildSingle2DControl(
           context,
           id: cfg.id,
@@ -511,7 +572,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         if (w != null) {
           dockedTopControls.add(
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: EdgeInsets.only(left: i == 0 ? 0 : 8),
               child: Transform.scale(scale: cfg.scale, child: w),
             ),
           );
@@ -707,22 +768,6 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                     const SizedBox(width: 4),
                   ],
                   ...dockedTopControls,
-                  IconButton(
-                    key: const ValueKey('hud_action_settings_gear'),
-                    tooltip: 'Настройки плеера',
-                    icon: Icon(
-                      Icons.settings_outlined,
-                      color: AppColors.textPrimary,
-                      size: isLandscape ? 19 : 20,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => PlayerSettingsSheet.show(
-                      context,
-                      cubit: cubit,
-                      state: state,
-                      onMinimizeToMiniPlayer: onMinimize,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -757,10 +802,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     }
 
     final topRightControls = <Widget>[
-      for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode'])
+      for (final id in const ['lock_screen', 'speed', 'quality_dub', 'pip_mode', 'settings'])
         if (control(id) case final w?) w,
     ];
-    final skipIntro = control('skip_intro');
+    final seekBack = control('seek_back');
+    final playPause = control('play_pause');
+    final seekForward = control('seek_forward');
 
     return Column(
       key: const ValueKey('player_portrait_docked_layout'),
@@ -771,12 +818,17 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Align(
               alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: topRightControls,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (int i = 0; i < topRightControls.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      topRightControls[i],
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -785,25 +837,19 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             child: isGuestInSync
                 ? _buildGuestPauseButton(context)
                 : Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (control('seek_back') case final w?) w,
-                      const SizedBox(width: 24),
-                      if (control('play_pause') case final w?) w,
-                      const SizedBox(width: 24),
-                      if (control('seek_forward') case final w?) w,
+                      if (seekBack != null) seekBack,
+                      if (seekBack != null && playPause != null)
+                        const SizedBox(width: 36),
+                      if (playPause != null) playPause,
+                      if (playPause != null && seekForward != null)
+                        const SizedBox(width: 36),
+                      if (seekForward != null) seekForward,
                     ],
                   ),
           ),
         ),
-        if (skipIntro != null)
-          Padding(
-            padding: const EdgeInsets.only(right: 16, bottom: 8),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: skipIntro,
-            ),
-          ),
         _buildBottomBar(
           context,
           isLandscape: false,
@@ -920,7 +966,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             details,
             canvasSize,
           ),
-          onDragEnd: () => _onDragEnd(settingsCubit),
+          onDragEnd: () => _onDragEnd(settingsCubit, canvasSize),
           child: button,
         ),
       );
@@ -1287,6 +1333,30 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             iconSize: isLandscape ? 18 : 20,
             visualDensity: VisualDensity.compact,
             onPressed: widget.onEnterPip ?? onMinimize ?? () {},
+          ),
+        );
+
+      case 'settings':
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            key: const ValueKey('hud_action_settings_gear'),
+            tooltip: 'Настройки плеера',
+            icon: Icon(
+              Icons.settings_outlined,
+              color: AppColors.textPrimary,
+              size: isLandscape ? 19 : 20,
+            ),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => PlayerSettingsSheet.show(
+              context,
+              cubit: cubit,
+              state: state,
+              onMinimizeToMiniPlayer: onMinimize,
+            ),
           ),
         );
 

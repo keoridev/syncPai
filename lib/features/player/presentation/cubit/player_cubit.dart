@@ -10,6 +10,7 @@ import 'package:media_kit/media_kit.dart' hide PlayerState;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/smart_mirror_interceptor.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/services/presence_service.dart';
@@ -61,7 +62,14 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _awayDurationTimer;
   Timer? _spoilerShieldTimer;
   Timer? _bufferingFallbackTimer;
+  Timer? _bufferingDebounceTimer;
   Timer? _driftRateTimer;
+
+  bool get _hasBufferedAhead =>
+      state.buffer > state.position + const Duration(seconds: 2);
+
+  bool get _isBufferDepleted =>
+      state.buffer <= state.position + const Duration(seconds: 1);
   final List<DateTime> _recentBufferEvents = [];
   Duration _lastEmittedPos = Duration.zero;
   DateTime? _lastBufferEmitAt;
@@ -318,8 +326,24 @@ class PlayerCubit extends Cubit<PlayerState> {
       }),
       player.stream.buffering.listen((buffering) {
         if (isClosed || _isDisposing) return;
-        emit(state.copyWith(isBuffering: buffering));
-        _handleBufferingWatchdog(buffering);
+        if (!buffering) {
+          _bufferingDebounceTimer?.cancel();
+          _bufferingDebounceTimer = null;
+          if (state.isBuffering) {
+            emit(state.copyWith(isBuffering: false));
+          }
+          _handleBufferingWatchdog(false);
+        } else if (!_hasBufferedAhead) {
+          _bufferingDebounceTimer?.cancel();
+          _bufferingDebounceTimer =
+              Timer(const Duration(milliseconds: 650), () {
+            if (isClosed || _isDisposing) return;
+            if (player.state.buffering && !_hasBufferedAhead) {
+              emit(state.copyWith(isBuffering: true));
+              _handleBufferingWatchdog(true);
+            }
+          });
+        }
         // При изменении буферизации уведомляем комнату
         if (state.isSyncRoom) {
           syncRepository?.sendBufferState(
@@ -405,19 +429,30 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.error.listen((error) {
         if (isClosed || _isDisposing) return;
         if (error.isNotEmpty) {
+          // Не показываем ошибку, пока в буфере есть запас кадров впереди
+          if (_hasBufferedAhead) return;
+
           if (isTransientStreamError(error)) {
-            if (_streamRetryCount < 3) {
+            if (_streamRetryCount < 5) {
               _streamRetryCount++;
               final attempt = _streamRetryCount;
-              final resumePos = state.position;
               emit(state.copyWith(
                 isBuffering: true,
                 errorMessage: () => null,
               ));
               _streamRetryTimer?.cancel();
-              _streamRetryTimer = Timer(Duration(seconds: attempt), () {
+              _streamRetryTimer =
+                  Timer(Duration(seconds: attempt.clamp(1, 3)), () {
                 if (isClosed || _isDisposing) return;
-                _loadCurrentEpisodeStream(initialPosition: resumePos);
+                if (_hasBufferedAhead) return;
+                final resumeAt = player.state.position > Duration.zero
+                    ? player.state.position
+                    : state.position;
+                _loadCurrentEpisodeStream(
+                  initialPosition: resumeAt,
+                  forceReopen: true,
+                  mirrorAttempt: attempt,
+                );
               });
               return;
             }
@@ -472,7 +507,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   /// Автоматический контроль буферизации (Watchdog):
-  /// Если буферизация на 1080p длится > 4 сек или возникает чаще 3 раз за 15 сек — авто-фолбэк на 720p
+  /// Если буфер полностью истощён > 12 сек на 1080p или сбоит > 3 раз за 15 сек — авто-фолбэк на 720p
   void _handleBufferingWatchdog(bool isBuffering) {
     if (!isBuffering) {
       _bufferingFallbackTimer?.cancel();
@@ -480,23 +515,32 @@ class PlayerCubit extends Cubit<PlayerState> {
       return;
     }
 
-    if (!state.isPlaying || state.selectedQuality != PlayerQuality.fhd) return;
+    if (!state.isPlaying ||
+        state.selectedQuality != PlayerQuality.fhd ||
+        !_isBufferDepleted) {
+      return;
+    }
 
     final now = DateTime.now();
     _recentBufferEvents.add(now);
     _recentBufferEvents.removeWhere((t) => now.difference(t).inSeconds > 15);
 
-    // Условие 1: если более 3 раз за 15 секунд сработала буферизация на 1080p
+    // Условие 1: если более 3 раз за 15 секунд сработала буферизация с пустым буфером на 1080p
     if (_recentBufferEvents.length >= 3) {
       _recentBufferEvents.clear();
       _fallbackQualityToHd('Частая буферизация');
       return;
     }
 
-    // Условие 2: буферизация длится дольше 4 секунд
+    // Условие 2: непрерывная остановка с пустым буфером длится дольше 12 секунд
     _bufferingFallbackTimer?.cancel();
-    _bufferingFallbackTimer = Timer(const Duration(seconds: 4), () {
-      if (!isClosed && !_isDisposing && state.isBuffering && state.isPlaying && state.selectedQuality == PlayerQuality.fhd) {
+    _bufferingFallbackTimer = Timer(const Duration(seconds: 12), () {
+      if (!isClosed &&
+          !_isDisposing &&
+          state.isBuffering &&
+          state.isPlaying &&
+          state.selectedQuality == PlayerQuality.fhd &&
+          _isBufferDepleted) {
         _fallbackQualityToHd('Низкая скорость сети');
       }
     });
@@ -512,12 +556,17 @@ class PlayerCubit extends Cubit<PlayerState> {
                 null);
 
     if (hasHd && state.selectedQuality != PlayerQuality.hd) {
-      final currentPos = state.position;
+      final resumeAt = player.state.position > Duration.zero
+          ? player.state.position
+          : state.position;
       emit(state.copyWith(
         selectedQuality: PlayerQuality.hd,
         bufferNotice: () => 'Качество автоматически переключено на 720p ($reason)',
       ));
-      await _loadCurrentEpisodeStream(initialPosition: currentPos);
+      await _loadCurrentEpisodeStream(
+        initialPosition: resumeAt,
+        forceReopen: true,
+      );
     }
   }
 
@@ -1131,7 +1180,23 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   final Set<String> _completed80Episodes = {};
 
-  Future<void> _loadCurrentEpisodeStream({Duration? initialPosition}) async {
+  String _applyCdnMirrorIfNeeded(String url, int attempt) {
+    if (attempt <= 0) return url;
+    const mirrors = SmartMirrorInterceptor.cdnMirrors;
+    for (final mirror in mirrors) {
+      if (url.startsWith(mirror)) {
+        final target = mirrors[attempt % mirrors.length];
+        return url.replaceFirst(mirror, target);
+      }
+    }
+    return url;
+  }
+
+  Future<void> _loadCurrentEpisodeStream({
+    Duration? initialPosition,
+    bool forceReopen = false,
+    int mirrorAttempt = 0,
+  }) async {
     final int generation = ++_loadGeneration;
     final effectiveStart = initialPosition ?? _pendingInitialSeek;
     if (effectiveStart != null && effectiveStart > Duration.zero) {
@@ -1238,6 +1303,9 @@ class PlayerCubit extends Cubit<PlayerState> {
       if (trimmed.startsWith('//')) {
         streamUrl = 'https:$trimmed';
       }
+      if (mirrorAttempt > 0) {
+        streamUrl = _applyCdnMirrorIfNeeded(streamUrl, mirrorAttempt);
+      }
     }
 
     if (streamUrl == null || streamUrl.isEmpty || streamUrl.contains('sample.com')) {
@@ -1250,7 +1318,9 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
 
     final currentMediaKey = '${state.title.id}_${state.episode.episode}_${state.selectedQuality.name}_$streamUrl';
-    if (_loadedMediaKey == currentMediaKey && player.state.playlist.medias.isNotEmpty) {
+    if (!forceReopen &&
+        _loadedMediaKey == currentMediaKey &&
+        player.state.playlist.medias.isNotEmpty) {
       // Медиа уже открыто в плеере — избегаем повторного player.open(), сброса D3D/MediaCodec и AudioTrack
       final shouldPlay = !state.isSyncRoom || state.isHost;
       if (shouldPlay && !state.isPlaying) {
@@ -2296,6 +2366,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _awayDurationTimer?.cancel();
     _spoilerShieldTimer?.cancel();
     _bufferingFallbackTimer?.cancel();
+    _bufferingDebounceTimer?.cancel();
     _driftRateTimer?.cancel();
     for (final t in _ephemeralTimers) {
       t.cancel();

@@ -162,6 +162,7 @@ const List<PlayerHud2DButtonMeta> kPlayerHud2DButtons = [
   PlayerHud2DButtonMeta(id: 'lock_screen', label: 'Блокировка экрана'),
   PlayerHud2DButtonMeta(id: 'fullscreen', label: 'Полный экран'),
   PlayerHud2DButtonMeta(id: 'pip_mode', label: 'Картинка в картинке (PiP)'),
+  PlayerHud2DButtonMeta(id: 'settings', label: 'Настройки плеера'),
 ];
 
 String hud2DButtonLabel(String id) {
@@ -178,6 +179,7 @@ class PlayerHud2DPresets {
         'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.73, ny: 0.08),
         'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.80, ny: 0.08),
         'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.87, ny: 0.08),
+        'settings': PlayerHudButtonConfig(id: 'settings', nx: 0.94, ny: 0.08),
         // Exact Center Transport Row (ny = 0.50 — locked)
         'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.35, ny: 0.50),
         'play_pause': PlayerHudButtonConfig(id: 'play_pause', nx: 0.50, ny: 0.50),
@@ -382,6 +384,7 @@ class SettingsState extends Equatable {
       'speed': PlayerHudButtonConfig(id: 'speed', nx: 0.73, ny: 0.08),
       'quality_dub': PlayerHudButtonConfig(id: 'quality_dub', nx: 0.80, ny: 0.08),
       'pip_mode': PlayerHudButtonConfig(id: 'pip_mode', nx: 0.87, ny: 0.08),
+      'settings': PlayerHudButtonConfig(id: 'settings', nx: 0.94, ny: 0.08),
       'seek_back': PlayerHudButtonConfig(id: 'seek_back', nx: 0.35, ny: 0.50),
       'play_pause': PlayerHudButtonConfig(id: 'play_pause', nx: 0.50, ny: 0.50),
       'seek_forward': PlayerHudButtonConfig(id: 'seek_forward', nx: 0.65, ny: 0.50),

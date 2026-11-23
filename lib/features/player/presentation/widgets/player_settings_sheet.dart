@@ -173,8 +173,18 @@ class PlayerSettingsSheet extends StatelessWidget {
                       // Быстрый вход в живой редактор кнопок HUD
                       InkWell(
                         key: const ValueKey('player_settings_direct_hud_edit_btn'),
-                        onTap: () {
+                        onTap: () async {
+                          final isMobilePlatform =
+                              !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+                          final isPortrait = MediaQuery.orientationOf(context) !=
+                              Orientation.landscape;
                           Navigator.of(context).pop();
+                          if (isMobilePlatform && isPortrait) {
+                            await SystemChrome.setPreferredOrientations([
+                              DeviceOrientation.landscapeLeft,
+                              DeviceOrientation.landscapeRight,
+                            ]);
+                          }
                           cubit.setHudEditMode(true);
                         },
                         borderRadius: BorderRadius.circular(14),

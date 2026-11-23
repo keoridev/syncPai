@@ -122,6 +122,8 @@ void main() {
     expect(reloaded.state.hudConfigFor('quality_dub').ny, closeTo(0.08, 0.001));
     expect(reloaded.state.hudConfigFor('pip_mode').nx, closeTo(0.87, 0.001));
     expect(reloaded.state.hudConfigFor('pip_mode').ny, closeTo(0.08, 0.001));
+    expect(reloaded.state.hudConfigFor('settings').nx, closeTo(0.94, 0.001));
+    expect(reloaded.state.hudConfigFor('settings').ny, closeTo(0.08, 0.001));
     expect(reloaded.state.hudConfigFor('seek_back').nx, closeTo(0.35, 0.001));
     expect(reloaded.state.hudConfigFor('seek_back').ny, closeTo(0.50, 0.001));
     expect(reloaded.state.hudConfigFor('play_pause').nx, closeTo(0.50, 0.001));
@@ -221,8 +223,8 @@ void main() {
     await tester.pump();
     expect(settingsCubit.state.hudConfigFor('lock_screen').nx, closeTo(0.50, 0.001));
 
-    // Магнитное выравнивание по оси Y соседней кнопки (верхний ряд ny = 0.08)
-    await settingsCubit.updateHudButtonConfig('skip_intro', nx: 0.88, ny: 0.14);
+    // Магнитное выравнивание по оси Y соседней кнопки (верхний ряд ny = 0.08, свободная позиция nx = 0.44)
+    await settingsCubit.updateHudButtonConfig('skip_intro', nx: 0.44, ny: 0.14);
     await tester.pump();
     await tester.drag(
       find.byKey(const ValueKey('hud_canvas_btn_skip_intro')),
@@ -308,6 +310,42 @@ void main() {
     );
     expect(find.byKey(const ValueKey('hud_bottom_fullscreen')), findsOneWidget);
     expect(find.byKey(const ValueKey('hud_center_play_pause')), findsOneWidget);
+    expect(find.byKey(const ValueKey('hud_action_settings_gear')), findsOneWidget);
+    expect(find.byKey(const ValueKey('hud_edit_skip_intro')), findsNothing);
+    expect(find.byKey(const ValueKey('hud_edit_grid_overlay')), findsNothing);
+
+    // Даже при isHudEditMode: true в портретной ориентации 2D-редактор не рендерится
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(390, 844)),
+          child: Scaffold(
+            body: SizedBox(
+              width: 390,
+              height: 844,
+              child: PlayerControlsOverlay(
+                cubit: fakePlayerCubit,
+                state: PlayerState(
+                  title: _testTitle(),
+                  episode: const EpisodeItem(episode: 1),
+                  isHudEditMode: true,
+                  areControlsVisible: true,
+                ),
+                onBack: () {},
+                onToggleOrientation: () {},
+                onMinimize: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('player_portrait_docked_layout')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('hud_edit_grid_overlay')), findsNothing);
 
     await settingsCubit.close();
   });

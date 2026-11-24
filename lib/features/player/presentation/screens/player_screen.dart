@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -12,6 +13,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
+import 'package:sync_pai/core/network/image_cors_helper.dart';
 import 'package:sync_pai/core/network/network_status_helper.dart';
 import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
@@ -19,6 +21,9 @@ import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
+import 'package:sync_pai/features/kodik/domain/entities/kodik_translation.dart';
+import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
+import 'package:sync_pai/features/kodik/presentation/cubit/kodik_state.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:sync_pai/features/sync_room/presentation/widgets/reaction_overlay_layer.dart';
@@ -44,6 +49,7 @@ import '../widgets/desktop_player_layout.dart';
 import '../widgets/double_tap_seek_overlay.dart';
 import '../widgets/floating_pai_chan_reactions_overlay.dart';
 import '../widgets/player_controls_overlay.dart';
+import '../widgets/quality_selection_sheet.dart';
 import '../widgets/quick_phrase_toast_widget.dart';
 import '../widgets/twitch_chat_overlay.dart';
 import '../widgets/danmaku_overlay_layer.dart';
@@ -51,6 +57,12 @@ import '../widgets/pulsing_radar_waiting_widget.dart';
 import '../widgets/watch_party_stats_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
+  static const VideoControllerConfiguration defaultVideoControllerConfig =
+      VideoControllerConfiguration(
+    enableHardwareAcceleration: true,
+    androidAttachSurfaceAfterVideoParameters: false,
+  );
+
   final AnimeTitle title;
   final EpisodeItem initialEpisode;
   final PlayerQuality initialQuality;
@@ -75,7 +87,12 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   late final PlayerCubit _cubit;
   late final VideoController _videoController;
-  final GlobalKey _videoWidgetKey = GlobalKey(debugLabel: 'PersistentSyncPaiVideoSurface');
+  final GlobalKey _videoSurfaceKey =
+      GlobalKey(debugLabel: 'PersistentSyncPaiVideoSurface');
+  final GlobalKey _screenshotBoundaryKey =
+      GlobalKey(debugLabel: 'SyncPaiVideoScreenshotBoundary');
+  bool _episodesGridMode = false;
+  bool? _lastLandscapeSystemUi;
   StreamSubscription<bool>? _pipSubscription;
   bool _isInPip = false;
   bool _watchReactionsEnabled = true;
@@ -265,10 +282,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
       _videoController = VideoController(
         _cubit.player,
-        configuration: const VideoControllerConfiguration(
-          enableHardwareAcceleration: true,
-          androidAttachSurfaceAfterVideoParameters: true,
-        ),
+        configuration: PlayerScreen.defaultVideoControllerConfig,
       );
     }
 
@@ -675,25 +689,41 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     // В режиме Картинка-в-картинке (PiP) отображаем только чистое видео без оверлеев
     if (_isInPip) {
+      final mqSize = MediaQuery.sizeOf(context);
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-                return const SizedBox.shrink();
-              }
-              return RepaintBoundary(
-                child: Video(
-                  key: _videoWidgetKey,
-                  controller: _videoController,
-                  controls: NoVideoControls,
+          child: (mqSize.width <= 0 || mqSize.height <= 0)
+              ? const SizedBox.shrink()
+              : RepaintBoundary(
+                  key: _screenshotBoundaryKey,
+                  child: Video(
+                    key: _videoSurfaceKey,
+                    controller: _videoController,
+                    controls: NoVideoControls,
+                  ),
                 ),
-              );
-            },
-          ),
         ),
       );
+    }
+
+    final bool isDesktopOS = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.linux);
+    final bool isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      if (_lastLandscapeSystemUi != isLandscape) {
+        _lastLandscapeSystemUi = isLandscape;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isDisposed || _handedOffToMiniPlayer) return;
+          SystemChrome.setEnabledSystemUIMode(
+            isLandscape ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+          );
+        });
+      }
     }
 
     return PopScope(
@@ -707,12 +737,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         }
       },
       child: Focus(
-        autofocus: !(!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)),
+        autofocus: !isDesktopOS,
         onKeyEvent: _handleTvKeyEvent,
         child: BlocProvider.value(
           value: _cubit,
           child: Scaffold(
-            backgroundColor: Colors.black,
+            backgroundColor: (!isDesktopOS && !isLandscape)
+                ? const Color(0xFF0B0E14)
+                : Colors.black,
             resizeToAvoidBottomInset: false,
             body: BlocConsumer<PlayerCubit, PlayerState>(
               buildWhen: (previous, current) =>
@@ -788,9 +820,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 );
               },
               builder: (context, state) {
-                final bool isDesktopOS = !kIsWeb &&
-                    (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-
                 if (isDesktopOS) {
                   final desktop = DesktopPlayerLayout(
                     cubit: _cubit,
@@ -835,581 +864,1267 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   );
                 }
 
-                return GestureDetector(
-                  onVerticalDragEnd: (details) {
-                    // Свайп вниз в портретном режиме сворачивает плеер в глобальное мини-окно
-                    if (!state.isHudEditMode &&
-                        !state.isBuffering &&
-                        MediaQuery.of(context).orientation == Orientation.portrait &&
-                        details.primaryVelocity != null &&
-                        details.primaryVelocity! > 750) {
-                      _minimizePlayer();
-                    }
-                  },
-                  child: Stack(
+                if (isLandscape) {
+                  return Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Видео полотно libmpv без стандартных нативных контролов
-                      // Изолировано в RepaintBoundary для разгрузки главного потока рендеринга
-                      // LayoutBuilder гарантирует, что Video не создается с нулевыми размерами (0x0 D3D surface)
-                      Positioned.fill(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-                              return const SizedBox.shrink();
-                            }
-                            return RepaintBoundary(
-                              child: Center(
-                                child: Video(
-                                  key: _videoWidgetKey,
-                                  controller: _videoController,
-                                  controls: NoVideoControls,
-                                  fit: state.videoFit,
-                                  fill: Colors.black,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                      _buildVideoViewport(
+                        context,
+                        state,
+                        isLandscape: true,
                       ),
-
-                      // Слой жестов перемотки по двойному тапу (±10 сек), 2X, свайпов яркости/громкости и покадрового скраббинга
-                      if (!state.isScreenLocked)
-                        const Positioned.fill(
-                          child: BackgroundSnowLayer(
-                            key: ValueKey('player_snow_layer'),
-                            flakeCount: 25,
-                            opacity: 0.48,
-                            forPlayer: true,
+                      if (state.showWatchPartyStats)
+                        Positioned.fill(
+                          child: WatchPartyStatsSheet(
+                            title: state.title,
+                            episode: state.episode,
+                            pauseCount: state.pauseCount,
+                            emojisSent: state.emojisSent,
+                            peerPingMs: state.peerPingMs,
+                            peerName: state.peerName ?? 'Друг',
+                            onClose: () => _cubit.toggleWatchPartyStats(),
                           ),
                         ),
-
-                      IgnorePointer(
-                        ignoring: state.isHudEditMode || state.isScreenLocked,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onScaleStart: (_) => _pinchHandledInGesture = false,
-                          onScaleUpdate: (details) {
-                            if (details.pointerCount < 2 || _pinchHandledInGesture) {
-                              return;
-                            }
-                            if (details.scale > 1.15 && state.videoFit != BoxFit.cover) {
-                              _pinchHandledInGesture = true;
-                              _cubit.setVideoFit(BoxFit.cover);
-                              _showCenterOsd('Экран: На весь экран');
-                            } else if (details.scale < 0.85 &&
-                                state.videoFit != BoxFit.contain) {
-                              _pinchHandledInGesture = true;
-                              _cubit.setVideoFit(BoxFit.contain);
-                              _showCenterOsd('Экран: По размеру');
-                            }
-                          },
-                          child: DoubleTapSeekOverlay(
-                          onTap: () => _cubit.toggleControls(),
-                        onSeekRelative: (seconds) {
-                          _cubit.seekRelative(seconds);
-                          if (_showOnboarding) {
-                            _onboardingKey.currentState?.notifySeekDoubleTapped();
-                          }
-                        },
-                        onCenterDoubleTap: () => _cubit.togglePlayPause(),
-                        onBrightnessChanged: (b) {
-                          _cubit.setBrightness(b);
-                          if (_showOnboarding) {
-                            _onboardingKey.currentState?.notifyBrightnessSwiped();
-                          }
-                        },
-                        onVolumeChanged: (v) {
-                          _cubit.setVolume(v);
-                          if (_showOnboarding) {
-                            _onboardingKey.currentState?.notifyVolumeSwiped();
-                          }
-                        },
-                        onScrubSeek: (pos) => _cubit.seek(pos),
-                        currentPosition: state.position,
-                        totalDuration: state.duration,
-                        currentVolume: state.volume,
-                        currentBrightness: state.brightness,
-                        isScreenLocked: state.isScreenLocked,
-                        onScreenLockedTap: () {
-                          HapticFeedback.selectionClick();
-                        },
-                        opening: state.effectiveOpening,
-                        ending: state.effectiveEnding,
-                    previewUrl: state.episode.previewUrl ??
-                        (state.title.posterMedium.isNotEmpty
-                            ? state.title.posterMedium
-                            : state.title.posterSmall),
-                    isLocked: false,
-                    onLockedTap: () {},
-                    seekStepSeconds: getIt.isRegistered<SettingsCubit>()
-                        ? getIt<SettingsCubit>().state.seekStepSeconds
-                        : 10,
-                    swipeSensitivity: getIt.isRegistered<SettingsCubit>()
-                        ? getIt<SettingsCubit>().state.gestureSwipeSensitivity
-                        : 1.0,
-                    onLongPressStart: state.isSyncRoom ? null : () => _cubit.start2xFastForward(),
-                    onLongPressEnd: state.isSyncRoom ? null : () => _cubit.stop2xFastForward(),
-                    onFastForwardRateChanged:
-                        state.isSyncRoom ? null : (rate) => _cubit.setFastForwardRate(rate),
-                        ),
-                        ),
-                      ),
-
-                  // Индикатор быстрой перемотки при зажатии экрана (без неона, с поддержкой свайпов скорости)
-                  if (state.is2xFastForwarding)
-                    Positioned(
-                      top: MediaQuery.paddingOf(context).top + 16,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF14161F).withValues(alpha: 0.90),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.20),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                blurRadius: 18,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                      if (_showOnboarding)
+                        Positioned.fill(
+                          child: PlayerOnboardingOverlay(
+                            key: _onboardingKey,
+                            onDismiss: _dismissOnboarding,
+                            onStepChanged: (step) {
+                              if (step == 3) {
+                                _cubit.showControls();
+                              }
+                            },
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.fast_forward_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${state.playbackRate.toStringAsFixed(state.playbackRate.truncateToDouble() == state.playbackRate ? 0 : 2)}X  Быстрая перемотка',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '↑↓ Свайп скорости',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.65),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
+                        ),
+                    ],
+                  );
+                }
+
+                // ПОРТРЕТНЫЙ РЕЖИМ (YouTube / Crunchyroll стиль): 16:9 плеер сверху + панель серий снизу (#0B0E14)
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    SafeArea(
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            onVerticalDragEnd: (details) {
+                              if (!state.isHudEditMode &&
+                                  !state.isBuffering &&
+                                  details.primaryVelocity != null &&
+                                  details.primaryVelocity! > 750) {
+                                _minimizePlayer();
+                              }
+                            },
+                            child: AspectRatio(
+                              key: const ValueKey('player_portrait_16_9_box'),
+                              aspectRatio: 16 / 9,
+                              child: ClipRect(
+                                child: ColoredBox(
+                                  color: Colors.black,
+                                  child: _buildVideoViewport(
+                                    context,
+                                    state,
+                                    isLandscape: false,
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
                           ),
+                          Expanded(
+                            child: _buildPortraitCompanionPanel(context, state),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (state.showWatchPartyStats)
+                      Positioned.fill(
+                        child: WatchPartyStatsSheet(
+                          title: state.title,
+                          episode: state.episode,
+                          pauseCount: state.pauseCount,
+                          emojisSent: state.emojisSent,
+                          peerPingMs: state.peerPingMs,
+                          peerName: state.peerName ?? 'Друг',
+                          onClose: () => _cubit.toggleWatchPartyStats(),
+                        ),
+                      ),
+                    if (_showOnboarding)
+                      Positioned.fill(
+                        child: PlayerOnboardingOverlay(
+                          key: _onboardingKey,
+                          onDismiss: _dismissOnboarding,
+                          onStepChanged: (step) {
+                            if (step == 3) {
+                              _cubit.showControls();
+                            }
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoViewport(
+    BuildContext context,
+    PlayerState state, {
+    required bool isLandscape,
+  }) {
+    final mqSize = MediaQuery.sizeOf(context);
+    final hasValidSurfaceSize = mqSize.width > 0 && mqSize.height > 0;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Видео полотно libmpv с единым стабильным GlobalKey (_videoSurfaceKey)
+        // Сохраняет нативный SurfaceView / Texture при смене портретной и альбомной ориентации
+        Positioned.fill(
+          child: !hasValidSurfaceSize
+              ? const SizedBox.shrink()
+              : RepaintBoundary(
+                  key: _screenshotBoundaryKey,
+                  child: Center(
+                    child: Video(
+                      key: _videoSurfaceKey,
+                      controller: _videoController,
+                      controls: NoVideoControls,
+                      fit: state.videoFit,
+                      fill: Colors.black,
+                    ),
+                  ),
+                ),
+        ),
+
+        if (!state.isScreenLocked)
+          const Positioned.fill(
+            child: BackgroundSnowLayer(
+              key: ValueKey('player_snow_layer'),
+              flakeCount: 25,
+              opacity: 0.48,
+              forPlayer: true,
+            ),
+          ),
+
+        IgnorePointer(
+          ignoring: state.isHudEditMode || state.isScreenLocked,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onScaleStart: (_) => _pinchHandledInGesture = false,
+            onScaleUpdate: (details) {
+              if (details.pointerCount < 2 || _pinchHandledInGesture) {
+                return;
+              }
+              if (details.scale > 1.15 && state.videoFit != BoxFit.cover) {
+                _pinchHandledInGesture = true;
+                _cubit.setVideoFit(BoxFit.cover);
+                _showCenterOsd('Экран: На весь экран');
+              } else if (details.scale < 0.85 &&
+                  state.videoFit != BoxFit.contain) {
+                _pinchHandledInGesture = true;
+                _cubit.setVideoFit(BoxFit.contain);
+                _showCenterOsd('Экран: По размеру');
+              }
+            },
+            child: BlocSelector<PlayerCubit, PlayerState, ({Duration pos, Duration dur})>(
+              bloc: _cubit,
+              selector: (s) => (pos: s.position, dur: s.duration),
+              builder: (context, timing) => DoubleTapSeekOverlay(
+                onTap: () => _cubit.toggleControls(),
+                onSeekRelative: (seconds) {
+                  _cubit.seekRelative(seconds);
+                  if (_showOnboarding) {
+                    _onboardingKey.currentState?.notifySeekDoubleTapped();
+                  }
+                },
+                onCenterDoubleTap: () => _cubit.togglePlayPause(),
+                onBrightnessChanged: (b) {
+                  _cubit.setBrightness(b);
+                  if (_showOnboarding) {
+                    _onboardingKey.currentState?.notifyBrightnessSwiped();
+                  }
+                },
+                onVolumeChanged: (v) {
+                  _cubit.setVolume(v);
+                  if (_showOnboarding) {
+                    _onboardingKey.currentState?.notifyVolumeSwiped();
+                  }
+                },
+                onScrubSeek: (pos) => _cubit.seek(pos),
+                currentPosition: timing.pos,
+                totalDuration: timing.dur,
+                currentVolume: state.volume,
+                currentBrightness: state.brightness,
+                isScreenLocked: state.isScreenLocked,
+                onScreenLockedTap: () {
+                  HapticFeedback.selectionClick();
+                },
+                opening: state.effectiveOpening,
+                ending: state.effectiveEnding,
+                previewUrl: state.episode.previewUrl ??
+                    (state.title.posterMedium.isNotEmpty
+                        ? state.title.posterMedium
+                        : state.title.posterSmall),
+                isLocked: false,
+                onLockedTap: () {},
+                seekStepSeconds: getIt.isRegistered<SettingsCubit>()
+                    ? getIt<SettingsCubit>().state.seekStepSeconds
+                    : 10,
+                swipeSensitivity: getIt.isRegistered<SettingsCubit>()
+                    ? getIt<SettingsCubit>().state.gestureSwipeSensitivity
+                    : 1.0,
+                onLongPressStart:
+                    state.isSyncRoom ? null : () => _cubit.start2xFastForward(),
+                onLongPressEnd:
+                    state.isSyncRoom ? null : () => _cubit.stop2xFastForward(),
+                onFastForwardRateChanged: state.isSyncRoom
+                    ? null
+                    : (rate) => _cubit.setFastForwardRate(rate),
+              ),
+            ),
+          ),
+        ),
+
+        // Индикатор быстрой перемотки при зажатии экрана
+        if (state.is2xFastForwarding)
+          Positioned(
+            top: (isLandscape ? MediaQuery.paddingOf(context).top + 16 : 8),
+            left: 8,
+            right: 8,
+            child: Center(
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isLandscape ? 16 : 12,
+                  vertical: isLandscape ? 8 : 5,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14161F).withValues(alpha: 0.90),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.20),
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.fast_forward_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${state.playbackRate.toStringAsFixed(state.playbackRate.truncateToDouble() == state.playbackRate ? 0 : 2)}X  Быстрая перемотка',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        if (state.isSyncRoom && isLandscape)
+          TwitchChatOverlay(
+            messages: state.chatMessages,
+            isVisible: state.isChatOverlayVisible,
+            onToggleVisibility: () => _cubit.toggleChatOverlay(),
+          ),
+
+        if (state.isSyncRoom || state.activeReactions.isNotEmpty)
+          FloatingPaiChanReactionsOverlay(
+            reactions: state.activeReactions,
+          ),
+
+        DanmakuOverlayLayer(
+          items: state.danmakuMessages,
+          isEnabled: state.isDanmakuEnabled,
+        ),
+
+        if (state.isSyncRoom && state.activeQuickPhrase != null)
+          QuickPhraseToastWidget(toast: state.activeQuickPhrase!),
+
+        if (state.isSyncRoom && state.bufferNotice != null)
+          PulsingRadarWaitingWidget(
+            title: state.bufferNotice!,
+            pingMs: state.peerPingMs,
+            awaySeconds: state.awaySecondsCount,
+            onPokeNudge: () {
+              _cubit.sendPokeNudge();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Вы отправили сигнал другу!'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: Color(0xFFFF5E3A),
+                ),
+              );
+            },
+          ),
+
+        if (state.isSpoilerShieldActive)
+          Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.primary),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.shield_rounded, color: AppColors.primaryLight, size: 18),
+                        const SizedBox(width: 8),
+                        const Flexible(
+                          child: Text(
+                            'Прыжок во времени (Спойлер-щит активен)',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (state.pokeNudgeMessage != null)
+          Positioned(
+            top: isLandscape ? MediaQuery.paddingOf(context).top + 70 : 12,
+            left: 16,
+            right: 16,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF5E3A),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  state.pokeNudgeMessage!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (state.isSyncRoom &&
+            state.autoNextCountdown != null &&
+            state.nextEpisode != null)
+          AutoNextEpisodeBanner(
+            countdown: state.autoNextCountdown!,
+            nextEpisode: state.nextEpisode!,
+            isHost: state.isHost,
+            onPlayNow: () => _cubit.playNextEpisode(),
+            onCancel: () => _cubit.cancelAutoNextCountdown(),
+          ),
+
+        if (state.isBuffering &&
+            state.bufferNotice == null &&
+            !state.areControlsVisible &&
+            state.errorMessage == null)
+          Center(
+            child: Container(
+              padding: EdgeInsets.all(isLandscape ? 16 : 12),
+              decoration: BoxDecoration(
+                color: AppColors.background.withValues(alpha: 0.65),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.strokeMedium),
+              ),
+              child: SizedBox(
+                width: isLandscape ? 36 : 28,
+                height: isLandscape ? 36 : 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
+              ),
+            ),
+          ),
+
+        // Кастомный оверлей управления (строго внутри 16:9 в портрете и полноэкранный в ландшафте)
+        PlayerControlsOverlay(
+          cubit: _cubit,
+          state: state,
+          onBack: _minimizePlayer,
+          onMinimize: _minimizePlayer,
+          onToggleOrientation: _toggleScreenOrientation,
+          onTakeScreenshot: _takeScreenshot,
+          onOpenSleepTimer: _openSleepTimerSheet,
+          onEnterPip: _handlePipAction,
+          onAspectRatioChanged: (fit) {
+            final label = fit == BoxFit.contain
+                ? 'По размеру'
+                : (fit == BoxFit.cover ? 'На весь экран' : 'Растянуть');
+            _showCenterOsd('Экран: $label');
+          },
+          syncStatus: state.isSyncRoom ? state.syncStatus : null,
+          syncPeerName: state.peerName,
+        ),
+
+        if (_centerOsdMessage != null)
+          Center(
+            child: IgnorePointer(
+              child: Container(
+                key: const ValueKey('player_center_osd'),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F141E).withValues(alpha: 0.86),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Text(
+                  _centerOsdMessage!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (_screenshotPreviewBytes != null)
+          Positioned(
+            top: isLandscape ? MediaQuery.paddingOf(context).top + 56 : 10,
+            right: 12,
+            child: IgnorePointer(
+              child: Container(
+                key: const ValueKey('player_screenshot_toast'),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F141E).withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF35D9D5).withValues(alpha: 0.55),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.memory(
+                        _screenshotPreviewBytes!,
+                        width: 44,
+                        height: 26,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Скриншот сохранён',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        _buildReactiveSkipOverlay(),
+
+        if (state.isSyncRoom && state.roomCode != null && isLandscape)
+          ..._buildSyncRoomReactionWidgets(state),
+
+        if (state.isScreenLocked)
+          Positioned(
+            left: isLandscape ? 20 : 10,
+            top: isLandscape ? MediaQuery.paddingOf(context).top + 16 : 10,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.9, end: 0.4),
+              duration: const Duration(seconds: 3),
+              builder: (context, opacity, child) => Opacity(
+                opacity: opacity,
+                child: child,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    _cubit.toggleScreenLock();
+                  },
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    padding: EdgeInsets.all(isLandscape ? 12 : 9),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.lock_outline_rounded,
+                      color: Colors.white,
+                      size: isLandscape ? 22 : 18,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (state.errorMessage != null)
+          Material(
+            color: Colors.black.withValues(alpha: 0.85),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(isLandscape ? 24 : 12),
+                child: NetworkStatusHelper.isConnectionError(state.errorMessage)
+                    ? PaiChanOfflineView(
+                        title: 'Ошибка загрузки видеопотока',
+                        subtitle:
+                            'Нет подключения к сети для воспроизведения серии. Проверьте интернет или выберите скачанную серию.',
+                        onRetry: () => _cubit.switchEpisode(state.episode),
+                        onOpenSaved: () => context.push('/downloads'),
+                      )
+                    : Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isLandscape ? 24 : 16,
+                          vertical: isLandscape ? 20 : 12,
+                        ),
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.strokeMedium),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.error_outline_rounded,
+                              color: AppColors.syncError,
+                              size: isLandscape ? 44 : 28,
+                            ),
+                            SizedBox(height: isLandscape ? 12 : 6),
+                            Text(
+                              state.errorMessage!,
+                              maxLines: isLandscape ? 4 : 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontSize: isLandscape ? 14 : 12,
+                              ),
+                            ),
+                            SizedBox(height: isLandscape ? 18 : 10),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    visualDensity: isLandscape
+                                        ? VisualDensity.standard
+                                        : VisualDensity.compact,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isLandscape ? 16 : 12,
+                                      vertical: isLandscape ? 10 : 6,
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                                  label: const Text('Повторить'),
+                                  onPressed: () => _cubit.switchEpisode(state.episode),
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.textPrimary,
+                                    visualDensity: isLandscape
+                                        ? VisualDensity.standard
+                                        : VisualDensity.compact,
+                                    side: const BorderSide(color: AppColors.strokeMedium),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isLandscape ? 16 : 12,
+                                      vertical: isLandscape ? 10 : 6,
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                                  label: const Text('Выйти'),
+                                  onPressed: _handleExit,
+                                ),
+                                IconButton(
+                                  tooltip: 'Повернуть экран',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(
+                                    Icons.screen_rotation_rounded,
+                                    color: AppColors.textSecondary,
+                                    size: 20,
+                                  ),
+                                  onPressed: _toggleScreenOrientation,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPortraitCompanionPanel(BuildContext context, PlayerState state) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final episodes = state.title.episodes.isNotEmpty
+        ? state.title.episodes
+        : <EpisodeItem>[state.episode];
+    final currentEpNum = state.episode.episode;
+    final isGuestInSync = state.isSyncRoom && !state.isHost;
+    final qualityLabel = state.selectedQuality == PlayerQuality.fhd
+        ? '1080p'
+        : (state.selectedQuality == PlayerQuality.hd ? '720p' : '480p');
+
+    return ColoredBox(
+      key: const ValueKey('player_portrait_companion_panel'),
+      color: const Color(0xFF0B0E14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+
+              // 1. ШАПКА РЕЛИЗА И ТЕКУЩЕЙ СЕРИИ
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            state.title.displayTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.titleMedium.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15.5,
+                              height: 1.25,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Серия ${state.episode.episode}${state.episode.name != null && state.episode.name!.isNotEmpty ? ' — ${state.episode.name}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => QualitySelectionSheet.show(
+                        context,
+                        currentQuality: state.selectedQuality,
+                        onSelect: (q) => _cubit.changeQuality(q),
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF131722),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.hd_outlined,
+                              size: 15,
+                              color: primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              qualityLabel,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-
-                  // Стрим-чат (Twitch Chat Overlay) в левом верхнем углу
-                  if (state.isSyncRoom)
-                    TwitchChatOverlay(
-                      messages: state.chatMessages,
-                      isVisible: state.isChatOverlayVisible,
-                      onToggleVisibility: () => _cubit.toggleChatOverlay(),
-                    ),
-
-                  // Слой плавающих стикер-реакций Пай-чан поверх видео (FloatingPaiChanReactionsOverlay)
-                  if (state.isSyncRoom || state.activeReactions.isNotEmpty)
-                    FloatingPaiChanReactionsOverlay(
-                      reactions: state.activeReactions,
-                    ),
-
-                  // Danmaku бегущие строки поверх экрана (Bilibili / Nico Nico стиль)
-                  DanmakuOverlayLayer(
-                    items: state.danmakuMessages,
-                    isEnabled: state.isDanmakuEnabled,
-                  ),
-
-                  // Всплывающее стеклянное уведомление быстрой фразы (шортката)
-                  if (state.isSyncRoom && state.activeQuickPhrase != null)
-                    QuickPhraseToastWidget(toast: state.activeQuickPhrase!),
-
-                  // Живой радар и неоновые волны ожидания при буферизации или паузе у друга
-                  if (state.isSyncRoom && state.bufferNotice != null)
-                    PulsingRadarWaitingWidget(
-                      title: state.bufferNotice!,
-                      pingMs: state.peerPingMs,
-                      awaySeconds: state.awaySecondsCount,
-                      onPokeNudge: () {
-                        _cubit.sendPokeNudge();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('🩴 Вы кинули тапок в друга!'),
-                            duration: Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: Color(0xFFFF5E3A),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: _toggleScreenOrientation,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF131722),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
                           ),
-                        );
+                        ),
+                        child: const Icon(
+                          Icons.fullscreen_rounded,
+                          size: 18,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 2. СЕЛЕКТОР ОЗВУЧКИ (AniLibria / Kodik студии)
+              _buildPortraitDubbingSelector(context, state, primary),
+
+              const SizedBox(height: 8),
+              Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+
+              // 3. ЗАГОЛОВОК СПИСКА СЕРИЙ + ПЕРЕКЛЮЧАТЕЛЬ СЕТКА / СПИСОК
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.video_library_rounded,
+                      size: 17,
+                      color: primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Список серий',
+                      style: AppTypography.titleSmall.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF131722),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: Text(
+                        '${episodes.length}',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      key: const ValueKey('player_portrait_episodes_mode_toggle'),
+                      tooltip: _episodesGridMode
+                          ? 'Показать списком'
+                          : 'Показать сеткой',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      icon: Icon(
+                        _episodesGridMode
+                            ? Icons.view_list_rounded
+                            : Icons.grid_view_rounded,
+                        size: 18,
+                        color: AppColors.textSecondary,
+                      ),
+                      onPressed: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _episodesGridMode = !_episodesGridMode);
                       },
                     ),
+                  ],
+                ),
+              ),
 
-                  // Спойлер-щит (Blur Mode при резких скачках таймлайна вперед)
-                  if (state.isSpoilerShieldActive)
-                    Positioned.fill(
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                          child: Container(
-                            color: Colors.black.withValues(alpha: 0.65),
-                            alignment: Alignment.center,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              // 4. ПРОКРУЧИВАЕМЫЙ СПИСОК / СЕТКА СЕРИЙ
+              Expanded(
+                child: _episodesGridMode
+                    ? GridView.builder(
+                        key: const ValueKey('player_portrait_episodes_grid'),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        physics: const BouncingScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 1.35,
+                        ),
+                        itemCount: episodes.length,
+                        itemBuilder: (context, index) {
+                          final ep = episodes[index];
+                          final isSelected = ep.episode == currentEpNum;
+                          return InkWell(
+                            key: ValueKey('portrait_ep_grid_${ep.episode}'),
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (isGuestInSync) {
+                                _cubit.showGuestPlaybackLockedNotice();
+                                return;
+                              }
+                              HapticFeedback.lightImpact();
+                              _cubit.switchEpisode(ep);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
                               decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppColors.primary),
+                                color: isSelected
+                                    ? primary.withValues(alpha: 0.20)
+                                    : const Color(0xFF131722),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? primary
+                                      : Colors.white.withValues(alpha: 0.08),
+                                  width: isSelected ? 1.4 : 1.0,
+                                ),
                               ),
+                              alignment: Alignment.center,
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.shield_rounded, color: AppColors.primaryLight, size: 22),
-                                  const SizedBox(width: 10),
-                                  const Text(
-                                    'Прыжок во времени (Спойлер-щит активен)',
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  if (isSelected) ...[
+                                    Icon(
+                                      Icons.play_arrow_rounded,
+                                      size: 14,
+                                      color: primary,
+                                    ),
+                                    const SizedBox(width: 2),
+                                  ],
+                                  Text(
+                                    '${ep.episode}',
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? primary
+                                          : AppColors.textPrimary,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Всплывающее уведомление о «летящем тапке» от друга
-                  if (state.pokeNudgeMessage != null)
-                    Positioned(
-                      top: MediaQuery.paddingOf(context).top + 70,
-                      left: 20,
-                      right: 20,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF5E3A),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFFF5E3A).withValues(alpha: 0.5),
-                                blurRadius: 16,
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            state.pokeNudgeMessage!,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Карточка-статистика Watch Party Wrapped
-                  if (state.showWatchPartyStats)
-                    Positioned.fill(
-                      child: WatchPartyStatsSheet(
-                        title: state.title,
-                        episode: state.episode,
-                        pauseCount: state.pauseCount,
-                        emojisSent: state.emojisSent,
-                        peerPingMs: state.peerPingMs,
-                        peerName: state.peerName ?? 'Друг',
-                        onClose: () => _cubit.toggleWatchPartyStats(),
-                      ),
-                    ),
-
-                  // Баннер авто-перехода на следующую серию (Auto Next Episode)
-                  if (state.isSyncRoom &&
-                      state.autoNextCountdown != null &&
-                      state.nextEpisode != null)
-                    AutoNextEpisodeBanner(
-                      countdown: state.autoNextCountdown!,
-                      nextEpisode: state.nextEpisode!,
-                      isHost: state.isHost,
-                      onPlayNow: () => _cubit.playNextEpisode(),
-                      onCancel: () => _cubit.cancelAutoNextCountdown(),
-                    ),
-
-                  // Индикатор локальной буферизации (показывается только когда скрыты контролы,
-                  // так как при видимых контролах спиннер встроен прямо в центральную кнопку Play/Pause)
-                  if (state.isBuffering &&
-                      state.bufferNotice == null &&
-                      !state.areControlsVisible &&
-                      state.errorMessage == null)
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.background.withValues(alpha: 0.65),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.strokeMedium),
-                        ),
-                        child: SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Кастомный оверлей управления в стиле Cinema Dark
-                  PlayerControlsOverlay(
-                    cubit: _cubit,
-                    state: state,
-                    onBack: _minimizePlayer,
-                    onMinimize: _minimizePlayer,
-                    onToggleOrientation: _toggleScreenOrientation,
-                    onTakeScreenshot: _takeScreenshot,
-                    onOpenSleepTimer: _openSleepTimerSheet,
-                    onEnterPip: _handlePipAction,
-                    onAspectRatioChanged: (fit) {
-                      final label = fit == BoxFit.contain
-                          ? 'По размеру'
-                          : (fit == BoxFit.cover ? 'На весь экран' : 'Растянуть');
-                      _showCenterOsd('Экран: $label');
-                    },
-                    syncStatus: state.isSyncRoom ? state.syncStatus : null,
-                    syncPeerName: state.peerName,
-                  ),
-
-                  if (_centerOsdMessage != null)
-                    Center(
-                      child: IgnorePointer(
-                        child: Container(
-                          key: const ValueKey('player_center_osd'),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F141E).withValues(alpha: 0.86),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Text(
-                            _centerOsdMessage!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  if (_screenshotPreviewBytes != null)
-                    Positioned(
-                      top: MediaQuery.paddingOf(context).top + 56,
-                      right: 16,
-                      child: IgnorePointer(
-                        child: Container(
-                          key: const ValueKey('player_screenshot_toast'),
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F141E).withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFF35D9D5).withValues(alpha: 0.55),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.memory(
-                                  _screenshotPreviewBytes!,
-                                  width: 48,
-                                  height: 28,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Скриншот сохранён',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Плавающая кнопка пропуска опенинга и эндинга + таймер обратного отсчета до эндинга (рендерится поверх контролов)
-                  _buildReactiveSkipOverlay(),
-
-                  if (state.isSyncRoom && state.roomCode != null)
-                    ..._buildSyncRoomReactionWidgets(state),
-
-                  if (_showOnboarding)
-                    Positioned.fill(
-                      child: PlayerOnboardingOverlay(
-                        key: _onboardingKey,
-                        onDismiss: _dismissOnboarding,
-                        onStepChanged: (step) {
-                          if (step == 3) {
-                            _cubit.showControls();
-                          }
-                        },
-                      ),
-                    ),
-
-                  // Ненавязчивая плавающая иконка замка при активной блокировке
-                  if (state.isScreenLocked)
-                    Positioned(
-                      left: 20,
-                      top: MediaQuery.paddingOf(context).top + 16,
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween<double>(begin: 0.9, end: 0.4),
-                        duration: const Duration(seconds: 3),
-                        builder: (context, opacity, child) {
-                          return Opacity(
-                            opacity: opacity,
-                            child: child,
                           );
                         },
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              HapticFeedback.mediumImpact();
-                              _cubit.toggleScreenLock();
-                            },
-                            borderRadius: BorderRadius.circular(24),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.25),
-                                  width: 1.2,
-                                ),
-                              ),
-                              child: const Icon(
-                                Icons.lock_outline_rounded,
-                                color: Colors.white,
-                                size: 22,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                      )
+                    : ListView.separated(
+                        key: const ValueKey('player_portrait_episodes_list'),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: episodes.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final ep = episodes[index];
+                          final isCurrent = ep.episode == currentEpNum;
+                          final thumbUrl = (ep.previewUrl != null &&
+                                  ep.previewUrl!.isNotEmpty)
+                              ? ep.previewUrl!
+                              : (state.title.posterMedium.isNotEmpty
+                                  ? state.title.posterMedium
+                                  : state.title.posterSmall);
 
-                  // Ошибка воспроизведения потока (рендерится ПОВЕРХ оверлея управления, чтобы кнопки всегда реагировали на нажатия)
-                  if (state.errorMessage != null)
-                    Material(
-                      color: Colors.black.withValues(alpha: 0.85),
-                      child: Center(
-                        child: NetworkStatusHelper.isConnectionError(state.errorMessage)
-                            ? PaiChanOfflineView(
-                                title: 'Ошибка загрузки видеопотока',
-                                subtitle: 'Нет подключения к сети для воспроизведения серии. Проверьте интернет или выберите скачанную серию.',
-                                onRetry: () => _cubit.switchEpisode(state.episode),
-                                onOpenSaved: () => context.push('/downloads'),
-                              )
-                            : Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                                margin: const EdgeInsets.all(24),
-                                constraints: const BoxConstraints(maxWidth: 420),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: AppColors.strokeMedium),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.6),
-                                      blurRadius: 24,
-                                    ),
-                                  ],
+                          return InkWell(
+                            key: ValueKey('portrait_ep_item_${ep.episode}'),
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              if (isGuestInSync) {
+                                _cubit.showGuestPlaybackLockedNotice();
+                                return;
+                              }
+                              HapticFeedback.lightImpact();
+                              _cubit.switchEpisode(ep);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isCurrent
+                                    ? primary.withValues(alpha: 0.14)
+                                    : const Color(0xFF131722),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isCurrent
+                                      ? primary.withValues(alpha: 0.85)
+                                      : Colors.white.withValues(alpha: 0.07),
+                                  width: isCurrent ? 1.3 : 1.0,
                                 ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.error_outline_rounded, color: AppColors.syncError, size: 44),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      state.errorMessage!,
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary),
+                              ),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 96,
+                                      height: 54,
+                                      color: const Color(0xFF0B0E14),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          if (thumbUrl.isNotEmpty)
+                                            CachedNetworkImage(
+                                              imageUrl: wrapCorsSafeUrl(thumbUrl),
+                                              fit: BoxFit.cover,
+                                              memCacheWidth: 220,
+                                              placeholder: (_, __) => const ColoredBox(
+                                                color: Color(0xFF171C28),
+                                              ),
+                                              errorWidget: (_, __, ___) =>
+                                                  _buildPortraitThumbFallback(),
+                                            )
+                                          else
+                                            _buildPortraitThumbFallback(),
+                                          if (isCurrent)
+                                            Container(
+                                              color: Colors.black.withValues(alpha: 0.45),
+                                              alignment: Alignment.center,
+                                              child: Container(
+                                                padding: const EdgeInsets.all(5),
+                                                decoration: BoxDecoration(
+                                                  color: primary,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: Icon(
+                                                  state.isPlaying
+                                                      ? Icons.equalizer_rounded
+                                                      : Icons.play_arrow_rounded,
+                                                  color: Colors.white,
+                                                  size: 15,
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            Positioned(
+                                              left: 5,
+                                              bottom: 4,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 5,
+                                                  vertical: 1.5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black.withValues(alpha: 0.72),
+                                                  borderRadius: BorderRadius.circular(5),
+                                                ),
+                                                child: Text(
+                                                  '#${ep.episode}',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                    const SizedBox(height: 18),
-                                    Wrap(
-                                      alignment: WrapAlignment.center,
-                                      spacing: 10,
-                                      runSpacing: 10,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Theme.of(context).colorScheme.primary,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        Text(
+                                          'Серия ${ep.episode}',
+                                          style: TextStyle(
+                                            color: isCurrent
+                                                ? primary
+                                                : AppColors.textPrimary,
+                                            fontWeight: isCurrent
+                                                ? FontWeight.w800
+                                                : FontWeight.w600,
+                                            fontSize: 13.5,
                                           ),
-                                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                                          label: const Text('Повторить'),
-                                          onPressed: () {
-                                            _cubit.switchEpisode(state.episode);
-                                          },
                                         ),
-                                        OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: AppColors.textPrimary,
-                                            side: const BorderSide(color: AppColors.strokeMedium),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          (ep.name != null && ep.name!.isNotEmpty)
+                                              ? ep.name!
+                                              : state.title.displayTitle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 11.5,
                                           ),
-                                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                                          label: const Text('Выйти'),
-                                          onPressed: _handleExit,
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Повернуть экран',
-                                          icon: const Icon(Icons.screen_rotation_rounded, color: AppColors.textSecondary, size: 22),
-                                          onPressed: _toggleScreenOrientation,
                                         ),
                                       ],
                                     ),
+                                  ),
+                                  if (isCurrent) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: primary,
+                                        borderRadius: BorderRadius.circular(7),
+                                      ),
+                                      child: const Text(
+                                        'СЕЙЧАС',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPortraitThumbFallback() {
+    return Container(
+      color: const Color(0xFF171C28),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.movie_creation_outlined,
+        color: AppColors.textMuted,
+        size: 20,
+      ),
+    );
+  }
+
+  Widget _buildPortraitDubbingSelector(
+    BuildContext context,
+    PlayerState state,
+    Color primary,
+  ) {
+    if (!getIt.isRegistered<KodikCubit>()) {
+      final activeName = state.currentTranslation?.studioName ?? 'AniLibria';
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: primary.withValues(alpha: 0.7)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mic_rounded, size: 14, color: primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      activeName,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            );
-          },
+            ],
+          ),
         ),
-      ),
-    ),
-  ),
-);
-}
+      );
+    }
+
+    final kodikCubit = getIt<KodikCubit>();
+    if (kodikCubit.state.translations.length <= 1 && !kodikCubit.state.isLoading) {
+      kodikCubit.loadVoiceovers(
+        shikimoriId: state.title.shikimoriId,
+        title: state.title.displayTitle,
+      );
+    }
+
+    return BlocBuilder<KodikCubit, KodikState>(
+      bloc: kodikCubit,
+      builder: (context, kodikState) {
+        final studios = kodikState.translations.isNotEmpty
+            ? kodikState.translations
+            : <KodikTranslation>[
+                KodikTranslation.anilibria(),
+                const KodikTranslation(
+                  id: 610,
+                  title: 'StudioBand',
+                  type: 'voice',
+                  episodesCount: 12,
+                ),
+                const KodikTranslation(
+                  id: 1978,
+                  title: 'Dream Cast',
+                  type: 'voice',
+                  episodesCount: 12,
+                ),
+                const KodikTranslation(
+                  id: 609,
+                  title: 'AniDUB',
+                  type: 'voice',
+                  episodesCount: 12,
+                ),
+                const KodikTranslation(
+                  id: 2148,
+                  title: 'Субтитры',
+                  type: 'subtitles',
+                  episodesCount: 12,
+                ),
+              ];
+
+        return SizedBox(
+          height: 34,
+          child: ListView.separated(
+            key: const ValueKey('player_portrait_dubbing_list'),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: studios.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final studio = studios[index];
+              final isSelected =
+                  kodikState.selectedTranslation.title.toLowerCase() ==
+                      studio.title.toLowerCase();
+              final isSub = studio.type == 'subtitles';
+
+              return InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _cubit.switchVoiceoverStudio(studio);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? primary
+                        : const Color(0xFF131722),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected
+                          ? primary
+                          : Colors.white.withValues(alpha: 0.09),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isSub ? Icons.subtitles_rounded : Icons.mic_rounded,
+                        size: 13.5,
+                        color: isSelected ? Colors.white : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        studio.title,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : AppColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
 
   void _showCenterOsd(String message) {
     _centerOsdTimer?.cancel();
@@ -1423,7 +2138,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   Future<void> _takeScreenshot() async {
     try {
-      final boundary = _videoWidgetKey.currentContext?.findRenderObject()
+      final boundary = _screenshotBoundaryKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
       if (boundary == null) {
         _showCenterOsd('Скриншот недоступен');
@@ -1655,10 +2370,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _dismissedEndingEpisode = null;
     }
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-    final bottomOffset = MediaQuery.paddingOf(context).bottom +
+    final bottomOffset = (isLandscape ? MediaQuery.paddingOf(context).bottom : 0.0) +
         (state.areControlsVisible && !state.isScreenLocked
-            ? (isLandscape ? 82.0 : 142.0)
-            : 28.0);
+            ? (isLandscape ? 82.0 : 56.0)
+            : (isLandscape ? 28.0 : 10.0));
     final primaryAccent = Theme.of(context).colorScheme.primary;
 
     // 1. Минималистичная кнопка пропуска опенинга в стиле Netflix (доступна даже при блокировке экрана)
@@ -1694,8 +2409,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
 
       return SafeArea(
+        top: isLandscape,
+        bottom: isLandscape,
+        left: isLandscape,
+        right: isLandscape,
         child: Align(
-          alignment: Alignment(skipCfg.nx * 2.0 - 1.0, skipCfg.ny * 2.0 - 1.0),
+          alignment: isLandscape
+              ? Alignment(skipCfg.nx * 2.0 - 1.0, skipCfg.ny * 2.0 - 1.0)
+              : const Alignment(0.92, 0.42),
           child: Transform.scale(
             scale: skipCfg.scale,
             child: Material(

@@ -346,54 +346,43 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             onDoubleTapDown: state.isHudEditMode
                 ? null
                 : (details) {
-                    final screenWidth = MediaQuery.of(context).size.width;
-                    final dx = details.globalPosition.dx;
+                    final box = context.findRenderObject() as RenderBox?;
+                    final localDx = box != null
+                        ? box.globalToLocal(details.globalPosition).dx
+                        : details.localPosition.dx;
+                    final boxWidth = (box != null && box.hasSize && box.size.width > 0)
+                        ? box.size.width
+                        : MediaQuery.of(context).size.width;
                     final step = settingsState.seekStepSeconds;
-                    if (dx < screenWidth * 0.38) {
+                    if (localDx < boxWidth * 0.38) {
                       cubit.seekRelative(-step);
-                    } else if (dx > screenWidth * 0.62) {
+                    } else if (localDx > boxWidth * 0.62) {
                       cubit.seekRelative(step);
                     } else {
                       cubit.togglePlayPause();
                     }
                   },
             onDoubleTap: state.isHudEditMode ? null : () {},
-            onVerticalDragUpdate: state.isHudEditMode
-                ? null
-                : (details) {
-                    final deltaPx = details.primaryDelta;
-                    if (deltaPx == null) return;
-                    final screenWidth = MediaQuery.of(context).size.width;
-                    final isLeft = details.globalPosition.dx < (screenWidth / 2);
-                    final screenHeight = MediaQuery.of(context).size.height;
-                    final delta = (-deltaPx / (screenHeight * 0.65)) *
-                        settingsState.gestureSwipeSensitivity;
-                    if (isLeft) {
-                      cubit.setBrightness(
-                        (state.brightness + delta).clamp(0.05, 1.0),
-                      );
-                    } else {
-                      cubit.setVolume(
-                        (state.volume + (delta * 100.0)).clamp(0.0, 100.0),
-                      );
-                    }
-                  },
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.22, 0.65, 0.88, 1.0],
+                  stops: const [0.0, 0.24, 0.62, 0.86, 1.0],
                   colors: [
-                    Colors.black.withValues(alpha: isLandscape ? 0.70 : 0.80),
-                    Colors.black.withValues(alpha: 0.35),
+                    Colors.black.withValues(alpha: isLandscape ? 0.70 : 0.76),
+                    Colors.black.withValues(alpha: 0.30),
                     Colors.transparent,
-                    Colors.black.withValues(alpha: isLandscape ? 0.72 : 0.82),
-                    Colors.black.withValues(alpha: isLandscape ? 0.90 : 0.95),
+                    Colors.black.withValues(alpha: isLandscape ? 0.72 : 0.76),
+                    Colors.black.withValues(alpha: isLandscape ? 0.90 : 0.92),
                   ],
                 ),
               ),
               child: SafeArea(
+                top: isLandscape,
+                bottom: isLandscape,
+                left: isLandscape,
+                right: isLandscape,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final canvasSize = Size(
@@ -787,6 +776,9 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     required bool hasPrevEpisode,
     required bool hasNextEpisode,
   }) {
+    final title = state.title;
+    final ep = state.episode;
+
     Widget? control(String id) {
       if (!settingsState.hudConfigFor(id).visible) return null;
       return _buildSingle2DControl(
@@ -808,58 +800,191 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
     final seekBack = control('seek_back');
     final playPause = control('play_pause');
     final seekForward = control('seek_forward');
+    final fullscreenBtn = control('fullscreen');
 
     return Column(
       key: const ValueKey('player_portrait_docked_layout'),
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildTopHeaderBar(context, isLandscape: false),
-        if (topRightControls.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (int i = 0; i < topRightControls.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      topRightControls[i],
-                    ],
-                  ],
+        // 1. КОМПАКТНЫЙ ВЕРХНИЙ РЯД ВНУТРИ 16:9: <, название, lock, 1.0x, 720p, PiP, gear
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 6, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: AppColors.textPrimary,
+                ),
+                iconSize: 17,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                visualDensity: VisualDensity.compact,
+                onPressed: onBack,
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text(
+                  title.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.titleSmall.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (state.isSyncRoom) ...[
+                        Container(
+                          key: const ValueKey('player_overlay_role_pill'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: state.isHost
+                                ? AppColors.primary.withValues(alpha: 0.22)
+                                : Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: state.isHost
+                                  ? AppColors.primaryLight.withValues(alpha: 0.7)
+                                  : Colors.white.withValues(alpha: 0.22),
+                            ),
+                          ),
+                          child: Text(
+                            state.isHost ? 'Хост комнаты' : 'Участник',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: state.isHost
+                                  ? AppColors.primaryLight
+                                  : Colors.white70,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      for (int i = 0; i < topRightControls.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 4),
+                        topRightControls[i],
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+        ),
+
+        // 2. ЦЕНТРАЛЬНЫЙ РЯД ТРАНСПОРТА: -10s, play/pause, +10s
         Expanded(
           child: Center(
             child: isGuestInSync
                 ? _buildGuestPauseButton(context)
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       if (seekBack != null) seekBack,
                       if (seekBack != null && playPause != null)
-                        const SizedBox(width: 36),
+                        const SizedBox(width: 24),
                       if (playPause != null) playPause,
                       if (playPause != null && seekForward != null)
-                        const SizedBox(width: 36),
+                        const SizedBox(width: 24),
                       if (seekForward != null) seekForward,
                     ],
                   ),
           ),
         ),
-        _buildBottomBar(
-          context,
-          isLandscape: false,
-          isShort: isShort,
-          isGuestInSync: isGuestInSync,
-          settingsState: settingsState,
-          allEpisodes: allEpisodes,
-          currentIndex: currentIndex,
-          hasPrevEpisode: hasPrevEpisode,
-          hasNextEpisode: hasNextEpisode,
+
+        // 3. НИЖНИЙ РЯД ВНУТРИ 16:9: прогресс-бар + кнопка полного экрана
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 6, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (state.isSyncRoom && ep.opening != null)
+                BlocSelector<PlayerCubit, PlayerState, ({int sec, int votes, bool voted})>(
+                  bloc: cubit,
+                  selector: (s) => (
+                    sec: s.position.inSeconds,
+                    votes: s.coopSkipVotes,
+                    voted: s.hasVotedCoopSkip,
+                  ),
+                  builder: (context, coop) {
+                    if (coop.sec < ep.opening!.start || coop.sec >= ep.opening!.stop) {
+                      return const SizedBox.shrink();
+                    }
+                    return Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: coop.voted ? AppColors.syncActive : AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.fast_forward_rounded, size: 14),
+                          label: Text(
+                            coop.votes > 0
+                                ? 'Скип (${coop.votes}/2)'
+                                : 'Пропустить (${coop.votes}/2)',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+                          ),
+                          onPressed: () => cubit.voteCoopSkip(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: BlocSelector<PlayerCubit, PlayerState, ({Duration pos, Duration dur, Duration buf, bool isBuf})>(
+                      bloc: cubit,
+                      selector: (s) => (
+                        pos: s.position,
+                        dur: s.duration,
+                        buf: s.buffer,
+                        isBuf: s.isBuffering,
+                      ),
+                      builder: (context, timing) => PlayerProgressBar(
+                        position: timing.pos,
+                        duration: timing.dur,
+                        buffer: timing.buf,
+                        heatmap: cubit.state.heatmap,
+                        opening: cubit.state.effectiveOpening,
+                        ending: cubit.state.effectiveEnding,
+                        isBuffering: timing.isBuf,
+                        onSeek: (pos) => cubit.seek(pos),
+                        isLocked: isGuestInSync,
+                        onLockedTap: () => cubit.showGuestPlaybackLockedNotice(),
+                      ),
+                    ),
+                  ),
+                  if (fullscreenBtn != null) ...[
+                    const SizedBox(width: 6),
+                    fullscreenBtn,
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1021,17 +1146,17 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             customBorder: const CircleBorder(),
             onTap: () => cubit.playOrPause(),
             child: Padding(
-              padding: EdgeInsets.all(isLandscape ? 12 : AppDimensions.spacingLg),
+              padding: EdgeInsets.all(isLandscape ? 12 : 9),
               child: SizedBox(
-                width: isLandscape ? 32 : 44,
-                height: isLandscape ? 32 : 44,
+                width: isLandscape ? 32 : 28,
+                height: isLandscape ? 32 : 28,
                 child: Center(
                   child: state.isBuffering
                       ? SizedBox(
-                          width: isLandscape ? 24 : 30,
-                          height: isLandscape ? 24 : 30,
+                          width: isLandscape ? 24 : 20,
+                          height: isLandscape ? 24 : 20,
                           child: const CircularProgressIndicator(
-                            strokeWidth: 2.6,
+                            strokeWidth: 2.4,
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
@@ -1039,7 +1164,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           state.isPlaying
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
-                          size: isLandscape ? 32 : 44,
+                          size: isLandscape ? 32 : 28,
                           color: AppColors.textPrimary,
                         ),
                 ),
@@ -1057,7 +1182,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
           child: IconButton(
             key: const ValueKey('hud_center_seek_back'),
             tooltip: 'Назад $seekStepSeconds сек',
-            iconSize: isLandscape ? 32 : 38,
+            iconSize: isLandscape ? 32 : 25,
+            padding: EdgeInsets.all(isLandscape ? 8 : 6),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 44 : 38,
+              minHeight: isLandscape ? 44 : 38,
+            ),
             icon: seekStepSeconds == 15
                 ? Stack(
                     alignment: Alignment.center,
@@ -1065,7 +1195,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       Icon(
                         Icons.replay_rounded,
                         color: Colors.white,
-                        size: isLandscape ? 32 : 38,
+                        size: isLandscape ? 32 : 25,
                       ),
                       const Padding(
                         padding: EdgeInsets.only(top: 3),
@@ -1073,7 +1203,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           '15',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 9,
+                            fontSize: 8.5,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -1094,7 +1224,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
           child: IconButton(
             key: const ValueKey('hud_center_seek_forward'),
             tooltip: 'Вперёд $seekStepSeconds сек',
-            iconSize: isLandscape ? 32 : 38,
+            iconSize: isLandscape ? 32 : 25,
+            padding: EdgeInsets.all(isLandscape ? 8 : 6),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 44 : 38,
+              minHeight: isLandscape ? 44 : 38,
+            ),
             icon: seekStepSeconds == 15
                 ? Stack(
                     alignment: Alignment.center,
@@ -1102,14 +1237,14 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       Icon(
                         Icons.forward_5_rounded,
                         color: Colors.transparent,
-                        size: isLandscape ? 32 : 38,
+                        size: isLandscape ? 32 : 25,
                       ),
                       Transform.flip(
                         flipX: true,
                         child: Icon(
                           Icons.replay_rounded,
                           color: Colors.white,
-                          size: isLandscape ? 32 : 38,
+                          size: isLandscape ? 32 : 25,
                         ),
                       ),
                       const Padding(
@@ -1118,7 +1253,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           '15',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 9,
+                            fontSize: 8.5,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -1226,7 +1361,10 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
           onTap: () => _showQuickSpeedSheet(context),
           borderRadius: AppDimensions.borderRadiusSmall,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            padding: EdgeInsets.symmetric(
+              horizontal: isLandscape ? 9 : 7,
+              vertical: isLandscape ? 5 : 4,
+            ),
             decoration: BoxDecoration(
               color: AppColors.surfaceElevated.withValues(alpha: 0.90),
               borderRadius: AppDimensions.borderRadiusSmall,
@@ -1236,7 +1374,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
               '${state.playbackRate}x',
               style: AppTypography.badge.copyWith(
                 color: AppColors.textPrimary,
-                fontSize: 11.5,
+                fontSize: isLandscape ? 11.5 : 10.5,
               ),
             ),
           ),
@@ -1248,7 +1386,10 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
           onTap: () => _showQuickQualitySheet(context),
           borderRadius: AppDimensions.borderRadiusSmall,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            padding: EdgeInsets.symmetric(
+              horizontal: isLandscape ? 9 : 7,
+              vertical: isLandscape ? 5 : 4,
+            ),
             decoration: BoxDecoration(
               color: AppColors.surfaceElevated.withValues(alpha: 0.90),
               borderRadius: AppDimensions.borderRadiusSmall,
@@ -1262,7 +1403,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                       : '480p',
               style: AppTypography.badge.copyWith(
                 color: AppColors.textPrimary,
-                fontSize: 11.5,
+                fontSize: isLandscape ? 11.5 : 10.5,
               ),
             ),
           ),
@@ -1281,7 +1422,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
               Icons.lock_outline_rounded,
               color: AppColors.textPrimary,
             ),
-            iconSize: isLandscape ? 19 : 21,
+            iconSize: isLandscape ? 19 : 16,
+            padding: EdgeInsets.all(isLandscape ? 8 : 5),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 36 : 30,
+              minHeight: isLandscape ? 36 : 30,
+            ),
             visualDensity: VisualDensity.compact,
             onPressed: () {
               HapticFeedback.lightImpact();
@@ -1307,7 +1453,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                   ? Icons.fullscreen_exit_rounded
                   : Icons.fullscreen_rounded,
               color: AppColors.textPrimary,
-              size: 22,
+              size: isLandscape ? 22 : 20,
+            ),
+            padding: EdgeInsets.all(isLandscape ? 8 : 5),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 36 : 32,
+              minHeight: isLandscape ? 36 : 32,
             ),
             visualDensity: VisualDensity.compact,
             onPressed: onToggleOrientation ?? () {},
@@ -1330,7 +1481,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
               Icons.picture_in_picture_alt_rounded,
               color: AppColors.textPrimary,
             ),
-            iconSize: isLandscape ? 18 : 20,
+            iconSize: isLandscape ? 18 : 16,
+            padding: EdgeInsets.all(isLandscape ? 8 : 5),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 36 : 30,
+              minHeight: isLandscape ? 36 : 30,
+            ),
             visualDensity: VisualDensity.compact,
             onPressed: widget.onEnterPip ?? onMinimize ?? () {},
           ),
@@ -1348,7 +1504,12 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             icon: Icon(
               Icons.settings_outlined,
               color: AppColors.textPrimary,
-              size: isLandscape ? 19 : 20,
+              size: isLandscape ? 19 : 17,
+            ),
+            padding: EdgeInsets.all(isLandscape ? 8 : 5),
+            constraints: BoxConstraints(
+              minWidth: isLandscape ? 36 : 30,
+              minHeight: isLandscape ? 36 : 30,
             ),
             visualDensity: VisualDensity.compact,
             onPressed: () => PlayerSettingsSheet.show(

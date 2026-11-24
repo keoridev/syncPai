@@ -261,5 +261,135 @@ void main() {
       await cubit.close();
       await tester.pump(const Duration(seconds: 3));
     });
+
+    test(
+        'PlayerScreen configures VideoController with androidAttachSurfaceAfterVideoParameters: false',
+        () {
+      expect(
+        PlayerScreen.defaultVideoControllerConfig.enableHardwareAcceleration,
+        isTrue,
+      );
+      expect(
+        PlayerScreen
+            .defaultVideoControllerConfig.androidAttachSurfaceAfterVideoParameters,
+        isFalse,
+      );
+    });
+
+    testWidgets(
+        'Portrait mode renders 16:9 top video box + #0B0E14 companion episode list, and preserves Video GlobalKey across orientation switches',
+        (tester) async {
+      final fakePlayer = _RebuildFakePlayer();
+      final title = _rebuildTitle();
+      final cubit = PlayerCubit(
+        title: title,
+        episode: title.episodes.first,
+        existingPlayer: fakePlayer,
+        userIdOverride: 'u_orient',
+      );
+      final fakeVc = _FakeVideoController(fakePlayer);
+
+      GlobalMiniPlayerService.instance.minimize(
+        cubit: cubit,
+        videoController: fakeVc,
+        onSaveProgress: () {},
+      );
+
+      // 1. Open in Portrait (390x844)
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PlayerScreen(
+            title: title,
+            initialEpisode: title.episodes.first,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final boxFinder = find.byKey(const ValueKey('player_portrait_16_9_box'));
+      final overlayFinder =
+          find.byKey(const ValueKey('player_portrait_docked_layout'));
+      final companionFinder =
+          find.byKey(const ValueKey('player_portrait_companion_panel'));
+      final videoFinder = find.byType(Video);
+
+      expect(boxFinder, findsOneWidget);
+      expect(overlayFinder, findsOneWidget);
+      expect(companionFinder, findsOneWidget);
+      expect(find.text('Список серий'), findsOneWidget);
+      expect(find.text('Серия 1'), findsWidgets);
+      expect(find.text('Серия 2'), findsOneWidget);
+      expect(videoFinder, findsOneWidget);
+
+      final boxRect = tester.getRect(boxFinder);
+      final overlayRect = tester.getRect(overlayFinder);
+      final companionRect = tester.getRect(companionFinder);
+      expect(boxRect.width / boxRect.height, closeTo(16 / 9, 0.02));
+      expect(overlayRect.top, greaterThanOrEqualTo(boxRect.top - 0.5));
+      expect(overlayRect.bottom, lessThanOrEqualTo(boxRect.bottom + 0.5));
+      expect(companionRect.top, closeTo(boxRect.bottom, 1.0));
+
+      final portraitVideoWidget = tester.widget<Video>(videoFinder);
+      final portraitVideoKey = portraitVideoWidget.key;
+      final portraitVideoState = tester.state(videoFinder);
+      expect(portraitVideoKey, isA<GlobalKey>());
+
+      // Tap episode 2 in portrait companion list -> switches active episode
+      await tester.tap(find.byKey(const ValueKey('portrait_ep_item_2')));
+      await tester.pump();
+      expect(cubit.state.episode.episode, 2);
+
+      // Toggle companion episodes view to Grid mode and back to List mode
+      await tester.tap(
+        find.byKey(const ValueKey('player_portrait_episodes_mode_toggle')),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('player_portrait_episodes_grid')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('player_portrait_episodes_mode_toggle')),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('player_portrait_episodes_list')),
+        findsOneWidget,
+      );
+
+      // 2. Rotate to Landscape (844x390) -> fullscreen immersive, same Video State & GlobalKey
+      tester.view.physicalSize = const Size(844, 390);
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('player_portrait_16_9_box')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('player_portrait_companion_panel')),
+        findsNothing,
+      );
+      expect(videoFinder, findsOneWidget);
+      expect(tester.widget<Video>(videoFinder).key, same(portraitVideoKey));
+      expect(tester.state(videoFinder), same(portraitVideoState));
+
+      // 3. Rotate back to Portrait (390x844) -> 16:9 + companion restored, same Video State & GlobalKey
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('player_portrait_16_9_box')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player_portrait_companion_panel')),
+        findsOneWidget,
+      );
+      expect(tester.widget<Video>(videoFinder).key, same(portraitVideoKey));
+      expect(tester.state(videoFinder), same(portraitVideoState));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await cubit.close();
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 }

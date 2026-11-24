@@ -261,193 +261,202 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final height = size.height;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fallbackHeight = MediaQuery.sizeOf(context).height;
+        final height = (constraints.maxHeight.isFinite && constraints.maxHeight > 0)
+            ? constraints.maxHeight
+            : fallbackHeight;
+        final sliderHeight = (height * 0.64).clamp(96.0, 220.0);
 
-    // Вычисляем дельту покадровой перемотки
-    final scrubDeltaSec = _scrubTargetPosition.inSeconds - _scrubStartPosition.inSeconds;
-    final scrubSign = scrubDeltaSec >= 0 ? '+' : '';
-    final deltaStr = '$scrubSign$scrubDeltaSec с';
-    final inOpening = _isInsideOpening(_scrubTargetPosition);
-    final inEnding = _isInsideEnding(_scrubTargetPosition);
+        // Вычисляем дельту покадровой перемотки
+        final scrubDeltaSec = _scrubTargetPosition.inSeconds - _scrubStartPosition.inSeconds;
+        final scrubSign = scrubDeltaSec >= 0 ? '+' : '';
+        final deltaStr = '$scrubSign$scrubDeltaSec с';
+        final inOpening = _isInsideOpening(_scrubTargetPosition);
+        final inEnding = _isInsideEnding(_scrubTargetPosition);
 
-    return Stack(
-      children: [
-        // 1. Аппаратное / визуальное плавное затемнение при регулировке яркости
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 70),
-              color: Colors.black.withValues(alpha: ((1.0 - _brightness) * 0.85).clamp(0.0, 0.85)),
+        return Stack(
+          children: [
+            // 1. Аппаратное / визуальное плавное затемнение при регулировке яркости
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 70),
+                  color: Colors.black.withValues(alpha: ((1.0 - _brightness) * 0.85).clamp(0.0, 0.85)),
+                ),
+              ),
             ),
-          ),
-        ),
 
-        // 2. Единая 3-зонная система жестового управления (Лево: Яркость / -10с, Центр: Пауза / Скраб, Право: Звук / +10с)
-        Positioned.fill(
-          child: Row(
-            children: [
-              // ЛЕВАЯ ЗОНА: Регулировка яркости (вертикально), перемотка назад -10с (двойной тап), скраб (горизонтально)
-              Expanded(
-                flex: 7,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    if (widget.isScreenLocked) {
-                      widget.onScreenLockedTap?.call();
-                    } else {
-                      widget.onTap();
-                    }
-                  },
-                  onDoubleTap: () => _triggerSeek(-widget.seekStepSeconds, true),
-                  onLongPressStart: _handleLongPressStart,
-                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
-                  onLongPressEnd: (_) => _handleLongPressEnd(),
-                  onLongPressCancel: _handleLongPressEnd,
-                  onVerticalDragStart: (_) {
-                    _hudDismissTimer?.cancel();
-                    setState(() => _activeGesture = _GestureType.brightness);
-                  },
-                  onVerticalDragUpdate: (details) {
-                    if (_activeGesture == _GestureType.brightness) {
-                      final delta = (-details.primaryDelta! / (height * 0.65)) *
-                          widget.swipeSensitivity;
-                      final newB = (_brightness + delta).clamp(0.05, 1.0);
-                      setState(() => _brightness = newB);
-                      widget.onBrightnessChanged?.call(newB);
-                    }
-                  },
-                  onVerticalDragEnd: (_) => _startHudDismiss(),
-                  onHorizontalDragStart: (_) => _onHorizontalStart(),
-                  onHorizontalDragUpdate: _onHorizontalUpdate,
-                  onHorizontalDragEnd: (_) => _onHorizontalEnd(),
-                ),
-              ),
-
-              // ЦЕНТРАЛЬНАЯ ЗОНА: Пауза / Play (двойной тап), скраб (горизонтально), тап (меню)
-              Expanded(
-                flex: 6,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    if (widget.isScreenLocked) {
-                      widget.onScreenLockedTap?.call();
-                    } else {
-                      widget.onTap();
-                    }
-                  },
-                  onDoubleTap: _triggerCenterDoubleTap,
-                  onLongPressStart: _handleLongPressStart,
-                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
-                  onLongPressEnd: (_) => _handleLongPressEnd(),
-                  onLongPressCancel: _handleLongPressEnd,
-                  onHorizontalDragStart: (_) => _onHorizontalStart(),
-                  onHorizontalDragUpdate: _onHorizontalUpdate,
-                  onHorizontalDragEnd: (_) => _onHorizontalEnd(),
-                ),
-              ),
-
-              // ПРАВАЯ ЗОНА: Регулировка звука (вертикально), перемотка вперед +10с (двойной тап), скраб (горизонтально)
-              Expanded(
-                flex: 7,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    if (widget.isScreenLocked) {
-                      widget.onScreenLockedTap?.call();
-                    } else {
-                      widget.onTap();
-                    }
-                  },
-                  onDoubleTap: () => _triggerSeek(widget.seekStepSeconds, false),
-                  onLongPressStart: _handleLongPressStart,
-                  onLongPressMoveUpdate: _handleLongPressMoveUpdate,
-                  onLongPressEnd: (_) => _handleLongPressEnd(),
-                  onLongPressCancel: _handleLongPressEnd,
-                  onVerticalDragStart: (_) {
-                    _hudDismissTimer?.cancel();
-                    setState(() => _activeGesture = _GestureType.volume);
-                  },
-                  onVerticalDragUpdate: (details) {
-                    if (_activeGesture == _GestureType.volume) {
-                      final delta =
-                          (-details.primaryDelta! / (height * 0.65)) *
-                              100.0 *
+            // 2. Единая 3-зонная система жестового управления (Лево: Яркость / -10с, Центр: Пауза / Скраб, Право: Звук / +10с)
+            Positioned.fill(
+              child: Row(
+                children: [
+                  // ЛЕВАЯ ЗОНА: Регулировка яркости (вертикально), перемотка назад -10с (двойной тап), скраб (горизонтально)
+                  Expanded(
+                    flex: 7,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (widget.isScreenLocked) {
+                          widget.onScreenLockedTap?.call();
+                        } else {
+                          widget.onTap();
+                        }
+                      },
+                      onDoubleTap: () => _triggerSeek(-widget.seekStepSeconds, true),
+                      onLongPressStart: _handleLongPressStart,
+                      onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                      onLongPressEnd: (_) => _handleLongPressEnd(),
+                      onLongPressCancel: _handleLongPressEnd,
+                      onVerticalDragStart: (_) {
+                        _hudDismissTimer?.cancel();
+                        setState(() => _activeGesture = _GestureType.brightness);
+                      },
+                      onVerticalDragUpdate: (details) {
+                        if (_activeGesture == _GestureType.brightness) {
+                          final delta = (-details.primaryDelta! / (height * 0.65)) *
                               widget.swipeSensitivity;
-                      final newV = (_volume + delta).clamp(0.0, 100.0);
-                      setState(() => _volume = newV);
-                      widget.onVolumeChanged?.call(newV);
-                    }
-                  },
-                  onVerticalDragEnd: (_) => _startHudDismiss(),
-                  onHorizontalDragStart: (_) => _onHorizontalStart(),
-                  onHorizontalDragUpdate: _onHorizontalUpdate,
-                  onHorizontalDragEnd: (_) => _onHorizontalEnd(),
-                ),
-              ),
-            ],
-          ),
-        ),
+                          final newB = (_brightness + delta).clamp(0.05, 1.0);
+                          setState(() => _brightness = newB);
+                          widget.onBrightnessChanged?.call(newB);
+                        }
+                      },
+                      onVerticalDragEnd: (_) => _startHudDismiss(),
+                      onHorizontalDragStart: (_) => _onHorizontalStart(),
+                      onHorizontalDragUpdate: _onHorizontalUpdate,
+                      onHorizontalDragEnd: (_) => _onHorizontalEnd(),
+                    ),
+                  ),
 
-        // 3. Стеклянный индикатор ЯРКОСТИ слева (с иконкой-солнцем)
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: _activeGesture == _GestureType.brightness ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 180),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 32),
-                child: SizedBox(
-                  height: height * 0.45,
-                  child: _buildVerticalSliderHud(
-                    icon: _brightness > 0.6 ? Icons.wb_sunny_rounded : Icons.brightness_medium_rounded,
-                    value: _brightness,
-                    label: '${(_brightness * 100).round()}%',
-                    isSun: true,
+                  // ЦЕНТРАЛЬНАЯ ЗОНА: Пауза / Play (двойной тап), скраб (горизонтально), тап (меню)
+                  Expanded(
+                    flex: 6,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (widget.isScreenLocked) {
+                          widget.onScreenLockedTap?.call();
+                        } else {
+                          widget.onTap();
+                        }
+                      },
+                      onDoubleTap: _triggerCenterDoubleTap,
+                      onLongPressStart: _handleLongPressStart,
+                      onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                      onLongPressEnd: (_) => _handleLongPressEnd(),
+                      onLongPressCancel: _handleLongPressEnd,
+                      onHorizontalDragStart: (_) => _onHorizontalStart(),
+                      onHorizontalDragUpdate: _onHorizontalUpdate,
+                      onHorizontalDragEnd: (_) => _onHorizontalEnd(),
+                    ),
+                  ),
+
+                  // ПРАВАЯ ЗОНА: Регулировка звука (вертикально), перемотка вперед +10с (двойной тап), скраб (горизонтально)
+                  Expanded(
+                    flex: 7,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (widget.isScreenLocked) {
+                          widget.onScreenLockedTap?.call();
+                        } else {
+                          widget.onTap();
+                        }
+                      },
+                      onDoubleTap: () => _triggerSeek(widget.seekStepSeconds, false),
+                      onLongPressStart: _handleLongPressStart,
+                      onLongPressMoveUpdate: _handleLongPressMoveUpdate,
+                      onLongPressEnd: (_) => _handleLongPressEnd(),
+                      onLongPressCancel: _handleLongPressEnd,
+                      onVerticalDragStart: (_) {
+                        _hudDismissTimer?.cancel();
+                        setState(() => _activeGesture = _GestureType.volume);
+                      },
+                      onVerticalDragUpdate: (details) {
+                        if (_activeGesture == _GestureType.volume) {
+                          final delta =
+                              (-details.primaryDelta! / (height * 0.65)) *
+                                  100.0 *
+                                  widget.swipeSensitivity;
+                          final newV = (_volume + delta).clamp(0.0, 100.0);
+                          setState(() => _volume = newV);
+                          widget.onVolumeChanged?.call(newV);
+                        }
+                      },
+                      onVerticalDragEnd: (_) => _startHudDismiss(),
+                      onHorizontalDragStart: (_) => _onHorizontalStart(),
+                      onHorizontalDragUpdate: _onHorizontalUpdate,
+                      onHorizontalDragEnd: (_) => _onHorizontalEnd(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 3. Стеклянный индикатор ЯРКОСТИ слева (с иконкой-солнцем)
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _activeGesture == _GestureType.brightness ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 180),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 20),
+                    child: SizedBox(
+                      height: sliderHeight,
+                      child: _buildVerticalSliderHud(
+                        icon: _brightness > 0.6 ? Icons.wb_sunny_rounded : Icons.brightness_medium_rounded,
+                        value: _brightness,
+                        label: '${(_brightness * 100).round()}%',
+                        isSun: true,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
 
-        // 4. Стеклянный индикатор ГРОМКОСТИ справа (с иконкой-динамиком)
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: _activeGesture == _GestureType.volume ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 180),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 32),
-                child: SizedBox(
-                  height: height * 0.45,
-                  child: _buildVerticalSliderHud(
-                    icon: _volume <= 0
-                        ? Icons.volume_mute_rounded
-                        : _volume < 50
-                            ? Icons.volume_down_rounded
-                            : Icons.volume_up_rounded,
-                    value: _volume / 100.0,
-                    label: '${_volume.round()}%',
-                    isSun: false,
+            // 4. Стеклянный индикатор ГРОМКОСТИ справа (с иконкой-динамиком)
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _activeGesture == _GestureType.volume ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 180),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 20),
+                    child: SizedBox(
+                      height: sliderHeight,
+                      child: _buildVerticalSliderHud(
+                        icon: _volume <= 0
+                            ? Icons.volume_mute_rounded
+                            : _volume < 50
+                                ? Icons.volume_down_rounded
+                                : Icons.volume_up_rounded,
+                        value: _volume / 100.0,
+                        label: '${_volume.round()}%',
+                        isSun: false,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
 
-        // 5. Стеклянная плашка ПОКАДРОВОЙ ПЕРЕМОТКИ по центру (YouTube/Netflix style с миниатюрой и таймкодами)
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: _activeGesture == _GestureType.scrub ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 160),
-            child: Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: BackdropFilter(
+            // 5. Стеклянная плашка ПОКАДРОВОЙ ПЕРЕМОТКИ по центру (YouTube/Netflix style с миниатюрой и таймкодами)
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _activeGesture == _GestureType.scrub ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 160),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -586,6 +595,8 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                           ),
                         ),
                       ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -668,12 +679,14 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                 child: const Icon(
                   Icons.play_arrow_rounded,
                   color: Colors.white,
-                  size: 46,
+                  size: 40,
                 ),
               ),
             ),
           ),
       ],
+    );
+      },
     );
   }
 

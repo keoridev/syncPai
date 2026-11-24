@@ -46,6 +46,9 @@ class CatalogLoaded extends CatalogState {
   final int currentPage;
   final bool hasMore;
   final bool isLoadingMore;
+  final String activeFilterKey;
+  final bool isRefreshing;
+  final bool isLoadingNextPage;
 
   const CatalogLoaded({
     required this.titles,
@@ -62,6 +65,9 @@ class CatalogLoaded extends CatalogState {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.activeFilterKey = '',
+    this.isRefreshing = false,
+    this.isLoadingNextPage = false,
   });
 
   /// Геттер для обратной совместимости с существующим кодом
@@ -87,6 +93,9 @@ class CatalogLoaded extends CatalogState {
     int? currentPage,
     bool? hasMore,
     bool? isLoadingMore,
+    String? activeFilterKey,
+    bool? isRefreshing,
+    bool? isLoadingNextPage,
   }) {
     Set<String> nextGenres;
     if (clearGenre) {
@@ -114,6 +123,9 @@ class CatalogLoaded extends CatalogState {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      activeFilterKey: activeFilterKey ?? this.activeFilterKey,
+      isRefreshing: isRefreshing ?? this.isRefreshing,
+      isLoadingNextPage: isLoadingNextPage ?? this.isLoadingNextPage,
     );
   }
 
@@ -133,6 +145,9 @@ class CatalogLoaded extends CatalogState {
         currentPage,
         hasMore,
         isLoadingMore,
+        activeFilterKey,
+        isRefreshing,
+        isLoadingNextPage,
       ];
 }
 

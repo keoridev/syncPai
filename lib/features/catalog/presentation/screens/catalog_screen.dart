@@ -68,6 +68,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     (id: 'released', label: 'Завершённые'),
     (id: 'movies', label: 'Фильмы'),
     (id: 'anons', label: 'Анонсы'),
+    (id: 'schedule', label: 'Расписание'),
     (id: 'for_you', label: 'Для тебя'),
   ];
 
@@ -76,6 +77,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
       return 'for_you';
     }
     if (state is! CatalogLoaded) return 'all';
+    if (state.activeFilterKey.startsWith('announced|')) return 'anons';
+    if (state.activeFilterKey.startsWith('schedule|')) return 'schedule';
     if (state.selectedGenres.isNotEmpty) return null;
     if (state.typeFilter == 'MOVIE' && state.statusFilter == null) {
       return 'movies';

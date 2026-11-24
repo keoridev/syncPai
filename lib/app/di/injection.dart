@@ -16,6 +16,9 @@ import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
 import '../../features/catalog/data/datasources/anilibria_remote_datasource.dart';
 import '../../features/catalog/data/datasources/anime_remote_datasource.dart';
+import '../../features/catalog/data/datasources/catalog_references_datasource.dart';
+import '../../features/catalog/data/datasources/shikimori_announced_datasource.dart';
+import '../../features/catalog/data/services/references_store.dart';
 import '../../features/catalog/data/repositories/anime_catalog_repository_impl.dart';
 import '../../features/catalog/data/repositories/catalog_repository_impl.dart';
 import '../../features/catalog/domain/repositories/anime_catalog_repository.dart';
@@ -162,6 +165,13 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<DioClient>(() => DioClient());
 
   // Features: AniLiberty Anime Catalog & Player Data Layer (Direct Dio)
+  getIt.registerLazySingleton<CatalogReferencesDataSource>(
+    () => CatalogReferencesDataSourceImpl(getIt<DioClient>().dio),
+  );
+  getIt.registerSingleton<ReferencesStore>(ReferencesStore.instance);
+  getIt.registerLazySingleton<ShikimoriAnnouncedDataSource>(
+    () => ShikimoriAnnouncedDataSourceImpl(getIt<DioClient>().dio),
+  );
   getIt.registerLazySingleton<AnimeRemoteDataSource>(
     () => AniLibertyAnimeRemoteDataSourceImpl(customDio: getIt<DioClient>().dio),
   );
@@ -208,6 +218,7 @@ Future<void> configureDependencies() async {
       prefs: getIt<SharedPreferences>(),
       getCatalogUseCase: getIt<GetCatalogUseCase>(),
       searchCatalogUseCase: getIt<SearchCatalogUseCase>(),
+      shikimoriAnnouncedDataSource: getIt<ShikimoriAnnouncedDataSource>(),
     ),
   );
   // Features: Settings Cubit

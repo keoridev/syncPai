@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../domain/entities/catalog_filter.dart';
+import '../../domain/entities/catalog_filter_query.dart';
 import '../../domain/entities/episode_item.dart';
 import '../models/anime_catalog_model.dart';
 import '../models/anime_player_data_model.dart';
@@ -50,6 +52,19 @@ abstract class AnimeRemoteDataSource {
   /// Загрузка и кэширование справочника жанров AniLibria (`/api/v1/anime/catalog/references/genres`)
   Future<List<CatalogGenreRef>> syncGenreReferences({bool force = false});
 
+  /// Получение каталога по декларативному фильтру AniLibria v1
+  Future<List<AnimeCatalogModel>> getReleases({
+    required CatalogFilter filter,
+    int page = 1,
+    int limit = 40,
+    CancelToken? cancelToken,
+  });
+
+  /// Получение недельного расписания `/api/v1/anime/schedule/week`
+  Future<List<AnimeCatalogModel>> getScheduleWeek({
+    CancelToken? cancelToken,
+  });
+
   /// Получение каталога напрямую через AniLiberty (AniLibria v1) API / Supabase anime_catalog
   Future<List<AnimeCatalogModel>> getCatalog({
     int page = 1,
@@ -91,11 +106,13 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   final Map<String, _CachedCatalogPage> _catalogCache = {};
 
   static const String _catalogUrl = 'https://anilibria.top/api/v1/anime/catalog/releases';
+  static const String _scheduleWeekUrl = 'https://anilibria.top/api/v1/anime/schedule/week';
   static const String _genresReferenceUrl = 'https://anilibria.top/api/v1/anime/catalog/references/genres';
   static const String _searchUrl = 'https://anilibria.top/api/v1/app/search/releases';
   static const String _releaseUrl = 'https://anilibria.top/api/v1/anime/releases';
 
   static const String _fallbackCatalogUrl = 'https://api.anilibria.app/api/v1/anime/catalog/releases';
+  static const String _fallbackScheduleWeekUrl = 'https://api.anilibria.app/api/v1/anime/schedule/week';
   static const String _fallbackGenresReferenceUrl = 'https://api.anilibria.app/api/v1/anime/catalog/references/genres';
   static const String _fallbackSearchUrl = 'https://api.anilibria.app/api/v1/app/search/releases';
   static const String _fallbackReleaseUrl = 'https://api.anilibria.app/api/v1/anime/releases';
@@ -360,13 +377,6 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     String? types,
     CancelToken? cancelToken,
   }) async {
-    if (cancelToken != null && cancelToken.isCancelled) {
-      throw DioException.requestCancelled(
-        requestOptions: RequestOptions(path: _catalogUrl),
-        reason: cancelToken.cancelError,
-      );
-    }
-
     if (!_hasLiveGenreReferences &&
         genres != null &&
         genres.trim().isNotEmpty &&
@@ -374,71 +384,99 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       await syncGenreReferences();
     }
 
-    // Нормализуем стандартные запросы (limit <= 40) к единому пулу limit=40,
-    // чтобы дедуплицировать одновременные запросы виджетов и предзагрузки.
-    final int fetchLimit = limit <= 40 ? 40 : limit;
-    final String normalizedSort =
-        (sort == null || sort.trim().isEmpty) ? 'updates' : sort.trim();
-
-    final queryParams = <String, dynamic>{
-      'page': page,
-      'limit': fetchLimit,
-    };
+    final genreIds = <int>[];
     if (genres != null && genres.trim().isNotEmpty && genres.trim() != 'Все') {
       final parts = genres
           .split(RegExp(r'[,;]+'))
           .map(normalizeGenreKey)
           .where((s) => s.isNotEmpty);
-      final ids = <int>[];
       for (final p in parts) {
         final id = resolveGenreId(p);
-        if (id != null && !ids.contains(id)) {
-          ids.add(id);
+        if (id != null && !genreIds.contains(id)) {
+          genreIds.add(id);
         }
       }
-      if (ids.isNotEmpty) {
-        // AniLibria v1 expects f[genres] as comma-separated IDs (e.g. f[genres]=4 or f[genres]=4,14)
-        queryParams['f[genres]'] = ids.join(',');
-      }
     }
-    if (year != null && year.trim().isNotEmpty) {
-      queryParams['f[years][from_year]'] = year.trim();
-      queryParams['f[years][to_year]'] = year.trim();
-    }
-    switch (normalizedSort) {
+
+    final parsedYear =
+        (year != null && year.trim().isNotEmpty) ? int.tryParse(year.trim()) : null;
+
+    final CatalogSorting sorting;
+    switch ((sort ?? '').trim()) {
       case 'yearDesc':
-        queryParams['f[sorting]'] = 'YEAR_DESC';
+        sorting = CatalogSorting.yearDesc;
         break;
       case 'yearAsc':
-        queryParams['f[sorting]'] = 'YEAR_ASC';
+        sorting = CatalogSorting.yearAsc;
         break;
       case 'rating':
-        queryParams['f[sorting]'] = 'RATING_DESC';
+        sorting = CatalogSorting.ratingDesc;
         break;
       case 'updates':
       default:
-        queryParams['f[sorting]'] = 'FRESH_AT_DESC';
+        sorting = CatalogSorting.freshAtDesc;
         break;
     }
+
+    final publishStatuses = <PublishStatus>[];
+    final productionStatuses = <ProductionStatus>[];
     if (status != null && status.isNotEmpty) {
       if (status == 'ongoing') {
-        queryParams['f[publish_statuses]'] = 'IS_ONGOING';
+        publishStatuses.add(PublishStatus.isOngoing);
       } else if (status == 'released') {
-        queryParams['f[publish_statuses]'] = 'IS_NOT_ONGOING';
+        publishStatuses.add(PublishStatus.isNotOngoing);
       } else if (status == 'anons' || status == 'anonses') {
-        queryParams['f[publish_statuses]'] = 'IS_IN_PRODUCTION';
+        productionStatuses.add(ProductionStatus.isInProduction);
       }
     }
+
+    final parsedTypes = <ReleaseType>[];
     if (types != null && types.trim().isNotEmpty) {
-      queryParams['f[types]'] = types.trim().toUpperCase();
+      for (final part in types.split(',')) {
+        final t = ReleaseType.fromApi(part);
+        if (t != null && !parsedTypes.contains(t)) {
+          parsedTypes.add(t);
+        }
+      }
     }
 
-    final dedupKey = 'p=$page|l=$fetchLimit'
-        '|g=${queryParams['f[genres]'] ?? ''}'
-        '|y=${queryParams['f[years][from_year]'] ?? ''}'
-        '|s=${queryParams['f[sorting]'] ?? ''}'
-        '|st=${queryParams['f[publish_statuses]'] ?? ''}'
-        '|tp=${queryParams['f[types]'] ?? ''}';
+    final filter = CatalogFilter(
+      sorting: sorting,
+      genres: genreIds,
+      types: parsedTypes,
+      publishStatuses: publishStatuses,
+      productionStatuses: productionStatuses,
+      yearFrom: parsedYear,
+      yearTo: parsedYear,
+    );
+
+    return getReleases(
+      filter: filter,
+      page: page,
+      limit: limit,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<List<AnimeCatalogModel>> getReleases({
+    required CatalogFilter filter,
+    int page = 1,
+    int limit = 40,
+    CancelToken? cancelToken,
+  }) async {
+    if (cancelToken != null && cancelToken.isCancelled) {
+      throw DioException.requestCancelled(
+        requestOptions: RequestOptions(path: _catalogUrl),
+        reason: cancelToken.cancelError,
+      );
+    }
+
+    // Нормализуем стандартные запросы (limit <= 40) к единому пулу limit=40,
+    // чтобы дедуплицировать одновременные запросы виджетов и предзагрузки.
+    final int fetchLimit = limit <= 40 ? 40 : limit;
+    final queryParams = filter.toQueryParameters(page: page, limit: fetchLimit);
+    final dedupKey = '${filter.signature}|p=$page|l=$fetchLimit';
 
     // 1. Мгновенная отдача из единого 40-элементного кэша (в 0мс)
     final cached = _catalogCache[dedupKey];
@@ -502,33 +540,48 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     }
 
     try {
-      final primary = await fetchWithParams(queryParams);
-      if (primary.isNotEmpty ||
-          queryParams['f[publish_statuses]'] != 'IS_IN_PRODUCTION') {
-        return primary;
-      }
+      return await fetchWithParams(queryParams);
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
-      if (queryParams['f[publish_statuses]'] != 'IS_IN_PRODUCTION') {
-        throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
-      }
+      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
     } catch (e) {
-      if (queryParams['f[publish_statuses]'] != 'IS_IN_PRODUCTION') {
-        throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
+      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
+    }
+  }
+
+  @override
+  Future<List<AnimeCatalogModel>> getScheduleWeek({
+    CancelToken? cancelToken,
+  }) async {
+    Future<List<AnimeCatalogModel>> parseSchedule(dynamic raw) async {
+      final list = raw is List
+          ? raw
+          : (raw is Map && raw['data'] is List ? raw['data'] as List : const []);
+      final items = <Map<String, dynamic>>[];
+      for (final entry in list) {
+        if (entry is Map && entry['release'] is Map) {
+          items.add(Map<String, dynamic>.from(entry['release'] as Map));
+        } else if (entry is Map<String, dynamic>) {
+          items.add(entry);
+        }
       }
+      return items.map((j) => AnimeCatalogModel.fromJson(j)).toList();
     }
 
-    // Fallback для «Анонсы»: если IS_IN_PRODUCTION вернул пусто/ошибку — пробуем IS_ANNOUNCED
     try {
-      final retryParams = Map<String, dynamic>.from(queryParams)
-        ..['f[publish_statuses]'] = 'IS_ANNOUNCED';
-      return await fetchWithParams(retryParams);
+      final response = await _dio
+          .get(_scheduleWeekUrl, cancelToken: cancelToken)
+          .timeout(const Duration(seconds: 10));
+      final parsed = await parseSchedule(response.data);
+      if (parsed.isNotEmpty) return parsed;
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
-      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
-    } catch (e) {
-      throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
-    }
+    } catch (_) {}
+
+    final fallback = await _dio
+        .get(_fallbackScheduleWeekUrl, cancelToken: cancelToken)
+        .timeout(const Duration(seconds: 10));
+    return parseSchedule(fallback.data);
   }
 
   @override

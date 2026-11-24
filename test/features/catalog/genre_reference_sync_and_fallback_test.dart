@@ -206,7 +206,7 @@ void main() {
       await CatalogPersistentStore.instance.clear();
     });
 
-    test('getCatalog passes f[types]=MOVIE and anons falls back to IS_ANNOUNCED',
+    test('getCatalog passes f[types]=MOVIE and anons uses f[production_statuses]=IS_IN_PRODUCTION without IS_ANNOUNCED',
         () async {
       final adapter = _AnonsAndMoviesAdapter();
       final dio = Dio()..httpClientAdapter = adapter;
@@ -224,18 +224,20 @@ void main() {
       expect(movieReq.queryParameters['f[sorting]'], 'RATING_DESC');
 
       final anons = await ds.getCatalog(page: 1, status: 'anons');
-      expect(anons, isNotEmpty);
+      expect(anons, isEmpty);
       expect(
         adapter.requests.any(
-          (r) => r.queryParameters['f[publish_statuses]'] == 'IS_IN_PRODUCTION',
+          (r) =>
+              r.queryParameters['f[production_statuses]'] == 'IS_IN_PRODUCTION',
         ),
         isTrue,
       );
       expect(
         adapter.requests.any(
-          (r) => r.queryParameters['f[publish_statuses]'] == 'IS_ANNOUNCED',
+          (r) =>
+              r.queryParameters.values.any((v) => v.toString().contains('IS_ANNOUNCED')),
         ),
-        isTrue,
+        isFalse,
       );
     });
 
@@ -326,7 +328,7 @@ class _AnonsAndMoviesAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
-    if (options.queryParameters['f[publish_statuses]'] == 'IS_IN_PRODUCTION') {
+    if (options.queryParameters['f[production_statuses]'] == 'IS_IN_PRODUCTION') {
       return ResponseBody.fromString(
         jsonEncode({'data': []}),
         200,

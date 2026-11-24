@@ -31,17 +31,105 @@ class CatalogPersistentStore {
   static const String _fileName = 'syncpai_catalog_index_v1.json';
   static const int _maxEntries = 2500;
 
+  static const Duration signatureCacheTtl = Duration(days: 30);
+
   final Map<int, AnimeTitle> _byId = {};
   final List<int> _orderedIds = [];
+  final Map<String, List<AnimeTitle>> _filteredPageCache = {};
+  final Map<String, ({List<AnimeTitle> items, int page, bool hasMore, DateTime cachedAt})>
+      _signatureCache = {};
   bool _initialized = false;
   File? _overrideFile;
   Timer? _persistDebounceTimer;
+
+  /// Ключ кэша по канонической сигнатуре фильтра.
+  String signatureStorageKey(String signature) => 'catalog_$signature';
+
+  /// Сохраняет склеенный список и resume-page строго под сигнатурой фильтра (TTL 30 дней).
+  void putBySignature(
+    String signature,
+    List<AnimeTitle> items, {
+    required int page,
+    required bool hasMore,
+  }) {
+    _signatureCache[signatureStorageKey(signature)] = (
+      items: List<AnimeTitle>.unmodifiable(items),
+      page: page,
+      hasMore: hasMore,
+      cachedAt: DateTime.now(),
+    );
+  }
+
+  /// Возвращает кэш строго для данной сигнатуры (никогда не подмешивает общий кэш «Все»).
+  ({List<AnimeTitle> items, int page, bool hasMore})? getBySignature(
+    String signature,
+  ) {
+    final key = signatureStorageKey(signature);
+    final entry = _signatureCache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.cachedAt) > signatureCacheTtl) {
+      _signatureCache.remove(key);
+      return null;
+    }
+    return (items: entry.items, page: entry.page, hasMore: entry.hasMore);
+  }
+
+  int getResumePage(String signature) =>
+      getBySignature(signature)?.page ?? 1;
+
+  /// Формирует изолированный ключ кэша с учётом всех активных фильтров и страницы.
+  String buildFilterCacheKey({
+    String? genre,
+    String? status,
+    String? type,
+    String sort = 'updates',
+    int page = 1,
+  }) {
+    final g = (genre ?? 'all').trim().toLowerCase();
+    final st = (status ?? 'all').trim().toLowerCase();
+    final tp = (type ?? 'all').trim().toLowerCase();
+    return 'catalog_${g}_${sort}_${st}_${tp}_page_$page';
+  }
+
+  List<AnimeTitle>? getFilteredPage({
+    String? genre,
+    String? status,
+    String? type,
+    String sort = 'updates',
+    int page = 1,
+  }) =>
+      _filteredPageCache[buildFilterCacheKey(
+        genre: genre,
+        status: status,
+        type: type,
+        sort: sort,
+        page: page,
+      )];
+
+  void putFilteredPage(
+    List<AnimeTitle> items, {
+    String? genre,
+    String? status,
+    String? type,
+    String sort = 'updates',
+    int page = 1,
+  }) {
+    _filteredPageCache[buildFilterCacheKey(
+      genre: genre,
+      status: status,
+      type: type,
+      sort: sort,
+      page: page,
+    )] = List<AnimeTitle>.unmodifiable(items);
+  }
 
   @visibleForTesting
   void setTestFile(File? file) {
     _overrideFile = file;
     _byId.clear();
     _orderedIds.clear();
+    _filteredPageCache.clear();
+    _signatureCache.clear();
     _initialized = false;
   }
 

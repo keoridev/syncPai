@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../domain/entities/anime_title.dart';
+import '../../domain/entities/catalog_filter.dart';
+import '../../domain/entities/catalog_filter_query.dart';
 import '../../domain/entities/catalog_settings.dart';
+import '../../data/datasources/shikimori_announced_datasource.dart';
 import '../../data/services/catalog_persistent_store.dart';
 import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
@@ -19,6 +23,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   final SharedPreferences? prefs;
   final GetCatalogUseCase? getCatalogUseCase;
   final SearchCatalogUseCase? searchCatalogUseCase;
+  final ShikimoriAnnouncedDataSource? shikimoriAnnouncedDataSource;
 
   Timer? _searchDebounceTimer;
   Timer? _filterDebounceTimer;
@@ -44,8 +49,311 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   final Map<String, List<AnimeTitle>> _pageCache = {};
   final Map<String, List<AnimeTitle>> _tabMemoryCache = {};
+  final Map<String, CancelToken> _inFlight = {};
+  final Map<String, Future<void>> _inFlightFutures = {};
   String _activeFilterKey = 'all|updates|||false';
   int _requestId = 0;
+  int _loadGeneration = 0;
+
+  void _cancelForeignInFlight(String activeSignature) {
+    final prefix = '${activeSignature}_p';
+    final staleKeys =
+        _inFlight.keys.where((k) => !k.startsWith(prefix)).toList();
+    for (final k in staleKeys) {
+      final token = _inFlight.remove(k);
+      if (token != null && !token.isCancelled) {
+        token.cancel('Filter changed to $activeSignature');
+      }
+      _inFlightFutures.remove(k);
+    }
+  }
+
+  /// Единая таблица маппинга быстрых вкладок каталога в источник данных [CatalogTabSource].
+  static Map<String, CatalogTabSource> get quickTabSources => {
+        'all': const AnilibriaCatalogSource(
+          CatalogFilter(sorting: CatalogSorting.freshAtDesc),
+        ),
+        'ongoing': const AnilibriaCatalogSource(
+          CatalogFilter(
+            sorting: CatalogSorting.freshAtDesc,
+            publishStatuses: [PublishStatus.isOngoing],
+          ),
+        ),
+        'released': const AnilibriaCatalogSource(
+          CatalogFilter(
+            sorting: CatalogSorting.freshAtDesc,
+            publishStatuses: [PublishStatus.isNotOngoing],
+          ),
+        ),
+        'popular': const AnilibriaCatalogSource(
+          CatalogFilter(sorting: CatalogSorting.ratingDesc),
+        ),
+        'movies': const AnilibriaCatalogSource(
+          CatalogFilter(
+            sorting: CatalogSorting.freshAtDesc,
+            types: [ReleaseType.movie],
+          ),
+        ),
+        'anons': ShikimoriAnnouncedSource(computeNextShikimoriSeason()),
+        'schedule': const AniLibriaScheduleSource(),
+      };
+
+  /// Декларативная загрузка каталога по [CatalogFilter].
+  Future<void> load(
+    CatalogFilter filter, {
+    int page = 1,
+    bool refresh = false,
+  }) {
+    return loadSource(
+      AnilibriaCatalogSource(filter),
+      page: page,
+      refresh: refresh,
+    );
+  }
+
+  /// Универсальная загрузка вкладки по [CatalogTabSource] (AniLibria catalog / Shikimori announced / schedule)
+  /// с отменой чужих токенов, дедупликацией in-flight `(signature, page)`, последовательной пагинацией и SWR.
+  Future<void> loadSource(
+    CatalogTabSource source, {
+    int page = 1,
+    bool refresh = false,
+  }) async {
+    final sig = source.signature;
+    final effectivePage =
+        source is AnilibriaCatalogSource ? page : 1;
+    final inFlightKey = '${sig}_p$effectivePage';
+    if (_inFlightFutures.containsKey(inFlightKey)) {
+      return _inFlightFutures[inFlightKey]!;
+    }
+
+    // Последовательная пагинация: page > 1 разрешён только для AnilibriaCatalogSource и при hasMore == true
+    if (effectivePage > 1) {
+      final cur = state is CatalogLoaded ? (state as CatalogLoaded) : null;
+      if (_isLoadingMore ||
+          cur == null ||
+          cur.activeFilterKey != sig ||
+          !cur.hasMore ||
+          effectivePage != cur.currentPage + 1) {
+        return;
+      }
+      _isLoadingMore = true;
+      emit(cur.copyWith(isLoadingMore: true, isLoadingNextPage: true));
+    }
+
+    final currentGen = ++_loadGeneration;
+    _activeFilterKey = sig;
+    _cancelForeignInFlight(sig);
+
+    final CatalogFilter? catalogFilter =
+        source is AnilibriaCatalogSource ? source.filter : null;
+    final sortBy = catalogFilter != null
+        ? _sortFromCatalogSorting(catalogFilter.sorting)
+        : CatalogSort.updates;
+    final statusFilter = catalogFilter != null
+        ? _statusFromFilter(catalogFilter)
+        : (source is ShikimoriAnnouncedSource ? 'anons' : null);
+    final typeFilter = (catalogFilter != null && catalogFilter.types.isNotEmpty)
+        ? catalogFilter.types.first.apiValue
+        : null;
+
+    // Stale-While-Revalidate на page == 1
+    if (effectivePage == 1 && !refresh) {
+      final swr = CatalogPersistentStore.instance.getBySignature(sig);
+      if (swr != null && swr.items.isNotEmpty) {
+        emit(CatalogLoaded(
+          titles: swr.items,
+          filteredTitles: swr.items,
+          sortBy: sortBy,
+          statusFilter: statusFilter,
+          typeFilter: typeFilter,
+          viewMode: _currentViewMode,
+          gridDensity: _currentGridDensity,
+          currentPage: swr.page,
+          hasMore: source is AnilibriaCatalogSource ? swr.hasMore : false,
+          activeFilterKey: sig,
+          isRefreshing: true,
+        ));
+      } else if (state is! CatalogLoaded) {
+        emit(const CatalogLoading());
+      } else {
+        emit((state as CatalogLoaded).copyWith(
+          activeFilterKey: sig,
+          statusFilter: statusFilter,
+          clearStatusFilter: statusFilter == null,
+          typeFilter: typeFilter,
+          clearTypeFilter: typeFilter == null,
+          sortBy: sortBy,
+          isRefreshing: true,
+          titles: const [],
+          filteredTitles: const [],
+        ));
+      }
+    }
+
+    final cancelToken = CancelToken();
+    _inFlight[inFlightKey] = cancelToken;
+
+    final future = () async {
+      try {
+        final List<AnimeTitle> incoming;
+        final bool hasMore;
+
+        switch (source) {
+          case AnilibriaCatalogSource(:final filter):
+            final useCase = getCatalogUseCase ??
+                (getIt.isRegistered<GetCatalogUseCase>()
+                    ? getIt<GetCatalogUseCase>()
+                    : null);
+            if (useCase == null) return;
+            final pageResult = await useCase.getReleases(
+              filter: filter,
+              page: effectivePage,
+              limit: 40,
+              cancelToken: cancelToken,
+            );
+            incoming = pageResult.items.map((e) => e.toAnimeTitle()).toList();
+            hasMore = pageResult.hasMore;
+            break;
+
+          case ShikimoriAnnouncedSource(:final season):
+            final shikiDs = shikimoriAnnouncedDataSource ??
+                (getIt.isRegistered<ShikimoriAnnouncedDataSource>()
+                    ? getIt<ShikimoriAnnouncedDataSource>()
+                    : null);
+            if (shikiDs == null) {
+              incoming = const [];
+            } else {
+              incoming = await shikiDs.fetchAnnounced(
+                season: season,
+                cancelToken: cancelToken,
+              );
+            }
+            hasMore = false;
+            break;
+
+          case AniLibriaScheduleSource():
+            final useCase = getCatalogUseCase ??
+                (getIt.isRegistered<GetCatalogUseCase>()
+                    ? getIt<GetCatalogUseCase>()
+                    : null);
+            if (useCase == null) {
+              incoming = const [];
+            } else {
+              final entities = await useCase.getSchedule(
+                cancelToken: cancelToken,
+              );
+              incoming = entities.map((e) => e.toAnimeTitle()).toList();
+            }
+            hasMore = false;
+            break;
+        }
+
+        if (currentGen != _loadGeneration || cancelToken.isCancelled || isClosed) {
+          if (currentGen != _loadGeneration) {
+            debugPrint(
+              '[CatalogCubit] Discarded stale load response (gen=$currentGen, active=$_loadGeneration)',
+            );
+          }
+          return;
+        }
+
+        final List<AnimeTitle> combined;
+        if (effectivePage > 1 && state is CatalogLoaded) {
+          final existing = (state as CatalogLoaded).titles;
+          final seen = existing.map((e) => e.id).toSet();
+          combined = [
+            ...existing,
+            ...incoming.where((item) => seen.add(item.id)),
+          ];
+        } else {
+          combined = incoming;
+        }
+
+        CatalogPersistentStore.instance.putBySignature(
+          sig,
+          combined,
+          page: effectivePage,
+          hasMore: hasMore,
+        );
+        _tabMemoryCache[sig] = combined;
+
+        emit(CatalogLoaded(
+          titles: combined,
+          filteredTitles: combined,
+          sortBy: sortBy,
+          statusFilter: statusFilter,
+          typeFilter: typeFilter,
+          viewMode: _currentViewMode,
+          gridDensity: _currentGridDensity,
+          currentPage: effectivePage,
+          hasMore: hasMore,
+          isLoadingMore: false,
+          activeFilterKey: sig,
+          isRefreshing: false,
+          isLoadingNextPage: false,
+        ));
+      } catch (e) {
+        if (currentGen != _loadGeneration || cancelToken.isCancelled || isClosed) {
+          return;
+        }
+        if (state is CatalogLoaded) {
+          emit((state as CatalogLoaded).copyWith(
+            isLoadingMore: false,
+            isRefreshing: false,
+            isLoadingNextPage: false,
+          ));
+        } else {
+          emit(CatalogLoaded(
+            titles: const [],
+            filteredTitles: const [],
+            sortBy: sortBy,
+            statusFilter: statusFilter,
+            typeFilter: typeFilter,
+            viewMode: _currentViewMode,
+            gridDensity: _currentGridDensity,
+            currentPage: 1,
+            hasMore: false,
+            activeFilterKey: sig,
+          ));
+        }
+      } finally {
+        if (effectivePage > 1) _isLoadingMore = false;
+        _inFlight.remove(inFlightKey);
+        _inFlightFutures.remove(inFlightKey);
+      }
+    }();
+
+    _inFlightFutures[inFlightKey] = future;
+    return future;
+  }
+
+  CatalogSort _sortFromCatalogSorting(CatalogSorting s) {
+    switch (s) {
+      case CatalogSorting.ratingDesc:
+      case CatalogSorting.ratingAsc:
+        return CatalogSort.rating;
+      case CatalogSorting.yearDesc:
+        return CatalogSort.yearDesc;
+      case CatalogSorting.yearAsc:
+        return CatalogSort.yearAsc;
+      case CatalogSorting.freshAtDesc:
+      case CatalogSorting.freshAtAsc:
+        return CatalogSort.updates;
+    }
+  }
+
+  String? _statusFromFilter(CatalogFilter filter) {
+    if (filter.publishStatuses.contains(PublishStatus.isOngoing)) {
+      return 'ongoing';
+    }
+    if (filter.publishStatuses.contains(PublishStatus.isNotOngoing)) {
+      return 'released';
+    }
+    if (filter.productionStatuses.contains(ProductionStatus.isInProduction)) {
+      return 'anons';
+    }
+    return null;
+  }
 
   String _buildFilterKey({
     required Set<String> genres,
@@ -111,6 +419,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     this.prefs,
     this.getCatalogUseCase,
     this.searchCatalogUseCase,
+    this.shikimoriAnnouncedDataSource,
   }) : super(const CatalogInitial()) {
     _currentViewMode = _loadSavedViewMode();
     _currentGridDensity = _loadSavedGridDensity();
@@ -342,6 +651,7 @@ class CatalogCubit extends Cubit<CatalogState> {
             : _resetForegroundCancelToken('Load more catalog'))
         : _resetForegroundCancelToken('New catalog fetch');
     final requestId = ++_requestId;
+    final currentGeneration = ++_loadGeneration;
     final requestFilterKey = _activeFilterKey;
     int page = isLoadMore ? (_pageMap[cleanCategory] ?? 1) + 1 : 1;
     final genreParam = cleanCategory == 'Все' ? null : cleanCategory;
@@ -417,9 +727,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
 
       if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
           requestFilterKey != _activeFilterKey ||
           cancelToken.isCancelled ||
           isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale response (gen=$currentGeneration, active=$_loadGeneration)');
+        }
         return;
       }
 
@@ -477,7 +791,16 @@ class CatalogCubit extends Cubit<CatalogState> {
         isLoadingMore: false,
       ));
     } catch (e) {
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
+          requestFilterKey != _activeFilterKey ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale filtered response (gen=$currentGeneration, active=$_loadGeneration)');
+        }
+        return;
+      }
       final localFallback = cleanCategory != 'Все'
           ? CatalogPersistentStore.instance
               .queryLocal()
@@ -630,6 +953,7 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   Future<void> performSearch(String query) async {
     final requestId = ++_requestId;
+    final currentGeneration = ++_loadGeneration;
     final cancelToken = _resetForegroundCancelToken('Search query');
     if (state is CatalogLoaded) {
       emit((state as CatalogLoaded).copyWith(
@@ -666,7 +990,15 @@ class CatalogCubit extends Cubit<CatalogState> {
         results = await searchTitles(query, limit: 40);
       }
 
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale search response (gen=$currentGeneration, active=$_loadGeneration)');
+        }
+        return;
+      }
 
       final current = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final genres = current?.selectedGenres ?? const {};
@@ -697,7 +1029,15 @@ class CatalogCubit extends Cubit<CatalogState> {
         gridDensity: _currentGridDensity,
       ));
     } catch (e) {
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale search error (gen=$currentGeneration, active=$_loadGeneration)');
+        }
+        return;
+      }
       emit(CatalogError('Поиск не удался: $e'));
     } finally {
       if (!isClosed &&
@@ -807,6 +1147,7 @@ class CatalogCubit extends Cubit<CatalogState> {
             : _resetForegroundCancelToken('Load more filtered catalog'))
         : _resetForegroundCancelToken('Filter changed');
     final requestId = ++_requestId;
+    final currentGeneration = ++_loadGeneration;
 
     List<AnimeTitle> queryLocalMatches() {
       if (genres.length == 1) {
@@ -922,7 +1263,16 @@ class CatalogCubit extends Cubit<CatalogState> {
         page++;
       }
 
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
+          requestFilterKey != _activeFilterKey ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale filtered response (gen=$currentGeneration, active=$_loadGeneration)');
+        }
+        return;
+      }
 
       final prevLoaded = state is CatalogLoaded ? (state as CatalogLoaded) : null;
       final sameVisibleScope = prevLoaded != null &&
@@ -977,7 +1327,16 @@ class CatalogCubit extends Cubit<CatalogState> {
         isLoadingMore: false,
       ));
     } catch (e) {
-      if (requestId != _requestId || cancelToken.isCancelled) return;
+      if (requestId != _requestId ||
+          currentGeneration != _loadGeneration ||
+          requestFilterKey != _activeFilterKey ||
+          cancelToken.isCancelled ||
+          isClosed) {
+        if (currentGeneration != _loadGeneration) {
+          debugPrint('[CatalogCubit] Discarded stale filtered response (gen=$currentGeneration, active=$_loadGeneration)');
+        }
+        return;
+      }
       final localFallback = queryLocalMatches();
       final fallbackFiltered = _applyFiltersAndSorting(
         localFallback,
@@ -1061,8 +1420,16 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
-  /// Быстрое переключение вкладок каталога (Все / Онгоинги / Популярное / Завершённые / Фильмы / Анонсы)
+  /// Быстрое переключение вкладок каталога (Все / Онгоинги / Популярное / Завершённые / Фильмы / Анонсы / Расписание)
   void selectQuickTab(String tabId) {
+    if (tabId == 'anons' || tabId == 'schedule') {
+      final source = quickTabSources[tabId];
+      if (source != null) {
+        unawaited(loadSource(source, page: 1, refresh: true));
+      }
+      return;
+    }
+
     CatalogSort sort = CatalogSort.updates;
     String? statusFilter;
     String? typeFilter;
@@ -1080,9 +1447,6 @@ class CatalogCubit extends Cubit<CatalogState> {
       case 'movies':
         typeFilter = 'MOVIE';
         sort = CatalogSort.rating;
-        break;
-      case 'anons':
-        statusFilter = 'anons';
         break;
       case 'all':
       default:
@@ -1385,6 +1749,14 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   @override
   Future<void> close() {
+    _loadGeneration = -1;
+    for (final token in _inFlight.values) {
+      if (!token.isCancelled) {
+        token.cancel('CatalogCubit closed');
+      }
+    }
+    _inFlight.clear();
+    _inFlightFutures.clear();
     _searchDebounceTimer?.cancel();
     _filterDebounceTimer?.cancel();
     if (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled) {

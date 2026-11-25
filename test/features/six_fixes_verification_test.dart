@@ -17,6 +17,7 @@ import 'package:sync_pai/features/catalog/domain/usecases/get_updates.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/search_titles.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 
 class _FakeCatalogRepo implements CatalogRepository {
@@ -69,6 +70,22 @@ class _FakeShikimoriRemoteDS implements ShikimoriRemoteDataSource {
     String? fallbackPoster,
   }) async =>
       const [];
+
+  @override
+  Future<AdaptedMangaInfo?> getAdaptedManga(int shikimoriAnimeId) async => null;
+
+  @override
+  Future<int?> resolveShikimoriId(AnimeTitle title) async => null;
+
+  @override
+  Future<List<AnimeTitle>> getUpcomingAnnouncements({
+    int page = 1,
+    int limit = 40,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId) async => const [];
 }
 
 class _MockShikimoriAdapter implements HttpClientAdapter {
@@ -138,9 +155,9 @@ void main() {
   });
 
   test(
-      'ShikimoriRemoteDataSourceImpl uses shikimori.one API base and enables followRedirects',
+      'ShikimoriRemoteDataSourceImpl uses shikimori.io API base and enables followRedirects',
       () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://shikimori.one/api'));
+    final dio = Dio(BaseOptions(baseUrl: 'https://shikimori.io/api'));
     final adapter = _MockShikimoriAdapter();
     dio.httpClientAdapter = adapter;
 
@@ -152,7 +169,7 @@ void main() {
 
     final shots = await ds.getScreenshots(52991);
     expect(adapter.requests, 1);
-    expect(shots, ['https://shikimori.one/system/screenshots/original/1.jpg']);
+    expect(shots, ['https://shikimori.io/system/screenshots/original/1.jpg']);
   });
 
   test(

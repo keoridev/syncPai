@@ -478,12 +478,53 @@ class RecommendationEngine extends ChangeNotifier {
     return picks.take(limit).toList();
   }
 
+  static const Set<String> _nicheGenres = {
+    'психологическое',
+    'психология',
+    'триллер',
+    'детектив',
+    'сэйнэн',
+    'сэйнен',
+    'сейнен',
+    'исекай',
+    'боевые искусства',
+    'сверхъестественное',
+    'мистика',
+    'киберпанк',
+    'ужасы',
+  };
+
+  static const Set<String> _toneLightGenres = {
+    'комедия',
+    'романтика',
+    'сёдзё',
+    'седзе',
+    'гарем',
+    'этти',
+  };
+
+  static String _normalizeFranchiseBase(String raw) {
+    var s = raw.toLowerCase().trim();
+    s = s.replaceAll(RegExp(r'\s*\([^)]*\)'), '');
+    s = s.replaceAll(RegExp(r'\s*\d+\s*сезон.*$'), '');
+    s = s.replaceAll(RegExp(r'\s*season\s*\d+.*$'), '');
+    s = s.replaceAll(RegExp(r'\s*(ii|iii|iv|v)\s*$'), '');
+    s = s.split(':').first.trim();
+    s = s.split('—').first.trim();
+    return s;
+  }
+
+  double _genreWeight(String genre) =>
+      _nicheGenres.contains(genre) ? 3.0 : 1.0;
+
   /// Похожие тайтлы для блока «Похожее по вайбу» на экране деталей аниме.
   List<RecommendedAnimePick> recommendSimilarTo({
     required AnimeTitle target,
     required List<AnimeTitle> catalogPool,
     required List<UserAnimeEntry> userEntries,
     required List<WatchHistoryItem> watchHistory,
+    List<AnimeTitle> shikimoriSimilar = const [],
+    Set<int> relatedIds = const {},
     int limit = 10,
   }) {
     final vector = buildTasteVector(
@@ -491,7 +532,10 @@ class RecommendationEngine extends ChangeNotifier {
       userEntries: userEntries,
       watchHistory: watchHistory,
     );
-    final blockedIds = <int>{target.id, ...vector.excludedIds};
+    final blockedIds = <int>{target.id, ...vector.excludedIds, ...relatedIds};
+    if (target.shikimoriId != null) {
+      blockedIds.add(target.shikimoriId!);
+    }
     for (final entry in userEntries) {
       if (entry.status == AnimeListStatus.watching ||
           entry.status == AnimeListStatus.completed ||
@@ -499,42 +543,138 @@ class RecommendationEngine extends ChangeNotifier {
         blockedIds.add(entry.animeId);
       }
     }
+
+    final targetBaseRu = _normalizeFranchiseBase(target.russianTitle);
+    final targetBaseEn = _normalizeFranchiseBase(target.englishTitle);
+    bool isSameFranchise(AnimeTitle item) {
+      if (blockedIds.contains(item.id) ||
+          (item.shikimoriId != null && blockedIds.contains(item.shikimoriId))) {
+        return true;
+      }
+      final itemBaseRu = _normalizeFranchiseBase(item.russianTitle);
+      final itemBaseEn = _normalizeFranchiseBase(item.englishTitle);
+      if (targetBaseRu.length >= 4 &&
+          itemBaseRu.length >= 4 &&
+          (itemBaseRu == targetBaseRu ||
+              itemBaseRu.startsWith('$targetBaseRu ') ||
+              targetBaseRu.startsWith('$itemBaseRu '))) {
+        return true;
+      }
+      if (targetBaseEn.length >= 4 &&
+          itemBaseEn.length >= 4 &&
+          (itemBaseEn == targetBaseEn ||
+              itemBaseEn.startsWith('$targetBaseEn ') ||
+              targetBaseEn.startsWith('$itemBaseEn '))) {
+        return true;
+      }
+      return false;
+    }
+
+    final picks = <RecommendedAnimePick>[];
+    final seenIds = <int>{};
+
+    // 1. Приоритет: реальные рекомендации сообщества Shikimori (/similar),
+    // сопоставленные с локальным каталогом AniLibria для мгновенного воспроизведения.
+    if (shikimoriSimilar.isNotEmpty) {
+      final catalogByShikiId = <int, AnimeTitle>{};
+      final catalogByName = <String, AnimeTitle>{};
+      for (final c in catalogPool) {
+        if (c.shikimoriId != null && c.shikimoriId! > 0) {
+          catalogByShikiId[c.shikimoriId!] = c;
+        }
+        final ru = c.russianTitle.trim().toLowerCase();
+        final en = c.englishTitle.trim().toLowerCase();
+        if (ru.isNotEmpty) catalogByName[ru] = c;
+        if (en.isNotEmpty) catalogByName[en] = c;
+      }
+
+      for (var i = 0; i < shikimoriSimilar.length && picks.length < limit; i++) {
+        final shiki = shikimoriSimilar[i];
+        if (isSameFranchise(shiki)) continue;
+        final matched = catalogByShikiId[shiki.id] ??
+            catalogByName[shiki.russianTitle.trim().toLowerCase()] ??
+            catalogByName[shiki.englishTitle.trim().toLowerCase()] ??
+            shiki;
+        if (isSameFranchise(matched) || !seenIds.add(matched.id)) continue;
+
+        final pct = (96 - i * 2).clamp(88, 96);
+        picks.add(
+          RecommendedAnimePick(
+            anime: matched,
+            reasonTag: '$pct% схожесть',
+            hook: RecommendationHook.postFinaleEcho,
+            score: 100.0 - i,
+            matchPercent: pct,
+          ),
+        );
+      }
+    }
+
+    if (picks.length >= limit) {
+      return picks;
+    }
+
+    // 2. Строгий локальный фолбэк по взвешенному Jaccard и тональности
     final targetGenres =
         target.genres.map((g) => g.trim().toLowerCase()).where((g) => g.isNotEmpty).toSet();
+    final targetHasLightTone = targetGenres.any(_toneLightGenres.contains);
     final minOverlap = targetGenres.length >= 2 ? 2 : targetGenres.length;
-    final candidates = <({AnimeTitle anime, double score, int overlap})>[];
+    final candidates = <({AnimeTitle anime, double score, double similarity})>[];
 
     for (final item in catalogPool) {
-      if (blockedIds.contains(item.id)) {
+      if (seenIds.contains(item.id) || isSameFranchise(item)) {
         continue;
       }
       final itemGenres =
           item.genres.map((g) => g.trim().toLowerCase()).where((g) => g.isNotEmpty).toSet();
-      final overlap = targetGenres.intersection(itemGenres).length;
-      if (targetGenres.isNotEmpty && overlap < minOverlap) continue;
-      final penalty = _heavyActionPenalty(item, vector);
+      final intersection = targetGenres.intersection(itemGenres);
+      if (targetGenres.isNotEmpty && intersection.length < minOverlap) {
+        continue;
+      }
+
+      final union = targetGenres.union(itemGenres);
+      double weightedOverlap = 0;
+      double weightedUnion = 0;
+      for (final g in intersection) {
+        weightedOverlap += _genreWeight(g);
+      }
+      for (final g in union) {
+        weightedUnion += _genreWeight(g);
+      }
+      var similarity = weightedUnion > 0 ? (weightedOverlap / weightedUnion) : 0.0;
+
+      // Штраф за конфликт тональности (комедия/гарем без комедии/романтики в оригинале)
+      if (!targetHasLightTone &&
+          (itemGenres.contains('комедия') || itemGenres.contains('гарем'))) {
+        similarity -= 0.40;
+      }
+      if (similarity <= 0.15) continue;
+
       final sameEra = target.year != null &&
           item.year != null &&
           (item.year! - target.year!).abs() <= 4;
-      final score = overlap * 3.2 +
-          (sameEra ? 1.2 : 0.0) +
-          vector.scoreGenres(item.genres) * 0.25 +
-          (item.score ?? 7.0) * 0.3 +
-          penalty;
-      candidates.add((anime: item, score: score, overlap: overlap));
+      final score = similarity * 10.0 +
+          (sameEra ? 1.0 : 0.0) +
+          (item.score ?? 7.0) * 0.25 +
+          _heavyActionPenalty(item, vector);
+      candidates.add((anime: item, score: score, similarity: similarity));
     }
 
     candidates.sort((a, b) => b.score.compareTo(a.score));
-    return candidates.take(limit).map((c) {
-      final pct = (74 + c.overlap * 6).clamp(74, 98);
-      return RecommendedAnimePick(
-        anime: c.anime,
-        reasonTag: 'Совпадение $pct% по вайбу',
-        hook: RecommendationHook.postFinaleEcho,
-        score: c.score,
-        matchPercent: pct,
+    for (final c in candidates) {
+      if (picks.length >= limit) break;
+      final pct = (60 + (c.similarity * 35)).round().clamp(60, 95);
+      picks.add(
+        RecommendedAnimePick(
+          anime: c.anime,
+          reasonTag: '$pct% схожесть',
+          hook: RecommendationHook.postFinaleEcho,
+          score: c.score,
+          matchPercent: pct,
+        ),
       );
-    }).toList();
+    }
+    return picks;
   }
 
   ({Set<String> genres, String label}) _circadianBoostConfig(DateTime now) {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
+import '../../../anime_details/data/datasources/shikimori_remote_datasource.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_filter.dart';
 import '../../domain/entities/catalog_filter_query.dart';
@@ -54,6 +55,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   String _activeFilterKey = 'all|updates|||false';
   int _requestId = 0;
   int _loadGeneration = 0;
+  bool _initialized = false;
 
   void _cancelForeignInFlight(String activeSignature) {
     final prefix = '${activeSignature}_p';
@@ -118,9 +120,13 @@ class CatalogCubit extends Cubit<CatalogState> {
     int page = 1,
     bool refresh = false,
   }) async {
-    final sig = source.signature;
+    final sig = source is ShikimoriAnnouncedSource
+        ? 'tab:announcements'
+        : source.signature;
     final effectivePage =
-        source is AnilibriaCatalogSource ? page : 1;
+        (source is AnilibriaCatalogSource || source is ShikimoriAnnouncedSource)
+            ? page
+            : 1;
     final inFlightKey = '${sig}_p$effectivePage';
     if (_inFlightFutures.containsKey(inFlightKey)) {
       return _inFlightFutures[inFlightKey]!;
@@ -216,19 +222,25 @@ class CatalogCubit extends Cubit<CatalogState> {
             break;
 
           case ShikimoriAnnouncedSource(:final season):
-            final shikiDs = shikimoriAnnouncedDataSource ??
-                (getIt.isRegistered<ShikimoriAnnouncedDataSource>()
-                    ? getIt<ShikimoriAnnouncedDataSource>()
-                    : null);
-            if (shikiDs == null) {
-              incoming = const [];
+            if (getIt.isRegistered<ShikimoriRemoteDataSource>()) {
+              incoming = await getIt<ShikimoriRemoteDataSource>()
+                  .getUpcomingAnnouncements(page: effectivePage, limit: 40);
+              hasMore = incoming.length >= 40;
             } else {
-              incoming = await shikiDs.fetchAnnounced(
-                season: season,
-                cancelToken: cancelToken,
-              );
+              final shikiDs = shikimoriAnnouncedDataSource ??
+                  (getIt.isRegistered<ShikimoriAnnouncedDataSource>()
+                      ? getIt<ShikimoriAnnouncedDataSource>()
+                      : null);
+              if (shikiDs == null) {
+                incoming = const [];
+              } else {
+                incoming = await shikiDs.fetchAnnounced(
+                  season: season,
+                  cancelToken: cancelToken,
+                );
+              }
+              hasMore = false;
             }
-            hasMore = false;
             break;
 
           case AniLibriaScheduleSource():
@@ -437,6 +449,8 @@ class CatalogCubit extends Cubit<CatalogState> {
 
   /// Загрузка обновлений каталога (с поддержкой pull-to-refresh)
   Future<void> loadUpdates({bool refresh = false}) async {
+    if (!refresh && _initialized) return;
+    _initialized = true;
     if (refresh) {
       _cache.clear();
       _pageMap.clear();
@@ -856,13 +870,21 @@ class CatalogCubit extends Cubit<CatalogState> {
   /// Алиас для бесконечного скролла следующей страницы.
   Future<void> loadNextPage() => loadMore();
 
-  /// Подгрузка следующей страницы каталога (AniLibria API v1) с pre-fetch
+  DateTime? _lastLoadMoreAt;
+
+  /// Подгрузка следующей страницы каталога (AniLibria API v1) с pre-fetch и cooldown 600ms
   Future<void> loadMore() async {
     if (state is! CatalogLoaded) return;
     final current = state as CatalogLoaded;
     if (_isLoadingMore || current.isLoadingMore || !current.hasMore || current.searchQuery.isNotEmpty) {
       return;
     }
+    final now = DateTime.now();
+    if (_lastLoadMoreAt != null &&
+        now.difference(_lastLoadMoreAt!) < const Duration(milliseconds: 600)) {
+      return;
+    }
+    _lastLoadMoreAt = now;
 
     if (current.selectedGenres.length > 1 ||
         current.statusFilter != null ||
@@ -881,6 +903,17 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     final category = current.selectedGenres.isNotEmpty ? current.selectedGenres.first : 'Все';
     await _fetchCatalog(category: category, isLoadMore: true);
+  }
+
+  bool _isMangaMode = false;
+  bool get isMangaMode => _isMangaMode;
+
+  void setMangaMode(bool value) {
+    if (_isMangaMode == value) return;
+    _isMangaMode = value;
+    if (state is CatalogLoaded) {
+      emit((state as CatalogLoaded).copyWith(isMangaMode: value));
+    }
   }
 
   void toggleViewMode() {

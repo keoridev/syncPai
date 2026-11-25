@@ -1,13 +1,49 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/painting.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
+import 'package:sync_pai/features/anime_details/domain/entities/related_anime_release.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
+
+/// Проверенный следующий сезон по хронологии франшизы.
+class SeasonFinaleNextSeason extends Equatable {
+  final String name;
+  final AnimeTitle? title;
+  final RelatedAnimeRelease? relatedRelease;
+  final bool isAnnounced;
+
+  const SeasonFinaleNextSeason({
+    required this.name,
+    this.title,
+    this.relatedRelease,
+    this.isAnnounced = false,
+  });
+
+  @override
+  List<Object?> get props => [name, title, relatedRelease, isAnnounced];
+}
+
+/// Событие завершения финальной серии сезона для тоста-компаньона Пай-тян.
+class SeasonFinalePrompt extends Equatable {
+  final int titleId;
+  final SeasonFinaleNextSeason? nextSeason;
+  final AnimeMangaBridge? mangaBridge;
+
+  const SeasonFinalePrompt({
+    required this.titleId,
+    this.nextSeason,
+    this.mangaBridge,
+  });
+
+  @override
+  List<Object?> get props => [titleId, nextSeason, mangaBridge];
+}
 
 class PlayerState extends Equatable {
   final AnimeTitle title;
@@ -80,6 +116,7 @@ class PlayerState extends Equatable {
   final int emojisSent;
   final BoxFit videoFit;
   final bool isHudEditMode;
+  final SeasonFinalePrompt? seasonFinalePrompt;
 
   const PlayerState({
     required this.title,
@@ -130,6 +167,7 @@ class PlayerState extends Equatable {
     this.emojisSent = 0,
     this.videoFit = BoxFit.contain,
     this.isHudEditMode = false,
+    this.seasonFinalePrompt,
   });
 
   bool get isSyncRoom => roomCode != null && roomCode!.isNotEmpty;
@@ -203,6 +241,7 @@ class PlayerState extends Equatable {
     int? emojisSent,
     BoxFit? videoFit,
     bool? isHudEditMode,
+    SeasonFinalePrompt? Function()? seasonFinalePrompt,
   }) {
     return PlayerState(
       title: title ?? this.title,
@@ -253,6 +292,7 @@ class PlayerState extends Equatable {
       emojisSent: emojisSent ?? this.emojisSent,
       videoFit: videoFit ?? this.videoFit,
       isHudEditMode: isHudEditMode ?? this.isHudEditMode,
+      seasonFinalePrompt: seasonFinalePrompt != null ? seasonFinalePrompt() : this.seasonFinalePrompt,
     );
   }
 
@@ -306,5 +346,6 @@ class PlayerState extends Equatable {
         emojisSent,
         videoFit,
         isHudEditMode,
+        seasonFinalePrompt,
       ];
 }

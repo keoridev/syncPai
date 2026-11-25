@@ -32,7 +32,10 @@ class SmartMirrorInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    if (isAntiBlockEnabled) {
+    if (isAntiBlockEnabled &&
+        options.extra['disable_mirror_rewrite'] != true &&
+        !options.path.startsWith('http://') &&
+        !options.path.startsWith('https://')) {
       // Подставляем текущее рабочее зеркало если запрос идет к базовому хосту
       final active = activeApiMirror;
       if (options.baseUrl.contains('anilibria') && options.baseUrl != active) {
@@ -53,6 +56,7 @@ class SmartMirrorInterceptor extends Interceptor {
     final isConnectionFailure = err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionError ||
+        err.error is FormatException ||
         statusCode == 403 ||
         statusCode == 410 ||
         statusCode == 502 ||

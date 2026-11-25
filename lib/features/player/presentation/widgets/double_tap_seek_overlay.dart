@@ -71,10 +71,10 @@ class DoubleTapSeekOverlay extends StatefulWidget {
   });
 
   @override
-  State<DoubleTapSeekOverlay> createState() => _DoubleTapSeekOverlayState();
+  State<DoubleTapSeekOverlay> createState() => DoubleTapSeekOverlayState();
 }
 
-class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with SingleTickerProviderStateMixin {
+class DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with SingleTickerProviderStateMixin {
   int? _seekIndicatorSeconds;
   bool _isLeft = false;
   Timer? _dismissTimer;
@@ -200,6 +200,40 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
     });
   }
 
+  /// Внешнее управление вертикальным свайпом яркости/громкости из верхнеуровневого GestureDetector в PlayerScreen.
+  void startExternalVerticalSwipe({required bool isBrightness}) {
+    if (widget.isScreenLocked) return;
+    _hudDismissTimer?.cancel();
+    setState(() {
+      _activeGesture =
+          isBrightness ? _GestureType.brightness : _GestureType.volume;
+    });
+  }
+
+  void updateExternalVerticalSwipe({
+    required double deltaPx,
+    required double viewportHeight,
+  }) {
+    if (widget.isScreenLocked || viewportHeight <= 0) return;
+    if (_activeGesture == _GestureType.brightness) {
+      final delta =
+          (-deltaPx / (viewportHeight * 0.65)) * widget.swipeSensitivity;
+      final newB = (_brightness + delta).clamp(0.05, 1.0);
+      setState(() => _brightness = newB);
+      widget.onBrightnessChanged?.call(newB);
+    } else if (_activeGesture == _GestureType.volume) {
+      final delta =
+          (-deltaPx / (viewportHeight * 0.65)) * 100.0 * widget.swipeSensitivity;
+      final newV = (_volume + delta).clamp(0.0, 100.0);
+      setState(() => _volume = newV);
+      widget.onVolumeChanged?.call(newV);
+    }
+  }
+
+  void endExternalVerticalSwipe() {
+    _startHudDismiss();
+  }
+
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -309,20 +343,6 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
                       onLongPressEnd: (_) => _handleLongPressEnd(),
                       onLongPressCancel: _handleLongPressEnd,
-                      onVerticalDragStart: (_) {
-                        _hudDismissTimer?.cancel();
-                        setState(() => _activeGesture = _GestureType.brightness);
-                      },
-                      onVerticalDragUpdate: (details) {
-                        if (_activeGesture == _GestureType.brightness) {
-                          final delta = (-details.primaryDelta! / (height * 0.65)) *
-                              widget.swipeSensitivity;
-                          final newB = (_brightness + delta).clamp(0.05, 1.0);
-                          setState(() => _brightness = newB);
-                          widget.onBrightnessChanged?.call(newB);
-                        }
-                      },
-                      onVerticalDragEnd: (_) => _startHudDismiss(),
                       onHorizontalDragStart: (_) => _onHorizontalStart(),
                       onHorizontalDragUpdate: _onHorizontalUpdate,
                       onHorizontalDragEnd: (_) => _onHorizontalEnd(),
@@ -352,7 +372,7 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                     ),
                   ),
 
-                  // ПРАВАЯ ЗОНА: Регулировка звука (вертикально), перемотка вперед +10с (двойной тап), скраб (горизонтально)
+                  // ПРАВАЯ ЗОНА: Регулировка звука (через верхний детектор), перемотка вперед +10с (двойной тап), скраб (горизонтально)
                   Expanded(
                     flex: 7,
                     child: GestureDetector(
@@ -369,22 +389,6 @@ class _DoubleTapSeekOverlayState extends State<DoubleTapSeekOverlay> with Single
                       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
                       onLongPressEnd: (_) => _handleLongPressEnd(),
                       onLongPressCancel: _handleLongPressEnd,
-                      onVerticalDragStart: (_) {
-                        _hudDismissTimer?.cancel();
-                        setState(() => _activeGesture = _GestureType.volume);
-                      },
-                      onVerticalDragUpdate: (details) {
-                        if (_activeGesture == _GestureType.volume) {
-                          final delta =
-                              (-details.primaryDelta! / (height * 0.65)) *
-                                  100.0 *
-                                  widget.swipeSensitivity;
-                          final newV = (_volume + delta).clamp(0.0, 100.0);
-                          setState(() => _volume = newV);
-                          widget.onVolumeChanged?.call(newV);
-                        }
-                      },
-                      onVerticalDragEnd: (_) => _startHudDismiss(),
                       onHorizontalDragStart: (_) => _onHorizontalStart(),
                       onHorizontalDragUpdate: _onHorizontalUpdate,
                       onHorizontalDragEnd: (_) => _onHorizontalEnd(),

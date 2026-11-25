@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/network/api_constants.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../anime_lists/services/lists_sync_service.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../domain/entities/anime_rating_aggregate.dart';
 import '../../domain/entities/anime_review.dart';
 import '../../domain/entities/anime_video_item.dart';
@@ -46,6 +48,10 @@ abstract class ShikimoriRemoteDataSource {
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title);
   Future<List<AnimeVideoItem>> getVideos({int? shikimoriId, String? query, String? fallbackPoster});
   Future<List<String>> getScreenshots(int shikimoriId);
+  Future<AdaptedMangaInfo?> getAdaptedManga(int shikimoriAnimeId);
+  Future<int?> resolveShikimoriId(AnimeTitle title);
+  Future<List<AnimeTitle>> getUpcomingAnnouncements({int page = 1, int limit = 40});
+  Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId);
 }
 
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
@@ -56,12 +62,203 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   final Future<UserListsStats> Function(AnimeTitle title, int? shikimoriId)?
       _communityStatsLoader;
 
-  static const String _baseUrl = 'https://shikimori.one/api';
-  static const String _graphqlUrl = 'https://shikimori.one/api/graphql';
+  static const String _baseUrl = ApiConstants.shikimoriBaseUrl;
+  static const String _graphqlUrl = ApiConstants.shikimoriGraphqlUrl;
   static const String _userAgent = 'SyncPai/1.0 (Desktop/Mobile)';
 
   static Future<void> _queueTail = Future<void>.value();
   static DateTime? _lastRequestAt;
+  final Map<String, Future<Response<dynamic>>> _inFlightGraphql = {};
+  final Map<String, Future<List<AnimeTitle>>> _inFlightAnnouncements = {};
+  final Map<int, Future<List<AnimeTitle>>> _inFlightSimilar = {};
+
+  @override
+  Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId) async {
+    if (shikimoriId <= 0) return const [];
+    final existing = _inFlightSimilar[shikimoriId];
+    if (existing != null) return existing;
+
+    final future = _executeGetSimilarAnimes(shikimoriId);
+    _inFlightSimilar[shikimoriId] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlightSimilar.remove(shikimoriId);
+    }
+  }
+
+  Future<List<AnimeTitle>> _executeGetSimilarAnimes(int shikimoriId) async {
+    try {
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          '$_baseUrl/animes/$shikimoriId/similar',
+          options: _shikimoriOptions,
+        ),
+      );
+      final raw = response.data;
+      if (raw is! List) return const [];
+
+      String normalizeShikimoriImage(String path) {
+        final clean = path.trim();
+        if (clean.isEmpty) return '';
+        if (clean.startsWith('//')) return 'https:$clean';
+        if (clean.startsWith('http')) return clean;
+        return 'https://shikimori.io$clean';
+      }
+
+      final results = <AnimeTitle>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final id = (item['id'] as num?)?.toInt() ??
+            int.tryParse('${item['id'] ?? ''}') ??
+            0;
+        if (id <= 0) continue;
+
+        final ru = (item['russian'] ?? '').toString().trim();
+        final en = (item['name'] ?? '').toString().trim();
+        final img = item['image'] is Map ? item['image'] as Map : const {};
+        final orig = normalizeShikimoriImage('${img['original'] ?? ''}');
+        final prev = normalizeShikimoriImage('${img['preview'] ?? orig}');
+        final airedOn = (item['aired_on'] ?? '').toString().trim();
+        final year = airedOn.length >= 4 ? int.tryParse(airedOn.substring(0, 4)) : null;
+        final kind = (item['kind'] ?? '').toString().trim().toUpperCase();
+        final score = double.tryParse('${item['score'] ?? ''}');
+        final rawStatus = (item['status'] ?? '').toString().trim().toLowerCase();
+        final status = rawStatus == 'ongoing'
+            ? 'Онгоинг'
+            : (rawStatus == 'anons' ? 'Анонс' : 'Вышел');
+
+        results.add(
+          AnimeTitle(
+            id: id,
+            shikimoriId: id,
+            code: 'shiki_$id',
+            russianTitle: ru.isNotEmpty ? ru : en,
+            englishTitle: en,
+            posterSmall: prev.isNotEmpty ? prev : orig,
+            posterMedium: prev.isNotEmpty ? prev : orig,
+            posterOriginal: orig.isNotEmpty ? orig : prev,
+            kind: kind.isEmpty ? null : kind,
+            score: (score != null && score > 0) ? score : null,
+            year: year,
+            genres: const [],
+            description: '',
+            status: status,
+            episodesTotal: (item['episodes'] as num?)?.toInt(),
+            episodes: const [],
+            shikimoriUrl: 'https://shikimori.io/animes/$id',
+          ),
+        );
+      }
+      return results;
+    } catch (e) {
+      debugPrint('[Shikimori] getSimilarAnimes error: $e');
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<AnimeTitle>> getUpcomingAnnouncements({
+    int page = 1,
+    int limit = 40,
+  }) async {
+    final dedupKey = '$page|$limit';
+    final existing = _inFlightAnnouncements[dedupKey];
+    if (existing != null) return existing;
+
+    final future = _executeGetUpcomingAnnouncements(page: page, limit: limit);
+    _inFlightAnnouncements[dedupKey] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlightAnnouncements.remove(dedupKey);
+    }
+  }
+
+  Future<List<AnimeTitle>> _executeGetUpcomingAnnouncements({
+    required int page,
+    required int limit,
+  }) async {
+    try {
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          'https://shikimori.io/api/animes',
+          queryParameters: {
+            'status': 'anons',
+            'order': 'popularity',
+            'page': page,
+            'limit': limit,
+          },
+          options: Options(
+            headers: {
+              if (!kIsWeb) 'User-Agent': _userAgent,
+              'Accept': 'application/json',
+            },
+          ),
+        ),
+      );
+
+      final raw = response.data;
+      if (raw is! List) return const [];
+
+      String normalizeShikimoriImage(String path) {
+        final clean = path.trim();
+        if (clean.isEmpty) return '';
+        if (clean.startsWith('//')) return 'https:$clean';
+        if (clean.startsWith('http')) return clean;
+        return 'https://shikimori.io$clean';
+      }
+
+      final results = <AnimeTitle>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final id = (item['id'] as num?)?.toInt() ??
+            int.tryParse('${item['id'] ?? ''}') ??
+            0;
+        if (id <= 0) continue;
+
+        final ru = (item['russian'] ?? '').toString().trim();
+        final en = (item['name'] ?? '').toString().trim();
+        final img = item['image'] is Map ? item['image'] as Map : const {};
+        final orig = normalizeShikimoriImage('${img['original'] ?? ''}');
+        final prev = normalizeShikimoriImage('${img['preview'] ?? orig}');
+        final airedOn = (item['aired_on'] ?? '').toString().trim();
+        final seasonRaw = (item['season'] ?? '').toString().trim();
+        final releaseLabel = airedOn.isNotEmpty
+            ? airedOn
+            : (seasonRaw.isNotEmpty ? seasonRaw : 'Скоро');
+        final kind = (item['kind'] ?? '').toString().trim().toUpperCase();
+        final score = double.tryParse('${item['score'] ?? ''}');
+
+        results.add(
+          AnimeTitle(
+            id: id,
+            shikimoriId: id,
+            code: 'shiki_$id',
+            russianTitle: ru.isNotEmpty ? ru : en,
+            englishTitle: en,
+            posterSmall: prev.isNotEmpty ? prev : orig,
+            posterMedium: prev.isNotEmpty ? prev : orig,
+            posterOriginal: orig.isNotEmpty ? orig : prev,
+            kind: kind.isEmpty ? null : kind,
+            score: (score != null && score > 0) ? score : null,
+            season: releaseLabel,
+            genres: const [],
+            description: '',
+            status: 'Анонс',
+            episodesTotal: (item['episodes'] as num?)?.toInt(),
+            episodes: const [],
+            isAnnounced: true,
+            shikimoriUrl: 'https://shikimori.io/animes/$id',
+          ),
+        );
+      }
+      return results;
+    } catch (e) {
+      debugPrint('[Shikimori] getUpcomingAnnouncements error: $e');
+      return const [];
+    }
+  }
 
   ShikimoriRemoteDataSourceImpl({
     Dio? customDio,
@@ -160,6 +357,106 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           'Accept': 'application/json',
         },
       );
+
+  @override
+  Future<int?> resolveShikimoriId(AnimeTitle title) async {
+    if (title.shikimoriId != null && title.shikimoriId! > 0) {
+      return title.shikimoriId;
+    }
+    final resolved = await _resolveShikimoriIdAndScore(title);
+    return resolved.id;
+  }
+
+  @override
+  Future<AdaptedMangaInfo?> getAdaptedManga(int shikimoriAnimeId) async {
+    if (shikimoriAnimeId <= 0) return null;
+    try {
+      final res = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          'https://shikimori.io/api/animes/$shikimoriAnimeId/related',
+          options: _shikimoriOptions,
+        ),
+      );
+      if (res.statusCode != 200 || res.data is! List) return null;
+      for (final item in res.data as List) {
+        if (item is! Map) continue;
+        final relation = '${item['relation'] ?? ''}'.trim().toLowerCase();
+        final relationRu =
+            '${item['relation_russian'] ?? ''}'.trim().toLowerCase();
+        final manga = item['manga'];
+        if ((relation == 'adaptation' || relationRu == 'первоисточник') &&
+            manga is Map) {
+          final mangaId = int.tryParse('${manga['id'] ?? ''}') ?? 0;
+          if (mangaId <= 0) continue;
+          var ru = (manga['russian'] ?? '').toString().trim();
+          var en = (manga['name'] ?? '').toString().trim();
+          String? jp;
+          int? malId = int.tryParse('${manga['myanimelist_id'] ?? ''}');
+          var kind = (manga['kind'] ?? 'manga').toString().trim();
+          var score = double.tryParse('${manga['score'] ?? ''}');
+          var chapters = (manga['chapters'] as num?)?.toInt();
+          final imgMap = manga['image'] is Map ? manga['image'] as Map : null;
+          var rawCover = (imgMap?['original'] ?? imgMap?['preview'] ?? '')
+              .toString()
+              .trim();
+
+          // Подгружаем полную карточку манги для точного оригинального названия и MAL ID
+          try {
+            final fullRes = await _enqueueShikimoriRequest(
+              () => _dio.get(
+                'https://shikimori.io/api/mangas/$mangaId',
+                options: _shikimoriOptions,
+              ),
+            );
+            if (fullRes.statusCode == 200 && fullRes.data is Map) {
+              final full = fullRes.data as Map;
+              final fullRu = (full['russian'] ?? '').toString().trim();
+              final fullEn = (full['name'] ?? '').toString().trim();
+              final fullJpList = full['japanese'];
+              if (fullJpList is List && fullJpList.isNotEmpty) {
+                jp = fullJpList.first.toString().trim();
+              } else if (full['japanese'] is String) {
+                jp = (full['japanese'] as String).trim();
+              }
+              if (fullRu.isNotEmpty) ru = fullRu;
+              if (fullEn.isNotEmpty) en = fullEn;
+              malId ??= int.tryParse('${full['myanimelist_id'] ?? full['id'] ?? ''}');
+              final fullKind = (full['kind'] ?? '').toString().trim();
+              if (fullKind.isNotEmpty) kind = fullKind;
+              score ??= double.tryParse('${full['score'] ?? ''}');
+              chapters ??= (full['chapters'] as num?)?.toInt();
+              if (rawCover.isEmpty && full['image'] is Map) {
+                final fImg = full['image'] as Map;
+                rawCover = (fImg['original'] ?? fImg['preview'] ?? '')
+                    .toString()
+                    .trim();
+              }
+            }
+          } catch (_) {}
+
+          final coverUrl = rawCover.startsWith('http')
+              ? rawCover
+              : (rawCover.isNotEmpty
+                  ? 'https://shikimori.io$rawCover'
+                  : '');
+          return AdaptedMangaInfo(
+            shikimoriMangaId: mangaId,
+            russianTitle: ru,
+            englishTitle: en,
+            japaneseTitle: (jp != null && jp.isNotEmpty) ? jp : null,
+            malId: (malId != null && malId > 0) ? malId : null,
+            coverUrl: wrapCorsSafeUrl(coverUrl),
+            score: score,
+            chaptersCount: (chapters != null && chapters > 0) ? chapters : null,
+            kind: kind,
+          );
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Future<ShikimoriRatingAndReviews> getReviewsAndRatings(AnimeTitle title) async {
@@ -596,7 +893,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 .replaceAll('/preview/', '/original/');
             final rawPUrl = rawImg.startsWith('http')
                 ? rawImg
-                : (rawImg.isNotEmpty ? 'https://shikimori.one$rawImg' : '');
+                : (rawImg.isNotEmpty ? 'https://shikimori.io$rawImg' : '');
             final pUrl = wrapCorsSafeUrl(rawPUrl);
 
             final yNum = n['year'] as int?;
@@ -693,7 +990,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
               .replaceAll('/preview/', '/original/');
           final rawPosterUrl = rawPoster.startsWith('http')
               ? rawPoster
-              : (rawPoster.isNotEmpty ? 'https://shikimori.one$rawPoster' : '');
+              : (rawPoster.isNotEmpty ? 'https://shikimori.io$rawPoster' : '');
           final posterUrl = wrapCorsSafeUrl(rawPosterUrl);
 
           final airedOn = animeMap['aired_on'] as String?;
@@ -757,7 +1054,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
                 final rawP = imgMap?['preview'] as String? ?? imgMap?['original'] as String? ?? '';
                 final pUrl = rawP.startsWith('http')
                     ? rawP
-                    : (rawP.isNotEmpty ? 'https://shikimori.one$rawP' : '');
+                    : (rawP.isNotEmpty ? 'https://shikimori.io$rawP' : '');
 
                 final aired = aMap['aired_on'] as String?;
                 final y = aired != null && aired.length >= 4 ? '${aired.substring(0, 4)} год' : null;
@@ -918,22 +1215,44 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
         }
       ''';
 
-      final response = await _enqueueShikimoriRequest(
-        () => _dio.post(
-          _graphqlUrl,
-          data: {
+      final graphqlKey = '${gqlQuery.hashCode}|$shikimoriId';
+      final response = await _inFlightGraphql.putIfAbsent(graphqlKey, () {
+        return _enqueueShikimoriRequest(() async {
+          final gqlPayload = {
             'query': gqlQuery,
             'variables': {'ids': '$shikimoriId'},
-          },
-          options: Options(
+          };
+          final gqlOptions = Options(
+            followRedirects: true,
+            maxRedirects: 5,
+            validateStatus: (status) => status != null && status < 400,
             headers: {
               if (!kIsWeb) 'User-Agent': _userAgent,
               'Accept': 'application/json',
               'Content-Type': 'application/json',
             },
-          ),
-        ),
-      );
+          );
+          var res = await _dio.post(
+            _graphqlUrl,
+            data: gqlPayload,
+            options: gqlOptions,
+          );
+          if (res.statusCode == 307 || res.statusCode == 308) {
+            final location = res.headers.value('location');
+            if (location != null && location.isNotEmpty) {
+              final redirectUri = Uri.parse(_graphqlUrl).resolve(location).toString();
+              res = await _dio.post(
+                redirectUri,
+                data: gqlPayload,
+                options: gqlOptions,
+              );
+            }
+          }
+          return res;
+        }).whenComplete(() {
+          _inFlightGraphql.remove(graphqlKey);
+        });
+      });
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final root = response.data as Map<String, dynamic>;
@@ -1041,7 +1360,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
               final original = item['originalUrl'] as String? ?? '';
               if (original.isNotEmpty) {
                 screenshots.add(
-                  original.startsWith('http') ? original : 'https://shikimori.one$original',
+                  original.startsWith('http') ? original : 'https://shikimori.io$original',
                 );
               }
             }
@@ -1359,7 +1678,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           if (item is Map) {
             final original = item['original'] as String? ?? item['preview'] as String? ?? '';
             if (original.isNotEmpty) {
-              final fullUrl = original.startsWith('http') ? original : 'https://shikimori.one$original';
+              final fullUrl = original.startsWith('http') ? original : 'https://shikimori.io$original';
               list.add(fullUrl);
             }
           }

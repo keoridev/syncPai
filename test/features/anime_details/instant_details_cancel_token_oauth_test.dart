@@ -18,6 +18,7 @@ import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_useca
 import 'package:sync_pai/features/catalog/domain/usecases/get_updates.dart';
 import 'package:sync_pai/features/catalog/domain/usecases/search_titles.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 
 class _RealHttpOverrides extends HttpOverrides {}
 
@@ -60,6 +61,22 @@ class _SlowShikimoriDataSource implements ShikimoriRemoteDataSource {
 
   @override
   Future<List<String>> getScreenshots(int shikimoriId) async => const [];
+
+  @override
+  Future<AdaptedMangaInfo?> getAdaptedManga(int shikimoriAnimeId) async => null;
+
+  @override
+  Future<int?> resolveShikimoriId(AnimeTitle title) async => null;
+
+  @override
+  Future<List<AnimeTitle>> getUpcomingAnnouncements({
+    int page = 1,
+    int limit = 40,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId) async => const [];
 }
 
 class _FakeAnimeRepo implements CatalogRepository {

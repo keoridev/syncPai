@@ -27,6 +27,10 @@ import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../../manga/data/datasources/mangadex_datasource.dart';
+import '../../../manga/data/repositories/manga_progress_repository.dart';
+import '../../../manga/domain/entities/manga_bridge.dart';
+import '../../../manga/presentation/cubit/user_manga_list_cubit.dart';
 import '../../services/avatar_upload_service.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
@@ -78,6 +82,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   final TextEditingController _commentController = TextEditingController();
   final TextEditingController _quickNicknameController = TextEditingController();
   List<WatchHistoryItem> _watchHistory = [];
+  ProfileShowcaseConfig _showcaseConfig = const ProfileShowcaseConfig();
+  FeaturedMangaShowcase? get _featuredManga => _showcaseConfig.selectedManga;
+  int _totalChaptersRead = 0;
   List<Map<String, dynamic>> _onlineFriends = [];
   List<Map<String, String>> _wallComments = [
     {
@@ -112,6 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     _loadBannerDismissed();
     _loadWatchHistory();
+    _loadMangaShowcase();
     _onlineFriends = FriendsService.getCachedFriends();
     FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadRealFriends();
@@ -200,6 +208,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         getIt<SharedPreferences>().setString(key, jsonEncode(_wallComments));
       } catch (_) {}
     }
+  }
+
+  Future<void> _loadMangaShowcase() async {
+    final repo = getIt.isRegistered<MangaProgressRepository>()
+        ? getIt<MangaProgressRepository>()
+        : MangaProgressRepository();
+    final config = await repo.getShowcaseConfig();
+    final chaptersRead = await repo.getTotalChaptersRead();
+    if (!mounted) return;
+    setState(() {
+      _showcaseConfig = config;
+      _totalChaptersRead = chaptersRead;
+    });
   }
 
   void _loadBannerDismissed() {
@@ -900,7 +921,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                                   ),
                                                 ],
                                                 const SizedBox(height: 8),
-                                                _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                                _buildCentralShowcaseSection(context, profile, currentAccentColor),
                                                 const SizedBox(height: 8),
                                                 _RecentHistoryCarousel(
                                                   items: _watchHistory,
@@ -922,6 +943,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                               children: [
                                                 _StatsCard(
                                                   stats: stats,
+                                                  totalChaptersRead: _totalChaptersRead,
                                                   currentAccentColor: currentAccentColor,
                                                   showActivityCharts: _showActivityCharts,
                                                   onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
@@ -992,7 +1014,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 ),
                                 if (_selectedMobileTab == 0) ...[
                                   SliverToBoxAdapter(
-                                    child: _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+                                    child: _buildCentralShowcaseSection(context, profile, currentAccentColor),
                                   ),
                                   SliverToBoxAdapter(
                                     child: _RecentHistoryCarousel(
@@ -1005,6 +1027,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   SliverToBoxAdapter(
                                     child: _StatsCard(
                                       stats: stats,
+                                      totalChaptersRead: _totalChaptersRead,
                                       currentAccentColor: currentAccentColor,
                                       showActivityCharts: _showActivityCharts,
                                       onToggleCharts: () => setState(() => _showActivityCharts = !_showActivityCharts),
@@ -1343,6 +1366,512 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           Icon(Icons.chevron_right_rounded, color: accent, size: 22),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCentralShowcaseSection(
+    BuildContext context,
+    UserProfile profile,
+    Color currentAccentColor,
+  ) {
+    final mode = _showcaseConfig.mode;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 15, color: currentAccentColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  mode.labelRu.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                key: const ValueKey('profile_customize_showcase_btn'),
+                onPressed: () => _openShowcaseCustomizerSheet(context, currentAccentColor),
+                icon: const Icon(Icons.tune_rounded, size: 15),
+                label: const Text(
+                  'Настроить витрину',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: currentAccentColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (mode == ShowcaseMode.anime || mode == ShowcaseMode.dual)
+          _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+        if (mode == ShowcaseMode.manga || mode == ShowcaseMode.dual)
+          _buildMangaShowcaseCard(context, currentAccentColor),
+      ],
+    );
+  }
+
+  Future<void> _openShowcaseCustomizerSheet(
+    BuildContext context,
+    Color accent,
+  ) async {
+    var draft = _showcaseConfig;
+    final captionController = TextEditingController(text: draft.customCaption);
+    final searchController = TextEditingController();
+    List<MangaDexManga> searchResults = const [];
+    bool isSearching = false;
+
+    final userManga = getIt.isRegistered<UserMangaListCubit>()
+        ? getIt<UserMangaListCubit>().state.entries
+        : const <UserMangaEntry>[];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF131722),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                16,
+                20,
+                MediaQuery.viewInsetsOf(ctx).bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Настроить витрину',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: ShowcaseMode.values.map((m) {
+                        final selected = draft.mode == m;
+                        return ChoiceChip(
+                          label: Text(m.labelRu),
+                          selected: selected,
+                          selectedColor: accent,
+                          labelStyle: TextStyle(
+                            color: selected ? Colors.white : Colors.white70,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                          onSelected: (_) {
+                            setSheetState(() => draft = draft.copyWith(mode: m));
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: captionController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Заголовок витрины',
+                        labelStyle: const TextStyle(color: Colors.white60),
+                        filled: true,
+                        fillColor: const Color(0xFF1A2030),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onChanged: (val) {
+                        draft = draft.copyWith(customCaption: val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Полноразмерный фон обложки',
+                        style: TextStyle(color: Colors.white, fontSize: 13.5),
+                      ),
+                      value: draft.fullBleedBackdrop,
+                      activeThumbColor: accent,
+                      onChanged: (val) {
+                        setSheetState(() {
+                          draft = draft.copyWith(fullBleedBackdrop: val);
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: searchController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Найти мангу для витрины...',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF1A2030),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        suffixIcon: isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.search_rounded, color: Colors.white70),
+                                onPressed: () async {
+                                  final q = searchController.text.trim();
+                                  if (q.isEmpty) return;
+                                  setSheetState(() => isSearching = true);
+                                  final ds = getIt.isRegistered<MangaDexDataSource>()
+                                      ? getIt<MangaDexDataSource>()
+                                      : MangaDexDataSource();
+                                  final found = await ds.searchManga(q);
+                                  if (!ctx.mounted) return;
+                                  setSheetState(() {
+                                    searchResults = found;
+                                    isSearching = false;
+                                  });
+                                },
+                              ),
+                      ),
+                    ),
+                    if (userManga.isNotEmpty || searchResults.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 120,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            for (final m in searchResults)
+                              _buildShowcasePickerTile(
+                                title: m.title,
+                                coverUrl: m.coverUrl,
+                                isSelected: draft.selectedManga?.mangaId == m.id,
+                                accent: accent,
+                                onTap: () {
+                                  setSheetState(() {
+                                    draft = draft.copyWith(
+                                      selectedManga: FeaturedMangaShowcase(
+                                        mangaId: m.id,
+                                        mangaTitle: m.title,
+                                        coverUrl: m.coverUrl,
+                                        chapterLabel: '1',
+                                      ),
+                                    );
+                                  });
+                                },
+                              ),
+                            for (final u in userManga)
+                              _buildShowcasePickerTile(
+                                title: u.mangaTitle,
+                                coverUrl: u.coverUrl,
+                                isSelected: draft.selectedManga?.mangaId == u.mangaId,
+                                accent: accent,
+                                onTap: () {
+                                  setSheetState(() {
+                                    draft = draft.copyWith(
+                                      selectedManga: FeaturedMangaShowcase(
+                                        mangaId: u.mangaId,
+                                        mangaTitle: u.mangaTitle,
+                                        coverUrl: u.coverUrl,
+                                        chapterLabel: u.lastReadChapter,
+                                        totalChapters: u.chaptersCount,
+                                      ),
+                                    );
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () async {
+                          final repo = getIt.isRegistered<MangaProgressRepository>()
+                              ? getIt<MangaProgressRepository>()
+                              : MangaProgressRepository();
+                          await repo.saveShowcaseConfig(draft);
+                          if (mounted) {
+                            setState(() => _showcaseConfig = draft);
+                          }
+                          if (sheetCtx.mounted) {
+                            Navigator.pop(sheetCtx);
+                          }
+                        },
+                        child: const Text(
+                          'Сохранить витрину',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    captionController.dispose();
+    searchController.dispose();
+  }
+
+  Widget _buildShowcasePickerTile({
+    required String title,
+    required String coverUrl,
+    required bool isSelected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 78,
+          decoration: BoxDecoration(
+            color: isSelected ? accent.withValues(alpha: 0.25) : const Color(0xFF1A2030),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: coverUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(coverUrl),
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF121620),
+                          child: Icon(Icons.menu_book_rounded, color: Colors.white38),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMangaShowcaseCard(BuildContext context, Color currentAccentColor) {
+    final showcase = _featuredManga;
+    if (showcase == null) {
+      return _GlassCard(
+        accentColor: currentAccentColor,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(Icons.menu_book_rounded, color: currentAccentColor, size: 22),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Закрепите любимую мангу в витрине профиля',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _openShowcaseCustomizerSheet(context, currentAccentColor),
+              child: const Text('Выбрать'),
+            ),
+          ],
+        ),
+      );
+    }
+    final chapterText = showcase.totalChapters != null
+        ? 'Глава ${showcase.chapterLabel} / ${showcase.totalChapters}'
+        : 'Глава ${showcase.chapterLabel}';
+    final caption = _showcaseConfig.customCaption.trim().isNotEmpty
+        ? _showcaseConfig.customCaption.trim().toUpperCase()
+        : 'ВИТРИНА МАНГИ';
+
+    return _GlassCard(
+      accentColor: currentAccentColor,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          children: [
+            if (_showcaseConfig.fullBleedBackdrop && showcase.coverUrl.isNotEmpty)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.22,
+                  child: CachedNetworkImage(
+                    imageUrl: wrapCorsSafeUrl(showcase.coverUrl),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.menu_book_rounded, size: 15, color: currentAccentColor),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          width: 58,
+                          height: 84,
+                          child: showcase.coverUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: wrapCorsSafeUrl(showcase.coverUrl),
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => const ColoredBox(
+                                    color: Color(0xFF1A2030),
+                                    child: Icon(Icons.menu_book_rounded, color: Colors.white38),
+                                  ),
+                                )
+                              : const ColoredBox(
+                                  color: Color(0xFF1A2030),
+                                  child: Icon(Icons.menu_book_rounded, color: Colors.white38),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              showcase.mangaTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF35D9D5).withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                chapterText,
+                                style: const TextStyle(
+                                  color: Color(0xFF35D9D5),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 34,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: currentAccentColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  final bridge = AnimeMangaBridge(
+                                    anilibriaId: 0,
+                                    mangaDexId: showcase.mangaId,
+                                    mangaTitle: showcase.mangaTitle,
+                                    coverUrl: showcase.coverUrl,
+                                    chaptersCount: showcase.totalChapters,
+                                  );
+                                  context.pushNamed(
+                                    'manga_reader',
+                                    extra: {
+                                      'bridge': bridge,
+                                      'initialChapter': double.tryParse(showcase.chapterLabel)?.floor(),
+                                    },
+                                  );
+                                },
+                                child: const Text(
+                                  'Продолжить',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2363,12 +2892,14 @@ class _ProfileScreenState extends State<ProfileScreen>
 // ============================================================================
 class _StatsCard extends StatelessWidget {
   final UserAnimeStats stats;
+  final int totalChaptersRead;
   final Color currentAccentColor;
   final bool showActivityCharts;
   final VoidCallback onToggleCharts;
 
   const _StatsCard({
     required this.stats,
+    this.totalChaptersRead = 0,
     required this.currentAccentColor,
     required this.showActivityCharts,
     required this.onToggleCharts,
@@ -2477,6 +3008,17 @@ class _StatsCard extends StatelessWidget {
                   icon: Icons.play_circle_outline_rounded,
                   value: '$totalEpisodes',
                   label: 'Эпизодов',
+                ),
+              ),
+              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
+
+              // 4. Прочитано глав
+              Expanded(
+                child: _buildStatCol(
+                  context,
+                  icon: Icons.menu_book_rounded,
+                  value: '$totalChaptersRead',
+                  label: 'Прочитано глав',
                 ),
               ),
             ],

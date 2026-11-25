@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/api_constants.dart';
@@ -37,8 +38,69 @@ abstract class AnilibriaRemoteDataSource {
 
 class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   final DioClient client;
+  final Map<String, Future<Response<dynamic>>> _inFlightQueries = {};
 
   AnilibriaRemoteDataSourceImpl(this.client);
+
+  bool _isEmptyBody(dynamic data) {
+    if (data == null) return true;
+    if (data is String && data.trim().isEmpty) return true;
+    return false;
+  }
+
+  String _buildDedupKey(String path, Map<String, dynamic>? queryParameters) {
+    if (queryParameters == null || queryParameters.isEmpty) {
+      return '${ApiConstants.baseUrl}$path';
+    }
+    final sortedKeys = queryParameters.keys.toList()..sort();
+    final queryStr = sortedKeys
+        .map((k) => '$k=${queryParameters[k]}')
+        .join('&');
+    return '${ApiConstants.baseUrl}$path?$queryStr';
+  }
+
+  Future<Response<dynamic>> _getWithMirrorFailover(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) {
+    final dedupKey = _buildDedupKey(path, queryParameters);
+    return _inFlightQueries.putIfAbsent(dedupKey, () async {
+      try {
+        Response<dynamic> response;
+        try {
+          response = await client.get(
+            path,
+            queryParameters: queryParameters,
+          );
+        } catch (e) {
+          final msg = e.toString().toLowerCase();
+          if (e is FormatException ||
+              msg.contains('the document is empty') ||
+              msg.contains('formatexception')) {
+            return await client.get(
+              '${ApiConstants.fallbackBaseUrl}$path',
+              queryParameters: queryParameters,
+              options: Options(extra: const {'disable_mirror_rewrite': true}),
+            );
+          }
+          rethrow;
+        }
+
+        if (_isEmptyBody(response.data)) {
+          final fallbackResponse = await client.get(
+            '${ApiConstants.fallbackBaseUrl}$path',
+            queryParameters: queryParameters,
+            options: Options(extra: const {'disable_mirror_rewrite': true}),
+          );
+          return fallbackResponse;
+        }
+
+        return response;
+      } finally {
+        _inFlightQueries.remove(dedupKey);
+      }
+    });
+  }
 
   @override
   Future<List<AnimeTitleDto>> getUpdates({int page = 1, int limit = 40}) async {
@@ -49,7 +111,7 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   @override
   Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
     try {
-      final response = await client.get(
+      final response = await _getWithMirrorFailover(
         ApiConstants.searchReleases,
         queryParameters: {
           'query': query,
@@ -57,6 +119,9 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       );
 
       final data = response.data;
+      if (_isEmptyBody(data)) {
+        return const [];
+      }
       final isTest = Platform.environment.containsKey('FLUTTER_TEST');
       if (isTest) {
         return parseAnilibriaDtosInIsolate(data);
@@ -105,13 +170,15 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       final target = resolvedId != null ? '$resolvedId' : rawCode;
       final path = '${ApiConstants.releaseDetails}/$target';
 
-      dynamic response;
+      Response<dynamic>? response;
       try {
-        response = await client.get(path);
+        response = await _getWithMirrorFailover(path);
       } catch (err) {
         if (hasValidCode && target != rawCode) {
           try {
-            response = await client.get('${ApiConstants.releaseDetails}/$rawCode');
+            response = await _getWithMirrorFailover(
+              '${ApiConstants.releaseDetails}/$rawCode',
+            );
           } catch (_) {
             try {
               final searchResults = await searchTitles(rawCode);
@@ -128,6 +195,10 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         if (response == null) {
           return _buildFallbackShikimoriDto(id: id, code: rawCode);
         }
+      }
+
+      if (_isEmptyBody(response.data)) {
+        return _buildFallbackShikimoriDto(id: id, code: rawCode);
       }
 
       if (response.data is Map<String, dynamic>) {

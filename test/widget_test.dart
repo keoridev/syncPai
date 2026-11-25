@@ -36,6 +36,7 @@ import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/data/models/anime_catalog_model.dart';
 import 'package:sync_pai/features/catalog/data/models/anime_player_data_model.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_entity.dart';
+import 'package:sync_pai/features/catalog/domain/entities/catalog_filter.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_entity.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
 import 'package:sync_pai/features/catalog/domain/repositories/anime_catalog_repository.dart';
@@ -3955,6 +3956,25 @@ class _CountingMockAnimeCatalogRepository implements AnimeCatalogRepository {
 
   @override
   Future<List<TranslationEntity>> getPlayerLinks(int releaseId, {String? title}) async => [];
+
+  @override
+  Future<CatalogPage> getReleases({
+    required CatalogFilter filter,
+    required int page,
+    int limit = 40,
+    CancelToken? cancelToken,
+  }) async {
+    final items = await getCatalog(
+      page: page,
+      limit: limit,
+      genres: filter.genres.isNotEmpty ? filter.genres.join(',') : null,
+      cancelToken: cancelToken,
+    );
+    return CatalogPage(items: items, page: page, hasMore: false);
+  }
+
+  @override
+  Future<List<AnimeEntity>> getSchedule({CancelToken? cancelToken}) async => const [];
 }
 
 class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
@@ -4014,4 +4034,18 @@ class _MockAnimeCatalogRepository implements AnimeCatalogRepository {
       ),
     ];
   }
+
+  @override
+  Future<CatalogPage> getReleases({
+    required CatalogFilter filter,
+    required int page,
+    int limit = 40,
+    CancelToken? cancelToken,
+  }) async {
+    final items = await getCatalog(page: page, limit: limit, cancelToken: cancelToken);
+    return CatalogPage(items: items, page: page, hasMore: false);
+  }
+
+  @override
+  Future<List<AnimeEntity>> getSchedule({CancelToken? cancelToken}) async => const [];
 }

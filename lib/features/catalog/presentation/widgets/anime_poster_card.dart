@@ -299,41 +299,39 @@ class UnifiedAnimeCard extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
 
-              // 2. Название тайтла и метаданные с гарантированным выравниванием строк через Spacer()
-              SizedBox(
-                height: isCompact ? 48 : 54,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title.displayTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.start,
-                      style: AppTypography.bodySmall.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: isCompact ? 12.0 : (isNarrow ? 11.5 : 12.5),
-                        height: 1.22,
-                        color: AppColors.textPrimary,
-                        letterSpacing: -0.1,
-                      ),
+              // 2. Название тайтла и метаданные без переполнения на 3-колоночной сетке
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title.displayTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.start,
+                    style: AppTypography.bodySmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: isCompact ? 11.5 : (isNarrow ? 11.5 : 12.5),
+                      height: 1.2,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.1,
                     ),
-                    const Spacer(),
-                    Text(
-                      subtitleOverride ?? _buildMetaSubtitle(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption.copyWith(
-                        fontSize: isCompact ? 9.5 : 10.5,
-                        fontWeight: FontWeight.w400,
-                        color: AppColors.textMuted,
-                        letterSpacing: 0.1,
-                      ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitleOverride ?? _buildMetaSubtitle(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      fontSize: isCompact ? 9.5 : 10.5,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textMuted,
+                      letterSpacing: 0.1,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),

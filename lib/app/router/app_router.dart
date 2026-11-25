@@ -10,6 +10,9 @@ import '../../features/catalog/domain/entities/anime_title.dart';
 import '../../features/catalog/domain/entities/episode_item.dart';
 import '../../features/downloads/presentation/screens/downloads_screen.dart';
 import '../../features/main/presentation/screens/main_screen.dart';
+import '../../features/manga/domain/entities/manga_bridge.dart';
+import '../../features/manga/presentation/screens/manga_details_screen.dart';
+import '../../features/manga/presentation/screens/manga_reader_screen.dart';
 import '../../features/player/domain/entities/player_quality.dart';
 import '../../features/player/presentation/screens/player_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
@@ -106,8 +109,11 @@ final GoRouter appRouter = GoRouter(
             body: Center(child: Text('Тайтл не найден')),
           );
         }
+        final scrollToSimilar =
+            state.extra is Map && (state.extra as Map)['scrollToSimilar'] == true;
         return AnimeDetailsScreen(
           title: title,
+          scrollToSimilar: scrollToSimilar,
           onPlayEpisode: (t, ep, quality) {
             PlayerNavigationGuard.openPlayer(context, extra: {
               'title': t,
@@ -220,6 +226,56 @@ final GoRouter appRouter = GoRouter(
       path: '/wrapped',
       name: 'wrapped',
       builder: (context, state) => const WrappedStoryScreen(),
+    ),
+    GoRoute(
+      path: '/manga/:id',
+      name: 'manga_details',
+      builder: (context, state) {
+        final mangaId = state.pathParameters['id'] ?? '';
+        final initialManga = state.extra is MangaDexManga
+            ? state.extra as MangaDexManga
+            : null;
+        return MangaDetailsScreen(
+          mangaId: mangaId,
+          initialManga: initialManga,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/manga/reader/:chapterId',
+      name: 'manga_reader_chapter',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final bridge = extra?['bridge'] as AnimeMangaBridge?;
+        final initialChapter = extra?['initialChapter'] as int?;
+        if (bridge == null) {
+          return const Scaffold(
+            body: Center(child: Text('Манга не найдена')),
+          );
+        }
+        return MangaReaderScreen(
+          bridge: bridge,
+          initialChapter: initialChapter,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/manga-reader',
+      name: 'manga_reader',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final bridge = extra?['bridge'] as AnimeMangaBridge?;
+        final initialChapter = extra?['initialChapter'] as int?;
+        if (bridge == null) {
+          return const Scaffold(
+            body: Center(child: Text('Манга не найдена')),
+          );
+        }
+        return MangaReaderScreen(
+          bridge: bridge,
+          initialChapter: initialChapter,
+        );
+      },
     ),
     GoRoute(
       path: '/player',

@@ -53,6 +53,8 @@ import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history
 import 'package:sync_pai/core/widgets/tv_focusable.dart';
 import 'package:sync_pai/features/downloads/domain/entities/download_task.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
+import 'package:sync_pai/features/manga/data/datasources/mangadex_datasource.dart';
+import 'package:sync_pai/shared/widgets/compact_episode_grid.dart';
 import 'package:sync_pai/features/downloads/presentation/cubit/download_state.dart';
 import 'package:sync_pai/features/torrents/domain/entities/torrent_release.dart';
 import 'package:sync_pai/features/torrents/domain/repositories/torrent_repository.dart';
@@ -62,6 +64,8 @@ import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_state.dart';
 import 'package:sync_pai/features/kodik/presentation/widgets/voiceover_selector_sheet.dart';
 import 'package:sync_pai/features/main/presentation/screens/main_screen.dart';
+import 'package:sync_pai/features/manga/data/services/anime_manga_bridge_service.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 
 /// In-Memory LRU кэш с 30-минутным TTL для мгновенного повторного открытия деталей аниме (0ms)
 class CachedAnimeDetails {
@@ -180,6 +184,7 @@ class AnimeDetailsCache {
 /// 5. Вкладки «Серии», «Инфо & Трейлер» и «Отзывы» с оценками порталов (Shikimori/MAL/AniLibria).
 class AnimeDetailsScreen extends StatefulWidget {
   final AnimeTitle title;
+  final bool scrollToSimilar;
   final void Function(AnimeTitle title, EpisodeItem episode, PlayerQuality quality)? onPlayEpisode;
   final void Function(AnimeTitle title, EpisodeItem episode, PlayerQuality quality, Duration position)? onResumeEpisode;
   final void Function(AnimeTitle title, EpisodeItem episode)? onStartSyncRoom;
@@ -187,6 +192,7 @@ class AnimeDetailsScreen extends StatefulWidget {
   const AnimeDetailsScreen({
     super.key,
     required this.title,
+    this.scrollToSimilar = false,
     this.onPlayEpisode,
     this.onResumeEpisode,
     this.onStartSyncRoom,
@@ -213,8 +219,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   bool _isLoadingDetails = false;
   bool _isOpeningEpisode = false;
   bool _isStartingWatchTogether = false;
+  bool _isOpeningManga = false;
   late final ScrollController _scrollController;
+  final GlobalKey _similarSectionKey = GlobalKey();
   bool _showAppBarTitle = false;
+  AnimeMangaBridge? _mangaBridge;
+  List<AnimeTitle> _shikimoriSimilar = const [];
+  bool? _manualCompactEpisodeGrid;
+  int? _selectedEpisodeRangeIndex;
 
   @override
   void initState() {
@@ -252,6 +264,23 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
 
     _scrollController = ScrollController()..addListener(_handleScroll);
+    if (widget.scrollToSimilar) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 220), () {
+          if (!mounted) return;
+          final targetCtx = _similarSectionKey.currentContext;
+          if (targetCtx != null && targetCtx.mounted) {
+            Scrollable.ensureVisible(
+              targetCtx,
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
+      });
+    }
+    _resolveMangaBridge();
+    _loadShikimoriSimilar();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging && _tabController.index != _currentTabIndex) {
@@ -587,6 +616,82 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     return null;
   }
 
+  Future<void> _loadShikimoriSimilar() async {
+    if (!getIt.isRegistered<ShikimoriRemoteDataSource>()) return;
+    try {
+      final ds = getIt<ShikimoriRemoteDataSource>();
+      final shikiId = _currentTitle.shikimoriId ??
+          await ds.resolveShikimoriId(_currentTitle);
+      if (!mounted || shikiId == null || shikiId <= 0) return;
+      final similar = await ds.getSimilarAnimes(shikiId);
+      if (mounted && similar.isNotEmpty) {
+        setState(() => _shikimoriSimilar = similar);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _resolveMangaBridge() async {
+    final cached = AnimeMangaBridgeService.instance.getCached(_currentTitle.id);
+    if (cached != null) {
+      if (mounted) setState(() => _mangaBridge = cached);
+      return;
+    }
+    final resolved =
+        await AnimeMangaBridgeService.instance.resolveForAnime(_currentTitle);
+    if (mounted && resolved != null) {
+      setState(() => _mangaBridge = resolved);
+    }
+  }
+
+  Future<void> _handleReadMangaTap(AnimeTitle title) async {
+    if (_isOpeningManga) return;
+    if (_mangaBridge != null) {
+      _openMangaReader(_mangaBridge!);
+      return;
+    }
+
+    setState(() => _isOpeningManga = true);
+    final resolved = await AnimeMangaBridgeService.instance.resolveForAnime(title);
+    if (!mounted) return;
+    setState(() => _isOpeningManga = false);
+    if (resolved != null) {
+      setState(() => _mangaBridge = resolved);
+      _openMangaReader(resolved);
+      return;
+    }
+
+    final ds = getIt.isRegistered<MangaDexDataSource>()
+        ? getIt<MangaDexDataSource>()
+        : MangaDexDataSource();
+    final query = title.englishTitle.trim().isNotEmpty
+        ? title.englishTitle.trim()
+        : title.russianTitle.trim();
+    final matches = await ds.searchManga(query);
+    if (!mounted) return;
+    if (matches.isNotEmpty) {
+      context.pushNamed(
+        'manga_details',
+        pathParameters: {'id': matches.first.id},
+        extra: matches.first,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Манга-первоисточник не найдена'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _openMangaReader(AnimeMangaBridge bridge) {
+    HapticFeedback.lightImpact();
+    context.pushNamed('manga_reader', extra: {
+      'bridge': bridge,
+      'initialChapter': bridge.continueFromChapter,
+    });
+  }
+
   void _onRelatedReleaseSelected(RelatedAnimeRelease release) async {
     if (release.isCurrent) return;
 
@@ -686,22 +791,36 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     required String label,
     required VoidCallback? onTap,
     Color iconColor = AppColors.textPrimary,
+    bool isLoading = false,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: isLoading ? null : onTap,
       borderRadius: BorderRadius.circular(14),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            GlassIconButton(
-              icon: icon,
-              size: 46,
-              iconSize: 20,
-              iconColor: iconColor,
-              onTap: onTap,
-            ),
+            if (isLoading)
+              const SizedBox(
+                width: 46,
+                height: 46,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            else
+              GlassIconButton(
+                icon: icon,
+                size: 46,
+                iconSize: 20,
+                iconColor: iconColor,
+                onTap: onTap,
+              ),
             const SizedBox(height: 6),
             SizedBox(
               width: 66,
@@ -728,11 +847,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     required String label,
     required VoidCallback? onTap,
     Color iconColor = AppColors.textPrimary,
+    bool isLoading = false,
   }) {
     return Tooltip(
       message: label,
       child: InkWell(
-        onTap: onTap,
+        onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           height: 46,
@@ -745,7 +865,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20, color: iconColor),
+              if (isLoading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(icon, size: 20, color: iconColor),
               const SizedBox(width: 8),
               Text(
                 label,
@@ -1239,51 +1366,85 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   }
 
   Widget _buildWatchButton(BuildContext context, EpisodeItem? currentEpisode, {double? width, double height = 48.0}) {
-    final isAnons = _currentTitle.status.toLowerCase().contains('анонс') ||
+    final isAnons = (_currentTitle.isAnnounced && _currentTitle.episodes.isEmpty) ||
+        _currentTitle.status.toLowerCase().contains('анонс') ||
         _currentTitle.status.toLowerCase().contains('скоро');
 
     if (isAnons) {
-      return SizedBox(
-        width: width,
-        height: height,
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF261D15),
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: Color(0xFFFF9800), width: 1.2),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-          ),
-          icon: const Icon(Icons.campaign_rounded, color: Color(0xFFFFB74D), size: 22),
-          label: const Text(
-            'Анонс • Добавить в «В планах»',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          onPressed: () {
-            if (getIt.isRegistered<AnimeListCubit>()) {
-              context.read<AnimeListCubit>().setAnimeStatus(
-                animeId: _currentTitle.id,
-                titleRu: _currentTitle.displayTitle,
-                posterUrl: _currentTitle.posterMedium.isNotEmpty
-                    ? _currentTitle.posterMedium
-                    : _currentTitle.posterSmall,
-                status: AnimeListStatus.planned,
-                isUserInitiated: true,
-              );
-            }
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✨ Анонс добавлен в список «В планах»! Оповестим вас о премьере!'),
-                duration: Duration(seconds: 2),
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: Color(0xFFE06C53),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF261D15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFFFF9800).withValues(alpha: 0.6),
+                width: 1,
               ),
-            );
-          },
-        ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule_rounded, color: Color(0xFFFFB74D), size: 14),
+                SizedBox(width: 6),
+                Text(
+                  'Ожидается выход',
+                  style: TextStyle(
+                    color: Color(0xFFFFB74D),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: width,
+            height: height,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF261D15),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: Color(0xFFFF9800), width: 1.2),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              icon: const Icon(Icons.bookmark_add_rounded, color: Color(0xFFFFB74D), size: 20),
+              label: const Text(
+                'Добавить в «В планах»',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+              onPressed: () {
+                if (getIt.isRegistered<AnimeListCubit>()) {
+                  context.read<AnimeListCubit>().setAnimeStatus(
+                    animeId: _currentTitle.id,
+                    titleRu: _currentTitle.displayTitle,
+                    posterUrl: _currentTitle.posterMedium.isNotEmpty
+                        ? _currentTitle.posterMedium
+                        : _currentTitle.posterSmall,
+                    status: AnimeListStatus.planned,
+                    isUserInitiated: true,
+                  );
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Анонс добавлен в список «В планах»'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: Color(0xFFE06C53),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       );
     }
 
@@ -1475,6 +1636,19 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 label: 'Скачать',
                 onTap: () => _openTorrentsSheet(context),
               ),
+              if (_mangaBridge != null ||
+                  (_currentTitle.shikimoriId != null && _currentTitle.shikimoriId! > 0)) ...[
+                const SizedBox(width: 10),
+                _buildDesktopActionButton(
+                  icon: Icons.menu_book_rounded,
+                  iconColor: AppColors.primaryLight,
+                  isLoading: _isOpeningManga,
+                  label: _mangaBridge?.continueFromChapter != null
+                      ? 'Читать мангу • с ${_mangaBridge!.continueFromChapter} гл.'
+                      : 'Читать мангу',
+                  onTap: () => _handleReadMangaTap(title),
+                ),
+              ],
             ],
           );
         }
@@ -1499,6 +1673,17 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 });
               },
             ),
+            if (_mangaBridge != null ||
+                (_currentTitle.shikimoriId != null && _currentTitle.shikimoriId! > 0))
+              _buildSecondaryActionButton(
+                icon: Icons.menu_book_rounded,
+                iconColor: AppColors.primaryLight,
+                isLoading: _isOpeningManga,
+                label: _mangaBridge?.continueFromChapter != null
+                    ? 'с ${_mangaBridge!.continueFromChapter} гл.'
+                    : 'Читать мангу',
+                onTap: () => _handleReadMangaTap(title),
+              ),
             if (getIt.isRegistered<AnimeListCubit>())
               BlocBuilder<AnimeListCubit, AnimeListState>(
                 bloc: getIt<AnimeListCubit>(),
@@ -1734,6 +1919,186 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         ],
       ),
     );
+  }
+
+  List<Widget> _buildEpisodesSlivers({
+    required BuildContext context,
+    required AnimeTitle title,
+    required List<EpisodeItem> episodes,
+    required String backdropUrl,
+    required bool isDesktop,
+  }) {
+    final isCompactGrid =
+        _manualCompactEpisodeGrid ?? (episodes.length > kCompactEpisodeGridThreshold);
+
+    if (!isCompactGrid) {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+          sliver: isDesktop
+              ? SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 4.2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 10,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildEpisodeCard(
+                      context,
+                      title,
+                      episodes[index],
+                      index,
+                      backdropUrl,
+                    ),
+                    childCount: episodes.length,
+                  ),
+                )
+              : SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildEpisodeCard(
+                      context,
+                      title,
+                      episodes[index],
+                      index,
+                      backdropUrl,
+                    ),
+                    childCount: episodes.length,
+                  ),
+                ),
+        ),
+      ];
+    }
+
+    int? lastWatchedEp;
+    if (getIt.isRegistered<WatchHistoryCubit>()) {
+      final histState = getIt<WatchHistoryCubit>().state;
+      final histItem = histState.historyMap[title.id];
+      if (histItem != null) {
+        lastWatchedEp = histItem.episode;
+      } else {
+        final normTitle = title.russianTitle.trim().toLowerCase();
+        for (final h in histState.history) {
+          if (h.titleName.trim().toLowerCase() == normTitle) {
+            lastWatchedEp = h.episode;
+            break;
+          }
+        }
+      }
+    }
+
+    final activeEp = lastWatchedEp ??
+        episodes[_selectedEpisodeIndex.clamp(0, episodes.length - 1)].episode;
+    final effectiveRangeIndex = _selectedEpisodeRangeIndex ??
+        computeEpisodeRangeIndex(episodes, activeEp);
+    final visibleEpisodes = sliceEpisodesForRange(episodes, effectiveRangeIndex);
+
+    return [
+      if (episodes.length > kEpisodeRangeChunkSize)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: EpisodeRangeChips(
+              episodes: episodes,
+              selectedRangeIndex: effectiveRangeIndex,
+              padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+              onRangeSelected: (idx) {
+                setState(() => _selectedEpisodeRangeIndex = idx);
+              },
+            ),
+          ),
+        ),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+        sliver: SliverGrid(
+          gridDelegate: CompactEpisodeGrid.gridDelegate,
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final ep = visibleEpisodes[index];
+              final isActive = ep.episode == activeEp;
+              final isWatched = !isActive &&
+                  lastWatchedEp != null &&
+                  ep.episode <= lastWatchedEp;
+              final isDownloaded = getIt.isRegistered<DownloadCubit>() &&
+                  getIt<DownloadCubit>().state.isDownloaded(title.id, ep.episode);
+
+              return CompactEpisodeTile(
+                episode: ep,
+                isActive: isActive,
+                isWatched: isWatched,
+                isDownloaded: isDownloaded,
+                onTap: () {
+                  final globalIndex = episodes.indexWhere((e) => e.episode == ep.episode);
+                  if (globalIndex >= 0) {
+                    setState(() => _selectedEpisodeIndex = globalIndex);
+                  }
+                  _requestPlayEpisode(ep);
+                },
+                onLongPress: () {
+                  showEpisodeQuickActionsSheet(
+                    context,
+                    episode: ep,
+                    isDownloaded: isDownloaded,
+                    onDownload: () => _startEpisodeDownload(title, ep),
+                    onMarkWatched: () => _markEpisodeWatched(title, ep),
+                  );
+                },
+              );
+            },
+            childCount: visibleEpisodes.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _startEpisodeDownload(AnimeTitle title, EpisodeItem ep) async {
+    if (!getIt.isRegistered<DownloadCubit>()) return;
+    String? streamUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
+    EpisodeItem downloadEp = ep;
+    if (getIt.isRegistered<KodikCubit>()) {
+      final kodikCubit = getIt<KodikCubit>();
+      if (!kodikCubit.state.isAniLibriaActive) {
+        final resolved = await kodikCubit.getStreamForEpisode(ep.episode);
+        if (resolved != null && resolved.isNotEmpty) {
+          streamUrl = resolved;
+          downloadEp = EpisodeItem(
+            episode: ep.episode,
+            name: '${ep.name ?? "Серия ${ep.episode}"} (${kodikCubit.state.activeVoiceoverTitle})',
+            fhdUrl: resolved,
+            hdUrl: resolved,
+            sdUrl: resolved,
+            previewUrl: ep.previewUrl,
+          );
+        }
+      }
+    }
+    if (streamUrl != null && streamUrl.isNotEmpty) {
+      final quality = downloadEp.fhdUrl != null
+          ? '1080p FHD'
+          : (downloadEp.hdUrl != null ? '720p HD' : '480p SD');
+      getIt<DownloadCubit>().startSmartDownload(
+        title: title,
+        episode: downloadEp,
+        quality: quality,
+      );
+    }
+  }
+
+  Future<void> _markEpisodeWatched(AnimeTitle title, EpisodeItem ep) async {
+    if (!getIt.isRegistered<WatchHistoryCubit>()) return;
+    await getIt<WatchHistoryCubit>().saveProgress(
+      titleId: title.id,
+      titleName: title.russianTitle,
+      posterUrl: title.posterMedium,
+      episode: ep.episode,
+      episodeName: ep.name,
+      position: const Duration(minutes: 24),
+      duration: const Duration(minutes: 24),
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Widget _buildEpisodeCard(
@@ -2546,6 +2911,33 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                     fontSize: 13,
                                   ),
                                 ),
+                                const SizedBox(width: 6),
+                                Builder(
+                                  builder: (context) {
+                                    final isCompact = _manualCompactEpisodeGrid ??
+                                        (episodes.length > kCompactEpisodeGridThreshold);
+                                    return IconButton(
+                                      key: const ValueKey('details_episode_view_toggle'),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      tooltip: isCompact ? 'Показать списком' : 'Показать сеткой',
+                                      icon: Icon(
+                                        isCompact
+                                            ? Icons.view_agenda_rounded
+                                            : Icons.grid_view_rounded,
+                                        color: AppColors.textSecondary,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          _manualCompactEpisodeGrid = !isCompact;
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
                                 if (getIt.isRegistered<KodikCubit>()) ...[
                                   const SizedBox(width: 8),
                                   BlocBuilder<KodikCubit, KodikState>(
@@ -2607,29 +2999,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   ),
                 ),
 
-                // Карточки серий в стиле 16:9 с превью слева и тонким разделителем
+                // Список / компактная сетка серий
                 if (episodes.isNotEmpty)
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                    sliver: isDesktop
-                        ? SliverGrid(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 4.2,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 10,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _buildEpisodeCard(context, title, episodes[index], index, backdropUrl),
-                              childCount: episodes.length,
-                            ),
-                          )
-                        : SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _buildEpisodeCard(context, title, episodes[index], index, backdropUrl),
-                              childCount: episodes.length,
-                            ),
-                          ),
+                  ..._buildEpisodesSlivers(
+                    context: context,
+                    title: title,
+                    episodes: episodes,
+                    backdropUrl: backdropUrl,
+                    isDesktop: isDesktop,
                   )
                 else
                   SliverToBoxAdapter(
@@ -2830,13 +3207,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             final history = getIt.isRegistered<WatchHistoryCubit>()
                                 ? getIt<WatchHistoryCubit>().state.history
                                 : const <WatchHistoryItem>[];
+                            final relatedIds = _relatedReleases
+                                .map((r) => int.tryParse(r.id) ?? 0)
+                                .where((id) => id > 0)
+                                .toSet();
                             final similar = RecommendationEngine.instance.recommendSimilarTo(
                               target: _currentTitle,
                               catalogPool: catalogTitles,
                               userEntries: entries,
                               watchHistory: history,
+                              shikimoriSimilar: _shikimoriSimilar,
+                              relatedIds: relatedIds,
                             );
                             return ForYouRecommendationsShelf(
+                              key: _similarSectionKey,
                               title: 'Похожее по вайбу',
                               picks: similar,
                               onTitleTap: (anime) {

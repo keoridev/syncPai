@@ -515,6 +515,12 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     return limit < result.length ? result.take(limit).toList() : result;
   }
 
+  bool _isEmptyBody(dynamic data) {
+    if (data == null) return true;
+    if (data is String && data.trim().isEmpty) return true;
+    return false;
+  }
+
   Future<List<AnimeCatalogModel>> _executeCatalogFetch(
     Map<String, dynamic> queryParams,
   ) async {
@@ -525,9 +531,11 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
         final response = await _dio
             .get(_catalogUrl, queryParameters: params)
             .timeout(const Duration(seconds: 10));
-        final parsed = await _parseReleasesAsync(response.data);
-        if (parsed.isNotEmpty) {
-          return parsed;
+        if (!_isEmptyBody(response.data)) {
+          final parsed = await _parseReleasesAsync(response.data);
+          if (parsed.isNotEmpty) {
+            return parsed;
+          }
         }
       } on DioException catch (e) {
         if (CancelToken.isCancel(e)) rethrow;
@@ -536,6 +544,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       final fallbackRes = await _dio
           .get(_fallbackCatalogUrl, queryParameters: params)
           .timeout(const Duration(seconds: 10));
+      if (_isEmptyBody(fallbackRes.data)) return const [];
       return await _parseReleasesAsync(fallbackRes.data);
     }
 
@@ -553,7 +562,22 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   Future<List<AnimeCatalogModel>> getScheduleWeek({
     CancelToken? cancelToken,
   }) async {
+    if (cancelToken != null && cancelToken.isCancelled) {
+      throw DioException.requestCancelled(
+        requestOptions: RequestOptions(path: _scheduleWeekUrl),
+        reason: cancelToken.cancelError,
+      );
+    }
+
+    const dedupKey = _scheduleWeekUrl;
+    final cached = _catalogCache[dedupKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.cachedAt) < _catalogCacheTtl) {
+      return cached.items;
+    }
+
     Future<List<AnimeCatalogModel>> parseSchedule(dynamic raw) async {
+      if (_isEmptyBody(raw)) return const [];
       final list = raw is List
           ? raw
           : (raw is Map && raw['data'] is List ? raw['data'] as List : const []);
@@ -568,20 +592,48 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return items.map((j) => AnimeCatalogModel.fromJson(j)).toList();
     }
 
-    try {
-      final response = await _dio
-          .get(_scheduleWeekUrl, cancelToken: cancelToken)
-          .timeout(const Duration(seconds: 10));
-      final parsed = await parseSchedule(response.data);
-      if (parsed.isNotEmpty) return parsed;
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) rethrow;
-    } catch (_) {}
+    final inFlightFuture = _inFlightRequests.putIfAbsent(dedupKey, () {
+      return () async {
+        try {
+          final response = await _dio
+              .get(_scheduleWeekUrl)
+              .timeout(const Duration(seconds: 10));
+          final parsed = await parseSchedule(response.data);
+          if (parsed.isNotEmpty) {
+            _catalogCache[dedupKey] = _CachedCatalogPage(
+              items: parsed,
+              cachedAt: DateTime.now(),
+            );
+            return parsed;
+          }
+        } on DioException catch (e) {
+          if (CancelToken.isCancel(e)) rethrow;
+        } catch (_) {}
 
-    final fallback = await _dio
-        .get(_fallbackScheduleWeekUrl, cancelToken: cancelToken)
-        .timeout(const Duration(seconds: 10));
-    return parseSchedule(fallback.data);
+        final fallback = await _dio
+            .get(_fallbackScheduleWeekUrl)
+            .timeout(const Duration(seconds: 10));
+        final parsed = await parseSchedule(fallback.data);
+        if (parsed.isNotEmpty) {
+          _catalogCache[dedupKey] = _CachedCatalogPage(
+            items: parsed,
+            cachedAt: DateTime.now(),
+          );
+        }
+        return parsed;
+      }()
+          .whenComplete(() {
+        _inFlightRequests.remove(dedupKey);
+      });
+    });
+
+    if (cancelToken != null) {
+      return Future.any([
+        inFlightFuture,
+        cancelToken.whenCancel.then((err) => throw err),
+      ]);
+    }
+    return inFlightFuture;
   }
 
   @override

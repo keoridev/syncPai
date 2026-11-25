@@ -98,7 +98,7 @@ class AnimeEntity extends Equatable {
           : (status.toLowerCase().contains('ongoing') || status.toLowerCase().contains('онгоинг') || status.toLowerCase().contains('процесс'))
               ? 'Онгоинг'
               : 'Завершен',
-      shikimoriUrl: shikimoriId > 0 ? 'https://shikimori.one/animes/$shikimoriId' : null,
+      shikimoriUrl: shikimoriId > 0 ? 'https://shikimori.io/animes/$shikimoriId' : null,
     );
   }
 

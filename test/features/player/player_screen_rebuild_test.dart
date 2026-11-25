@@ -13,6 +13,7 @@ import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/player/presentation/cubit/player_cubit.dart';
 import 'package:sync_pai/features/player/presentation/cubit/player_state.dart';
 import 'package:sync_pai/features/player/presentation/screens/player_screen.dart';
+import 'package:sync_pai/features/player/presentation/widgets/player_progress_bar.dart';
 import 'package:sync_pai/features/player/services/global_mini_player_service.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 
@@ -80,6 +81,8 @@ class _RebuildFakePlayer extends Fake implements mk.Player {
   Future<void> open(mk.Playable playable, {bool play = true}) async {}
   @override
   Future<void> setVolume(double volume) async {}
+  @override
+  Future<void> seek(Duration position) async {}
   @override
   Future<void> stop() async {}
   @override
@@ -390,6 +393,100 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await cubit.close();
       await tester.pump(const Duration(seconds: 3));
+    });
+
+    testWidgets(
+        'UnifiedEndingNextPill stays identical in locked/unlocked states, vertical swipes work while HUD visible, and scrubbing pauses auto-hide',
+        (tester) async {
+      final fakePlayer = _RebuildFakePlayer();
+      final title = _rebuildTitle();
+      final cubit = PlayerCubit(
+        title: title,
+        episode: title.episodes.first,
+        existingPlayer: fakePlayer,
+        userIdOverride: 'u_ux_fixes',
+      );
+      final fakeVc = _FakeVideoController(fakePlayer);
+
+      GlobalMiniPlayerService.instance.minimize(
+        cubit: cubit,
+        videoController: fakeVc,
+        onSaveProgress: () {},
+      );
+
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PlayerScreen(
+            title: title,
+            initialEpisode: title.episodes.first,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 1. Reach ending segment -> UnifiedEndingNextPill appears in exact same spot in unlocked & locked states
+      final s = fakePlayer.stream as _RebuildFakeStream;
+      s.bufferingCtrl.add(false);
+      s.playingCtrl.add(true);
+      s.durationCtrl.add(const Duration(seconds: 1440));
+      s.positionCtrl.add(const Duration(seconds: 1320));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final pillFinder = find.byKey(const ValueKey('unified_ending_next_pill'));
+      expect(pillFinder, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player_locked_next_episode_pill')),
+        findsNothing,
+      );
+      final unlockedRect = tester.getRect(pillFinder);
+
+      cubit.setScreenLocked(true);
+      await tester.pump();
+      expect(pillFinder, findsOneWidget);
+      final lockedRect = tester.getRect(pillFinder);
+      expect(lockedRect, unlockedRect);
+
+      // Unlock and show controls -> vertical swipes on left/right adjust brightness/volume while HUD is visible
+      cubit.setScreenLocked(false);
+      cubit.showControls();
+      await tester.pump();
+      expect(cubit.state.areControlsVisible, isTrue);
+
+      final initialBrightness = cubit.state.brightness;
+      await tester.dragFrom(const Offset(150, 220), const Offset(0, -100));
+      await tester.pump();
+      expect(cubit.state.brightness, lessThanOrEqualTo(initialBrightness));
+      // Swipe down on left half lowers brightness
+      await tester.dragFrom(const Offset(150, 150), const Offset(0, 120));
+      await tester.pump();
+      expect(cubit.state.brightness, lessThan(1.0));
+
+      // Swipe down then up on right half adjusts volume while HUD is visible
+      await tester.dragFrom(const Offset(700, 150), const Offset(0, 120));
+      await tester.pump();
+      expect(cubit.state.volume, lessThan(100.0));
+
+      // 3. Scrubbing PlayerProgressBar pauses controls auto-hide for 6+ seconds until release
+      final barFinder = find.byType(PlayerProgressBar);
+      expect(barFinder, findsOneWidget);
+      final barRect = tester.getRect(barFinder);
+      final gesture = await tester.startGesture(
+        Offset(barRect.center.dx, barRect.top + 17),
+      );
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(seconds: 6));
+      expect(cubit.state.areControlsVisible, isTrue);
+      await gesture.up();
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await cubit.close();
+      await tester.pump(const Duration(seconds: 5));
     });
   });
 }

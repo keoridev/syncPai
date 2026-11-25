@@ -30,6 +30,7 @@ import '../../../catalog/presentation/widgets/anime_poster_card.dart';
 import '../../../downloads/domain/entities/download_task.dart';
 import '../../../downloads/presentation/cubit/download_cubit.dart';
 import '../../../downloads/presentation/cubit/download_state.dart';
+import '../../../manga/presentation/widgets/user_manga_list_view.dart';
 import '../../../player/domain/entities/player_quality.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -71,6 +72,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
   SavedAnimeViewMode _viewMode = SavedAnimeViewMode.grid;
   int _gridColumns = 3;
   bool _isHistoryTab = false;
+  bool _isMangaMode = false;
   SavedAnimeSort _sortBy = SavedAnimeSort.dateAdded;
 
   // Массовое управление (Batch Edit)
@@ -1043,6 +1045,78 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
 
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
+                  // Сегментированный переключатель «Аниме | Манга»
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF151923),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Material(
+                                  key: const ValueKey('lists_mode_anime'),
+                                  color: !_isMangaMode ? AppColors.primary : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(9),
+                                    onTap: () {
+                                      if (_isMangaMode) setState(() => _isMangaMode = false);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      child: Text(
+                                        'Аниме',
+                                        style: TextStyle(
+                                          color: !_isMangaMode ? Colors.white : AppColors.textSecondary,
+                                          fontSize: 12.5,
+                                          fontWeight: !_isMangaMode ? FontWeight.w700 : FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Material(
+                                  key: const ValueKey('lists_mode_manga'),
+                                  color: _isMangaMode ? AppColors.primary : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(9),
+                                    onTap: () {
+                                      if (!_isMangaMode) setState(() => _isMangaMode = true);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      child: Text(
+                                        'Манга',
+                                        style: TextStyle(
+                                          color: _isMangaMode ? Colors.white : AppColors.textSecondary,
+                                          fontSize: 12.5,
+                                          fontWeight: _isMangaMode ? FontWeight.w700 : FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
+                  if (_isMangaMode)
+                    const UserMangaListView()
+                  else ...[
                   // БЛОК 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Продолжить просмотр» из WatchHistory
                   if (!_isHistoryTab && historyState.lastWatched != null)
                     SliverToBoxAdapter(
@@ -1931,6 +2005,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     child: SizedBox(height: 90), // Отступ под парящий Glass Bottom Nav Bar
                   ),
                   ], // end else of _isHistoryTab
+                  ], // end else of _isMangaMode
                 ],
               ),
             ),

@@ -120,7 +120,7 @@ class ImportPosterEnricher {
     // 2. Fallback: Shikimori API
     try {
       final resp = await client.get<dynamic>(
-        'https://shikimori.one/api/animes?search=$encoded&limit=1',
+        'https://shikimori.io/api/animes?search=$encoded&limit=1',
       );
       final list = _extractList(resp.data);
       if (list.isNotEmpty && list.first is Map) {
@@ -131,7 +131,7 @@ class ImportPosterEnricher {
           poster = (imageObj['original'] ?? imageObj['preview'] ?? '').toString();
         }
         if (poster.startsWith('/')) {
-          poster = 'https://shikimori.one$poster';
+          poster = 'https://shikimori.io$poster';
         }
         if (poster.isNotEmpty) {
           final id = item['id'] is int ? item['id'] as int : int.tryParse('${item['id']}');

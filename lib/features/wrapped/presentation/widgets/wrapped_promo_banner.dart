@@ -96,9 +96,13 @@ class WrappedPromoBanner extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          const Text(
-                            '✨ Новое',
-                            style: TextStyle(color: Color(0xFFFFB300), fontSize: 10, fontWeight: FontWeight.w700),
+                          const Flexible(
+                            child: Text(
+                              'Новое',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Color(0xFFFFB300), fontSize: 10, fontWeight: FontWeight.w700),
+                            ),
                           ),
                         ],
                       ),

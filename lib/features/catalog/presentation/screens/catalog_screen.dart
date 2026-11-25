@@ -29,7 +29,6 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/catalog_settings.dart';
 import 'package:sync_pai/features/catalog/domain/services/recommendation_engine.dart';
-import '../widgets/for_you_recommendations_shelf.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
@@ -40,6 +39,7 @@ import '../cubit/catalog_state.dart';
 import '../widgets/anime_list_tile_card.dart';
 import '../widgets/anime_poster_card.dart';
 import '../widgets/catalog_filter_sheet.dart';
+import '../../../manga/presentation/widgets/manga_catalog_view.dart';
 
 class CatalogScreen extends StatefulWidget {
   final ValueChanged<AnimeTitle>? onTitleSelected;
@@ -59,7 +59,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
   bool _isForYouTabSelected = false;
-  bool _showForYouShelf = false;
+
+  bool get _isMangaMode => context.select<CatalogCubit, bool>(
+        (c) => c.state is CatalogLoaded
+            ? (c.state as CatalogLoaded).isMangaMode
+            : c.isMangaMode,
+      );
 
   static const List<({String id, String label})> _quickTabs = [
     (id: 'all', label: 'Все'),
@@ -103,7 +108,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context.read<CatalogCubit>().onSearchQueryChanged('');
     }
     setState(() {
-      _showForYouShelf = true;
       _isForYouTabSelected = true;
       _isSearchOpen = false;
     });
@@ -173,7 +177,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       return;
     }
     final pos = _scrollController.position;
-    if (pos.extentAfter < 600) {
+    if (pos.pixels > 200 && pos.extentAfter < 600) {
       if (_scrollDebounceTimer?.isActive ?? false) return;
       _scrollDebounceTimer = Timer(const Duration(milliseconds: 80), () {
         if (mounted) {
@@ -285,52 +289,39 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         ],
                       )
                     : (screenWidth >= 768
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SyncPaiLogo(size: 28),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Каталог аниме',
-                                style: AppTypography.displayMedium.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 22,
-                                  letterSpacing: -0.4,
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SyncPaiLogo(size: 28),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _isMangaMode ? 'Манга и Манхва' : 'Каталог аниме',
+                                  style: AppTypography.displayMedium.copyWith(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 20,
+                                    letterSpacing: -0.4,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 14),
+                                _buildModeSegmentedToggle(themePrimary),
+                              ],
+                            ),
                           )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SyncPaiLogo(size: 32),
-                              const SizedBox(width: 10),
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'Sync',
-                                      style: AppTypography.displayMedium.copyWith(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 22,
-                                        letterSpacing: -0.4,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: 'Pai',
-                                      style: AppTypography.displayMedium.copyWith(
-                                        color: themePrimary,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 22,
-                                        letterSpacing: -0.4,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                        : FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SyncPaiLogo(size: 26),
+                                const SizedBox(width: 6),
+                                _buildModeSegmentedToggle(themePrimary),
+                              ],
+                            ),
                           )),
                 actions: [
                   // Кнопка открытия / свертывания поиска
@@ -472,7 +463,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ],
               ),
 
-              // 2. Полоса "Продолжить просмотр" (сбалансированная на Desktop и Mobile)
+              // 2. Полоса "Продолжить просмотр" или браузер манги/манхвы
+              if (_isMangaMode)
+                MangaCatalogView(searchQuery: _searchController.text)
+              else ...[
               if (getIt.isRegistered<WatchHistoryCubit>())
                 BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
                   bloc: getIt<WatchHistoryCubit>(),
@@ -695,51 +689,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 8),
                     child: const WrappedPromoBanner(),
-                  ),
-                ),
-
-              // 2.5. Персональная лента рекомендаций «Для тебя» (скрыта по умолчанию на главном экране и открывается по запросу)
-              if (_showForYouShelf && !_isForYouTabSelected)
-                SliverToBoxAdapter(
-                  child: ListenableBuilder(
-                    listenable: RecommendationEngine.instance,
-                    builder: (context, _) {
-                      final catState = context.watch<CatalogCubit>().state;
-                      if (catState is! CatalogLoaded || catState.titles.isEmpty || catState.searchQuery.isNotEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      final history = getIt.isRegistered<WatchHistoryCubit>()
-                          ? context.watch<WatchHistoryCubit>().state.history
-                          : const <WatchHistoryItem>[];
-
-                      Widget buildShelf(List<UserAnimeEntry> entries) {
-                        if (entries.isEmpty && history.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        final userListsMap = <int, AnimeListStatus>{
-                          for (final e in entries) e.animeId: e.status,
-                        };
-                        final picks = RecommendationEngine.instance.generateForYouFeed(
-                          catalogPool: catState.titles,
-                          userEntries: entries,
-                          watchHistory: history,
-                        );
-                        return ForYouRecommendationsShelf(
-                          title: 'Для тебя',
-                          picks: picks,
-                          userAnimeListsMap: userListsMap,
-                          onTitleTap: _openAnimeDetails,
-                        );
-                      }
-
-                      if (getIt.isRegistered<AnimeListCubit>()) {
-                        return BlocBuilder<AnimeListCubit, AnimeListState>(
-                          bloc: getIt<AnimeListCubit>(),
-                          builder: (context, listState) => buildShelf(listState.allEntries),
-                        );
-                      }
-                      return buildShelf(const <UserAnimeEntry>[]);
-                    },
                   ),
                 ),
 
@@ -1039,6 +988,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   return const SliverToBoxAdapter(child: SizedBox.shrink());
                 },
               ),
+              ],
 
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
@@ -1048,6 +998,64 @@ class _CatalogScreenState extends State<CatalogScreen> {
     ),
   ),
 ),
+    );
+  }
+
+  Widget _buildModeSegmentedToggle(Color themePrimary) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151923),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildModeSegmentButton(
+            key: const ValueKey('catalog_mode_anime'),
+            label: 'Аниме',
+            isSelected: !_isMangaMode,
+            themePrimary: themePrimary,
+            onTap: () => context.read<CatalogCubit>().setMangaMode(false),
+          ),
+          _buildModeSegmentButton(
+            key: const ValueKey('catalog_mode_manga'),
+            label: 'Манга и манхва',
+            isSelected: _isMangaMode,
+            themePrimary: themePrimary,
+            onTap: () => context.read<CatalogCubit>().setMangaMode(true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSegmentButton({
+    required Key key,
+    required String label,
+    required bool isSelected,
+    required Color themePrimary,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      key: key,
+      color: isSelected ? themePrimary : Colors.transparent,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1066,14 +1074,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (screenWidth >= 600) {
       return const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        childAspectRatio: 0.64,
+        childAspectRatio: 0.52,
         crossAxisSpacing: 12,
         mainAxisSpacing: 14,
       );
     }
     return SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: mobileCols,
-      childAspectRatio: mobileCols == 3 ? 0.50 : 0.56,
+      childAspectRatio: mobileCols == 3 ? 0.52 : 0.58,
       crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
       mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
     );

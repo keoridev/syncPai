@@ -24,6 +24,7 @@ import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/kodik/domain/entities/kodik_translation.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_state.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_room.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 import 'package:sync_pai/features/sync_room/presentation/widgets/reaction_overlay_layer.dart';
@@ -44,7 +45,6 @@ import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dar
 import 'package:sync_pai/features/settings/presentation/cubit/settings_state.dart';
 import '../widgets/player_onboarding_overlay.dart';
 import 'package:sync_pai/features/player/services/pip_service.dart';
-import '../widgets/auto_next_episode_banner.dart';
 import '../widgets/desktop_player_layout.dart';
 import '../widgets/double_tap_seek_overlay.dart';
 import '../widgets/floating_pai_chan_reactions_overlay.dart';
@@ -91,6 +91,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       GlobalKey(debugLabel: 'PersistentSyncPaiVideoSurface');
   final GlobalKey _screenshotBoundaryKey =
       GlobalKey(debugLabel: 'SyncPaiVideoScreenshotBoundary');
+  final GlobalKey<DoubleTapSeekOverlayState> _seekOverlayKey =
+      GlobalKey<DoubleTapSeekOverlayState>();
+  final GlobalKey _viewportBoxKey =
+      GlobalKey(debugLabel: 'SyncPaiPlayerViewportBox');
   bool _episodesGridMode = false;
   bool? _lastLandscapeSystemUi;
   StreamSubscription<bool>? _pipSubscription;
@@ -113,6 +117,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _handedOffToMiniPlayer = false;
   bool _isDisposed = false;
   bool _pinchHandledInGesture = false;
+  final Set<int> _activePointerIds = <int>{};
+  bool _isPinching = false;
+  double _videoScale = 1.0;
+  double _pinchStartScale = 1.0;
+  String? _zoomPillText;
+  Timer? _zoomPillTimer;
+  bool _snappedToFill = false;
+  int? _lastZoomEpisodeNumber;
+  bool? _lastZoomIsLandscape;
   int? _dismissedOpeningEpisode;
   int? _dismissedEndingEpisode;
   int? _lastSkipEpisodeNum;
@@ -344,6 +357,141 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
+  void _handleSeasonFinalePrompt(SeasonFinalePrompt prompt) {
+    final nextSeason = prompt.nextSeason;
+    final hasPlayableSequel = nextSeason != null && !nextSeason.isAnnounced;
+    final hasAnnouncedSequel = nextSeason != null && nextSeason.isAnnounced;
+    final bridge = prompt.mangaBridge;
+
+    MascotCompanionService.instance.onSeasonFinale(
+      nextSeasonName: nextSeason?.name,
+      hasPlayableSequel: hasPlayableSequel,
+      hasAnnouncedSequel: hasAnnouncedSequel,
+      mangaTitle: bridge?.mangaTitle,
+      continueFromChapter: bridge?.continueFromChapter,
+      onWatchSequel: nextSeason == null
+          ? null
+          : () => _openVerifiedSequel(nextSeason),
+      onAddPlanned: nextSeason == null
+          ? null
+          : () => _addSequelToPlanned(nextSeason),
+      onReadManga: bridge == null
+          ? null
+          : () => _openMangaContinuation(bridge),
+      onFindSimilar: _openSimilarTitles,
+    );
+  }
+
+  void _openMangaContinuation(AnimeMangaBridge bridge) {
+    _markCurrentSeasonCompleted();
+    final router = GoRouter.maybeOf(context);
+    _handleExit();
+    if (router == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      router.pushNamed('manga_reader', extra: {
+        'bridge': bridge,
+        'initialChapter': bridge.continueFromChapter,
+      });
+    });
+  }
+
+  void _markCurrentSeasonCompleted() {
+    final title = _cubit.state.title;
+    final ep = _cubit.state.episode;
+    final dur = _cubit.state.duration > Duration.zero
+        ? _cubit.state.duration
+        : const Duration(minutes: 24);
+
+    if (getIt.isRegistered<WatchHistoryCubit>() && title.id > 0) {
+      unawaited(
+        getIt<WatchHistoryCubit>().saveProgress(
+          titleId: title.id,
+          titleName: title.displayTitle,
+          posterUrl: title.posterMedium.isNotEmpty
+              ? title.posterMedium
+              : title.posterSmall,
+          episode: ep.episode,
+          episodeName: ep.name,
+          position: dur,
+          duration: dur,
+        ),
+      );
+    }
+
+    if (getIt.isRegistered<AnimeListCubit>() && title.id > 0) {
+      unawaited(
+        getIt<AnimeListCubit>().setAnimeStatus(
+          animeId: title.id,
+          titleRu: title.displayTitle,
+          posterUrl: title.posterMedium.isNotEmpty
+              ? title.posterMedium
+              : title.posterSmall,
+          status: AnimeListStatus.completed,
+          lastEpisode: ep.episode,
+          positionMs: dur.inMilliseconds,
+          episodesTotal: title.episodesTotal,
+        ),
+      );
+    }
+  }
+
+  void _openVerifiedSequel(SeasonFinaleNextSeason nextSeason) {
+    _markCurrentSeasonCompleted();
+    final targetTitle = nextSeason.title;
+    final quality = _cubit.state.selectedQuality;
+    final router = GoRouter.maybeOf(context);
+    _handleExit();
+
+    if (targetTitle == null || router == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (targetTitle.episodes.isNotEmpty) {
+        router.pushNamed('player', extra: {
+          'title': targetTitle,
+          'episode': targetTitle.episodes.first,
+          'quality': quality,
+        });
+      } else {
+        router.pushNamed('details', extra: targetTitle);
+      }
+    });
+  }
+
+  void _addSequelToPlanned(SeasonFinaleNextSeason nextSeason) {
+    final targetId = nextSeason.title?.id ??
+        int.tryParse(nextSeason.relatedRelease?.id ?? '') ??
+        0;
+    if (getIt.isRegistered<AnimeListCubit>() && targetId > 0) {
+      unawaited(
+        getIt<AnimeListCubit>().setAnimeStatus(
+          animeId: targetId,
+          titleRu: nextSeason.name,
+          posterUrl: nextSeason.title?.posterUrl ??
+              nextSeason.relatedRelease?.posterUrl,
+          status: AnimeListStatus.planned,
+          episodesTotal: nextSeason.title?.episodesTotal,
+          isUserInitiated: true,
+        ),
+      );
+    }
+    MascotCompanionService.instance.onCollectionAdded(
+      'В планах',
+      nextSeason.name,
+    );
+  }
+
+  void _openSimilarTitles() {
+    final title = _cubit.state.title;
+    final router = GoRouter.maybeOf(context);
+    _handleExit();
+    if (router == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      router.pushNamed('details', extra: {
+        'title': title,
+        'scrollToSimilar': true,
+      });
+    });
+  }
+
   void _recordInitialWatchHistory() {
     if (widget.title.id <= 0 || widget.title.code == 'free_sync_room') return;
     if (!getIt.isRegistered<WatchHistoryCubit>()) return;
@@ -551,6 +699,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _isDisposed = true;
     _sleepTimer?.cancel();
     _centerOsdTimer?.cancel();
+    _zoomPillTimer?.cancel();
     _screenshotToastTimer?.cancel();
     _skipPillCollapseTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -786,8 +935,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               listenWhen: (previous, current) =>
                   previous.errorMessage != current.errorMessage ||
                   previous.episode.episode != current.episode.episode ||
-                  previous.isHudEditMode != current.isHudEditMode,
+                  previous.isHudEditMode != current.isHudEditMode ||
+                  previous.seasonFinalePrompt != current.seasonFinalePrompt,
               listener: (context, state) {
+                if (state.seasonFinalePrompt != null) {
+                  _handleSeasonFinalePrompt(state.seasonFinalePrompt!);
+                }
                 if (state.errorMessage != null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -972,6 +1125,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 
+  void _showZoomPill(String text, {bool autoHide = false}) {
+    _zoomPillTimer?.cancel();
+    if (mounted) {
+      setState(() => _zoomPillText = text);
+    }
+    if (autoHide) {
+      _zoomPillTimer = Timer(const Duration(milliseconds: 1200), () {
+        if (mounted) {
+          setState(() => _zoomPillText = null);
+        }
+      });
+    }
+  }
+
   Widget _buildVideoViewport(
     BuildContext context,
     PlayerState state, {
@@ -979,63 +1146,202 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }) {
     final mqSize = MediaQuery.sizeOf(context);
     final hasValidSurfaceSize = mqSize.width > 0 && mqSize.height > 0;
+    final canVerticalSwipe = !state.isScreenLocked && !state.isHudEditMode;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Видео полотно libmpv с единым стабильным GlobalKey (_videoSurfaceKey)
-        // Сохраняет нативный SurfaceView / Texture при смене портретной и альбомной ориентации
-        Positioned.fill(
-          child: !hasValidSurfaceSize
-              ? const SizedBox.shrink()
-              : RepaintBoundary(
-                  key: _screenshotBoundaryKey,
-                  child: Center(
-                    child: Video(
-                      key: _videoSurfaceKey,
-                      controller: _videoController,
-                      controls: NoVideoControls,
-                      fit: state.videoFit,
-                      fill: Colors.black,
+    // Сброс масштаба при выходе из ландшафта или смене серии
+    if ((_lastZoomIsLandscape == true && !isLandscape) ||
+        (_lastZoomEpisodeNumber != null &&
+            _lastZoomEpisodeNumber != state.episode.episode)) {
+      if (_videoScale != 1.0 || _snappedToFill || _zoomPillText != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _videoScale = 1.0;
+            _snappedToFill = false;
+            _zoomPillText = null;
+          });
+        });
+      }
+    }
+    _lastZoomIsLandscape = isLandscape;
+    _lastZoomEpisodeNumber = state.episode.episode;
+
+    final double screenAspect =
+        (mqSize.width > 0 && mqSize.height > 0) ? (mqSize.width / mqSize.height) : (16 / 9);
+    const double videoAspect = 16 / 9;
+    final double fillRatio = (screenAspect / videoAspect).clamp(1.05, 1.6);
+
+    return ClipRect(
+      child: Listener(
+        onPointerDown: (event) {
+          _activePointerIds.add(event.pointer);
+          if (_activePointerIds.length >= 2) {
+            _isPinching = true;
+            _seekOverlayKey.currentState?.endExternalVerticalSwipe();
+          }
+        },
+        onPointerUp: (event) {
+          _activePointerIds.remove(event.pointer);
+          if (_activePointerIds.isEmpty) {
+            _isPinching = false;
+          }
+        },
+        onPointerCancel: (event) {
+          _activePointerIds.remove(event.pointer);
+          if (_activePointerIds.isEmpty) {
+            _isPinching = false;
+          }
+        },
+        child: GestureDetector(
+          key: _viewportBoxKey,
+          behavior: HitTestBehavior.translucent,
+          onVerticalDragStart: canVerticalSwipe
+              ? (details) {
+                  if (_isPinching || _activePointerIds.length >= 2) return;
+                  final box =
+                      _viewportBoxKey.currentContext?.findRenderObject() as RenderBox?;
+                  final width = (box != null && box.hasSize && box.size.width > 0)
+                      ? box.size.width
+                      : mqSize.width;
+                  final localDx = box != null
+                      ? box.globalToLocal(details.globalPosition).dx
+                      : details.localPosition.dx;
+                  final isBrightness = localDx < (width / 2);
+                  _seekOverlayKey.currentState
+                      ?.startExternalVerticalSwipe(isBrightness: isBrightness);
+                }
+              : null,
+          onVerticalDragUpdate: canVerticalSwipe
+              ? (details) {
+                  if (_isPinching || _activePointerIds.length >= 2) {
+                    _seekOverlayKey.currentState?.endExternalVerticalSwipe();
+                    return;
+                  }
+                  final deltaPx = details.primaryDelta;
+                  if (deltaPx == null) return;
+                  final box =
+                      _viewportBoxKey.currentContext?.findRenderObject() as RenderBox?;
+                  final height = (box != null && box.hasSize && box.size.height > 0)
+                      ? box.size.height
+                      : mqSize.height;
+                  _seekOverlayKey.currentState?.updateExternalVerticalSwipe(
+                    deltaPx: deltaPx,
+                    viewportHeight: height,
+                  );
+                }
+              : null,
+          onVerticalDragEnd: canVerticalSwipe
+              ? (_) => _seekOverlayKey.currentState?.endExternalVerticalSwipe()
+              : null,
+          onVerticalDragCancel: canVerticalSwipe
+              ? () => _seekOverlayKey.currentState?.endExternalVerticalSwipe()
+              : null,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+            // Видео полотно libmpv с единым стабильным GlobalKey (_videoSurfaceKey)
+            // Сохраняет нативный SurfaceView / Texture при смене портретной и альбомной ориентации
+            Positioned.fill(
+              child: !hasValidSurfaceSize
+                  ? const SizedBox.shrink()
+                  : RepaintBoundary(
+                      key: _screenshotBoundaryKey,
+                      child: Center(
+                        child: Transform.scale(
+                          scale: isLandscape ? _videoScale : 1.0,
+                          child: Video(
+                            key: _videoSurfaceKey,
+                            controller: _videoController,
+                            controls: NoVideoControls,
+                            fit: state.videoFit,
+                            fill: Colors.black,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-        ),
-
-        if (!state.isScreenLocked)
-          const Positioned.fill(
-            child: BackgroundSnowLayer(
-              key: ValueKey('player_snow_layer'),
-              flakeCount: 25,
-              opacity: 0.48,
-              forPlayer: true,
             ),
-          ),
 
-        IgnorePointer(
-          ignoring: state.isHudEditMode || state.isScreenLocked,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onScaleStart: (_) => _pinchHandledInGesture = false,
-            onScaleUpdate: (details) {
-              if (details.pointerCount < 2 || _pinchHandledInGesture) {
-                return;
-              }
-              if (details.scale > 1.15 && state.videoFit != BoxFit.cover) {
-                _pinchHandledInGesture = true;
-                _cubit.setVideoFit(BoxFit.cover);
-                _showCenterOsd('Экран: На весь экран');
-              } else if (details.scale < 0.85 &&
-                  state.videoFit != BoxFit.contain) {
-                _pinchHandledInGesture = true;
-                _cubit.setVideoFit(BoxFit.contain);
-                _showCenterOsd('Экран: По размеру');
-              }
-            },
+            if (!state.isScreenLocked)
+              const Positioned.fill(
+                child: BackgroundSnowLayer(
+                  key: ValueKey('player_snow_layer'),
+                  flakeCount: 25,
+                  opacity: 0.48,
+                  forPlayer: true,
+                ),
+              ),
+
+            IgnorePointer(
+              ignoring: state.isHudEditMode || state.isScreenLocked,
+              child: GestureDetector(
+                key: const ValueKey('player_pinch_scale_detector'),
+                behavior: HitTestBehavior.translucent,
+                onScaleStart: (details) {
+                  _pinchHandledInGesture = false;
+                  _pinchStartScale = _videoScale;
+                  if (details.pointerCount >= 2 || _activePointerIds.length >= 2) {
+                    _isPinching = true;
+                    _seekOverlayKey.currentState?.endExternalVerticalSwipe();
+                  }
+                },
+                onScaleUpdate: (details) {
+                  if (details.pointerCount < 2 && _activePointerIds.length < 2) {
+                    return;
+                  }
+                  if (!_isPinching) {
+                    _isPinching = true;
+                    _seekOverlayKey.currentState?.endExternalVerticalSwipe();
+                  }
+
+                  if (!isLandscape) {
+                    if (details.scale > 1.25 && !_pinchHandledInGesture) {
+                      _pinchHandledInGesture = true;
+                      HapticFeedback.lightImpact();
+                      _toggleScreenOrientation();
+                    }
+                    return;
+                  }
+
+                  final double rawScale =
+                      (_pinchStartScale * details.scale).clamp(1.0, 2.5);
+                  double nextScale;
+                  String pillLabel;
+
+                  if ((rawScale - fillRatio).abs() < 0.08) {
+                    nextScale = fillRatio;
+                    if (!_snappedToFill) {
+                      HapticFeedback.selectionClick();
+                      _snappedToFill = true;
+                    }
+                    pillLabel = 'На весь экран';
+                  } else if (rawScale <= 1.04) {
+                    nextScale = 1.0;
+                    _snappedToFill = false;
+                    pillLabel = 'Исходный размер';
+                  } else {
+                    nextScale = rawScale;
+                    _snappedToFill = false;
+                    pillLabel = '${nextScale.toStringAsFixed(1)}x';
+                  }
+
+                  if ((nextScale - _videoScale).abs() > 0.005 ||
+                      _zoomPillText != pillLabel) {
+                    setState(() => _videoScale = nextScale);
+                    _showZoomPill(pillLabel);
+                  }
+                },
+                onScaleEnd: (_) {
+                  _isPinching = false;
+                  _pinchHandledInGesture = false;
+                  if (_zoomPillText != null) {
+                    _showZoomPill(_zoomPillText!, autoHide: true);
+                  }
+                },
             child: BlocSelector<PlayerCubit, PlayerState, ({Duration pos, Duration dur})>(
               bloc: _cubit,
               selector: (s) => (pos: s.position, dur: s.duration),
               builder: (context, timing) => DoubleTapSeekOverlay(
+                key: _seekOverlayKey,
                 onTap: () => _cubit.toggleControls(),
                 onSeekRelative: (seconds) {
                   _cubit.seekRelative(seconds);
@@ -1237,17 +1543,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             ),
           ),
 
-        if (state.isSyncRoom &&
-            state.autoNextCountdown != null &&
-            state.nextEpisode != null)
-          AutoNextEpisodeBanner(
-            countdown: state.autoNextCountdown!,
-            nextEpisode: state.nextEpisode!,
-            isHost: state.isHost,
-            onPlayNow: () => _cubit.playNextEpisode(),
-            onCancel: () => _cubit.cancelAutoNextCountdown(),
-          ),
-
         if (state.isBuffering &&
             state.bufferNotice == null &&
             !state.areControlsVisible &&
@@ -1290,6 +1585,33 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           syncStatus: state.isSyncRoom ? state.syncStatus : null,
           syncPeerName: state.peerName,
         ),
+
+        if (_zoomPillText != null)
+          Positioned(
+            top: isLandscape ? MediaQuery.paddingOf(context).top + 16 : 12,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  key: const ValueKey('player_zoom_pill'),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F141E).withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _zoomPillText!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
         if (_centerOsdMessage != null)
           Center(
@@ -1509,6 +1831,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             ),
           ),
       ],
+      ),
+      ),
+      ),
     );
   }
 
@@ -2370,10 +2695,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _dismissedEndingEpisode = null;
     }
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-    final bottomOffset = (isLandscape ? MediaQuery.paddingOf(context).bottom : 0.0) +
-        (state.areControlsVisible && !state.isScreenLocked
-            ? (isLandscape ? 82.0 : 56.0)
-            : (isLandscape ? 28.0 : 10.0));
     final primaryAccent = Theme.of(context).colorScheme.primary;
 
     // 1. Минималистичная кнопка пропуска опенинга в стиле Netflix (доступна даже при блокировке экрана)
@@ -2499,60 +2820,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final isLast90Seconds =
         hasNext && totalSec > 90 && (totalSec - curSec) <= 90 && (totalSec - curSec) > 0;
 
-    if (state.isScreenLocked) {
-      final canShowLockedNext = hasNext &&
-          nextEp != null &&
-          (isPreEndingCountdown ||
-              isInEndingSegment ||
-              isEndOfEpisodeCountdown ||
-              isLast90Seconds);
-      if (!canShowLockedNext) {
-        return const SizedBox.shrink();
-      }
-      return Positioned(
-        bottom: bottomOffset,
-        right: 20,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            key: const ValueKey('player_locked_next_episode_pill'),
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              _cubit.playNextEpisode(nextEp);
-            },
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              height: 38,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF12151E).withValues(alpha: 0.90),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: primaryAccent.withValues(alpha: 0.65),
-                  width: 1.2,
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.skip_next_rounded, color: Colors.white, size: 18),
-                  SizedBox(width: 6),
-                  Text(
-                    'След. серия',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
     if (!isPreEndingCountdown &&
         !isInEndingSegment &&
         !isEndOfEpisodeCountdown &&
@@ -2591,126 +2858,165 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     } else if (hasNext && (isInEndingSegment || isEndOfEpisodeCountdown)) {
       buttonLabel = 'Следующая серия • $countdownSecс';
     } else if (hasNext && isLast90Seconds) {
-      buttonLabel = 'След. серия';
+      buttonLabel = 'След. серия • $countdownSecс';
     } else {
       buttonLabel = 'Пропустить эндинг • $countdownSecс';
     }
 
+    // Единая пилюля завершения серии / перехода (одинаковая позиция, вид и таймер для locked и unlocked)
     return Positioned(
-      bottom: bottomOffset,
-      right: 20,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 220),
-          decoration: BoxDecoration(
-            color: const Color(0xFF12151E).withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: primaryAccent.withValues(alpha: 0.6),
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.65),
-                blurRadius: 18,
-                offset: const Offset(0, 4),
-              ),
-            ],
+      right: isLandscape ? 16 : 12,
+      bottom: isLandscape ? 72 : 48,
+      child: _UnifiedEndingNextPill(
+        key: const ValueKey('unified_ending_next_pill'),
+        label: buttonLabel,
+        progress: countdownProgress,
+        primaryAccent: primaryAccent,
+        isNextEpisodeAction:
+            hasNext && !hasPostCredits && !isPreEndingCountdown,
+        onAction: () {
+          HapticFeedback.mediumImpact();
+          if (!isPreEndingCountdown &&
+              !hasPostCredits &&
+              hasNext &&
+              nextEp != null) {
+            _cubit.playNextEpisode(nextEp);
+          } else if (ed != null) {
+            _cubit.seek(ed.stopDuration);
+            if (hasNext && nextEp != null && !hasPostCredits) {
+              _cubit.startAutoNextCountdown(nextEp);
+            }
+          }
+        },
+        onDismiss: () {
+          _cubit.cancelAutoNextCountdown();
+          setState(() => _dismissedEndingEpisode = curEpNum);
+        },
+      ),
+    );
+  }
+}
+
+class _UnifiedEndingNextPill extends StatelessWidget {
+  final String label;
+  final double progress;
+  final Color primaryAccent;
+  final bool isNextEpisodeAction;
+  final VoidCallback onAction;
+  final VoidCallback onDismiss;
+
+  const _UnifiedEndingNextPill({
+    super.key,
+    required this.label,
+    required this.progress,
+    required this.primaryAccent,
+    required this.isNextEpisodeAction,
+    required this.onAction,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 210),
+        decoration: BoxDecoration(
+          color: const Color(0xFF12151E).withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: primaryAccent.withValues(alpha: 0.6),
+            width: 1.2,
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      onTap: () {
-                        HapticFeedback.mediumImpact();
-                        if (!isPreEndingCountdown && !hasPostCredits && hasNext && nextEp != null) {
-                          _cubit.playNextEpisode(nextEp);
-                        } else if (ed != null) {
-                          _cubit.seek(ed.stopDuration);
-                          if (hasNext && nextEp != null && !hasPostCredits) {
-                            _cubit.startAutoNextCountdown(nextEp);
-                          }
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(10),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CircularProgressIndicator(
-                                  value: countdownProgress,
-                                  strokeWidth: 2.2,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.16),
-                                  valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
-                                ),
-                                Icon(
-                                  hasNext && !hasPostCredits && !isPreEndingCountdown
-                                      ? Icons.skip_next_rounded
-                                      : Icons.fast_forward_rounded,
-                                  color: Colors.white,
-                                  size: 12,
-                                ),
-                              ],
-                            ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.65),
+              blurRadius: 18,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: onAction,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 2.2,
+                                backgroundColor:
+                                    Colors.white.withValues(alpha: 0.16),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(primaryAccent),
+                              ),
+                              Icon(
+                                isNextEpisodeAction
+                                    ? Icons.skip_next_rounded
+                                    : Icons.fast_forward_rounded,
+                                color: Colors.white,
+                                size: 12,
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 9),
-                          Text(
-                            buttonLabel,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13.0,
-                              letterSpacing: 0.2,
-                            ),
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13.0,
+                            letterSpacing: 0.2,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: 'Остаться',
-                      child: InkWell(
-                        onTap: () {
-                          _cubit.cancelAutoNextCountdown();
-                          setState(() => _dismissedEndingEpisode = curEpNum);
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.close_rounded,
-                            size: 15,
-                            color: Colors.white.withValues(alpha: 0.65),
-                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Остаться',
+                    child: InkWell(
+                      onTap: onDismiss,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: Colors.white.withValues(alpha: 0.65),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              SizedBox(
-                height: 3,
-                width: 230,
-                child: LinearProgressIndicator(
-                  value: countdownProgress,
-                  backgroundColor: Colors.white.withValues(alpha: 0.12),
-                  valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
-                ),
+            ),
+            SizedBox(
+              height: 3,
+              width: 220,
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(primaryAccent),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

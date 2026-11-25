@@ -13,6 +13,8 @@ class PlayerProgressBar extends StatefulWidget {
   final Duration duration;
   final Duration buffer;
   final ValueChanged<Duration> onSeek;
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
   final bool isLocked;
   final VoidCallback? onLockedTap;
   final ReactionHeatmap? heatmap;
@@ -27,6 +29,8 @@ class PlayerProgressBar extends StatefulWidget {
     required this.duration,
     required this.buffer,
     required this.onSeek,
+    this.onDragStart,
+    this.onDragEnd,
     this.isLocked = false,
     this.onLockedTap,
     this.heatmap,
@@ -114,6 +118,7 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                       : (widget.isBuffering
                           ? null
                           : (details) {
+                              widget.onDragStart?.call();
                               setState(() {
                                 _isDragging = true;
                                 _dragRatio = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
@@ -135,9 +140,11 @@ class _PlayerProgressBarState extends State<PlayerProgressBar> {
                             widget.onSeek(Duration(milliseconds: (_dragRatio * maxMs).round()));
                           }
                           setState(() => _isDragging = false);
+                          widget.onDragEnd?.call();
                         },
                   onHorizontalDragCancel: () {
                     setState(() => _isDragging = false);
+                    widget.onDragEnd?.call();
                   },
                   onTapDown: widget.isLocked
                       ? (_) => widget.onLockedTap?.call()

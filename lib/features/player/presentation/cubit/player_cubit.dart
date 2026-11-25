@@ -16,6 +16,9 @@ import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/services/presence_service.dart';
 import 'package:sync_pai/features/profile/domain/services/achievement_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
+import 'package:sync_pai/features/anime_details/data/datasources/shikimori_remote_datasource.dart';
+import 'package:sync_pai/features/anime_details/domain/entities/related_anime_release.dart';
+import 'package:sync_pai/features/anime_details/presentation/screens/anime_details_screen.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
 import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dart';
@@ -25,6 +28,8 @@ import 'package:sync_pai/features/downloads/domain/repositories/download_reposit
 import 'package:sync_pai/features/downloads/presentation/cubit/download_cubit.dart';
 import 'package:sync_pai/features/kodik/domain/entities/kodik_translation.dart';
 import 'package:sync_pai/features/kodik/presentation/cubit/kodik_cubit.dart';
+import 'package:sync_pai/features/manga/data/services/anime_manga_bridge_service.dart';
+import 'package:sync_pai/features/manga/domain/entities/manga_bridge.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/domain/entities/reaction_heatmap.dart';
 import 'package:sync_pai/features/player/presentation/widgets/danmaku_overlay_layer.dart';
@@ -86,6 +91,11 @@ class PlayerCubit extends Cubit<PlayerState> {
   int _streamRetryCount = 0;
   int _loadGeneration = 0;
   Timer? _streamRetryTimer;
+  int? _seasonFinalePromptedForTitleId;
+  final Future<SeasonFinaleNextSeason?> Function(AnimeTitle title)?
+      _nextSeasonResolver;
+  final Future<AnimeMangaBridge?> Function(AnimeTitle title)?
+      _mangaBridgeResolver;
 
   void _scheduleEphemeralTimer(Duration duration, VoidCallback callback) {
     late final Timer timer;
@@ -240,7 +250,13 @@ class PlayerCubit extends Cubit<PlayerState> {
     Duration? initialPosition,
     Player? existingPlayer,
     String? userIdOverride,
-  })  : player = existingPlayer ??
+    Future<SeasonFinaleNextSeason?> Function(AnimeTitle title)?
+        nextSeasonResolver,
+    Future<AnimeMangaBridge?> Function(AnimeTitle title)?
+        mangaBridgeResolver,
+  })  : _nextSeasonResolver = nextSeasonResolver,
+        _mangaBridgeResolver = mangaBridgeResolver,
+        player = existingPlayer ??
             Player(
               configuration: const PlayerConfiguration(
                 bufferSize: 128 * 1024 * 1024, // 128 МБ для стабильного 1080p HLS
@@ -356,6 +372,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.position.listen((pos) {
         if (isClosed || _isDisposing) return;
         _checkAutoNextEpisode(pos);
+        _checkSeasonFinaleCompanion(pos);
         _checkAutoSkipOpening(pos);
         _checkNextEpisodePrefetch(pos);
         final now = DateTime.now();
@@ -2058,6 +2075,194 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
+  /// Умный триггер финала сезона Пай-тян: срабатывает строго на последней серии сезона.
+  void _checkSeasonFinaleCompanion(Duration pos) {
+    if (isClosed || _isDisposing) return;
+    final title = state.title;
+    if (_seasonFinalePromptedForTitleId == title.id) return;
+
+    final dur = state.duration;
+    if (dur <= const Duration(seconds: 20)) return;
+
+    final episodes = title.episodes;
+    final curEp = state.episode.episode;
+    if (episodes.any((e) => e.episode > curEp)) return;
+
+    final isFinalEpisode = episodes.isNotEmpty
+        ? curEp >= episodes.map((e) => e.episode).reduce((a, b) => a > b ? a : b)
+        : (title.episodesTotal != null &&
+            title.episodesTotal! > 0 &&
+            curEp >= title.episodesTotal!);
+    if (!isFinalEpisode) return;
+
+    final ending = state.effectiveEnding;
+    final inEndingRange = ending != null &&
+        ending.start > 0 &&
+        pos.inSeconds >= ending.start &&
+        pos.inSeconds <= ending.stop;
+    final remaining = dur - pos;
+    final inLast50Sec =
+        remaining <= const Duration(seconds: 50) && remaining >= Duration.zero;
+    if (!inEndingRange && !inLast50Sec) return;
+
+    _seasonFinalePromptedForTitleId = title.id;
+    unawaited(_resolveAndEmitSeasonFinale(title));
+  }
+
+  Future<void> _resolveAndEmitSeasonFinale(AnimeTitle title) async {
+    SeasonFinaleNextSeason? nextSeason;
+    try {
+      nextSeason = await (_nextSeasonResolver != null
+          ? _nextSeasonResolver(title)
+          : _findVerifiedNextSeason(title));
+    } catch (_) {
+      nextSeason = null;
+    }
+
+    AnimeMangaBridge? mangaBridge;
+    if (nextSeason == null) {
+      try {
+        mangaBridge = await (_mangaBridgeResolver != null
+            ? _mangaBridgeResolver(title)
+            : AnimeMangaBridgeService.instance.resolveForAnime(title));
+      } catch (_) {
+        mangaBridge = null;
+      }
+    }
+
+    if (isClosed || _isDisposing || state.title.id != title.id) return;
+    emit(state.copyWith(
+      seasonFinalePrompt: () => SeasonFinalePrompt(
+        titleId: title.id,
+        nextSeason: nextSeason,
+        mangaBridge: mangaBridge,
+      ),
+    ));
+  }
+
+  /// Проверяет реальное хронологическое продолжение (AniLibria / Shikimori) для текущего сезона.
+  Future<SeasonFinaleNextSeason?> _findVerifiedNextSeason(AnimeTitle title) async {
+    List<RelatedAnimeRelease> related =
+        AnimeDetailsCache.get(title.id)?.relatedReleases ?? const [];
+
+    if (related.isEmpty) {
+      final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+      if (getIt.isRegistered<ShikimoriRemoteDataSource>()) {
+        try {
+          final res = await getIt<ShikimoriRemoteDataSource>()
+              .getReviewsAndRatings(title);
+          related = res.relatedReleases;
+        } catch (_) {}
+      } else if (!isTest) {
+        try {
+          final res =
+              await ShikimoriRemoteDataSourceImpl().getReviewsAndRatings(title);
+          related = res.relatedReleases;
+        } catch (_) {}
+      }
+    }
+
+    if (related.isEmpty) return null;
+
+    final curIdx = related.indexWhere(
+      (r) => r.isCurrent || r.id == '${title.id}',
+    );
+
+    const excludedRelations = {
+      'Предыстория',
+      'Рекап',
+      'Спин-офф',
+      'Альтернативная версия',
+      'Текущий релиз',
+    };
+
+    final orderedPool = curIdx >= 0 && curIdx + 1 < related.length
+        ? related.sublist(curIdx + 1)
+        : related;
+
+    RelatedAnimeRelease? candidate;
+    for (final r in orderedPool) {
+      if (r.isCurrent || r.id == '${title.id}') continue;
+      if (r.relation == 'Продолжение') {
+        candidate = r;
+        break;
+      }
+    }
+    candidate ??= orderedPool.where((r) {
+      if (r.isCurrent || r.id == '${title.id}') return false;
+      if (excludedRelations.contains(r.relation)) return false;
+      final rYear = int.tryParse(r.year?.replaceAll(RegExp(r'\D'), '') ?? '');
+      if (title.year != null && rYear != null && rYear < title.year!) {
+        return false;
+      }
+      return true;
+    }).firstOrNull;
+
+    if (candidate == null) return null;
+
+    AnimeTitle? resolved = candidate.resolvedTitle;
+    if (resolved == null && getIt.isRegistered<CatalogRepository>()) {
+      try {
+        final catalogRepo = getIt<CatalogRepository>();
+        var results = await catalogRepo.searchTitles(candidate.title, limit: 10);
+        if (results.isEmpty &&
+            candidate.originalTitle != null &&
+            candidate.originalTitle!.isNotEmpty) {
+          results = await catalogRepo.searchTitles(
+            candidate.originalTitle!,
+            limit: 10,
+          );
+        }
+
+        final candidates = results.where((s) => s.id != title.id).toList();
+        if (candidates.isNotEmpty) {
+          final candTitleLower = candidate.title.toLowerCase().trim();
+          final origLower = candidate.originalTitle?.toLowerCase().trim();
+          final matched = candidates.where((s) {
+            return s.russianTitle.toLowerCase().trim() == candTitleLower ||
+                (origLower != null &&
+                    s.englishTitle.toLowerCase().trim() == origLower);
+          }).firstOrNull ??
+              candidates.first;
+
+          resolved = matched;
+          final lowerStatus = matched.status.toLowerCase();
+          if (matched.episodes.isEmpty &&
+              !lowerStatus.contains('анонс') &&
+              !lowerStatus.contains('скоро')) {
+            try {
+              resolved = await catalogRepo.getTitleDetails(
+                id: matched.id,
+                code: matched.code,
+              );
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (resolved != null) {
+      final statusLower = resolved.status.toLowerCase();
+      final isAnnounced = statusLower.contains('анонс') ||
+          statusLower.contains('скоро') ||
+          (resolved.episodes.isEmpty &&
+              (resolved.episodesTotal ?? 0) == 0 &&
+              (resolved.latestEpisode ?? 0) == 0);
+      return SeasonFinaleNextSeason(
+        name: resolved.displayTitle,
+        title: resolved,
+        relatedRelease: candidate,
+        isAnnounced: isAnnounced,
+      );
+    }
+
+    return SeasonFinaleNextSeason(
+      name: candidate.title,
+      relatedRelease: candidate,
+      isAnnounced: true,
+    );
+  }
+
   /// Запуск обратного отсчета следующей серии
   void startAutoNextCountdown(EpisodeItem nextEp) {
     if (state.autoNextCountdown != null) return;
@@ -2304,6 +2509,20 @@ class PlayerCubit extends Cubit<PlayerState> {
   void showControls() {
     emit(state.copyWith(areControlsVisible: true));
     _startControlsTimer();
+  }
+
+  /// Приостанавливает авто-скрытие контролов (например, во время перетаскивания таймлайна).
+  void pauseControlsAutoHide() {
+    _controlsTimer?.cancel();
+    _controlsTimer = null;
+    if (!state.areControlsVisible) {
+      emit(state.copyWith(areControlsVisible: true));
+    }
+  }
+
+  /// Перезапускает таймер авто-скрытия контролов после завершения скраббинга или перемотки.
+  void resetControlsAutoHideTimer() {
+    _resetControlsTimer();
   }
 
   void _startControlsTimer() {

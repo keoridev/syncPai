@@ -49,6 +49,7 @@ class CatalogLoaded extends CatalogState {
   final String activeFilterKey;
   final bool isRefreshing;
   final bool isLoadingNextPage;
+  final bool isMangaMode;
 
   const CatalogLoaded({
     required this.titles,
@@ -68,6 +69,7 @@ class CatalogLoaded extends CatalogState {
     this.activeFilterKey = '',
     this.isRefreshing = false,
     this.isLoadingNextPage = false,
+    this.isMangaMode = false,
   });
 
   /// Геттер для обратной совместимости с существующим кодом
@@ -96,6 +98,7 @@ class CatalogLoaded extends CatalogState {
     String? activeFilterKey,
     bool? isRefreshing,
     bool? isLoadingNextPage,
+    bool? isMangaMode,
   }) {
     Set<String> nextGenres;
     if (clearGenre) {
@@ -126,6 +129,7 @@ class CatalogLoaded extends CatalogState {
       activeFilterKey: activeFilterKey ?? this.activeFilterKey,
       isRefreshing: isRefreshing ?? this.isRefreshing,
       isLoadingNextPage: isLoadingNextPage ?? this.isLoadingNextPage,
+      isMangaMode: isMangaMode ?? this.isMangaMode,
     );
   }
 
@@ -148,6 +152,7 @@ class CatalogLoaded extends CatalogState {
         activeFilterKey,
         isRefreshing,
         isLoadingNextPage,
+        isMangaMode,
       ];
 }
 

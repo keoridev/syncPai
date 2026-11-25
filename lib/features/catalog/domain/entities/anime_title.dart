@@ -24,12 +24,14 @@ class AnimeTitle extends Equatable {
   final int? shikimoriId;
   final double? score;
   final String? kind;
+  final bool isAnnounced;
 
   const AnimeTitle({
     required this.id,
     this.shikimoriId,
     this.score,
     this.kind,
+    this.isAnnounced = false,
     required this.code,
     required this.russianTitle,
     required this.englishTitle,
@@ -107,12 +109,14 @@ class AnimeTitle extends Equatable {
     List<EpisodeItem>? episodes,
     String? trailerUrl,
     String? shikimoriUrl,
+    bool? isAnnounced,
   }) {
     return AnimeTitle(
       id: id ?? this.id,
       shikimoriId: shikimoriId ?? this.shikimoriId,
       score: score ?? this.score,
       kind: kind ?? this.kind,
+      isAnnounced: isAnnounced ?? this.isAnnounced,
       code: code ?? this.code,
       russianTitle: russianTitle ?? this.russianTitle,
       englishTitle: englishTitle ?? this.englishTitle,
@@ -157,6 +161,7 @@ class AnimeTitle extends Equatable {
         'episodes': episodes.map((e) => e.toJson()).toList(),
         'trailerUrl': trailerUrl,
         'shikimoriUrl': shikimoriUrl,
+        'isAnnounced': isAnnounced,
       };
 
   factory AnimeTitle.fromJson(Map<String, dynamic> json) => AnimeTitle(
@@ -186,6 +191,7 @@ class AnimeTitle extends Equatable {
             const [],
         trailerUrl: json['trailerUrl'] as String?,
         shikimoriUrl: json['shikimoriUrl'] as String?,
+        isAnnounced: json['isAnnounced'] as bool? ?? false,
       );
 
   @override
@@ -212,5 +218,6 @@ class AnimeTitle extends Equatable {
         shikimoriUrl,
         score,
         kind,
+        isAnnounced,
       ];
 }

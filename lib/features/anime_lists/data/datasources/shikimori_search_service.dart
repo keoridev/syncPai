@@ -26,7 +26,7 @@ class ShikimoriAnimeMatch {
 /// и кэширования результатов.
 class ShikimoriSearchService {
   final Dio _dio;
-  static const String _baseUrl = 'https://shikimori.one/api';
+  static const String _baseUrl = 'https://shikimori.io/api';
   static final Map<String, ShikimoriAnimeMatch?> _cache = {};
 
   ShikimoriSearchService({Dio? customDio})
@@ -121,7 +121,7 @@ class ShikimoriSearchService {
         }
 
         if (poster.isEmpty && shikiId > 0) {
-          poster = 'https://shikimori.one/system/animes/original/$shikiId.jpg';
+          poster = 'https://shikimori.io/system/animes/original/$shikiId.jpg';
         }
 
         final episodes = (firstRel['episodes_total'] as num?)?.toInt() ??
@@ -159,8 +159,8 @@ class ShikimoriSearchService {
             final imageObj = first['image'] as Map<String, dynamic>?;
             final rawOriginal = imageObj?['original'] as String? ?? imageObj?['preview'] as String? ?? '';
             final poster = rawOriginal.isNotEmpty
-                ? (rawOriginal.startsWith('http') ? rawOriginal : 'https://shikimori.one$rawOriginal')
-                : 'https://shikimori.one/system/animes/original/$id.jpg';
+                ? (rawOriginal.startsWith('http') ? rawOriginal : 'https://shikimori.io$rawOriginal')
+                : 'https://shikimori.io/system/animes/original/$id.jpg';
 
             final russian = (first['russian'] as String?)?.trim();
             final name = (first['name'] as String?)?.trim() ?? '';

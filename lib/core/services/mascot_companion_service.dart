@@ -13,6 +13,8 @@ class PaiCompanionReaction {
   final String message;
   final String? badgeId;
   final String? actionLabel;
+  final IconData? actionIcon;
+  final Color? actionColor;
   final VoidCallback? onAction;
   final bool isAfk;
   final DateTime createdAt;
@@ -23,6 +25,8 @@ class PaiCompanionReaction {
     required this.message,
     this.badgeId,
     this.actionLabel,
+    this.actionIcon,
+    this.actionColor,
     this.onAction,
     this.isAfk = false,
     required this.createdAt,
@@ -199,8 +203,11 @@ class MascotCompanionService extends ChangeNotifier {
     required String message,
     String? badgeId,
     String? actionLabel,
+    IconData? actionIcon,
+    Color? actionColor,
     VoidCallback? onAction,
     bool autoDismiss = true,
+    Duration? duration,
     bool isPlayerAction = false,
   }) {
     if (!_enabled || (_isPlayerActive && !isPlayerAction)) return;
@@ -213,13 +220,15 @@ class MascotCompanionService extends ChangeNotifier {
       message: message,
       badgeId: badgeId,
       actionLabel: actionLabel,
+      actionIcon: actionIcon,
+      actionColor: actionColor,
       onAction: onAction,
       createdAt: DateTime.now(),
     );
     notifyListeners();
 
     if (autoDismiss) {
-      _autoHideTimer = Timer(toastDuration, dismissCurrentToast);
+      _autoHideTimer = Timer(duration ?? toastDuration, dismissCurrentToast);
     }
   }
 
@@ -265,6 +274,83 @@ class MascotCompanionService extends ChangeNotifier {
           : 'Серия просмотрена! Переходим к следующей?',
       actionLabel: onNextEpisode != null ? 'След. серия' : null,
       onAction: onNextEpisode,
+      isPlayerAction: true,
+    );
+  }
+
+  /// Реакция Пай-тян на финал сезона с ветвлением по наличию продолжения или манги.
+  void onSeasonFinale({
+    String? nextSeasonName,
+    required bool hasPlayableSequel,
+    required bool hasAnnouncedSequel,
+    String? mangaTitle,
+    int? continueFromChapter,
+    VoidCallback? onWatchSequel,
+    VoidCallback? onAddPlanned,
+    VoidCallback? onReadManga,
+    VoidCallback? onFindSimilar,
+  }) {
+    final cleanName = nextSeasonName?.trim() ?? '';
+    if (hasPlayableSequel && cleanName.isNotEmpty) {
+      showReaction(
+        expression: MascotExpression.cheering,
+        title: 'Сезон завершён!',
+        message: 'Дальше по хронологии: «$cleanName». Газ в продолжение?',
+        actionLabel: 'Смотреть продолжение',
+        actionIcon: Icons.play_arrow_rounded,
+        actionColor: const Color(0xFFFF6B4A),
+        onAction: onWatchSequel,
+        duration: const Duration(seconds: 10),
+        isPlayerAction: true,
+      );
+      return;
+    }
+
+    if (hasAnnouncedSequel && cleanName.isNotEmpty) {
+      showReaction(
+        expression: MascotExpression.proudCollector,
+        title: 'Финал сезона!',
+        message: 'Серий продолжения пока нет, но анонсирован «$cleanName».',
+        actionLabel: 'В планах',
+        actionIcon: Icons.bookmark_add_rounded,
+        actionColor: const Color(0xFF35D9D5),
+        onAction: onAddPlanned,
+        duration: const Duration(seconds: 10),
+        isPlayerAction: true,
+      );
+      return;
+    }
+
+    final cleanManga = mangaTitle?.trim() ?? '';
+    if (cleanManga.isNotEmpty && onReadManga != null) {
+      showReaction(
+        expression: MascotExpression.curiousSearch,
+        title: 'Сезон завершён!',
+        message: continueFromChapter != null
+            ? 'Продолжения аниме пока нет, но сюжет идёт дальше в манге — начать с $continueFromChapter главы?'
+            : 'Продолжения аниме пока нет, но сюжет продолжается в манге — открыть для чтения?',
+        actionLabel: continueFromChapter != null
+            ? 'Читать с $continueFromChapter гл.'
+            : 'Открыть мангу',
+        actionIcon: Icons.menu_book_rounded,
+        actionColor: const Color(0xFFFF6B4A),
+        onAction: onReadManga,
+        duration: const Duration(seconds: 11),
+        isPlayerAction: true,
+      );
+      return;
+    }
+
+    showReaction(
+      expression: MascotExpression.curiousSearch,
+      title: 'Сезон пройден!',
+      message:
+          'Извини, продолжения у этого тайтла пока нет. Подобрать похожее по вайбу?',
+      actionLabel: 'Похожие тайтлы',
+      actionIcon: Icons.auto_awesome_rounded,
+      actionColor: const Color(0xFF35D9D5),
+      onAction: onFindSimilar,
+      duration: const Duration(seconds: 10),
       isPlayerAction: true,
     );
   }

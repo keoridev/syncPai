@@ -213,7 +213,7 @@ class AnimeMetaCacheService {
           .select('anime_key, shikimori_id, payload, updated_at')
           .eq('anime_key', key)
           .maybeSingle()
-          .timeout(const Duration(milliseconds: 1500));
+          .timeout(const Duration(milliseconds: 3500));
       if (row == null) return null;
       final entry = AnimeMetaCacheEntry.fromRow(row);
       return entry.isFresh ? entry : null;
@@ -226,6 +226,7 @@ class AnimeMetaCacheService {
   Future<void> upsert(AnimeTitle title, AnimeMetaCacheEntry entry) async {
     try {
       final client = Supabase.instance.client;
+      if (client.auth.currentSession == null) return;
       final key = buildAnimeKey(title);
       await client.from('anime_meta_cache').upsert(
         {
@@ -236,8 +237,8 @@ class AnimeMetaCacheService {
         },
         onConflict: 'anime_key',
       );
-    } catch (e) {
-      debugPrint('[AnimeMetaCache] upsert skipped: $e');
+    } catch (_) {
+      // Игнорируем ошибки RLS/сети при фоновой записи общего кэша
     }
   }
 }

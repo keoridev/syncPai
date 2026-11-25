@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/services/mascot_companion_service.dart';
+import 'package:sync_pai/core/widgets/mascot/pai_companion_toast.dart';
 import 'package:sync_pai/features/catalog/domain/entities/anime_title.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_entity.dart';
 import 'package:sync_pai/features/catalog/domain/entities/episode_item.dart';
@@ -13,6 +15,7 @@ import 'package:sync_pai/features/catalog/domain/entities/translation_entity.dar
 import 'package:sync_pai/features/catalog/domain/usecases/get_player_links_usecase.dart';
 import 'package:sync_pai/features/player/domain/entities/player_quality.dart';
 import 'package:sync_pai/features/player/presentation/cubit/player_cubit.dart';
+import 'package:sync_pai/features/player/presentation/cubit/player_state.dart';
 import 'package:sync_pai/features/sync_room/domain/entities/sync_protocol.dart';
 import 'package:sync_pai/features/sync_room/domain/repositories/sync_room_repository.dart';
 
@@ -562,6 +565,186 @@ void main() {
       expect(fakePlayer.disposed, isTrue);
       // Wait past timer durations to verify zero unhandled post-close emissions
       await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+  });
+
+  group('Season Finale Pai-chan Companion', () {
+    test(
+        'does NOT trigger on intermediate episode 1 of a multi-episode season, triggers once on final episode',
+        () async {
+      final fakePlayer = _FakePlayer();
+      final title = _sampleTitle(); // 3 episodes
+      int resolverCalls = 0;
+
+      final cubit = PlayerCubit(
+        title: title,
+        episode: title.episodes[0], // Episode 1
+        existingPlayer: fakePlayer,
+        userIdOverride: 'u_finale_1',
+        nextSeasonResolver: (t) async {
+          resolverCalls++;
+          return const SeasonFinaleNextSeason(
+            name: 'Тестовый Тайтл 2',
+            isAnnounced: false,
+          );
+        },
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      fakePlayer.fakeStream.durationCtrl.add(const Duration(minutes: 24));
+      // Seek to last 30 seconds of Episode 1
+      fakePlayer.fakeStream.positionCtrl
+          .add(const Duration(minutes: 23, seconds: 30));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(resolverCalls, 0);
+      expect(cubit.state.seasonFinalePrompt, isNull);
+
+      // Switch to final episode (Episode 3) and seek to last 40 seconds
+      await cubit.switchEpisode(title.episodes[2]);
+      fakePlayer.fakeStream.durationCtrl.add(const Duration(minutes: 24));
+      fakePlayer.fakeStream.positionCtrl
+          .add(const Duration(minutes: 23, seconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(resolverCalls, 1);
+      expect(cubit.state.seasonFinalePrompt, isNotNull);
+      expect(cubit.state.seasonFinalePrompt!.titleId, title.id);
+      expect(
+        cubit.state.seasonFinalePrompt!.nextSeason?.name,
+        'Тестовый Тайтл 2',
+      );
+      expect(cubit.state.seasonFinalePrompt!.nextSeason?.isAnnounced, isFalse);
+
+      // Subsequent position updates in the same finale must NOT re-trigger
+      fakePlayer.fakeStream.positionCtrl
+          .add(const Duration(minutes: 23, seconds: 45));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(resolverCalls, 1);
+
+      await cubit.close();
+    });
+
+    test(
+        'emits null nextSeason on final episode when single-season anime has no sequel',
+        () async {
+      final fakePlayer = _FakePlayer();
+      const singleSeasonTitle = AnimeTitle(
+        id: 777,
+        code: 'single_season',
+        russianTitle: 'Одиночный Сезон',
+        englishTitle: 'Single Season',
+        posterSmall: '',
+        posterMedium: '',
+        posterOriginal: '',
+        genres: ['Драма'],
+        description: '',
+        status: 'Вышел',
+        episodes: [
+          EpisodeItem(
+            episode: 1,
+            fhdUrl: 'https://anilibria.top/single_1.m3u8',
+          ),
+        ],
+      );
+
+      final cubit = PlayerCubit(
+        title: singleSeasonTitle,
+        episode: singleSeasonTitle.episodes.first,
+        existingPlayer: fakePlayer,
+        userIdOverride: 'u_finale_single',
+        nextSeasonResolver: (_) async => null,
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      fakePlayer.fakeStream.durationCtrl.add(const Duration(minutes: 24));
+      fakePlayer.fakeStream.positionCtrl
+          .add(const Duration(minutes: 23, seconds: 35));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(cubit.state.seasonFinalePrompt, isNotNull);
+      expect(cubit.state.seasonFinalePrompt!.titleId, 777);
+      expect(cubit.state.seasonFinalePrompt!.nextSeason, isNull);
+
+      await cubit.close();
+    });
+
+    testWidgets(
+        'PaiCompanionToast renders Case A (Playable Sequel), Case B (Announced), and Case C (No Sequel) with interactive CTAs',
+        (tester) async {
+      MascotCompanionService.instance.resetForTest();
+      MascotCompanionService.instance.setPlayerActive(true);
+      bool watchedSequel = false;
+      bool addedPlanned = false;
+      bool openedSimilar = false;
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [PaiCompanionToast()],
+            ),
+          ),
+        ),
+      );
+
+      // Case A: Playable Sequel
+      MascotCompanionService.instance.onSeasonFinale(
+        nextSeasonName: 'Магическая битва 2',
+        hasPlayableSequel: true,
+        hasAnnouncedSequel: false,
+        onWatchSequel: () => watchedSequel = true,
+      );
+      await tester.pump();
+      expect(find.text('Сезон завершён!'), findsOneWidget);
+      expect(
+        find.text('Дальше по хронологии: «Магическая битва 2». Газ в продолжение?'),
+        findsOneWidget,
+      );
+      expect(find.text('Смотреть продолжение'), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pai_companion_action_btn')));
+      await tester.pump();
+      expect(watchedSequel, isTrue);
+
+      // Case B: Announced Sequel
+      MascotCompanionService.instance.onSeasonFinale(
+        nextSeasonName: 'Магическая битва 3',
+        hasPlayableSequel: false,
+        hasAnnouncedSequel: true,
+        onAddPlanned: () => addedPlanned = true,
+      );
+      await tester.pump();
+      expect(find.text('Финал сезона!'), findsOneWidget);
+      expect(find.text('В планах'), findsOneWidget);
+      expect(find.byIcon(Icons.bookmark_add_rounded), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pai_companion_action_btn')));
+      await tester.pump();
+      expect(addedPlanned, isTrue);
+
+      // Case C: No Sequel
+      MascotCompanionService.instance.onSeasonFinale(
+        nextSeasonName: null,
+        hasPlayableSequel: false,
+        hasAnnouncedSequel: false,
+        onFindSimilar: () => openedSimilar = true,
+      );
+      await tester.pump();
+      expect(find.text('Сезон пройден!'), findsOneWidget);
+      expect(
+        find.text(
+          'Извини, продолжения у этого тайтла пока нет. Подобрать похожее по вайбу?',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Похожие тайтлы'), findsOneWidget);
+      expect(find.byIcon(Icons.auto_awesome_rounded), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pai_companion_action_btn')));
+      await tester.pump();
+      expect(openedSimilar, isTrue);
+
+      MascotCompanionService.instance.resetForTest();
     });
   });
 }

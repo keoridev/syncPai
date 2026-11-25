@@ -35,7 +35,7 @@ class PaiCompanionToast extends StatelessWidget {
             onTap: service.dismiss,
             child: Container(
               constraints: BoxConstraints(
-                maxWidth: isDesktop ? 350 : size.width - 28,
+                maxWidth: isDesktop ? 380 : size.width - 28,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -55,6 +55,7 @@ class PaiCompanionToast extends StatelessWidget {
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -101,7 +102,7 @@ class PaiCompanionToast extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           reaction.message,
-                          maxLines: 2,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
@@ -110,42 +111,63 @@ class PaiCompanionToast extends StatelessWidget {
                             height: 1.25,
                           ),
                         ),
+                        if (reaction.actionLabel != null &&
+                            reaction.onAction != null) ...[
+                          const SizedBox(height: 8),
+                          Builder(
+                            builder: (context) {
+                              final accent = reaction.actionColor ??
+                                  const Color(0xFF35D9D5);
+                              final isPrimaryFill =
+                                  reaction.actionColor ==
+                                      const Color(0xFFFF6B4A);
+                              return TextButton(
+                                key: const ValueKey('pai_companion_action_btn'),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: isPrimaryFill
+                                      ? accent
+                                      : accent.withValues(alpha: 0.18),
+                                  foregroundColor:
+                                      isPrimaryFill ? Colors.white : accent,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 11,
+                                    vertical: 6,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  final cb = reaction.onAction;
+                                  service.dismiss();
+                                  cb?.call();
+                                },
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (reaction.actionIcon != null) ...[
+                                      Icon(reaction.actionIcon, size: 14),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      reaction.actionLabel!,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  if (reaction.actionLabel != null &&
-                      reaction.onAction != null) ...[
-                    const SizedBox(width: 8),
-                    TextButton(
-                      key: const ValueKey('pai_companion_action_btn'),
-                      style: TextButton.styleFrom(
-                        backgroundColor:
-                            const Color(0xFF35D9D5).withValues(alpha: 0.18),
-                        foregroundColor: const Color(0xFF35D9D5),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      onPressed: () {
-                        final cb = reaction.onAction;
-                        service.dismiss();
-                        cb?.call();
-                      },
-                      child: Text(
-                        reaction.actionLabel!,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

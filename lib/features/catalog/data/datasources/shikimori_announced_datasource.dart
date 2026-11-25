@@ -25,6 +25,7 @@ abstract class ShikimoriAnnouncedDataSource {
 
 class ShikimoriAnnouncedDataSourceImpl implements ShikimoriAnnouncedDataSource {
   final Dio _dio;
+  final Map<String, Future<List<AnimeTitle>>> _inFlightQueries = {};
 
   static const String graphqlUrl = 'https://shikimori.io/api/graphql';
 
@@ -45,13 +46,40 @@ query ($season: String, $limit: Int) {
 }
 ''';
 
-  const ShikimoriAnnouncedDataSourceImpl(this._dio);
+  ShikimoriAnnouncedDataSourceImpl(this._dio);
 
   @override
   Future<List<AnimeTitle>> fetchAnnounced({
     required String season,
     int limit = 40,
     CancelToken? cancelToken,
+  }) async {
+    if (cancelToken != null && cancelToken.isCancelled) {
+      throw DioException.requestCancelled(
+        requestOptions: RequestOptions(path: graphqlUrl),
+        reason: cancelToken.cancelError,
+      );
+    }
+
+    final dedupKey = '$season|$limit';
+    final inFlight = _inFlightQueries.putIfAbsent(dedupKey, () {
+      return _executeFetchAnnounced(season: season, limit: limit).whenComplete(() {
+        _inFlightQueries.remove(dedupKey);
+      });
+    });
+
+    if (cancelToken != null) {
+      return Future.any([
+        inFlight,
+        cancelToken.whenCancel.then((err) => throw err),
+      ]);
+    }
+    return inFlight;
+  }
+
+  Future<List<AnimeTitle>> _executeFetchAnnounced({
+    required String season,
+    required int limit,
   }) async {
     final response = await _dio
         .post(
@@ -69,7 +97,6 @@ query ($season: String, $limit: Int) {
               'Accept': 'application/json',
             },
           ),
-          cancelToken: cancelToken,
         )
         .timeout(const Duration(seconds: 10));
 

@@ -12,6 +12,10 @@ abstract final class ApiConstants {
   static const String searchReleases = '/app/search/releases';
   static const String releaseDetails = '/anime/releases';
 
+  // Shikimori API v1 & GraphQL
+  static const String shikimoriBaseUrl = 'https://shikimori.io/api';
+  static const String shikimoriGraphqlUrl = 'https://shikimori.io/api/graphql';
+
   // Таймауты (Fail-Fast принцип для предотвращения UI freeze)
   static const Duration connectTimeout = Duration(seconds: 4);
   static const Duration receiveTimeout = Duration(seconds: 5);

@@ -127,7 +127,7 @@ class _MangaCatalogViewState extends State<MangaCatalogView> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final horizontalPad = screenWidth >= 900 ? 20.0 : 14.0;
+    final horizontalPad = screenWidth >= 900 ? 20.0 : (screenWidth < 390 ? 12.0 : 14.0);
 
     return SliverMainAxisGroup(
       slivers: [

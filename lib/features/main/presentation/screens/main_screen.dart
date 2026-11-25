@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../../app/di/injection.dart';
-import '../../../../core/services/mascot_companion_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/liquid_glass_nav_bar.dart';
 import '../../../../core/widgets/sync_pai_logo.dart';
@@ -13,7 +11,6 @@ import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../../sync_room/presentation/screens/watch_together_screen.dart';
 import '../../../sync_room/presentation/widgets/floating_room_overlay.dart';
-import '../../../watch_history/domain/repositories/watch_history_repository.dart';
 import '../../../winter_theme/presentation/widgets/background_snow_layer.dart';
 
 /// Главный экран приложения со связкой 5 разделов:
@@ -57,28 +54,6 @@ class _MainScreenState extends State<MainScreen> {
     MainScreen._activeState = this;
     _currentIndex = widget.initialTab.clamp(0, 4);
     _pageController = PageController(initialPage: _currentIndex);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _triggerDailyGreeting());
-  }
-
-  Future<void> _triggerDailyGreeting() async {
-    if (!mounted) return;
-    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
-    String? lastTitle;
-    int? lastEpisode;
-    try {
-      if (getIt.isRegistered<WatchHistoryRepository>()) {
-        final history = await getIt<WatchHistoryRepository>().getAllHistory();
-        if (history.isNotEmpty) {
-          lastTitle = history.first.titleName;
-          lastEpisode = history.first.episode;
-        }
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    MascotCompanionService.instance.showDailyGreeting(
-      lastAnimeTitle: lastTitle,
-      lastEpisode: lastEpisode,
-    );
   }
 
   @override

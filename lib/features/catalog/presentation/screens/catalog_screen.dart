@@ -921,8 +921,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         );
                       }
 
-                      final mobileCols = state.gridDensity.mobileColumns;
-                      final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
+                      final mobileCols = screenWidth < 390 ? 2 : state.gridDensity.mobileColumns;
+                      final gridHorizontalPad = screenWidth < 390
+                          ? 12.0
+                          : (screenWidth < 600 ? 14.0 : horizontalPad);
                       final gridDelegate = _resolveCatalogGridDelegate(
                         screenWidth: screenWidth,
                         mobileCols: mobileCols,
@@ -1079,11 +1081,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
         mainAxisSpacing: 14,
       );
     }
+    final effectiveMobileCols = screenWidth < 390 ? 2 : mobileCols;
     return SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: mobileCols,
-      childAspectRatio: mobileCols == 3 ? 0.52 : 0.58,
-      crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
-      mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
+      crossAxisCount: effectiveMobileCols,
+      childAspectRatio: effectiveMobileCols == 3 ? 0.52 : 0.58,
+      crossAxisSpacing: effectiveMobileCols == 3 ? 8.0 : 12.0,
+      mainAxisSpacing: effectiveMobileCols == 3 ? 12.0 : 14.0,
     );
   }
 
@@ -1106,8 +1109,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
       limit: 24,
     );
 
-    final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
-    final mobileCols = state.gridDensity.mobileColumns;
+    final gridHorizontalPad = screenWidth < 390
+        ? 12.0
+        : (screenWidth < 600 ? 14.0 : horizontalPad);
+    final mobileCols = screenWidth < 390 ? 2 : state.gridDensity.mobileColumns;
     final gridDelegate = _resolveCatalogGridDelegate(
       screenWidth: screenWidth,
       mobileCols: mobileCols,

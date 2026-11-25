@@ -160,19 +160,12 @@ class MascotCompanionService extends ChangeNotifier {
   }
 
   /// Фиксирует активность пользователя: сбрасывает 90-секундный AFK-таймер и
-  /// мгновенно будит Пай-тян коротким приветствием, если она задремала.
+  /// скрывает AFK-индикатор без навязчивого приветственного тоста.
   void reportUserActivity() {
     if (_isPlayerActive) return;
     if (_isAfkActive) {
       _isAfkActive = false;
-      if (_enabled) {
-        showReaction(
-          expression: MascotExpression.cheering,
-          message: 'С возвращением! Готовы продолжить просмотр?',
-        );
-      } else {
-        dismiss();
-      }
+      dismiss();
     }
     _restartAfkTimer();
   }

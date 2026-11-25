@@ -40,6 +40,7 @@ import 'package:sync_pai/core/widgets/desktop_title_bar.dart';
 import '../../domain/entities/player_quality.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/player/services/global_mini_player_service.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dart';
 import 'package:sync_pai/features/settings/presentation/cubit/settings_state.dart';
@@ -231,6 +232,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    CatalogCubit.pushForegroundScreen();
     final isMobilePlatform = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
     if (isMobilePlatform &&
         getIt.isRegistered<SettingsCubit>() &&
@@ -697,6 +699,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     _isDisposed = true;
+    CatalogCubit.popForegroundScreen();
     _sleepTimer?.cancel();
     _centerOsdTimer?.cancel();
     _zoomPillTimer?.cancel();

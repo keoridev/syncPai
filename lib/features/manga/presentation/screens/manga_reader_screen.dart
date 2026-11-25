@@ -6,11 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/di/injection.dart';
+import '../../../../core/services/mascot_companion_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../data/datasources/mangadex_datasource.dart';
 import '../../data/repositories/manga_progress_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
+import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
 
 enum MangaReadingMode { webtoon, paged }
@@ -22,6 +25,9 @@ enum MangaReadingMode { webtoon, paged }
 class MangaReaderScreen extends StatefulWidget {
   final AnimeMangaBridge bridge;
   final int? initialChapter;
+  /// 1-based initial page index when resuming from history.
+  final int? initialPage;
+  final String formatLabel;
   final MangaDexDataSource? dataSource;
   final MangaProgressRepository? progressRepository;
 
@@ -29,6 +35,8 @@ class MangaReaderScreen extends StatefulWidget {
     super.key,
     required this.bridge,
     this.initialChapter,
+    this.initialPage,
+    this.formatLabel = 'Манга',
     this.dataSource,
     this.progressRepository,
   });
@@ -57,6 +65,8 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   final ScrollController _webtoonScrollController = ScrollController();
   PageController _pageController = PageController();
   final Set<String> _precachedUrls = {};
+  final Map<int, Timer> _pageTimeoutTimers = {};
+  int? _notifiedFinishedChapterIdx;
 
   @override
   void initState() {
@@ -71,12 +81,33 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
             : MangaProgressRepository());
     _readingMode = MangaReadingMode.webtoon;
     _webtoonScrollController.addListener(_onWebtoonScroll);
+    CatalogCubit.pushForegroundScreen();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      MascotCompanionService.instance.setMangaContext(true);
+      MascotCompanionService.instance.maybeShowLateNightMangaTip();
+      if (widget.bridge.continueFromChapter != null) {
+        MascotCompanionService.instance.notifyMangaBridgeResumed(
+          'главы ${widget.bridge.continueFromChapter}',
+        );
+      }
+    });
     _initReader();
   }
 
   @override
   void dispose() {
+    for (final timer in _pageTimeoutTimers.values) {
+      timer.cancel();
+    }
+    _pageTimeoutTimers.clear();
     _saveCurrentProgress();
+    CatalogCubit.popForegroundScreen();
+    final nextMangaContext =
+        getIt.isRegistered<CatalogCubit>() ? getIt<CatalogCubit>().isMangaMode : false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MascotCompanionService.instance.setMangaContext(nextMangaContext);
+    });
     _webtoonScrollController.removeListener(_onWebtoonScroll);
     _webtoonScrollController.dispose();
     _pageController.dispose();
@@ -107,7 +138,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
       _errorMessage = null;
     });
 
-    final chapters = await _dataSource.getChapters(widget.bridge.mangaDexId);
+    final chapters = await _dataSource.getChapters(
+      widget.bridge.mangaDexId,
+      title: widget.bridge.mangaTitle,
+    );
     if (!mounted) return;
 
     if (chapters.isEmpty) {
@@ -119,7 +153,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     }
 
     int targetIdx = 0;
-    int initialPage = 0;
+    int initialPage = widget.initialPage != null
+        ? (widget.initialPage! - 1).clamp(0, 9999)
+        : 0;
 
     final targetChap = widget.initialChapter ?? widget.bridge.continueFromChapter;
     if (targetChap != null) {
@@ -144,7 +180,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         );
         if (savedIdx >= 0) {
           targetIdx = savedIdx;
-          initialPage = saved.pageIndex;
+          if (widget.initialPage == null) {
+            initialPage = saved.pageIndex;
+          }
         }
       }
     }
@@ -166,6 +204,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     if (chapterIndex < 0 || chapterIndex >= _chapters.length) return;
     final chapter = _chapters[chapterIndex];
 
+    for (final timer in _pageTimeoutTimers.values) {
+      timer.cancel();
+    }
+    _pageTimeoutTimers.clear();
     setState(() {
       _currentChapterIndex = chapterIndex;
       _isLoadingPages = true;
@@ -245,6 +287,17 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         ),
       );
     }
+    if (_pages.length > 1 &&
+        index == _pages.length - 1 &&
+        _notifiedFinishedChapterIdx != _currentChapterIndex) {
+      _notifiedFinishedChapterIdx = _currentChapterIndex;
+      final hasNext = _currentChapterIndex + 1 < _chapters.length;
+      MascotCompanionService.instance.notifyMangaChapterFinished(
+        onNextChapter: hasNext
+            ? () => _loadChapterPages(_currentChapterIndex + 1)
+            : null,
+      );
+    }
   }
 
   void _saveCurrentProgress() {
@@ -262,6 +315,26 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         pageIndex: _currentPageNotifier.value,
       ),
     );
+    if (getIt.isRegistered<MangaReadHistoryCubit>()) {
+      unawaited(
+        getIt<MangaReadHistoryCubit>().recordProgress(
+          MangaHistoryEntry(
+            mangaId: widget.bridge.mangaDexId,
+            title: widget.bridge.mangaTitle,
+            coverUrl: widget.bridge.coverUrl,
+            formatLabel: widget.formatLabel,
+            chapterId: chapter.id,
+            chapterLabel: chapter.chapterLabel.startsWith('Глава') ||
+                    chapter.chapterLabel.startsWith('Спешл')
+                ? chapter.chapterLabel
+                : 'Глава ${chapter.chapterLabel}',
+            pageIndex: _currentPageNotifier.value + 1,
+            totalPages: _pages.isNotEmpty ? _pages.length : 1,
+            updatedAt: DateTime.now(),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _pinToProfileShowcase() async {
@@ -387,19 +460,35 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: Text(
-                                  chap.displayTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isCurrent
-                                        ? primary
-                                        : AppColors.textPrimary,
-                                    fontWeight: isCurrent
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    fontSize: 13.5,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      chap.displayTitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isCurrent
+                                            ? primary
+                                            : AppColors.textPrimary,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        fontSize: 13.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      chap.secondaryMeta,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -561,7 +650,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                                     borderRadius: BorderRadius.circular(5),
                                   ),
                                   child: Text(
-                                    currentChapter.translatedLanguage.toUpperCase(),
+                                    '${currentChapter.translatedLanguage.toUpperCase()} • ${currentChapter.source}',
                                     style: TextStyle(
                                       color: currentChapter.translatedLanguage == 'ru'
                                           ? const Color(0xFF35D9D5)
@@ -869,12 +958,35 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         index < _dataSaverPages.length;
     final imageUrl = useSaver ? _dataSaverPages[index] : _pages[index];
     final retrySeed = _pageRetrySeeds[index] ?? 0;
+    final canFallbackToSaver = !useSaver &&
+        index < _dataSaverPages.length &&
+        _dataSaverPages[index] != imageUrl;
+
+    if (canFallbackToSaver) {
+      _pageTimeoutTimers[index] ??= Timer(const Duration(seconds: 4), () {
+        _pageTimeoutTimers.remove(index);
+        if (mounted && !_useDataSaverIndices.contains(index)) {
+          setState(() => _useDataSaverIndices.add(index));
+        }
+      });
+    }
 
     return CachedNetworkImage(
       key: ValueKey('manga_page_${index}_${useSaver ? 'ds' : 'hq'}_$retrySeed'),
       imageUrl: imageUrl,
+      httpHeaders: imageUrl.contains('remanga')
+          ? const {'Referer': 'https://remanga.org'}
+          : null,
       fit: fit,
       width: width,
+      imageBuilder: (_, imageProvider) {
+        _pageTimeoutTimers.remove(index)?.cancel();
+        return Image(
+          image: imageProvider,
+          fit: fit,
+          width: width,
+        );
+      },
       placeholder: (_, __) => const SizedBox(
         height: 360,
         child: Center(
@@ -882,9 +994,8 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         ),
       ),
       errorWidget: (_, __, ___) {
-        if (!useSaver &&
-            index < _dataSaverPages.length &&
-            _dataSaverPages[index] != imageUrl) {
+        _pageTimeoutTimers.remove(index)?.cancel();
+        if (canFallbackToSaver) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_useDataSaverIndices.contains(index)) {
               setState(() => _useDataSaverIndices.add(index));

@@ -46,6 +46,7 @@ class AnimeMangaBridgeService {
 
   final Map<int, AnimeMangaBridge?> _memoryCache = {};
   final Map<int, Future<AnimeMangaBridge?>> _inFlight = {};
+  final Set<int> _confirmedOriginalIds = {};
 
   ShikimoriRemoteDataSource get _shikimori =>
       _shikimoriOverride ??
@@ -75,15 +76,35 @@ class AnimeMangaBridgeService {
 
   AnimeMangaBridge? getCached(int anilibriaId) => _memoryCache[anilibriaId];
 
-  /// Разрешает первоисточник (мангу/манхву) и главу продолжения после аниме.
-  Future<AnimeMangaBridge?> resolveForAnime(AnimeTitle title) {
+  bool isConfirmedOriginal(int anilibriaId) =>
+      _confirmedOriginalIds.contains(anilibriaId);
+
+  Future<AnimeMangaBridge?> getCachedFromPrefs(int anilibriaId) async {
+    if (_memoryCache.containsKey(anilibriaId)) {
+      return _memoryCache[anilibriaId];
+    }
+    final local = await _fetchFromPrefs(anilibriaId);
+    if (local != null) {
+      _memoryCache[anilibriaId] = local;
+    }
+    return local;
+  }
+
+  /// Разрешает первоисточник (мангу/манхву) без блокировки на MangaUpdates.
+  Future<AnimeMangaBridge?> resolveForAnime(
+    AnimeTitle title, {
+    void Function(AnimeMangaBridge updated)? onChapterOffsetUpdated,
+  }) {
     if (title.id <= 0) return Future.value(null);
     if (_memoryCache.containsKey(title.id)) {
       return Future.value(_memoryCache[title.id]);
     }
     return _inFlight.putIfAbsent(title.id, () async {
       try {
-        final resolved = await _resolveInternal(title);
+        final resolved = await _resolveInternal(
+          title,
+          onChapterOffsetUpdated: onChapterOffsetUpdated,
+        );
         _memoryCache[title.id] = resolved;
         return resolved;
       } finally {
@@ -92,7 +113,10 @@ class AnimeMangaBridgeService {
     });
   }
 
-  Future<AnimeMangaBridge?> _resolveInternal(AnimeTitle title) async {
+  Future<AnimeMangaBridge?> _resolveInternal(
+    AnimeTitle title, {
+    void Function(AnimeMangaBridge updated)? onChapterOffsetUpdated,
+  }) async {
     // 0. Проверяем локальный SharedPreferences-кэш (0ms lookup)
     final localCached = await _fetchFromPrefs(title.id);
     if (localCached != null) {
@@ -101,48 +125,44 @@ class AnimeMangaBridgeService {
 
     // 1. Проверяем Supabase Bridge Cache (anime_manga_bridges)
     if (!_isTestEnv) {
-      final cachedRow = await _fetchFromSupabase(title);
+      final cachedRow = await _fetchFromSupabase(title)
+          .timeout(const Duration(milliseconds: 2500), onTimeout: () => null);
       if (cachedRow != null) {
         unawaited(_saveToPrefs(cachedRow));
         return cachedRow;
       }
     }
 
-    // 2. Определяем Shikimori ID и извлекаем первоисточник (Adaptation)
+    // 2. Определяем Shikimori ID и извлекаем первоисточник (Adaptation) с таймаутом 4s
     int? shikimoriId = title.shikimoriId;
     if (shikimoriId == null || shikimoriId <= 0) {
       if (_isTestEnv && _shikimoriOverride == null) return null;
-      shikimoriId = await _shikimori.resolveShikimoriId(title);
+      shikimoriId = await _shikimori
+          .resolveShikimoriId(title)
+          .timeout(const Duration(seconds: 4), onTimeout: () => null);
     }
     if (shikimoriId == null || shikimoriId <= 0) return null;
 
-    final adapted = await _shikimori.getAdaptedManga(shikimoriId);
-    if (adapted == null) return null;
+    final adapted = await _shikimori
+        .getAdaptedManga(shikimoriId)
+        .timeout(const Duration(seconds: 4), onTimeout: () => null);
+    if (adapted == null) {
+      _confirmedOriginalIds.add(title.id);
+      return null;
+    }
 
-    // 3. Параллельно ищем мангу на MangaDex и последнюю главу аниме в MangaUpdates
+    // 3. Быстрый путь: ищем мангу на MangaDex без ожидания медленного MangaUpdates
     final primarySearchTitle = adapted.englishTitle.isNotEmpty
         ? adapted.englishTitle
         : (adapted.russianTitle.isNotEmpty
             ? adapted.russianTitle
             : title.englishTitle);
 
-    final results = await Future.wait<dynamic>([
-      _searchBestMangaDex(
-        primarySearchTitle,
-        fallbackTitle: adapted.japaneseTitle ?? adapted.russianTitle,
-        malId: adapted.malId,
-      ),
-      _mangaUpdates
-          .getAnimeEndChapter(
-            adapted.englishTitle.isNotEmpty
-                ? adapted.englishTitle
-                : title.englishTitle,
-          )
-          .timeout(const Duration(milliseconds: 2500), onTimeout: () => null),
-    ]);
-
-    final mdManga = results[0] as MangaDexManga?;
-    final endChapter = results[1] as int?;
+    final mdManga = await _searchBestMangaDex(
+      primarySearchTitle,
+      fallbackTitle: adapted.japaneseTitle ?? adapted.russianTitle,
+      malId: adapted.malId,
+    ).timeout(const Duration(seconds: 4), onTimeout: () => null);
     if (mdManga == null) return null;
 
     final bridge = AnimeMangaBridge(
@@ -154,7 +174,7 @@ class AnimeMangaBridgeService {
           : mdManga.title,
       coverUrl:
           mdManga.coverUrl.isNotEmpty ? mdManga.coverUrl : adapted.coverUrl,
-      mangaUpdatesEndChapter: endChapter,
+      mangaUpdatesEndChapter: null,
       isManhwa: adapted.isManhwaOrWebtoon || mdManga.isManhwaOrWebtoon,
       chaptersCount: adapted.chaptersCount,
       score: adapted.score,
@@ -164,6 +184,49 @@ class AnimeMangaBridgeService {
     if (!_isTestEnv) {
       unawaited(_saveToSupabase(bridge));
     }
+
+    // 4. Фоновый неблокирующий запрос MangaUpdates (таймаут 2s) + эвристика при отсутствии данных
+    final muQuery = adapted.englishTitle.isNotEmpty
+        ? adapted.englishTitle
+        : title.englishTitle;
+    final episodesCount = title.episodesTotal ?? title.episodes.length;
+    unawaited(() async {
+      try {
+        int? endChapter;
+        if (muQuery.trim().isNotEmpty) {
+          endChapter = await _mangaUpdates
+              .getAnimeEndChapter(muQuery)
+              .timeout(const Duration(seconds: 2), onTimeout: () => null);
+        }
+        final isEstimated = endChapter == null && episodesCount > 0;
+        final resolvedEnd = endChapter ??
+            (isEstimated
+                ? ((episodesCount * 2.5).round() - 1).clamp(0, 9999)
+                : null);
+
+        if (resolvedEnd != null) {
+          final updated = AnimeMangaBridge(
+            anilibriaId: bridge.anilibriaId,
+            shikimoriId: bridge.shikimoriId,
+            mangaDexId: bridge.mangaDexId,
+            mangaTitle: bridge.mangaTitle,
+            coverUrl: bridge.coverUrl,
+            mangaUpdatesEndChapter: resolvedEnd,
+            isEstimatedChapter: isEstimated,
+            isManhwa: bridge.isManhwa,
+            chaptersCount: bridge.chaptersCount,
+            score: bridge.score,
+          );
+          _memoryCache[title.id] = updated;
+          unawaited(_saveToPrefs(updated));
+          if (!isEstimated && !_isTestEnv) {
+            unawaited(_saveToSupabase(updated));
+          }
+          onChapterOffsetUpdated?.call(updated);
+        }
+      } catch (_) {}
+    }());
+
     return bridge;
   }
 

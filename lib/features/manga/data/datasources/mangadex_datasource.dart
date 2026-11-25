@@ -1,15 +1,21 @@
 import 'package:dio/dio.dart';
 
 import '../../domain/entities/manga_bridge.dart';
+import 'remanga_datasource.dart';
 
-/// Источник данных MangaDex API v5 для поиска манги, списка глав и страниц.
+/// Источник данных MangaDex API v5 для поиска манги, списка глав и страниц
+/// с автоматическим fallback на Remanga при отсутствии русских глав.
 class MangaDexDataSource {
   final Dio _dio;
+  final RemangaDataSource _remanga;
 
   static const String _baseUrl = 'https://api.mangadex.org';
 
-  MangaDexDataSource({Dio? customDio})
-      : _dio = customDio ??
+  MangaDexDataSource({
+    Dio? customDio,
+    RemangaDataSource? remangaDataSource,
+  })  : _remanga = remangaDataSource ?? RemangaDataSource(),
+        _dio = customDio ??
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
@@ -22,7 +28,11 @@ class MangaDexDataSource {
             );
 
   /// Поиск манги/манхвы по названию с обложкой (`cover_art`).
-  Future<List<MangaDexManga>> searchManga(String title) async {
+  Future<List<MangaDexManga>> searchManga(
+    String title, {
+    int limit = 40,
+    int offset = 0,
+  }) async {
     final query = title.trim();
     if (query.isEmpty) return const [];
 
@@ -31,82 +41,28 @@ class MangaDexDataSource {
         '/manga',
         queryParameters: {
           'title': query,
-          'limit': 10,
+          'limit': limit,
+          'offset': offset,
           'includes[]': 'cover_art',
+          'contentRating[]': ['safe', 'suggestive'],
           'order[relevance]': 'desc',
         },
       );
 
       final body = res.data;
       if (body is! Map || body['data'] is! List) return const [];
-
-      final results = <MangaDexManga>[];
-      for (final item in body['data'] as List) {
-        if (item is! Map) continue;
-        final id = (item['id'] ?? '').toString().trim();
-        if (id.isEmpty) continue;
-
-        final attrs = item['attributes'] is Map
-            ? item['attributes'] as Map
-            : const <String, dynamic>{};
-        final titleMap = attrs['title'] is Map
-            ? attrs['title'] as Map
-            : const <String, dynamic>{};
-        final resolvedTitle = (titleMap['ru'] ??
-                titleMap['en'] ??
-                (titleMap.values.isNotEmpty ? titleMap.values.first : ''))
-            .toString()
-            .trim();
-        if (resolvedTitle.isEmpty) continue;
-
-        final origLang = attrs['originalLanguage']?.toString();
-        final langsList = attrs['availableTranslatedLanguages'] is List
-            ? (attrs['availableTranslatedLanguages'] as List)
-                .map((e) => e.toString().trim().toLowerCase())
-                .where((e) => e.isNotEmpty)
-                .toList()
-            : const <String>[];
-        final linksMap = attrs['links'] is Map ? attrs['links'] as Map : null;
-        final malId = linksMap?['mal']?.toString().trim();
-
-        String coverUrl = '';
-        final rels = item['relationships'];
-        if (rels is List) {
-          for (final rel in rels) {
-            if (rel is Map && rel['type'] == 'cover_art') {
-              final relAttrs = rel['attributes'];
-              if (relAttrs is Map) {
-                final fileName = relAttrs['fileName']?.toString() ?? '';
-                if (fileName.isNotEmpty) {
-                  coverUrl =
-                      'https://uploads.mangadex.org/covers/$id/$fileName.512.jpg';
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        results.add(
-          MangaDexManga(
-            id: id,
-            title: resolvedTitle,
-            coverUrl: coverUrl,
-            originalLanguage: origLang,
-            malId: (malId != null && malId.isNotEmpty) ? malId : null,
-            availableTranslatedLanguages: langsList,
-          ),
-        );
-      }
-
-      return results;
+      return _parseMangaList(body['data'] as List);
     } catch (_) {
       return const [];
     }
   }
 
-  /// Получает список глав (`ru` приоритетно, `en` только если русских глав нет) по возрастанию.
-  Future<List<MangaDexChapter>> getChapters(String mangaId) async {
+  /// Получает список глав (`ru` приоритетно, fallback на Remanga, затем `en`).
+  Future<List<MangaDexChapter>> getChapters(
+    String mangaId, {
+    String? title,
+    String? originalTitle,
+  }) async {
     if (mangaId.trim().isEmpty) return const [];
 
     Future<List<MangaDexChapter>> fetchForLang(String langCode) async {
@@ -114,6 +70,7 @@ class MangaDexDataSource {
         '/manga/$mangaId/feed',
         queryParameters: {
           'translatedLanguage[]': [langCode],
+          'includes[]': ['scanlation_group'],
           'order[chapter]': 'asc',
           'limit': 500,
         },
@@ -136,10 +93,28 @@ class MangaDexDataSource {
         final pages = (attrs['pages'] as num?)?.toInt() ?? 0;
         if (pages <= 0) continue;
 
+        final rawVol = (attrs['volume'] ?? '').toString().trim();
         final rawChap = (attrs['chapter'] ?? '').toString().trim();
         final chapNum = double.tryParse(rawChap);
         final lang = (attrs['translatedLanguage'] ?? langCode).toString().trim();
         final chapTitle = (attrs['title'] ?? '').toString().trim();
+
+        String? translatorGroup;
+        final rels = item['relationships'];
+        if (rels is List) {
+          for (final rel in rels) {
+            if (rel is Map && rel['type'] == 'scanlation_group') {
+              final relAttrs = rel['attributes'];
+              if (relAttrs is Map) {
+                final groupName = (relAttrs['name'] ?? '').toString().trim();
+                if (groupName.isNotEmpty) {
+                  translatorGroup = groupName;
+                  break;
+                }
+              }
+            }
+          }
+        }
 
         // Никогда не показываем UUID в качестве названия главы
         final cleanLabel = rawChap.isNotEmpty
@@ -148,11 +123,13 @@ class MangaDexDataSource {
 
         final candidate = MangaDexChapter(
           id: id,
+          volume: rawVol.isNotEmpty ? rawVol : null,
           chapterNumber: chapNum,
           chapterLabel: cleanLabel,
           title: chapTitle,
           translatedLanguage: lang,
           pagesCount: pages,
+          translatorGroup: translatorGroup,
         );
 
         final key = rawChap.isNotEmpty ? rawChap : 'idx_$i';
@@ -175,6 +152,16 @@ class MangaDexDataSource {
     try {
       final ruChapters = await fetchForLang('ru');
       if (ruChapters.isNotEmpty) return ruChapters;
+
+      if ((title != null && title.trim().isNotEmpty) ||
+          (originalTitle != null && originalTitle.trim().isNotEmpty)) {
+        final remangaChapters = await _remanga.getChaptersByTitle(
+          title: title,
+          originalTitle: originalTitle,
+        );
+        if (remangaChapters.isNotEmpty) return remangaChapters;
+      }
+
       return await fetchForLang('en');
     } catch (_) {
       return const [];
@@ -192,6 +179,10 @@ class MangaDexDataSource {
       getChapterPagesWithFallback(String chapterId) async {
     if (chapterId.trim().isEmpty) {
       return (dataUrls: const <String>[], dataSaverUrls: const <String>[]);
+    }
+    if (chapterId.startsWith('remanga:')) {
+      final urls = await _remanga.getChapterPages(chapterId);
+      return (dataUrls: urls, dataSaverUrls: const <String>[]);
     }
 
     try {
@@ -235,7 +226,7 @@ class MangaDexDataSource {
     String? availableTranslatedLanguage,
     String? status,
     String order = 'followedCount',
-    int limit = 24,
+    int limit = 40,
     int offset = 0,
     String? query,
   }) async {
@@ -300,12 +291,42 @@ class MangaDexDataSource {
       final titleMap = attrs['title'] is Map
           ? attrs['title'] as Map
           : const <String, dynamic>{};
-      final resolvedTitle = (titleMap['ru'] ??
-              titleMap['en'] ??
-              (titleMap.values.isNotEmpty ? titleMap.values.first : ''))
-          .toString()
-          .trim();
+
+      String? altRuTitle;
+      final altTitles = attrs['altTitles'];
+      if (altTitles is List) {
+        for (final entry in altTitles) {
+          if (entry is Map) {
+            final ruVal = (entry['ru'] ?? '').toString().trim();
+            if (ruVal.isNotEmpty) {
+              altRuTitle = ruVal;
+              break;
+            }
+          }
+        }
+      }
+
+      final primaryRu = (titleMap['ru'] ?? '').toString().trim();
+      final primaryEn = (titleMap['en'] ?? '').toString().trim();
+      final fallbackTitle = titleMap.values.isNotEmpty
+          ? titleMap.values.first.toString().trim()
+          : '';
+
+      final resolvedTitle = primaryRu.isNotEmpty
+          ? primaryRu
+          : (altRuTitle ??
+              (primaryEn.isNotEmpty ? primaryEn : fallbackTitle));
       if (resolvedTitle.isEmpty) continue;
+
+      final origTitleCandidate = primaryEn.isNotEmpty
+          ? primaryEn
+          : (titleMap['ja-ro'] ??
+                  titleMap['ja'] ??
+                  titleMap['ko-ro'] ??
+                  titleMap['ko'] ??
+                  fallbackTitle)
+              .toString()
+              .trim();
 
       final origLang = attrs['originalLanguage']?.toString();
       final langsList = attrs['availableTranslatedLanguages'] is List
@@ -338,6 +359,7 @@ class MangaDexDataSource {
         MangaDexManga(
           id: id,
           title: resolvedTitle,
+          originalTitle: origTitleCandidate.isNotEmpty ? origTitleCandidate : null,
           coverUrl: coverUrl,
           originalLanguage: origLang,
           malId: (malId != null && malId.isNotEmpty) ? malId : null,

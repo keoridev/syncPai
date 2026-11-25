@@ -50,6 +50,7 @@ class AdaptedMangaInfo extends Equatable {
 class MangaDexManga extends Equatable {
   final String id;
   final String title;
+  final String? originalTitle;
   final String coverUrl;
   final String? originalLanguage;
   final String? malId;
@@ -58,6 +59,7 @@ class MangaDexManga extends Equatable {
   const MangaDexManga({
     required this.id,
     required this.title,
+    this.originalTitle,
     required this.coverUrl,
     this.originalLanguage,
     this.malId,
@@ -70,10 +72,36 @@ class MangaDexManga extends Equatable {
   bool get hasRussianTranslation =>
       availableTranslatedLanguages.any((l) => l.toLowerCase() == 'ru');
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'originalTitle': originalTitle,
+        'coverUrl': coverUrl,
+        'originalLanguage': originalLanguage,
+        'malId': malId,
+        'availableTranslatedLanguages': availableTranslatedLanguages,
+      };
+
+  factory MangaDexManga.fromJson(Map<String, dynamic> json) {
+    return MangaDexManga(
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      originalTitle: json['originalTitle']?.toString(),
+      coverUrl: (json['coverUrl'] ?? '').toString(),
+      originalLanguage: json['originalLanguage']?.toString(),
+      malId: json['malId']?.toString(),
+      availableTranslatedLanguages: (json['availableTranslatedLanguages'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+    );
+  }
+
   @override
   List<Object?> get props => [
         id,
         title,
+        originalTitle,
         coverUrl,
         originalLanguage,
         malId,
@@ -84,19 +112,25 @@ class MangaDexManga extends Equatable {
 /// Глава манги / манхвы из MangaDex feed.
 class MangaDexChapter extends Equatable {
   final String id;
+  final String? volume;
   final double? chapterNumber;
   final String chapterLabel;
   final String title;
   final String translatedLanguage;
   final int pagesCount;
+  final String? translatorGroup;
+  final String source;
 
   const MangaDexChapter({
     required this.id,
+    this.volume,
     this.chapterNumber,
     required this.chapterLabel,
     required this.title,
     required this.translatedLanguage,
     this.pagesCount = 0,
+    this.translatorGroup,
+    this.source = 'MangaDex',
   });
 
   String get displayTitle {
@@ -106,20 +140,33 @@ class MangaDexChapter extends Equatable {
         : (trimmedLabel.startsWith('Глава') || trimmedLabel.startsWith('Спешл')
             ? trimmedLabel
             : 'Глава $trimmedLabel');
+    final vol = volume?.trim() ?? '';
+    final prefix = vol.isNotEmpty ? 'Том $vol • $base' : base;
     if (title.trim().isNotEmpty) {
-      return '$base — ${title.trim()}';
+      return '$prefix — ${title.trim()}';
     }
-    return base;
+    return prefix;
+  }
+
+  String get secondaryMeta {
+    final pagesPart = pagesCount > 0 ? '$pagesCount стр.' : '';
+    final groupPart = (translatorGroup != null && translatorGroup!.trim().isNotEmpty)
+        ? translatorGroup!.trim()
+        : 'Перевод';
+    return pagesPart.isNotEmpty ? '$pagesPart • $groupPart' : groupPart;
   }
 
   @override
   List<Object?> get props => [
         id,
+        volume,
         chapterNumber,
         chapterLabel,
         title,
         translatedLanguage,
         pagesCount,
+        translatorGroup,
+        source,
       ];
 }
 
@@ -131,6 +178,7 @@ class AnimeMangaBridge extends Equatable {
   final String mangaTitle;
   final String coverUrl;
   final int? mangaUpdatesEndChapter;
+  final bool isEstimatedChapter;
   final bool isManhwa;
   final int? chaptersCount;
   final double? score;
@@ -142,6 +190,7 @@ class AnimeMangaBridge extends Equatable {
     required this.mangaTitle,
     required this.coverUrl,
     this.mangaUpdatesEndChapter,
+    this.isEstimatedChapter = false,
     this.isManhwa = false,
     this.chaptersCount,
     this.score,
@@ -158,6 +207,7 @@ class AnimeMangaBridge extends Equatable {
         mangaTitle,
         coverUrl,
         mangaUpdatesEndChapter,
+        isEstimatedChapter,
         isManhwa,
         chaptersCount,
         score,

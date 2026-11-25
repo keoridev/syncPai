@@ -49,6 +49,7 @@ import '../../features/kodik/presentation/cubit/kodik_cubit.dart';
 import '../../features/manga/data/datasources/mangadex_datasource.dart';
 import '../../features/manga/data/datasources/mangaupdates_datasource.dart';
 import '../../features/manga/data/repositories/manga_progress_repository.dart';
+import '../../features/manga/presentation/cubit/manga_read_history_cubit.dart';
 import '../../features/manga/presentation/cubit/user_manga_list_cubit.dart';
 import '../../features/settings/presentation/cubit/settings_cubit.dart';
 import '../../features/profile/presentation/cubit/profile_cubit.dart';
@@ -111,6 +112,9 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton<UserMangaListCubit>(
     () => UserMangaListCubit(getIt<SharedPreferences>()),
+  );
+  getIt.registerLazySingleton<MangaReadHistoryCubit>(
+    () => MangaReadHistoryCubit(getIt<SharedPreferences>()),
   );
   getIt.registerLazySingleton<AnimeListRepository>(
     () => AnimeListRepositoryImpl(

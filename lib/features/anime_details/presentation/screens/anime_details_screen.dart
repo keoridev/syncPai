@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
+import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
@@ -220,6 +221,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   bool _isOpeningEpisode = false;
   bool _isStartingWatchTogether = false;
   bool _isOpeningManga = false;
+  bool _isAnimeOriginalConfirmed = false;
   late final ScrollController _scrollController;
   final GlobalKey _similarSectionKey = GlobalKey();
   bool _showAppBarTitle = false;
@@ -231,6 +233,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   @override
   void initState() {
     super.initState();
+    CatalogCubit.pushForegroundScreen();
     final cached = AnimeDetailsCache.get(widget.title.id);
     if (cached != null) {
       _currentTitle = cached.title.episodes.isNotEmpty
@@ -631,15 +634,19 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   }
 
   Future<void> _resolveMangaBridge() async {
-    final cached = AnimeMangaBridgeService.instance.getCached(_currentTitle.id);
-    if (cached != null) {
-      if (mounted) setState(() => _mangaBridge = cached);
+    final memCached = AnimeMangaBridgeService.instance.getCached(_currentTitle.id);
+    if (memCached != null) {
+      if (mounted) setState(() => _mangaBridge = memCached);
       return;
     }
-    final resolved =
-        await AnimeMangaBridgeService.instance.resolveForAnime(_currentTitle);
-    if (mounted && resolved != null) {
-      setState(() => _mangaBridge = resolved);
+    if (AnimeMangaBridgeService.instance.isConfirmedOriginal(_currentTitle.id)) {
+      if (mounted) setState(() => _isAnimeOriginalConfirmed = true);
+      return;
+    }
+    final prefsCached =
+        await AnimeMangaBridgeService.instance.getCachedFromPrefs(_currentTitle.id);
+    if (prefsCached != null && mounted) {
+      setState(() => _mangaBridge = prefsCached);
     }
   }
 
@@ -651,12 +658,23 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
 
     setState(() => _isOpeningManga = true);
-    final resolved = await AnimeMangaBridgeService.instance.resolveForAnime(title);
+    final resolved = await AnimeMangaBridgeService.instance.resolveForAnime(
+      title,
+      onChapterOffsetUpdated: (updated) {
+        if (mounted) setState(() => _mangaBridge = updated);
+      },
+    );
     if (!mounted) return;
     setState(() => _isOpeningManga = false);
     if (resolved != null) {
       setState(() => _mangaBridge = resolved);
       _openMangaReader(resolved);
+      return;
+    }
+
+    if (AnimeMangaBridgeService.instance.isConfirmedOriginal(title.id)) {
+      setState(() => _isAnimeOriginalConfirmed = true);
+      MascotCompanionService.instance.notifyAnimeOriginalNoManga();
       return;
     }
 
@@ -666,7 +684,9 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     final query = title.englishTitle.trim().isNotEmpty
         ? title.englishTitle.trim()
         : title.russianTitle.trim();
-    final matches = await ds.searchManga(query);
+    final matches = await ds
+        .searchManga(query, limit: 10)
+        .timeout(const Duration(seconds: 4), onTimeout: () => const []);
     if (!mounted) return;
     if (matches.isNotEmpty) {
       context.pushNamed(
@@ -675,12 +695,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         extra: matches.first,
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Манга-первоисточник не найдена'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      MascotCompanionService.instance.notifyAnimeOriginalNoManga();
     }
   }
 
@@ -781,6 +796,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
   @override
   void dispose() {
+    CatalogCubit.popForegroundScreen();
     _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -1636,15 +1652,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 label: 'Скачать',
                 onTap: () => _openTorrentsSheet(context),
               ),
-              if (_mangaBridge != null ||
-                  (_currentTitle.shikimoriId != null && _currentTitle.shikimoriId! > 0)) ...[
+              if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed) ...[
                 const SizedBox(width: 10),
                 _buildDesktopActionButton(
                   icon: Icons.menu_book_rounded,
                   iconColor: AppColors.primaryLight,
                   isLoading: _isOpeningManga,
                   label: _mangaBridge?.continueFromChapter != null
-                      ? 'Читать мангу • с ${_mangaBridge!.continueFromChapter} гл.'
+                      ? 'Читать мангу • ${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
                       : 'Читать мангу',
                   onTap: () => _handleReadMangaTap(title),
                 ),
@@ -1673,14 +1688,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 });
               },
             ),
-            if (_mangaBridge != null ||
-                (_currentTitle.shikimoriId != null && _currentTitle.shikimoriId! > 0))
+            if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
               _buildSecondaryActionButton(
                 icon: Icons.menu_book_rounded,
                 iconColor: AppColors.primaryLight,
                 isLoading: _isOpeningManga,
                 label: _mangaBridge?.continueFromChapter != null
-                    ? 'с ${_mangaBridge!.continueFromChapter} гл.'
+                    ? '${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
                     : 'Читать мангу',
                 onTap: () => _handleReadMangaTap(title),
               ),

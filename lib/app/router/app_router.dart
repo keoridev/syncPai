@@ -248,6 +248,8 @@ final GoRouter appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         final bridge = extra?['bridge'] as AnimeMangaBridge?;
         final initialChapter = extra?['initialChapter'] as int?;
+        final initialPage = extra?['initialPage'] as int?;
+        final formatLabel = extra?['formatLabel'] as String? ?? 'Манга';
         if (bridge == null) {
           return const Scaffold(
             body: Center(child: Text('Манга не найдена')),
@@ -256,6 +258,8 @@ final GoRouter appRouter = GoRouter(
         return MangaReaderScreen(
           bridge: bridge,
           initialChapter: initialChapter,
+          initialPage: initialPage,
+          formatLabel: formatLabel,
         );
       },
     ),
@@ -266,6 +270,8 @@ final GoRouter appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         final bridge = extra?['bridge'] as AnimeMangaBridge?;
         final initialChapter = extra?['initialChapter'] as int?;
+        final initialPage = extra?['initialPage'] as int?;
+        final formatLabel = extra?['formatLabel'] as String? ?? 'Манга';
         if (bridge == null) {
           return const Scaffold(
             body: Center(child: Text('Манга не найдена')),
@@ -274,6 +280,8 @@ final GoRouter appRouter = GoRouter(
         return MangaReaderScreen(
           bridge: bridge,
           initialChapter: initialChapter,
+          initialPage: initialPage,
+          formatLabel: formatLabel,
         );
       },
     ),

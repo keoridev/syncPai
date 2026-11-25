@@ -55,6 +55,23 @@ enum MascotExpression {
     required this.defaultMessage,
   });
 
+  /// Путь к манга-стилизованному ассету Пай-тян для контекста «Манга и манхва».
+  String get mangaAssetPath {
+    switch (this) {
+      case MascotExpression.cheering:
+      case MascotExpression.speedster:
+      case MascotExpression.proudCollector:
+        return 'assets/mascot/pai_manga_hype.png';
+      case MascotExpression.curiousSearch:
+        return 'assets/mascot/pai_manga_curious.png';
+      case MascotExpression.cozyNight:
+      case MascotExpression.afkDozing:
+        return 'assets/mascot/pai_manga_sleepy.png';
+      case MascotExpression.popcornWatch:
+        return 'assets/mascot/pai_manga_reading.png';
+    }
+  }
+
   MascotState toMascotState() {
     switch (this) {
       case MascotExpression.cozyNight:

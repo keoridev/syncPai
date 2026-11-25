@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
+import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_settings.dart';
 
@@ -50,6 +51,13 @@ class CatalogLoaded extends CatalogState {
   final bool isRefreshing;
   final bool isLoadingNextPage;
   final bool isMangaMode;
+  final List<MangaDexManga> mangaItems;
+  final String mangaTab;
+  final bool mangaRussianOnly;
+  final bool isMangaLoading;
+  final bool isMangaLoadingMore;
+  final bool hasMoreManga;
+  final String mangaSearchQuery;
 
   const CatalogLoaded({
     required this.titles,
@@ -70,6 +78,13 @@ class CatalogLoaded extends CatalogState {
     this.isRefreshing = false,
     this.isLoadingNextPage = false,
     this.isMangaMode = false,
+    this.mangaItems = const [],
+    this.mangaTab = 'all',
+    this.mangaRussianOnly = true,
+    this.isMangaLoading = false,
+    this.isMangaLoadingMore = false,
+    this.hasMoreManga = true,
+    this.mangaSearchQuery = '',
   });
 
   /// Геттер для обратной совместимости с существующим кодом
@@ -99,6 +114,13 @@ class CatalogLoaded extends CatalogState {
     bool? isRefreshing,
     bool? isLoadingNextPage,
     bool? isMangaMode,
+    List<MangaDexManga>? mangaItems,
+    String? mangaTab,
+    bool? mangaRussianOnly,
+    bool? isMangaLoading,
+    bool? isMangaLoadingMore,
+    bool? hasMoreManga,
+    String? mangaSearchQuery,
   }) {
     Set<String> nextGenres;
     if (clearGenre) {
@@ -130,6 +152,13 @@ class CatalogLoaded extends CatalogState {
       isRefreshing: isRefreshing ?? this.isRefreshing,
       isLoadingNextPage: isLoadingNextPage ?? this.isLoadingNextPage,
       isMangaMode: isMangaMode ?? this.isMangaMode,
+      mangaItems: mangaItems ?? this.mangaItems,
+      mangaTab: mangaTab ?? this.mangaTab,
+      mangaRussianOnly: mangaRussianOnly ?? this.mangaRussianOnly,
+      isMangaLoading: isMangaLoading ?? this.isMangaLoading,
+      isMangaLoadingMore: isMangaLoadingMore ?? this.isMangaLoadingMore,
+      hasMoreManga: hasMoreManga ?? this.hasMoreManga,
+      mangaSearchQuery: mangaSearchQuery ?? this.mangaSearchQuery,
     );
   }
 
@@ -153,6 +182,13 @@ class CatalogLoaded extends CatalogState {
         isRefreshing,
         isLoadingNextPage,
         isMangaMode,
+        mangaItems,
+        mangaTab,
+        mangaRussianOnly,
+        isMangaLoading,
+        isMangaLoadingMore,
+        hasMoreManga,
+        mangaSearchQuery,
       ];
 }
 

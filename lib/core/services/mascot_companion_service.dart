@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/profile/domain/services/achievement_service.dart';
@@ -17,6 +18,7 @@ class PaiCompanionReaction {
   final Color? actionColor;
   final VoidCallback? onAction;
   final bool isAfk;
+  final String? customAssetPath;
   final DateTime createdAt;
 
   const PaiCompanionReaction({
@@ -29,6 +31,7 @@ class PaiCompanionReaction {
     this.actionColor,
     this.onAction,
     this.isAfk = false,
+    this.customAssetPath,
     required this.createdAt,
   });
 }
@@ -202,6 +205,7 @@ class MascotCompanionService extends ChangeNotifier {
     bool autoDismiss = true,
     Duration? duration,
     bool isPlayerAction = false,
+    String? customAssetPath,
   }) {
     if (!_enabled || (_isPlayerActive && !isPlayerAction)) return;
     _autoHideTimer?.cancel();
@@ -216,9 +220,10 @@ class MascotCompanionService extends ChangeNotifier {
       actionIcon: actionIcon,
       actionColor: actionColor,
       onAction: onAction,
+      customAssetPath: customAssetPath,
       createdAt: DateTime.now(),
     );
-    notifyListeners();
+    _safeNotifyListeners();
 
     if (autoDismiss) {
       _autoHideTimer = Timer(duration ?? toastDuration, dismissCurrentToast);
@@ -409,6 +414,73 @@ class MascotCompanionService extends ChangeNotifier {
     );
   }
 
+  bool _isMangaContext = false;
+  bool get isMangaContext => _isMangaContext;
+  bool _lateNightMangaTipShown = false;
+
+  void _safeNotifyListeners() {
+    try {
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          notifyListeners();
+        });
+        return;
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  void setMangaContext(bool value) {
+    if (_isMangaContext == value) return;
+    _isMangaContext = value;
+    _safeNotifyListeners();
+  }
+
+  void notifyMangaBridgeResumed(String chapterLabel) {
+    if (!_enabled || !_isMangaContext) return;
+    showReaction(
+      expression: MascotExpression.popcornWatch,
+      customAssetPath: 'assets/mascot/pai_manga_reading.png',
+      message: 'Первоисточник открыт! Продолжаем сюжет прямо с $chapterLabel.',
+    );
+  }
+
+  void notifyAnimeOriginalNoManga() {
+    if (!_enabled) return;
+    showReaction(
+      expression: MascotExpression.curiousSearch,
+      customAssetPath: 'assets/mascot/pai_manga_curious.png',
+      message: 'У этого аниме нет манги — это оригинальный сюжет.',
+    );
+  }
+
+  void notifyMangaChapterFinished({VoidCallback? onNextChapter}) {
+    if (!_enabled || !_isMangaContext) return;
+    showReaction(
+      expression: MascotExpression.cheering,
+      customAssetPath: 'assets/mascot/pai_manga_hype.png',
+      message: 'Глава прочитана! Переходим к следующей?',
+      actionLabel: onNextChapter != null ? 'Дальше' : null,
+      actionIcon: onNextChapter != null ? Icons.arrow_forward_rounded : null,
+      actionColor: const Color(0xFFFF6B4A),
+      onAction: onNextChapter,
+    );
+  }
+
+  void maybeShowLateNightMangaTip({DateTime? now}) {
+    if (!_enabled || !_isMangaContext || _lateNightMangaTipShown) return;
+    final hour = (now ?? DateTime.now()).hour;
+    if (hour >= 0 && hour < 5) {
+      _lateNightMangaTipShown = true;
+      showReaction(
+        expression: MascotExpression.cozyNight,
+        customAssetPath: 'assets/mascot/pai_manga_sleepy.png',
+        message: 'Поздняя ночь — я запомнила страницу, чтобы ты мог продолжить завтра.',
+      );
+    }
+  }
+
   @visibleForTesting
   void resetForTest() {
     _autoHideTimer?.cancel();
@@ -420,6 +492,8 @@ class MascotCompanionService extends ChangeNotifier {
     _dailyGreetingShown = false;
     _isAfkActive = false;
     _isPlayerActive = false;
+    _isMangaContext = false;
+    _lateNightMangaTipShown = false;
     _indecisionHelperShownThisSession = false;
     _onOpenForYouCallback = null;
     _currentReaction = null;

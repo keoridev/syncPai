@@ -59,7 +59,10 @@ class PaiCompanionToast extends StatelessWidget {
                       width: 28,
                       height: 28,
                       child: Image.asset(
-                        reaction.expression.assetPath,
+                        reaction.customAssetPath ??
+                            (service.isMangaContext
+                                ? reaction.expression.mangaAssetPath
+                                : reaction.expression.assetPath),
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Icon(
                           Icons.auto_awesome_rounded,

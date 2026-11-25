@@ -6,11 +6,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../../core/services/mascot_companion_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../data/datasources/mangadex_datasource.dart';
 import '../../data/repositories/manga_progress_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
+import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
 
 /// Экран деталей манги/манхвы со списком глав и быстрым переходом к чтению.
@@ -38,7 +41,21 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
   void initState() {
     super.initState();
     _manga = widget.initialManga;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      MascotCompanionService.instance.setMangaContext(true);
+    });
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    final nextMangaContext =
+        getIt.isRegistered<CatalogCubit>() ? getIt<CatalogCubit>().isMangaMode : false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MascotCompanionService.instance.setMangaContext(nextMangaContext);
+    });
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -49,9 +66,13 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
         ? getIt<MangaProgressRepository>()
         : null;
 
+    final loadedManga = _manga ?? await ds.getMangaById(widget.mangaId);
     final results = await Future.wait([
-      if (_manga == null) ds.getMangaById(widget.mangaId) else Future.value(_manga),
-      ds.getChapters(widget.mangaId),
+      ds.getChapters(
+        widget.mangaId,
+        title: loadedManga?.title,
+        originalTitle: loadedManga?.originalTitle,
+      ),
       if (progressRepo != null)
         progressRepo.getProgress(widget.mangaId)
       else
@@ -60,9 +81,9 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
 
     if (!mounted) return;
     setState(() {
-      _manga = results[0] as MangaDexManga? ?? _manga;
-      _chapters = results[1] as List<MangaDexChapter>;
-      _savedProgress = results[2] as MangaReadingProgress?;
+      _manga = loadedManga ?? _manga;
+      _chapters = results[0] as List<MangaDexChapter>;
+      _savedProgress = results[1] as MangaReadingProgress?;
       _isLoading = false;
     });
   }
@@ -205,13 +226,16 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
     );
   }
 
-  void _openChapter(MangaDexChapter chapter) {
+  void _openChapter(MangaDexChapter chapter, {int? initialPage}) {
     final manga = _manga ??
         MangaDexManga(
           id: widget.mangaId,
           title: 'Манга',
           coverUrl: '',
         );
+    final formatLabel = manga.originalLanguage == 'ko'
+        ? 'Манхва'
+        : (manga.originalLanguage == 'zh' ? 'Маньхуа' : 'Манга');
     final bridge = AnimeMangaBridge(
       anilibriaId: 0,
       mangaDexId: manga.id,
@@ -226,6 +250,8 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
       extra: {
         'bridge': bridge,
         'initialChapter': chapter.chapterNumber?.floor(),
+        'initialPage': initialPage,
+        'formatLabel': formatLabel,
       },
     );
   }
@@ -324,40 +350,75 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   if (_chapters.isNotEmpty)
-                                    SizedBox(
-                                      height: 44,
-                                      child: ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFFFF6B4A),
-                                          foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        icon: const Icon(Icons.menu_book_rounded, size: 18),
-                                        label: Text(
-                                          _savedProgress != null
-                                              ? 'Продолжить (гл. ${_savedProgress!.chapterNumber})'
-                                              : 'Читать с 1 главы',
-                                          style: const TextStyle(fontWeight: FontWeight.w700),
-                                        ),
-                                        onPressed: () {
-                                          final savedNum = _savedProgress != null
-                                              ? int.tryParse(_savedProgress!.chapterNumber)
-                                              : null;
-                                          final target = savedNum != null
-                                              ? _chapters.firstWhere(
-                                                  (c) =>
-                                                      c.chapterNumber?.floor() ==
-                                                      savedNum,
-                                                  orElse: () => _chapters.first,
-                                                )
-                                              : _chapters.first;
-                                          _openChapter(target);
-                                        },
-                                      ),
+                                    Builder(
+                                      builder: (context) {
+                                        Widget buildCta(MangaHistoryEntry? historyEntry) {
+                                          final ctaLabel = historyEntry != null
+                                              ? 'Продолжить • ${historyEntry.chapterLabel} (стр. ${historyEntry.pageIndex})'
+                                              : (_savedProgress != null
+                                                  ? 'Продолжить (гл. ${_savedProgress!.chapterNumber})'
+                                                  : 'Читать с 1 главы');
+                                          return SizedBox(
+                                            height: 44,
+                                            child: ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFFF6B4A),
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                              icon: const Icon(Icons.menu_book_rounded, size: 18),
+                                              label: Text(
+                                                ctaLabel,
+                                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                              ),
+                                              onPressed: () {
+                                                if (historyEntry != null) {
+                                                  final target = _chapters.firstWhere(
+                                                    (c) => c.id == historyEntry.chapterId,
+                                                    orElse: () => _chapters.first,
+                                                  );
+                                                  _openChapter(
+                                                    target,
+                                                    initialPage: historyEntry.pageIndex,
+                                                  );
+                                                  return;
+                                                }
+                                                final savedNum = _savedProgress != null
+                                                    ? int.tryParse(_savedProgress!.chapterNumber)
+                                                    : null;
+                                                final target = savedNum != null
+                                                    ? _chapters.firstWhere(
+                                                        (c) =>
+                                                            c.chapterNumber?.floor() ==
+                                                            savedNum,
+                                                        orElse: () => _chapters.first,
+                                                      )
+                                                    : _chapters.first;
+                                                _openChapter(
+                                                  target,
+                                                  initialPage: _savedProgress != null
+                                                      ? _savedProgress!.pageIndex + 1
+                                                      : null,
+                                                );
+                                              },
+                                            ),
+                                          );
+                                        }
+
+                                        if (!getIt.isRegistered<MangaReadHistoryCubit>()) {
+                                          return buildCta(null);
+                                        }
+                                        return BlocBuilder<MangaReadHistoryCubit,
+                                            MangaReadHistoryState>(
+                                          bloc: getIt<MangaReadHistoryCubit>(),
+                                          builder: (context, historyState) =>
+                                              buildCta(historyState.getEntryFor(widget.mangaId)),
+                                        );
+                                      },
                                     ),
                                   if (getIt.isRegistered<UserMangaListCubit>())
                                     BlocBuilder<UserMangaListCubit, UserMangaListState>(
@@ -511,30 +572,58 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                               child: Row(
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      ch.displayTitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: isLastRead
-                                            ? const Color(0xFFFF6B4A)
-                                            : Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13.5,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          ch.displayTitle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: isLastRead
+                                                ? const Color(0xFFFF6B4A)
+                                                : Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          ch.secondaryMeta,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                  if (isLastRead) ...[
+                                    const SizedBox(width: 8),
+                                    const Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Color(0xFF2ED573),
+                                      size: 16,
+                                    ),
+                                  ],
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.06),
+                                      color: ch.translatedLanguage == 'ru'
+                                          ? const Color(0xFF35D9D5).withValues(alpha: 0.18)
+                                          : Colors.white.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
-                                      ch.translatedLanguage.toUpperCase(),
-                                      style: const TextStyle(
-                                        color: AppColors.textSecondary,
+                                      '${ch.translatedLanguage.toUpperCase()} • ${ch.source}',
+                                      style: TextStyle(
+                                        color: ch.translatedLanguage == 'ru'
+                                            ? const Color(0xFF35D9D5)
+                                            : AppColors.textSecondary,
                                         fontSize: 10.5,
                                         fontWeight: FontWeight.w700,
                                       ),

@@ -77,6 +77,7 @@ flutter:
   assets:
     - assets/icon/
     - assets/icons/
+    - assets/mascot/
     - assets/mascot/general/
     - assets/mascot/errors/
     - assets/mascot/empty_states/

@@ -52,6 +52,7 @@ abstract class ShikimoriRemoteDataSource {
   Future<int?> resolveShikimoriId(AnimeTitle title);
   Future<List<AnimeTitle>> getUpcomingAnnouncements({int page = 1, int limit = 40});
   Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId);
+  Future<List<({String russian, String english})>> searchMangas(String query, {int limit = 8});
 }
 
 class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
@@ -1840,5 +1841,36 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     }
 
     return text;
+  }
+
+  /// Поиск манги/манхвы на Shikimori для разрешения русских названий в английские/ромадзи.
+  Future<List<({String russian, String english})>> searchMangas(
+    String query, {
+    int limit = 8,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+    try {
+      final encoded = Uri.encodeQueryComponent(trimmed);
+      final res = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          'https://shikimori.io/api/mangas?search=$encoded&limit=$limit',
+          options: _shikimoriOptions,
+        ),
+      );
+      if (res.statusCode != 200 || res.data is! List) return const [];
+      final out = <({String russian, String english})>[];
+      for (final item in res.data as List) {
+        if (item is! Map) continue;
+        final ru = (item['russian'] ?? '').toString().trim();
+        final en = (item['name'] ?? '').toString().trim();
+        if (ru.isNotEmpty || en.isNotEmpty) {
+          out.add((russian: ru, english: en));
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
   }
 }

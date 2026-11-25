@@ -168,23 +168,41 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _maybeTriggerLoadNextPage() {
-    if (!mounted || !_scrollController.hasClients || _isForYouTabSelected) return;
-    final cubitState = context.read<CatalogCubit>().state;
-    if (cubitState is! CatalogLoaded ||
+    if (!mounted || !_scrollController.hasClients) return;
+    final cubit = context.read<CatalogCubit>();
+    final cubitState = cubit.state;
+    if (cubitState is! CatalogLoaded) return;
+
+    final pos = _scrollController.position;
+    if (pos.pixels <= 200 || pos.extentAfter >= 400) return;
+
+    if (cubit.isMangaMode) {
+      if (cubitState.isMangaLoadingMore ||
+          !cubitState.hasMoreManga ||
+          cubitState.mangaSearchQuery.isNotEmpty) {
+        return;
+      }
+      if (_scrollDebounceTimer?.isActive ?? false) return;
+      _scrollDebounceTimer = Timer(const Duration(milliseconds: 80), () {
+        if (mounted) {
+          context.read<CatalogCubit>().loadNextMangaPage();
+        }
+      });
+      return;
+    }
+
+    if (_isForYouTabSelected ||
         cubitState.isLoadingMore ||
         !cubitState.hasMore ||
         cubitState.searchQuery.isNotEmpty) {
       return;
     }
-    final pos = _scrollController.position;
-    if (pos.pixels > 200 && pos.extentAfter < 600) {
-      if (_scrollDebounceTimer?.isActive ?? false) return;
-      _scrollDebounceTimer = Timer(const Duration(milliseconds: 80), () {
-        if (mounted) {
-          context.read<CatalogCubit>().loadNextPage();
-        }
-      });
-    }
+    if (_scrollDebounceTimer?.isActive ?? false) return;
+    _scrollDebounceTimer = Timer(const Duration(milliseconds: 80), () {
+      if (mounted) {
+        context.read<CatalogCubit>().loadNextPage();
+      }
+    });
   }
 
   @override
@@ -277,10 +295,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                     if (_isForYouTabSelected && query.trim().isNotEmpty) {
                                       setState(() => _isForYouTabSelected = false);
                                     }
-                                    context.read<CatalogCubit>().onSearchQueryChanged(query);
+                                    final cubit = context.read<CatalogCubit>();
+                                    if (cubit.isMangaMode) {
+                                      cubit.onMangaSearchChanged(query);
+                                    } else {
+                                      cubit.onSearchQueryChanged(query);
+                                    }
                                   },
                                   onClear: () {
-                                    context.read<CatalogCubit>().onSearchQueryChanged('');
+                                    final cubit = context.read<CatalogCubit>();
+                                    if (cubit.isMangaMode) {
+                                      cubit.onMangaSearchChanged('');
+                                    } else {
+                                      cubit.onSearchQueryChanged('');
+                                    }
                                   },
                                 ),
                               ),
@@ -334,7 +362,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         if (_isSearchOpen) {
                           setState(() => _isSearchOpen = false);
                           _searchController.clear();
-                          context.read<CatalogCubit>().onSearchQueryChanged('');
+                          final cubit = context.read<CatalogCubit>();
+                          if (cubit.isMangaMode) {
+                            cubit.onMangaSearchChanged('');
+                          } else {
+                            cubit.onSearchQueryChanged('');
+                          }
                         } else {
                           setState(() => _isSearchOpen = true);
                         }
@@ -465,7 +498,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
               // 2. Полоса "Продолжить просмотр" или браузер манги/манхвы
               if (_isMangaMode)
-                MangaCatalogView(searchQuery: _searchController.text)
+                const MangaCatalogView()
               else ...[
               if (getIt.isRegistered<WatchHistoryCubit>())
                 BlocBuilder<WatchHistoryCubit, WatchHistoryState>(

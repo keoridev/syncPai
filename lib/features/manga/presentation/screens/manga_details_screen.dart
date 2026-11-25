@@ -10,8 +10,8 @@ import '../../../../core/services/mascot_companion_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
-import '../../data/datasources/mangadex_datasource.dart';
 import '../../data/repositories/manga_progress_repository.dart';
+import '../../data/repositories/manga_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
@@ -59,20 +59,22 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
   }
 
   Future<void> _loadData() async {
-    final ds = getIt.isRegistered<MangaDexDataSource>()
-        ? getIt<MangaDexDataSource>()
-        : MangaDexDataSource();
+    final repo = getIt.isRegistered<MangaRepository>()
+        ? getIt<MangaRepository>()
+        : MangaRepository.instance;
     final progressRepo = getIt.isRegistered<MangaProgressRepository>()
         ? getIt<MangaProgressRepository>()
         : null;
 
-    final loadedManga = _manga ?? await ds.getMangaById(widget.mangaId);
+    final loadedManga = _manga ?? await repo.getMangaDetails(widget.mangaId);
+    final chapterTarget = loadedManga ??
+        MangaDexManga(
+          id: widget.mangaId,
+          title: 'Манга',
+          coverUrl: '',
+        );
     final results = await Future.wait([
-      ds.getChapters(
-        widget.mangaId,
-        title: loadedManga?.title,
-        originalTitle: loadedManga?.originalTitle,
-      ),
+      repo.getChapters(chapterTarget),
       if (progressRepo != null)
         progressRepo.getProgress(widget.mangaId)
       else
@@ -262,6 +264,10 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
     final langLabel = manga?.originalLanguage == 'ko'
         ? 'Манхва'
         : (manga?.originalLanguage == 'zh' ? 'Маньхуа' : 'Манга');
+    final isDesktop = MediaQuery.sizeOf(context).width >= 800;
+    final statusLabel = manga?.status == 'completed'
+        ? 'Завершено'
+        : (manga?.status == 'ongoing' ? 'Онгоинг' : null);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -277,72 +283,138 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: SizedBox(
-                            width: 112,
-                            height: 162,
-                            child: (manga?.coverUrl.isNotEmpty ?? false)
-                                ? CachedNetworkImage(
-                                    imageUrl: wrapCorsSafeUrl(manga!.coverUrl),
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => const ColoredBox(
-                                      color: Color(0xFF1A2030),
-                                      child: Icon(Icons.menu_book_rounded, color: Colors.white38, size: 32),
-                                    ),
+          : Center(
+              child: ConstrainedBox(
+                key: const ValueKey('manga_details_desktop_max_width'),
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 0),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Container(
+                            padding: isDesktop ? const EdgeInsets.all(20) : EdgeInsets.zero,
+                            decoration: isDesktop
+                                ? BoxDecoration(
+                                    color: const Color(0xFF151923),
+                                    borderRadius: BorderRadius.circular(18),
                                   )
-                                : const ColoredBox(
-                                    color: Color(0xFF1A2030),
-                                    child: Icon(Icons.menu_book_rounded, color: Colors.white38, size: 32),
+                                : null,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: SizedBox(
+                                    width: isDesktop ? 200 : 112,
+                                    height: isDesktop ? 290 : 162,
+                                    child: (manga?.coverUrl.isNotEmpty ?? false)
+                                        ? CachedNetworkImage(
+                                            imageUrl: wrapCorsSafeUrl(manga!.coverUrl),
+                                            fit: BoxFit.cover,
+                                            errorWidget: (_, __, ___) => const ColoredBox(
+                                              color: Color(0xFF1A2030),
+                                              child: Icon(Icons.menu_book_rounded, color: Colors.white38, size: 32),
+                                            ),
+                                          )
+                                        : const ColoredBox(
+                                            color: Color(0xFF1A2030),
+                                            child: Icon(Icons.menu_book_rounded, color: Colors.white38, size: 32),
+                                          ),
                                   ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF1A2030),
-                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text(
-                                  langLabel,
-                                  style: const TextStyle(
-                                    color: Color(0xFF35D9D5),
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                manga?.title ?? 'Манга',
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.titleLarge.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 18,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${_chapters.length} гл.',
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
+                                SizedBox(width: isDesktop ? 24 : 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF1A2030),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              langLabel,
+                                              style: const TextStyle(
+                                                color: Color(0xFF35D9D5),
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          if (statusLabel != null)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF1A2030),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                statusLabel,
+                                                style: const TextStyle(
+                                                  color: AppColors.textSecondary,
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        manga?.title ?? 'Манга',
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTypography.titleLarge.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: isDesktop ? 22 : 18,
+                                        ),
+                                      ),
+                                      if (manga?.originalTitle != null &&
+                                          manga!.originalTitle!.trim().isNotEmpty &&
+                                          manga.originalTitle != manga.title) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          manga.originalTitle!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '${_chapters.length} гл.',
+                                        style: const TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      if (isDesktop &&
+                                          manga?.description != null &&
+                                          manga!.description!.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          manga.description!,
+                                          maxLines: 4,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 13,
+                                            height: 1.45,
+                                          ),
+                                        ),
+                                      ],
                               const SizedBox(height: 14),
                               Wrap(
                                 spacing: 10,
@@ -481,6 +553,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                     ),
                   ),
                 ),
+              ),
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -549,96 +622,110 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                 else
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    sliver: SliverList.separated(
-                      itemCount: _chapters.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final ch = _chapters[index];
-                        final savedNum = _savedProgress != null
-                            ? int.tryParse(_savedProgress!.chapterNumber)
-                            : null;
-                        final isLastRead = savedNum != null &&
-                            ch.chapterNumber?.floor() == savedNum;
-                        return Material(
-                          color: isLastRead
-                              ? const Color(0xFFFF6B4A).withValues(alpha: 0.16)
-                              : const Color(0xFF161A24),
-                          borderRadius: BorderRadius.circular(12),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () => _openChapter(ch),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          ch.displayTitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: isLastRead
-                                                ? const Color(0xFFFF6B4A)
-                                                : Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Text(
-                                          ch.secondaryMeta,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: AppColors.textMuted,
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (isLastRead) ...[
-                                    const SizedBox(width: 8),
-                                    const Icon(
-                                      Icons.check_circle_rounded,
-                                      color: Color(0xFF2ED573),
-                                      size: 16,
-                                    ),
-                                  ],
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: ch.translatedLanguage == 'ru'
-                                          ? const Color(0xFF35D9D5).withValues(alpha: 0.18)
-                                          : Colors.white.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '${ch.translatedLanguage.toUpperCase()} • ${ch.source}',
-                                      style: TextStyle(
-                                        color: ch.translatedLanguage == 'ru'
-                                            ? const Color(0xFF35D9D5)
-                                            : AppColors.textSecondary,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                    sliver: isDesktop
+                        ? SliverGrid.builder(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisExtent: 74,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 10,
                             ),
+                            itemCount: _chapters.length,
+                            itemBuilder: (context, index) => _buildChapterTile(index),
+                          )
+                        : SliverList.separated(
+                            itemCount: _chapters.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) => _buildChapterTile(index),
                           ),
-                        );
-                      },
-                    ),
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChapterTile(int index) {
+    final ch = _chapters[index];
+    final savedNum = _savedProgress != null
+        ? int.tryParse(_savedProgress!.chapterNumber)
+        : null;
+    final isLastRead = savedNum != null && ch.chapterNumber?.floor() == savedNum;
+    return Material(
+      color: isLastRead
+          ? const Color(0xFFFF6B4A).withValues(alpha: 0.16)
+          : const Color(0xFF161A24),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openChapter(ch),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      ch.displayTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isLastRead ? const Color(0xFFFF6B4A) : Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      ch.secondaryMeta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isLastRead) ...[
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF2ED573),
+                  size: 16,
+                ),
+              ],
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ch.translatedLanguage == 'ru'
+                      ? const Color(0xFF35D9D5).withValues(alpha: 0.18)
+                      : Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${ch.translatedLanguage.toUpperCase()} • ${ch.source}',
+                  style: TextStyle(
+                    color: ch.translatedLanguage == 'ru'
+                        ? const Color(0xFF35D9D5)
+                        : AppColors.textSecondary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

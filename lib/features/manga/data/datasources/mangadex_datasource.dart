@@ -337,6 +337,13 @@ class MangaDexDataSource {
           : const <String>[];
       final linksMap = attrs['links'] is Map ? attrs['links'] as Map : null;
       final malId = linksMap?['mal']?.toString().trim();
+      final latestChap = attrs['latestUploadedChapter']?.toString().trim();
+      final status = attrs['status']?.toString().trim();
+      final descMap =
+          attrs['description'] is Map ? attrs['description'] as Map : null;
+      final description = (descMap?['ru'] ?? descMap?['en'] ?? '')
+          .toString()
+          .trim();
       String coverUrl = '';
       final rels = item['relationships'];
       if (rels is List) {
@@ -364,6 +371,10 @@ class MangaDexDataSource {
           originalLanguage: origLang,
           malId: (malId != null && malId.isNotEmpty) ? malId : null,
           availableTranslatedLanguages: langsList,
+          latestUploadedChapter:
+              (latestChap != null && latestChap.isNotEmpty) ? latestChap : null,
+          description: description.isNotEmpty ? description : null,
+          status: (status != null && status.isNotEmpty) ? status : null,
         ),
       );
     }

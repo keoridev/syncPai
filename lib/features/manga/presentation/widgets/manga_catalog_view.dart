@@ -108,6 +108,10 @@ class MangaCatalogView extends StatelessWidget {
                                 child: entry.coverUrl.isNotEmpty
                                     ? CachedNetworkImage(
                                         imageUrl: wrapCorsSafeUrl(entry.coverUrl),
+                                        httpHeaders: entry.coverUrl.contains('remanga')
+                                            ? const {'Referer': 'https://remanga.org/'}
+                                            : null,
+                                        memCacheWidth: 360,
                                         width: 50,
                                         height: 70,
                                         fit: BoxFit.cover,
@@ -360,6 +364,10 @@ class MangaCatalogView extends StatelessWidget {
                                       if (manga.coverUrl.isNotEmpty)
                                         CachedNetworkImage(
                                           imageUrl: wrapCorsSafeUrl(manga.coverUrl),
+                                          httpHeaders: manga.coverUrl.contains('remanga')
+                                              ? const {'Referer': 'https://remanga.org/'}
+                                              : null,
+                                          memCacheWidth: 360,
                                           fit: BoxFit.cover,
                                           errorWidget: (_, __, ___) => Container(
                                             color: const Color(0xFF151923),
@@ -403,30 +411,28 @@ class MangaCatalogView extends StatelessWidget {
                                                 ),
                                               ),
                                             ),
-                                            const SizedBox(width: 4),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 6,
-                                                vertical: 3,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: manga.hasRussianTranslation
-                                                    ? const Color(0xFF35D9D5)
-                                                        .withValues(alpha: 0.85)
-                                                    : Colors.black.withValues(alpha: 0.72),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                manga.hasRussianTranslation ? 'RU' : 'EN',
-                                                style: TextStyle(
-                                                  color: manga.hasRussianTranslation
-                                                      ? const Color(0xFF0A0D14)
-                                                      : Colors.white70,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w800,
+                                            if (manga.hasVerifiedRussianChapters) ...[
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 3,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF35D9D5)
+                                                      .withValues(alpha: 0.85),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: const Text(
+                                                  'RU',
+                                                  style: TextStyle(
+                                                    color: Color(0xFF0A0D14),
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                            ],
                                           ],
                                         ),
                                       ),

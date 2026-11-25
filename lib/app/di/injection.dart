@@ -46,9 +46,12 @@ import '../../features/shorts/domain/repositories/anime_clips_repository.dart';
 import '../../features/kodik/data/datasources/kodik_remote_datasource.dart';
 import '../../features/kodik/data/datasources/kodik_stream_extractor.dart';
 import '../../features/kodik/presentation/cubit/kodik_cubit.dart';
+import '../../features/manga/data/datasources/desu_datasource.dart';
 import '../../features/manga/data/datasources/mangadex_datasource.dart';
 import '../../features/manga/data/datasources/mangaupdates_datasource.dart';
+import '../../features/manga/data/datasources/remanga_datasource.dart';
 import '../../features/manga/data/repositories/manga_progress_repository.dart';
+import '../../features/manga/data/repositories/manga_repository.dart';
 import '../../features/manga/presentation/cubit/manga_read_history_cubit.dart';
 import '../../features/manga/presentation/cubit/user_manga_list_cubit.dart';
 import '../../features/settings/presentation/cubit/settings_cubit.dart';
@@ -104,8 +107,18 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<MangaUpdatesDataSource>(
     () => MangaUpdatesDataSource(),
   );
+  getIt.registerLazySingleton<RemangaDataSource>(() => RemangaDataSource());
+  getIt.registerLazySingleton<DesuDataSource>(() => DesuDataSource());
   getIt.registerLazySingleton<MangaDexDataSource>(
-    () => MangaDexDataSource(),
+    () => MangaDexDataSource(remangaDataSource: getIt<RemangaDataSource>()),
+  );
+  getIt.registerLazySingleton<MangaRepository>(
+    () => MangaRepository(
+      remanga: getIt<RemangaDataSource>(),
+      desu: getIt<DesuDataSource>(),
+      mangadex: getIt<MangaDexDataSource>(),
+      prefs: getIt<SharedPreferences>(),
+    ),
   );
   getIt.registerLazySingleton<MangaProgressRepository>(
     () => MangaProgressRepository(getIt<SharedPreferences>()),

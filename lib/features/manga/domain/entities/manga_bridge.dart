@@ -55,6 +55,12 @@ class MangaDexManga extends Equatable {
   final String? originalLanguage;
   final String? malId;
   final List<String> availableTranslatedLanguages;
+  final String? latestUploadedChapter;
+  final String? description;
+  final String? status;
+  final double? rating;
+  final int? chaptersCount;
+  final String source;
 
   const MangaDexManga({
     required this.id,
@@ -64,13 +70,28 @@ class MangaDexManga extends Equatable {
     this.originalLanguage,
     this.malId,
     this.availableTranslatedLanguages = const [],
+    this.latestUploadedChapter,
+    this.description,
+    this.status,
+    this.rating,
+    this.chaptersCount,
+    this.source = 'MangaDex',
   });
 
   bool get isManhwaOrWebtoon =>
       originalLanguage == 'ko' || originalLanguage == 'zh';
 
   bool get hasRussianTranslation =>
+      source == 'Remanga' ||
+      source == 'Desu' ||
       availableTranslatedLanguages.any((l) => l.toLowerCase() == 'ru');
+
+  bool get hasVerifiedRussianChapters =>
+      source == 'Remanga' ||
+      source == 'Desu' ||
+      (hasRussianTranslation &&
+          latestUploadedChapter != null &&
+          latestUploadedChapter!.trim().isNotEmpty);
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -80,6 +101,12 @@ class MangaDexManga extends Equatable {
         'originalLanguage': originalLanguage,
         'malId': malId,
         'availableTranslatedLanguages': availableTranslatedLanguages,
+        'latestUploadedChapter': latestUploadedChapter,
+        'description': description,
+        'status': status,
+        'rating': rating,
+        'chaptersCount': chaptersCount,
+        'source': source,
       };
 
   factory MangaDexManga.fromJson(Map<String, dynamic> json) {
@@ -94,6 +121,12 @@ class MangaDexManga extends Equatable {
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      latestUploadedChapter: json['latestUploadedChapter']?.toString(),
+      description: json['description']?.toString(),
+      status: json['status']?.toString(),
+      rating: (json['rating'] as num?)?.toDouble(),
+      chaptersCount: (json['chaptersCount'] as num?)?.toInt(),
+      source: (json['source'] ?? 'MangaDex').toString(),
     );
   }
 
@@ -106,10 +139,16 @@ class MangaDexManga extends Equatable {
         originalLanguage,
         malId,
         availableTranslatedLanguages,
+        latestUploadedChapter,
+        description,
+        status,
+        rating,
+        chaptersCount,
+        source,
       ];
 }
 
-/// Глава манги / манхвы из MangaDex feed.
+/// Глава манги / манхвы из MangaDex / Remanga / Desu.uno.
 class MangaDexChapter extends Equatable {
   final String id;
   final String? volume;
@@ -120,6 +159,7 @@ class MangaDexChapter extends Equatable {
   final int pagesCount;
   final String? translatorGroup;
   final String source;
+  final bool isPaid;
 
   const MangaDexChapter({
     required this.id,
@@ -131,6 +171,7 @@ class MangaDexChapter extends Equatable {
     this.pagesCount = 0,
     this.translatorGroup,
     this.source = 'MangaDex',
+    this.isPaid = false,
   });
 
   String get displayTitle {

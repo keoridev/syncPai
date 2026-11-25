@@ -1376,47 +1376,55 @@ class _ProfileScreenState extends State<ProfileScreen>
     Color currentAccentColor,
   ) {
     final mode = _showcaseConfig.mode;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
-          child: Row(
-            children: [
-              Icon(Icons.auto_awesome_rounded, size: 15, color: currentAccentColor),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  mode.labelRu.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xEB141822),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.auto_awesome_rounded, size: 15, color: currentAccentColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    mode.labelRu.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
                   ),
                 ),
-              ),
-              TextButton.icon(
-                key: const ValueKey('profile_customize_showcase_btn'),
-                onPressed: () => _openShowcaseCustomizerSheet(context, currentAccentColor),
-                icon: const Icon(Icons.tune_rounded, size: 15),
-                label: const Text(
-                  'Настроить витрину',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                TextButton.icon(
+                  key: const ValueKey('profile_customize_showcase_btn'),
+                  onPressed: () => _openShowcaseCustomizerSheet(context, currentAccentColor),
+                  icon: const Icon(Icons.tune_rounded, size: 15),
+                  label: const Text(
+                    'Настроить витрину',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: currentAccentColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
                 ),
-                style: TextButton.styleFrom(
-                  foregroundColor: currentAccentColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: Size.zero,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        if (mode == ShowcaseMode.anime || mode == ShowcaseMode.dual)
-          _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
-        if (mode == ShowcaseMode.manga || mode == ShowcaseMode.dual)
-          _buildMangaShowcaseCard(context, currentAccentColor),
-      ],
+          if (mode == ShowcaseMode.anime || mode == ShowcaseMode.dual)
+            _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
+          if (mode == ShowcaseMode.manga || mode == ShowcaseMode.dual)
+            _buildMangaShowcaseCard(context, currentAccentColor),
+        ],
+      ),
     );
   }
 
@@ -1726,7 +1734,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       );
     }
-    final chapterText = showcase.totalChapters != null
+    final parsedChap = double.tryParse(
+      RegExp(r'\d+(?:\.\d+)?').firstMatch(showcase.chapterLabel)?.group(0) ?? '',
+    );
+    final showTotal = showcase.totalChapters != null &&
+        parsedChap != null &&
+        showcase.totalChapters! >= parsedChap;
+    final chapterText = showTotal
         ? 'Глава ${showcase.chapterLabel} / ${showcase.totalChapters}'
         : 'Глава ${showcase.chapterLabel}';
     final caption = _showcaseConfig.customCaption.trim().isNotEmpty
@@ -1741,7 +1755,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         borderRadius: BorderRadius.circular(18),
         child: Stack(
           children: [
-            if (_showcaseConfig.fullBleedBackdrop && showcase.coverUrl.isNotEmpty)
+            if (_showcaseConfig.fullBleedBackdrop && showcase.coverUrl.isNotEmpty) ...[
               Positioned.fill(
                 child: Opacity(
                   opacity: 0.22,
@@ -1751,6 +1765,21 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ),
               ),
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        Color(0xE6121620),
+                        Color(0xA6121620),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.all(14),
               child: Column(

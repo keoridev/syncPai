@@ -12,6 +12,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../data/datasources/mangadex_datasource.dart';
 import '../../data/repositories/manga_progress_repository.dart';
+import '../../data/repositories/manga_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
@@ -138,10 +139,22 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
       _errorMessage = null;
     });
 
-    final chapters = await _dataSource.getChapters(
-      widget.bridge.mangaDexId,
-      title: widget.bridge.mangaTitle,
-    );
+    final repo = getIt.isRegistered<MangaRepository>()
+        ? getIt<MangaRepository>()
+        : MangaRepository.instance;
+    final chapters = widget.dataSource != null
+        ? await _dataSource.getChapters(
+            widget.bridge.mangaDexId,
+            title: widget.bridge.mangaTitle,
+          )
+        : await repo.getChapters(
+            MangaDexManga(
+              id: widget.bridge.mangaDexId,
+              title: widget.bridge.mangaTitle,
+              coverUrl: widget.bridge.coverUrl,
+              originalLanguage: widget.bridge.isManhwa ? 'ko' : 'ja',
+            ),
+          );
     if (!mounted) return;
 
     if (chapters.isEmpty) {
@@ -219,7 +232,12 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
       _currentPageNotifier.value = 0;
     });
 
-    final bundle = await _dataSource.getChapterPagesWithFallback(chapter.id);
+    final repo = getIt.isRegistered<MangaRepository>()
+        ? getIt<MangaRepository>()
+        : MangaRepository.instance;
+    final bundle = widget.dataSource != null
+        ? await _dataSource.getChapterPagesWithFallback(chapter.id)
+        : await repo.getChapterPagesWithFallback(chapter.id);
     if (!mounted) return;
     final pages = bundle.dataUrls.isNotEmpty ? bundle.dataUrls : bundle.dataSaverUrls;
 
@@ -252,7 +270,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
 
   void _precacheAhead(int fromIndex) {
     if (!mounted || _pages.isEmpty) return;
-    for (int offset = 1; offset <= 3; offset++) {
+    for (int offset = 1; offset <= 2; offset++) {
       final target = fromIndex + offset;
       if (target >= _pages.length) break;
       final url = _pages[target];
@@ -929,7 +947,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         child: ListView.builder(
           key: const ValueKey('manga_webtoon_list'),
           controller: _webtoonScrollController,
-          cacheExtent: 1800,
+          cacheExtent: 1200,
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + 56,
             bottom: MediaQuery.paddingOf(context).bottom + 72,

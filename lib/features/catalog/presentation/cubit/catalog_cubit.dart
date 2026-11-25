@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,6 +7,7 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/services/mascot_companion_service.dart';
 import '../../../anime_details/data/datasources/shikimori_remote_datasource.dart';
 import '../../../manga/data/datasources/mangadex_datasource.dart';
+import '../../../manga/data/repositories/manga_repository.dart';
 import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/entities/catalog_filter.dart';
@@ -930,10 +930,11 @@ class CatalogCubit extends Cubit<CatalogState> {
     await _fetchCatalog(category: category, isLoadMore: true);
   }
 
-  static const String _mangaCacheKey = 'syncpai_manga_catalog_cache_v1';
-  static const int _mangaPageLimit = 40;
+  static const int _mangaPageLimit = 30;
   static const int _mangaPrefetchLimit = 24;
   static final RegExp _cyrillicRegex = RegExp(r'[а-яА-ЯёЁ]');
+
+  int _mangaPage = 1;
 
   static int _foregroundScreenDepth = 0;
   static bool get isBackgroundPrefetchPaused => _foregroundScreenDepth > 0;
@@ -992,10 +993,20 @@ class CatalogCubit extends Cubit<CatalogState> {
     ));
   }
 
+  MangaRepository _resolveMangaRepo() {
+    if (mangaDexDataSource != null) {
+      return MangaRepository(mangadex: mangaDexDataSource, prefs: prefs);
+    }
+    if (getIt.isRegistered<MangaRepository>()) {
+      return getIt<MangaRepository>();
+    }
+    return MangaRepository.instance;
+  }
+
   void _scheduleMangaPrefetch() {
     if (_mangaPrefetchScheduled || isClosed) return;
     _mangaPrefetchScheduled = true;
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (!isClosed && !isBackgroundPrefetchPaused) {
         unawaited(_prefetchInitialMangaCatalog());
       }
@@ -1003,49 +1014,31 @@ class CatalogCubit extends Cubit<CatalogState> {
   }
 
   Future<void> _prefetchInitialMangaCatalog() async {
-    if (isClosed) return;
-    try {
-      final p = prefs ?? await SharedPreferences.getInstance();
-      final cachedRaw = p.getString(_mangaCacheKey);
-      if (cachedRaw != null && cachedRaw.isNotEmpty && _mangaItems.isEmpty) {
-        final decoded = jsonDecode(cachedRaw);
-        if (decoded is List) {
-          final parsed = decoded
-              .whereType<Map>()
-              .map((m) => MangaDexManga.fromJson(Map<String, dynamic>.from(m)))
-              .where((m) => m.id.isNotEmpty)
-              .toList();
-          if (parsed.isNotEmpty && !isClosed) {
-            _mangaItems = parsed;
-            _hasMoreManga = parsed.length >= _mangaPageLimit;
-            _emitMangaFields();
-          }
-        }
-      }
-    } catch (_) {}
-
     if (isClosed || isBackgroundPrefetchPaused) return;
     try {
-      final fetched = await _resolveMangaDex().browseManga(
-        availableTranslatedLanguage: 'ru',
-        order: 'followedCount',
-        limit: _mangaPrefetchLimit,
-        offset: 0,
+      final repo = _resolveMangaRepo();
+      final cached = repo.getCachedCatalogPage(
+        tab: 'all',
+        page: 1,
+        russianOnly: true,
       );
+      if (cached != null && cached.isNotEmpty && _mangaItems.isEmpty) {
+        _mangaItems = cached;
+        _mangaPage = 1;
+        _hasMoreManga = cached.length >= _mangaPrefetchLimit;
+        _emitMangaFields();
+        return;
+      }
+
+      final fetched = await repo.prefetchPage1(count: _mangaPrefetchLimit);
       if (isClosed || fetched.isEmpty) return;
       if (_mangaTab == 'all' && _mangaRussianOnly && _mangaSearchQuery.isEmpty) {
         _mangaItems = fetched;
+        _mangaPage = 1;
         _hasMoreManga = fetched.length >= _mangaPrefetchLimit;
         _isMangaLoading = false;
         _emitMangaFields();
       }
-      try {
-        final p = prefs ?? await SharedPreferences.getInstance();
-        await p.setString(
-          _mangaCacheKey,
-          jsonEncode(fetched.map((e) => e.toJson()).toList()),
-        );
-      } catch (_) {}
     } catch (_) {}
   }
 
@@ -1103,34 +1096,39 @@ class CatalogCubit extends Cubit<CatalogState> {
     _hasMoreManga = false;
     _emitMangaFields();
 
-    final ds = _resolveMangaDex();
-    final merged = <MangaDexManga>[];
-    final seenIds = <String>{};
-
-    void appendUnique(List<MangaDexManga> list) {
-      for (final m in list) {
-        if (seenIds.add(m.id)) {
-          merged.add(m);
+    if (mangaDexDataSource != null) {
+      final ds = _resolveMangaDex();
+      final merged = <MangaDexManga>[];
+      final seenIds = <String>{};
+      void appendUnique(List<MangaDexManga> list) {
+        for (final m in list) {
+          if (seenIds.add(m.id)) merged.add(m);
         }
       }
-    }
 
-    final primary = await ds.searchManga(trimmed, limit: _mangaPageLimit);
-    appendUnique(primary);
-
-    if (_cyrillicRegex.hasMatch(trimmed) && merged.length < 3) {
-      final shiki = _resolveShikimori();
-      if (shiki != null) {
-        final shikiMatches = await shiki.searchMangas(trimmed, limit: 5);
-        for (final match in shikiMatches.take(2)) {
-          final eng = match.english.trim();
-          if (eng.isEmpty) continue;
-          final extra = await ds.searchManga(eng, limit: 20);
-          appendUnique(extra);
+      final primary = await ds.searchManga(trimmed, limit: _mangaPageLimit);
+      appendUnique(primary);
+      if (_cyrillicRegex.hasMatch(trimmed) && merged.length < 3) {
+        final shiki = _resolveShikimori();
+        if (shiki != null) {
+          final shikiMatches = await shiki.searchMangas(trimmed, limit: 5);
+          for (final match in shikiMatches.take(2)) {
+            final eng = match.english.trim();
+            if (eng.isEmpty) continue;
+            final extra = await ds.searchManga(eng, limit: 20);
+            appendUnique(extra);
+          }
         }
       }
+      if (isClosed || gen != _mangaRequestGen) return;
+      _mangaItems = merged;
+      _isMangaLoading = false;
+      _hasMoreManga = false;
+      _emitMangaFields();
+      return;
     }
 
+    final merged = await _resolveMangaRepo().searchManga(trimmed);
     if (isClosed || gen != _mangaRequestGen) return;
     _mangaItems = merged;
     _isMangaLoading = false;
@@ -1160,7 +1158,66 @@ class CatalogCubit extends Cubit<CatalogState> {
       return;
     }
     final gen = loadMore ? _mangaRequestGen : ++_mangaRequestGen;
-    final offset = loadMore ? _mangaItems.length : 0;
+    final nextPage = loadMore ? _mangaPage + 1 : 1;
+
+    if (mangaDexDataSource != null) {
+      final offset = loadMore ? _mangaItems.length : 0;
+      if (loadMore) {
+        _isMangaLoadingMore = true;
+      } else {
+        _isMangaLoading = _mangaItems.isEmpty;
+        _isMangaLoadingMore = false;
+      }
+      _emitMangaFields();
+
+      final origLang = _mangaTab == 'manhwa'
+          ? 'ko'
+          : (_mangaTab == 'manga' ? 'ja' : null);
+      final order = _mangaTab == 'popular' ? 'rating' : 'followedCount';
+      final status = _mangaTab == 'completed' ? 'completed' : null;
+      final fetched = await _resolveMangaDex().browseManga(
+        originalLanguage: origLang,
+        availableTranslatedLanguage: _mangaRussianOnly ? 'ru' : null,
+        status: status,
+        order: order,
+        limit: _mangaPageLimit,
+        offset: offset,
+      );
+      if (isClosed || gen != _mangaRequestGen) return;
+      if (loadMore) {
+        final seenIds = _mangaItems.map((e) => e.id).toSet();
+        final merged = List<MangaDexManga>.from(_mangaItems);
+        for (final item in fetched) {
+          if (seenIds.add(item.id)) merged.add(item);
+        }
+        _mangaItems = merged;
+        _isMangaLoadingMore = false;
+      } else {
+        _mangaItems = fetched;
+        _isMangaLoading = false;
+      }
+      _hasMoreManga = fetched.length >= _mangaPageLimit;
+      _emitMangaFields();
+      return;
+    }
+
+    final repo = _resolveMangaRepo();
+    if (!loadMore) {
+      final instant = repo.getCachedCatalogPage(
+        tab: _mangaTab,
+        page: 1,
+        russianOnly: _mangaRussianOnly,
+      );
+      if (instant != null && instant.isNotEmpty) {
+        _mangaItems = instant;
+        _mangaPage = 1;
+        _isMangaLoading = false;
+        _isMangaLoadingMore = false;
+        _hasMoreManga = instant.length >= _mangaPrefetchLimit;
+        _emitMangaFields();
+        return;
+      }
+    }
 
     if (loadMore) {
       _isMangaLoadingMore = true;
@@ -1170,19 +1227,11 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
     _emitMangaFields();
 
-    final origLang = _mangaTab == 'manhwa'
-        ? 'ko'
-        : (_mangaTab == 'manga' ? 'ja' : null);
-    final order = _mangaTab == 'popular' ? 'rating' : 'followedCount';
-    final status = _mangaTab == 'completed' ? 'completed' : null;
-
-    final fetched = await _resolveMangaDex().browseManga(
-      originalLanguage: origLang,
-      availableTranslatedLanguage: _mangaRussianOnly ? 'ru' : null,
-      status: status,
-      order: order,
-      limit: _mangaPageLimit,
-      offset: offset,
+    final fetched = await repo.getCatalog(
+      tab: _mangaTab,
+      page: nextPage,
+      count: _mangaPageLimit,
+      russianOnly: _mangaRussianOnly,
     );
 
     if (isClosed || gen != _mangaRequestGen) return;
@@ -1196,10 +1245,12 @@ class CatalogCubit extends Cubit<CatalogState> {
         }
       }
       _mangaItems = merged;
+      _mangaPage = nextPage;
       _isMangaLoadingMore = false;
       _hasMoreManga = fetched.length >= _mangaPageLimit;
     } else {
       _mangaItems = fetched;
+      _mangaPage = 1;
       _isMangaLoading = false;
       _hasMoreManga = fetched.length >= _mangaPageLimit;
     }

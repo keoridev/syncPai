@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -14,6 +15,7 @@ import '../../domain/entities/catalog_filter.dart';
 import '../../domain/entities/catalog_filter_query.dart';
 import '../../domain/entities/catalog_settings.dart';
 import '../../data/datasources/shikimori_announced_datasource.dart';
+import '../../data/services/anime_meta_enrichment_service.dart';
 import '../../data/services/catalog_persistent_store.dart';
 import '../../domain/usecases/get_catalog_usecase.dart';
 import '../../domain/usecases/get_updates.dart';
@@ -556,6 +558,7 @@ class CatalogCubit extends Cubit<CatalogState> {
         mangaSearchQuery: _mangaSearchQuery,
       ));
       _scheduleMangaPrefetch();
+      _scheduleHdMetaEnrichment(cached);
 
       // Если кэш устарел (> 15 минут), тихо обновляем его в фоне без сброса интерфейса
       if (CatalogPrefetchService.instance.isStale(cleanCategory)) {
@@ -1002,6 +1005,28 @@ class CatalogCubit extends Cubit<CatalogState> {
       return getIt<MangaRepository>();
     }
     return MangaRepository.instance;
+  }
+
+  void _scheduleHdMetaEnrichment(List<AnimeTitle> sourceTitles) {
+    if (isClosed || sourceTitles.isEmpty || isBackgroundPrefetchPaused) return;
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+    unawaited(
+      AnimeMetaEnrichmentService.instance.enrichBatch(
+        sourceTitles,
+        onUpdated: (enriched) {
+          if (isClosed || state is! CatalogLoaded || isBackgroundPrefetchPaused) {
+            return;
+          }
+          final cur = state as CatalogLoaded;
+          final byId = {for (final t in enriched) t.id: t};
+          final nextTitles =
+              cur.titles.map((t) => byId[t.id] ?? t).toList();
+          final nextFiltered =
+              cur.filteredTitles.map((t) => byId[t.id] ?? t).toList();
+          emit(cur.copyWith(titles: nextTitles, filteredTitles: nextFiltered));
+        },
+      ),
+    );
   }
 
   void _scheduleMangaPrefetch() {

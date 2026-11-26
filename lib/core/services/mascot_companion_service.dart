@@ -446,6 +446,15 @@ class MascotCompanionService extends ChangeNotifier {
     );
   }
 
+  void notifyMangaSavedProgressPreserved(String chapterLabel, int pageIndex) {
+    if (!_enabled || !_isMangaContext) return;
+    showReaction(
+      expression: MascotExpression.popcornWatch,
+      customAssetPath: 'assets/mascot/pai_manga_reading.png',
+      message: 'Продолжаем с сохранённой страницы ($chapterLabel, стр. $pageIndex).',
+    );
+  }
+
   void notifyAnimeOriginalNoManga() {
     if (!_enabled) return;
     showReaction(

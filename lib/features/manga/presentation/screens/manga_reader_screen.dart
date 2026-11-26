@@ -171,7 +171,39 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         : 0;
 
     final targetChap = widget.initialChapter ?? widget.bridge.continueFromChapter;
-    if (targetChap != null) {
+    final historyEntry = getIt.isRegistered<MangaReadHistoryCubit>()
+        ? getIt<MangaReadHistoryCubit>().state.getEntryFor(widget.bridge.mangaDexId)
+        : null;
+    final savedHistoryChapNum = historyEntry != null
+        ? double.tryParse(
+            RegExp(r'\d+(?:\.\d+)?')
+                    .firstMatch(historyEntry.chapterLabel)
+                    ?.group(0) ??
+                '',
+          )
+        : null;
+
+    if (targetChap != null &&
+        historyEntry != null &&
+        savedHistoryChapNum != null &&
+        savedHistoryChapNum > targetChap) {
+      // Не откатываем прогресс назад, если пользователь уже прочитал дальше
+      final byId = chapters.indexWhere((c) => c.id == historyEntry.chapterId);
+      final byNum = chapters.indexWhere(
+        (c) =>
+            c.chapterNumber != null &&
+            (c.chapterNumber! - savedHistoryChapNum).abs() < 0.01,
+      );
+      targetIdx = byId >= 0 ? byId : (byNum >= 0 ? byNum : 0);
+      initialPage = (historyEntry.pageIndex - 1).clamp(0, 9999);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        MascotCompanionService.instance.notifyMangaSavedProgressPreserved(
+          historyEntry.chapterLabel,
+          historyEntry.pageIndex,
+        );
+      });
+    } else if (targetChap != null) {
       final foundIdx = chapters.indexWhere(
         (c) =>
             c.chapterNumber != null &&

@@ -61,7 +61,8 @@ class UnifiedAnimeCard extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isNarrow = screenWidth <= 360;
     final effectiveBadgeText = statusBadgeText ?? _defaultTopLeftBadgeText();
-    final hasRating = rating != null && rating! > 0;
+    final effectiveRating = rating ?? title.score;
+    final hasRating = effectiveRating != null && effectiveRating > 0;
 
     return RepaintBoundary(
       child: GestureDetector(
@@ -103,7 +104,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                                   imageUrl: wrapCorsSafeUrl(posterUrl),
                                   cacheKey: posterUrl,
                                   cacheManager: SyncPaiPosterCacheManager.instance,
-                                  memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(360),
+                                  memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(420),
                                   maxWidthDiskCache: 480,
                                   fit: BoxFit.cover,
                                   alignment: Alignment.topCenter,
@@ -118,7 +119,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                                         imageUrl: wrapCorsSafeUrl(fallbackPoster),
                                         cacheKey: fallbackPoster,
                                         cacheManager: SyncPaiPosterCacheManager.instance,
-                                        memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(360),
+                                        memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(420),
                                         maxWidthDiskCache: 480,
                                         fit: BoxFit.cover,
                                         alignment: Alignment.topCenter,
@@ -249,7 +250,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                                     ),
                                   ),
                                   child: Text(
-                                    '★ ${rating!.toStringAsFixed(1)}',
+                                    '★ ${effectiveRating.toStringAsFixed(1)}',
                                     style: const TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,

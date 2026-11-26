@@ -21,6 +21,7 @@ import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:sync_pai/features/anime_lists/domain/entities/user_anime_entry.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_cubit.dart';
 import 'package:sync_pai/features/anime_lists/presentation/cubit/anime_list_state.dart';
+import 'package:sync_pai/features/catalog/data/services/anime_meta_enrichment_service.dart';
 import 'package:sync_pai/features/catalog/domain/services/recommendation_engine.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:sync_pai/features/catalog/presentation/cubit/catalog_state.dart';
@@ -305,6 +306,15 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       // Тихая фоновая ревалидация метаданных/отзывов (SWR)
       unawaited(_loadShikimoriReviews(silent: true));
     }
+
+    unawaited(() async {
+      final enriched = await AnimeMetaEnrichmentService.instance.enrichSingle(_currentTitle);
+      if (mounted &&
+          (enriched.posterOriginal != _currentTitle.posterOriginal ||
+              enriched.score != _currentTitle.score)) {
+        setState(() => _currentTitle = enriched);
+      }
+    }());
 
     if (getIt.isRegistered<KodikCubit>()) {
       unawaited(

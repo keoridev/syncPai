@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -33,6 +34,7 @@ import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../../manga/presentation/cubit/user_manga_list_cubit.dart';
 import '../../services/avatar_upload_service.dart';
 import '../../../support/domain/entities/supporter_tier.dart';
+import '../../../support/presentation/widgets/supporter_sheet.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
 import '../../../wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../../domain/services/achievement_service.dart';
@@ -111,6 +113,26 @@ class _ProfileScreenState extends State<ProfileScreen>
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
   ];
 
+  String? _remoteProfileTier;
+
+  Future<void> _loadRemoteTier() async {
+    try {
+      final client = Supabase.instance.client;
+      final uid = client.auth.currentUser?.id;
+      if (uid == null || uid.isEmpty) return;
+      final row = await client
+          .from('profiles')
+          .select('tier')
+          .eq('id', uid)
+          .maybeSingle();
+      if (!mounted || row == null) return;
+      final tierVal = (row['tier'] ?? '').toString().trim();
+      if (tierVal.isNotEmpty) {
+        setState(() => _remoteProfileTier = tierVal);
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -120,6 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _loadBannerDismissed();
     _loadWatchHistory();
     _loadMangaShowcase();
+    _loadRemoteTier();
     _onlineFriends = FriendsService.getCachedFriends();
     FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadRealFriends();
@@ -1255,10 +1278,18 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildOwnerSupportPill(BuildContext context, UserProfile profile, Color accent) {
     final tier = profile.supporterTier;
-    final actionLabel = tier == SupporterTier.free
+    final isSponsor = _remoteProfileTier == 'sponsor' || tier != SupporterTier.free;
+    final actionLabel = !isSponsor
         ? 'Поддержать'
         : (tier == SupporterTier.producer ? 'Подробнее' : 'Улучшить');
-    final pillColor = tier == SupporterTier.free ? accent : tier.accentColor;
+    final pillColor = !isSponsor
+        ? accent
+        : (_remoteProfileTier == 'sponsor'
+            ? const Color(0xFFFF6B4A)
+            : tier.accentColor);
+    final titleText = _remoteProfileTier == 'sponsor'
+        ? 'SyncPai Sponsor'
+        : tier.title;
 
     return KeyedSubtree(
       key: const ValueKey('profile_owner_support_pill'),
@@ -1266,7 +1297,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         accentColor: pillColor,
         margin: EdgeInsets.zero,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        onTap: () => context.push('/support'),
+        onTap: () => SupporterSheet.show(context),
         child: Row(
           children: [
             Container(
@@ -1275,12 +1306,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                 color: pillColor.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(tier.icon, size: 15, color: pillColor),
+              child: Icon(
+                isSponsor ? Icons.workspace_premium_rounded : tier.icon,
+                size: 15,
+                color: pillColor,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                tier.title,
+                titleText,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,

@@ -333,7 +333,7 @@ class MascotCompanionService extends ChangeNotifier {
         actionIcon: Icons.menu_book_rounded,
         actionColor: const Color(0xFFFF6B4A),
         onAction: onReadManga,
-        duration: const Duration(seconds: 11),
+        duration: const Duration(seconds: 10),
         isPlayerAction: true,
       );
       return;

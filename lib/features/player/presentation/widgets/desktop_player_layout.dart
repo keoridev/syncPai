@@ -44,6 +44,7 @@ class DesktopPlayerLayout extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onSaveProgress;
   final Widget? skipOverlay;
+  final Widget? seasonFinaleOverlay;
 
   const DesktopPlayerLayout({
     super.key,
@@ -53,6 +54,7 @@ class DesktopPlayerLayout extends StatefulWidget {
     required this.onBack,
     required this.onSaveProgress,
     this.skipOverlay,
+    this.seasonFinaleOverlay,
   });
 
   @override
@@ -1033,6 +1035,9 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
 
           // 5. Плавающий баннер пропуска опенинга / эндинга
           if (widget.skipOverlay != null) widget.skipOverlay!,
+
+          // 5b. Встроенная карточка финала сезона внутри видеополотна
+          if (widget.seasonFinaleOverlay != null) widget.seasonFinaleOverlay!,
 
           // 6. Нижняя панель управления (Control Bar) в стиле YouTube Web
           Positioned(

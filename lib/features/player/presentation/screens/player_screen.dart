@@ -55,6 +55,7 @@ import '../widgets/quick_phrase_toast_widget.dart';
 import '../widgets/twitch_chat_overlay.dart';
 import '../widgets/danmaku_overlay_layer.dart';
 import '../widgets/pulsing_radar_waiting_widget.dart';
+import '../widgets/season_finale_overlay.dart';
 import '../widgets/watch_party_stats_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -130,6 +131,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   int? _dismissedOpeningEpisode;
   int? _dismissedEndingEpisode;
   int? _lastSkipEpisodeNum;
+  final ScrollController _portraitEpisodesScrollController = ScrollController();
+  int? _lastAutoScrolledEpisode;
+  bool _seasonFinaleDismissed = false;
 
   void _minimizePlayer({bool alreadyPopping = false}) {
     if (_handedOffToMiniPlayer || _isDisposed) return;
@@ -360,17 +364,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _handleSeasonFinalePrompt(SeasonFinalePrompt prompt) {
-    final nextSeason = prompt.nextSeason;
-    final hasPlayableSequel = nextSeason != null && !nextSeason.isAnnounced;
-    final hasAnnouncedSequel = nextSeason != null && nextSeason.isAnnounced;
-    final bridge = prompt.mangaBridge;
+    if (_seasonFinaleDismissed && mounted) {
+      setState(() => _seasonFinaleDismissed = false);
+    }
+  }
 
-    MascotCompanionService.instance.onSeasonFinale(
-      nextSeasonName: nextSeason?.name,
-      hasPlayableSequel: hasPlayableSequel,
-      hasAnnouncedSequel: hasAnnouncedSequel,
-      mangaTitle: bridge?.mangaTitle,
-      continueFromChapter: bridge?.continueFromChapter,
+  Widget? _buildSeasonFinaleOverlay(PlayerState state) {
+    final prompt = state.seasonFinalePrompt;
+    if (prompt == null || _seasonFinaleDismissed) return null;
+    final nextSeason = prompt.nextSeason;
+    final bridge = prompt.mangaBridge;
+    return SeasonFinaleOverlay(
+      prompt: prompt,
+      onDismiss: () {
+        if (mounted) setState(() => _seasonFinaleDismissed = true);
+      },
       onWatchSequel: nextSeason == null
           ? null
           : () => _openVerifiedSequel(nextSeason),
@@ -703,6 +711,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _sleepTimer?.cancel();
     _centerOsdTimer?.cancel();
     _zoomPillTimer?.cancel();
+    _portraitEpisodesScrollController.dispose();
     _screenshotToastTimer?.cancel();
     _skipPillCollapseTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -984,6 +993,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     onBack: _handleExit,
                     onSaveProgress: _saveWatchProgress,
                     skipOverlay: _buildReactiveSkipOverlay(),
+                    seasonFinaleOverlay: _buildSeasonFinaleOverlay(state),
                   );
                   if (!state.isSyncRoom || state.roomCode == null) {
                     return Stack(
@@ -1546,6 +1556,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             ),
           ),
 
+        if (_buildSeasonFinaleOverlay(state) case final finaleOverlay?)
+          finaleOverlay,
+
         if (state.isBuffering &&
             state.bufferNotice == null &&
             !state.areControlsVisible &&
@@ -2043,10 +2056,40 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               ),
 
               // 4. ПРОКРУЧИВАЕМЫЙ СПИСОК / СЕТКА СЕРИЙ
+              Builder(
+                builder: (_) {
+                  if (_lastAutoScrolledEpisode != currentEpNum &&
+                      episodes.isNotEmpty) {
+                    _lastAutoScrolledEpisode = currentEpNum;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted ||
+                          !_portraitEpisodesScrollController.hasClients) {
+                        return;
+                      }
+                      final idx =
+                          episodes.indexWhere((e) => e.episode == currentEpNum);
+                      if (idx <= 0) return;
+                      final pos = _portraitEpisodesScrollController.position;
+                      final rawOffset = _episodesGridMode
+                          ? ((idx ~/ 5) * 66.0)
+                          : (idx * 84.0);
+                      final target =
+                          rawOffset.clamp(0.0, pos.maxScrollExtent);
+                      _portraitEpisodesScrollController.animateTo(
+                        target,
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                      );
+                    });
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               Expanded(
                 child: _episodesGridMode
                     ? GridView.builder(
                         key: const ValueKey('player_portrait_episodes_grid'),
+                        controller: _portraitEpisodesScrollController,
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                         physics: const BouncingScrollPhysics(),
                         gridDelegate:
@@ -2117,6 +2160,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       )
                     : ListView.separated(
                         key: const ValueKey('player_portrait_episodes_list'),
+                        controller: _portraitEpisodesScrollController,
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                         physics: const BouncingScrollPhysics(),
                         itemCount: episodes.length,

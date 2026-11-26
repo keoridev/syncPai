@@ -24,6 +24,18 @@ class PaiCompanionToast extends StatelessWidget {
         }
 
         final size = MediaQuery.sizeOf(context);
+        final isPortrait =
+            MediaQuery.orientationOf(context) == Orientation.portrait;
+        // В портретном режиме плеера карточка продолжения манги/сезона
+        // встраивается прямо над «Список серий» без перекрытия эпизодов.
+        final reactionTitle = reaction.title ?? '';
+        if (isPortrait &&
+            service.isPlayerActive &&
+            (reactionTitle.contains('Сезон') ||
+                reactionTitle.contains('Финал'))) {
+          return const SizedBox.shrink();
+        }
+
         final isDesktop = size.width >= 800;
         final bottomPadding = MediaQuery.paddingOf(context).bottom;
 
@@ -31,24 +43,18 @@ class PaiCompanionToast extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             key: const ValueKey('pai_companion_toast_card'),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(16),
             onTap: service.dismiss,
             child: Container(
               constraints: BoxConstraints(
                 minHeight: 46,
-                maxWidth: isDesktop ? 380 : size.width - 24,
+                maxWidth: isDesktop ? 420 : size.width - 24,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF121726).withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                color: const Color(0xFF141821),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x14FFFFFF)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -85,7 +91,7 @@ class PaiCompanionToast extends StatelessWidget {
                     child: Text(
                       reaction.message,
                       maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12.5,
@@ -146,6 +152,23 @@ class PaiCompanionToast extends StatelessWidget {
                       },
                     ),
                   ],
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: const ValueKey('pai_companion_close_btn'),
+                    onPressed: service.dismiss,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white54,
+                      size: 16,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 26,
+                      minHeight: 26,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Закрыть',
+                  ),
                 ],
               ),
             ),

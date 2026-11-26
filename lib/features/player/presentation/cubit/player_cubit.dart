@@ -437,6 +437,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       player.stream.completed.listen((completed) {
         if (isClosed || _isDisposing) return;
         if (completed) {
+          _checkSeasonFinaleCompanion(state.duration);
           emit(state.copyWith(isPlaying: false));
           if (!state.isSyncRoom || state.isHost) {
             playNextEpisode();
@@ -2101,9 +2102,9 @@ class PlayerCubit extends Cubit<PlayerState> {
         pos.inSeconds >= ending.start &&
         pos.inSeconds <= ending.stop;
     final remaining = dur - pos;
-    final inLast50Sec =
+    final inFinalSeconds =
         remaining <= const Duration(seconds: 50) && remaining >= Duration.zero;
-    if (!inEndingRange && !inLast50Sec) return;
+    if (!inEndingRange && !inFinalSeconds) return;
 
     _seasonFinalePromptedForTitleId = title.id;
     unawaited(_resolveAndEmitSeasonFinale(title));

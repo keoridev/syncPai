@@ -35,6 +35,7 @@ class CatalogCubit extends Cubit<CatalogState> {
   Timer? _searchDebounceTimer;
   Timer? _filterDebounceTimer;
   Timer? _mangaSearchDebounce;
+  Timer? _mangaPrefetchTimer;
   CancelToken? _foregroundCancelToken;
   List<AnimeTitle> _cachedUpdates = [];
 
@@ -1006,7 +1007,8 @@ class CatalogCubit extends Cubit<CatalogState> {
   void _scheduleMangaPrefetch() {
     if (_mangaPrefetchScheduled || isClosed) return;
     _mangaPrefetchScheduled = true;
-    Future.delayed(const Duration(milliseconds: 1500), () {
+    _mangaPrefetchTimer?.cancel();
+    _mangaPrefetchTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!isClosed && !isBackgroundPrefetchPaused) {
         unawaited(_prefetchInitialMangaCatalog());
       }
@@ -1030,9 +1032,16 @@ class CatalogCubit extends Cubit<CatalogState> {
         return;
       }
 
-      final fetched = await repo.prefetchPage1(count: _mangaPrefetchLimit);
-      if (isClosed || fetched.isEmpty) return;
-      if (_mangaTab == 'all' && _mangaRussianOnly && _mangaSearchQuery.isEmpty) {
+      await repo.prefetchAllFilterTabs(count: _mangaPrefetchLimit);
+      if (isClosed) return;
+      final fetched = repo.getCachedCatalogPage(
+        tab: _mangaTab,
+        page: 1,
+        russianOnly: _mangaRussianOnly,
+      );
+      if (fetched != null &&
+          fetched.isNotEmpty &&
+          _mangaSearchQuery.isEmpty) {
         _mangaItems = fetched;
         _mangaPage = 1;
         _hasMoreManga = fetched.length >= _mangaPrefetchLimit;
@@ -1216,6 +1225,16 @@ class CatalogCubit extends Cubit<CatalogState> {
         _hasMoreManga = instant.length >= _mangaPrefetchLimit;
         _emitMangaFields();
         return;
+      }
+
+      // Оптимистичная 0ms-фильтрация из уже закэшированных вкладок
+      final optimistic = repo.optimisticFilterFromMemory(tab: _mangaTab);
+      if (optimistic.isNotEmpty) {
+        _mangaItems = optimistic;
+        _mangaPage = 1;
+        _isMangaLoading = false;
+        _isMangaLoadingMore = false;
+        _emitMangaFields();
       }
     }
 
@@ -2143,6 +2162,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     _searchDebounceTimer?.cancel();
     _filterDebounceTimer?.cancel();
     _mangaSearchDebounce?.cancel();
+    _mangaPrefetchTimer?.cancel();
     if (_foregroundCancelToken != null && !_foregroundCancelToken!.isCancelled) {
       _foregroundCancelToken!.cancel('Cubit closed');
     }

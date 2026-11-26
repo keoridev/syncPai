@@ -36,6 +36,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
   List<MangaDexChapter> _chapters = const [];
   MangaReadingProgress? _savedProgress;
   bool _isLoading = true;
+  String? _selectedVolume;
 
   @override
   void initState() {
@@ -268,6 +269,19 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
     final statusLabel = manga?.status == 'completed'
         ? 'Завершено'
         : (manga?.status == 'ongoing' ? 'Онгоинг' : null);
+
+    final volumes = <String>[];
+    for (final ch in _chapters) {
+      final vol = ch.volume?.trim() ?? '';
+      if (vol.isNotEmpty && !volumes.contains(vol)) {
+        volumes.add(vol);
+      }
+    }
+    final filteredChapters = _selectedVolume == null
+        ? _chapters
+        : _chapters
+            .where((ch) => (ch.volume?.trim() ?? '') == _selectedVolume)
+            .toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -567,6 +581,59 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                     ),
                   ),
                 ),
+                if (volumes.length > 1)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 40,
+                      child: ListView.separated(
+                        key: const ValueKey('manga_volume_filter_bar'),
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: volumes.length + 1,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final isAll = index == 0;
+                          final vol = isAll ? null : volumes[index - 1];
+                          final isSelected = _selectedVolume == vol;
+                          return Material(
+                            color: isSelected
+                                ? const Color(0xFFFF6B4A)
+                                : const Color(0xFF141821),
+                            borderRadius: BorderRadius.circular(10),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: () => setState(() => _selectedVolume = vol),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: isSelected
+                                      ? null
+                                      : Border.all(color: const Color(0x14FFFFFF)),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    isAll ? 'Все тома' : 'Том $vol',
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : AppColors.textSecondary,
+                                      fontSize: 12.5,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                if (volumes.length > 1)
+                  const SliverToBoxAdapter(child: SizedBox(height: 10)),
                 if (_chapters.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -587,7 +654,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                             ),
                             const SizedBox(height: 10),
                             const Text(
-                              'Главы недоступны на MangaDex из-за ограничений правообладателя',
+                              'Главы пока не найдены ни в одном из источников',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: AppColors.textSecondary,
@@ -630,13 +697,15 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                               crossAxisSpacing: 12,
                               mainAxisSpacing: 10,
                             ),
-                            itemCount: _chapters.length,
-                            itemBuilder: (context, index) => _buildChapterTile(index),
+                            itemCount: filteredChapters.length,
+                            itemBuilder: (context, index) =>
+                                _buildChapterTile(filteredChapters[index]),
                           )
                         : SliverList.separated(
-                            itemCount: _chapters.length,
+                            itemCount: filteredChapters.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) => _buildChapterTile(index),
+                            itemBuilder: (context, index) =>
+                                _buildChapterTile(filteredChapters[index]),
                           ),
                   ),
               ],
@@ -647,8 +716,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
     );
   }
 
-  Widget _buildChapterTile(int index) {
-    final ch = _chapters[index];
+  Widget _buildChapterTile(MangaDexChapter ch) {
     final savedNum = _savedProgress != null
         ? int.tryParse(_savedProgress!.chapterNumber)
         : null;

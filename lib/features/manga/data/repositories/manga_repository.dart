@@ -18,7 +18,14 @@ class MangaRepository {
 
   static const int maxMemoryPages = 12;
   static const Duration diskCacheTtl = Duration(hours: 6);
-  static const String _diskPrefix = 'syncpai_manga_repo_cache_v1_';
+  static const String _diskPrefix = 'manga_cache_v3_';
+  static const List<String> filterTabs = [
+    'all',
+    'manhwa',
+    'manga',
+    'popular',
+    'completed',
+  ];
 
   final RemangaDataSource _remanga;
   final DesuDataSource _desu;
@@ -185,6 +192,51 @@ class MangaRepository {
   Future<List<MangaDexManga>> prefetchPage1({int count = 24}) =>
       getCatalog(tab: 'all', page: 1, count: count, russianOnly: true);
 
+  Future<void> prefetchAllFilterTabs({int count = 24}) async {
+    await Future.wait(
+      filterTabs.map(
+        (tab) => getCatalog(
+          tab: tab,
+          page: 1,
+          count: count,
+          russianOnly: true,
+        ).catchError((_) => const <MangaDexManga>[]),
+      ),
+    );
+  }
+
+  /// Оптимистичная 0ms-фильтрация по уже загруженным в LRU-кэш элементам.
+  List<MangaDexManga> optimisticFilterFromMemory({required String tab}) {
+    final seenIds = <String>{};
+    final pool = <MangaDexManga>[];
+    for (final pageList in _memoryLru.values) {
+      for (final item in pageList) {
+        if (seenIds.add(item.id)) {
+          pool.add(item);
+        }
+      }
+    }
+    if (pool.isEmpty) return const [];
+
+    switch (tab) {
+      case 'manhwa':
+        return pool
+            .where((m) => m.originalLanguage == 'ko' || m.isManhwaOrWebtoon)
+            .toList();
+      case 'manga':
+        return pool.where((m) => m.originalLanguage == 'ja').toList();
+      case 'completed':
+        return pool
+            .where((m) => m.status?.toLowerCase() == 'completed')
+            .toList();
+      case 'popular':
+        return List<MangaDexManga>.from(pool)
+          ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+      default:
+        return pool;
+    }
+  }
+
   Future<List<MangaDexManga>> searchManga(String query) {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return Future.value(const []);
@@ -224,41 +276,92 @@ class MangaRepository {
     return _mangadex.getMangaById(id);
   }
 
-  /// Загружает русские главы с автоматическим зеркалированием платных глав ReManga на Desu.uno.
+  static String sanitizeSearchQuery(String raw) {
+    return raw
+        .replaceAll(RegExp(r'\s*[~:(\—–].*$'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static List<String> buildNormalizedQueries(
+    String? originalTitle,
+    String? title,
+  ) {
+    final candidates = <String>[];
+    void addIfValid(String? val) {
+      final t = val?.trim() ?? '';
+      if (t.isNotEmpty && !candidates.contains(t)) {
+        candidates.add(t);
+      }
+    }
+
+    if (originalTitle != null && originalTitle.trim().isNotEmpty) {
+      addIfValid(sanitizeSearchQuery(originalTitle));
+    }
+    if (title != null && title.trim().isNotEmpty) {
+      addIfValid(sanitizeSearchQuery(title));
+    }
+    addIfValid(originalTitle);
+    addIfValid(title);
+    return candidates;
+  }
+
+  Future<List<MangaDexChapter>> _searchDesuChapters(List<String> queries) async {
+    for (final q in queries) {
+      final matches = await _desu.browseCatalog(search: q, limit: 5);
+      for (final match in matches.take(2)) {
+        final chapters = await _desu.getChapters(match.id);
+        if (chapters.isNotEmpty) return chapters;
+      }
+    }
+    return const [];
+  }
+
+  Future<List<MangaDexChapter>> _searchRemangaChapters(
+    List<String> queries,
+  ) async {
+    for (final q in queries) {
+      final chapters = await _remanga.getChaptersByTitle(title: q);
+      if (chapters.isNotEmpty) return chapters;
+    }
+    return const [];
+  }
+
+  static bool _startsFromChapterOne(List<MangaDexChapter> chapters) {
+    if (chapters.isEmpty) return false;
+    final firstNum = chapters.first.chapterNumber;
+    if (firstNum == null) return true;
+    return firstNum <= 1.5;
+  }
+
+  static List<MangaDexChapter> _pickMostCompleteRun(
+    List<List<MangaDexChapter>> candidates,
+  ) {
+    final nonEmpty = candidates.where((c) => c.isNotEmpty).toList();
+    if (nonEmpty.isEmpty) return const [];
+    final complete = nonEmpty.where(_startsFromChapterOne).toList();
+    final pool = complete.isNotEmpty ? complete : nonEmpty;
+    pool.sort((a, b) => b.length.compareTo(a.length));
+    return pool.first;
+  }
+
+  /// Загружает русские главы с ReManga, Desu.uno и MangaDex, выбирая самый полный ряд с 1-й главы.
   Future<List<MangaDexChapter>> getChapters(MangaDexManga manga) async {
+    final queries = buildNormalizedQueries(manga.originalTitle, manga.title);
+
     if (manga.id.startsWith('remanga:')) {
       final remangaChapters = await _remanga.getChaptersByDir(manga.id);
       final freeRemanga = remangaChapters.where((c) => !c.isPaid).toList();
       final hasPaidGaps =
-          remangaChapters.any((c) => c.isPaid) || freeRemanga.isEmpty;
+          remangaChapters.any((c) => c.isPaid) ||
+          freeRemanga.isEmpty ||
+          !_startsFromChapterOne(freeRemanga);
 
       if (!hasPaidGaps && freeRemanga.isNotEmpty) {
         return freeRemanga;
       }
 
-      // Если на ReManga есть платные главы — подтягиваем бесплатные главы с Desu.uno
-      final desuMatches = await _desu.browseCatalog(
-        search: manga.title,
-        limit: 5,
-      );
-      List<MangaDexChapter> desuChapters = const [];
-      for (final match in desuMatches.take(2)) {
-        desuChapters = await _desu.getChapters(match.id);
-        if (desuChapters.isNotEmpty) break;
-      }
-      if (desuChapters.isEmpty &&
-          manga.originalTitle != null &&
-          manga.originalTitle!.trim().isNotEmpty) {
-        final origMatches = await _desu.browseCatalog(
-          search: manga.originalTitle!,
-          limit: 5,
-        );
-        for (final match in origMatches.take(2)) {
-          desuChapters = await _desu.getChapters(match.id);
-          if (desuChapters.isNotEmpty) break;
-        }
-      }
-
+      final desuChapters = await _searchDesuChapters(queries);
       if (freeRemanga.isEmpty && desuChapters.isNotEmpty) {
         return desuChapters;
       }
@@ -288,28 +391,44 @@ class MangaRepository {
 
     if (manga.id.startsWith('desu:')) {
       final desuChapters = await _desu.getChapters(manga.id);
-      if (desuChapters.isNotEmpty) return desuChapters;
-      return _remanga.getChaptersByTitle(
+      if (desuChapters.isNotEmpty && _startsFromChapterOne(desuChapters)) {
+        return desuChapters;
+      }
+      final remangaCh =
+          (await _searchRemangaChapters(queries)).where((c) => !c.isPaid).toList();
+      final best = _pickMostCompleteRun([desuChapters, remangaCh]);
+      if (best.isNotEmpty) return best;
+      return _mangadex.getChapters(
+        manga.id,
         title: manga.title,
         originalTitle: manga.originalTitle,
       );
     }
 
-    // Fallback для MangaDex ID: сначала пробуем MangaDex RU -> ReManga -> Desu -> MangaDex EN
-    final mdChapters = await _mangadex.getChapters(
-      manga.id,
-      title: manga.title,
-      originalTitle: manga.originalTitle,
-    );
-    if (mdChapters.isNotEmpty && mdChapters.first.translatedLanguage == 'ru') {
-      return mdChapters;
+    // Для MangaDex ID (или из «Читать мангу») параллельно пробуем ReManga, Desu.uno и MangaDex,
+    // отдавая приоритет источнику, который начинается с 1-й главы и имеет максимум RU-глав.
+    final results = await Future.wait([
+      _searchRemangaChapters(queries),
+      _searchDesuChapters(queries),
+      _mangadex.getChapters(
+        manga.id,
+        title: manga.title,
+        originalTitle: manga.originalTitle,
+      ),
+    ]);
+
+    final remangaFree = results[0].where((c) => !c.isPaid).toList();
+    final desuCh = results[1];
+    final mdCh = results[2];
+    final mdRu =
+        mdCh.where((c) => c.translatedLanguage.toLowerCase() == 'ru').toList();
+
+    final bestRu = _pickMostCompleteRun([remangaFree, desuCh, mdRu]);
+    if (bestRu.isNotEmpty) {
+      return bestRu;
     }
-    final desuMatches = await _desu.browseCatalog(search: manga.title, limit: 3);
-    for (final match in desuMatches.take(2)) {
-      final desuCh = await _desu.getChapters(match.id);
-      if (desuCh.isNotEmpty) return desuCh;
-    }
-    return mdChapters;
+
+    return mdCh;
   }
 
   Future<({List<String> dataUrls, List<String> dataSaverUrls})>
@@ -323,6 +442,37 @@ class MangaRepository {
       return (dataUrls: urls, dataSaverUrls: const <String>[]);
     }
     return _mangadex.getChapterPagesWithFallback(chapterId);
+  }
+
+  /// Загружает страницы главы с прозрачным обходом 402/403 paywall на ReManga через Desu.uno / MangaDex.
+  Future<({List<String> dataUrls, List<String> dataSaverUrls})>
+      getChapterPagesForChapter(
+    MangaDexChapter chapter, {
+    String? mangaTitle,
+    String? originalTitle,
+  }) async {
+    final primary = await getChapterPagesWithFallback(chapter.id);
+    if (primary.dataUrls.isNotEmpty || primary.dataSaverUrls.isNotEmpty) {
+      return primary;
+    }
+
+    if (chapter.id.startsWith('remanga:')) {
+      final queries = buildNormalizedQueries(originalTitle, mangaTitle);
+      final desuChapters = await _searchDesuChapters(queries);
+      final matched = desuChapters.where((c) {
+        if (chapter.chapterNumber != null && c.chapterNumber != null) {
+          return (c.chapterNumber! - chapter.chapterNumber!).abs() < 0.01;
+        }
+        return c.chapterLabel == chapter.chapterLabel;
+      }).toList();
+      if (matched.isNotEmpty) {
+        final urls = await _desu.getChapterPages(matched.first.id);
+        if (urls.isNotEmpty) {
+          return (dataUrls: urls, dataSaverUrls: const <String>[]);
+        }
+      }
+    }
+    return primary;
   }
 }
 

@@ -42,7 +42,7 @@ class AnimeMangaBridgeService {
   final MangaUpdatesDataSource? _mangaUpdatesOverride;
   final MangaDexDataSource? _mangaDexOverride;
 
-  static const String _prefsBridgePrefix = 'syncpai_manga_bridge_v1_';
+  static const String _prefsBridgePrefix = 'syncpai_manga_bridge_v3_';
 
   final Map<int, AnimeMangaBridge?> _memoryCache = {};
   final Map<int, Future<AnimeMangaBridge?>> _inFlight = {};

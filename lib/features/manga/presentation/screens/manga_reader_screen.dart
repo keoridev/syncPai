@@ -160,7 +160,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     if (chapters.isEmpty) {
       setState(() {
         _isLoadingChapters = false;
-        _errorMessage = 'Главы для этого тайтла пока недоступны на MangaDex.';
+        _errorMessage = 'Главы пока не найдены ни в одном из источников.';
       });
       return;
     }
@@ -237,7 +237,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         : MangaRepository.instance;
     final bundle = widget.dataSource != null
         ? await _dataSource.getChapterPagesWithFallback(chapter.id)
-        : await repo.getChapterPagesWithFallback(chapter.id);
+        : await repo.getChapterPagesForChapter(
+            chapter,
+            mangaTitle: widget.bridge.mangaTitle,
+          );
     if (!mounted) return;
     final pages = bundle.dataUrls.isNotEmpty ? bundle.dataUrls : bundle.dataSaverUrls;
 

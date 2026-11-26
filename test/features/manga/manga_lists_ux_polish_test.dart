@@ -88,12 +88,13 @@ void main() {
     expect(find.byIcon(Icons.auto_stories_rounded), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('manga_empty_go_catalog_btn')));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(catalogCubit.isMangaMode, isTrue);
 
     await catalogCubit.close();
     await mangaListCubit.close();
+    await tester.pump(const Duration(milliseconds: 100));
   });
 
   testWidgets('MangaDetailsScreen shows В списки button and updates label on status selection', (tester) async {

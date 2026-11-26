@@ -7,13 +7,15 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../catalog/domain/entities/catalog_settings.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../cubit/manga_read_history_cubit.dart';
+import '../cubit/user_manga_list_cubit.dart';
 import '../screens/manga_details_screen.dart';
 
-/// Встроенный браузер манги и манхвы внутри каталога SyncPai.
+/// Встроенный браузер манги и манхвы внутри каталога SyncPai (flat matte UI, без BoxShadow/неона).
 class MangaCatalogView extends StatelessWidget {
   final String searchQuery;
 
@@ -21,6 +23,11 @@ class MangaCatalogView extends StatelessWidget {
     super.key,
     this.searchQuery = '',
   });
+
+  static const Color _surfaceCard = Color(0xFF141821);
+  static const Color _surfaceElevated = Color(0xFF1C212E);
+  static const Color _tonalBorder = Color(0x14FFFFFF);
+  static const Color _coralAccent = Color(0xFFFF6B4A);
 
   static const List<({String id, String label})> _tabs = [
     (id: 'all', label: 'Всё'),
@@ -73,7 +80,7 @@ class MangaCatalogView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: EdgeInsets.fromLTRB(horizontalPad, 2, horizontalPad, 8),
+                padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 8),
                 child: Text(
                   'Продолжить чтение',
                   style: AppTypography.titleSmall.copyWith(
@@ -83,7 +90,7 @@ class MangaCatalogView extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                height: 86,
+                height: 84,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.symmetric(horizontal: horizontalPad),
@@ -93,7 +100,7 @@ class MangaCatalogView extends StatelessWidget {
                     final entry = items[index];
                     return Material(
                       key: ValueKey('manga_continue_card_${entry.mangaId}'),
-                      color: const Color(0xFF151923),
+                      color: _surfaceCard,
                       borderRadius: BorderRadius.circular(14),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(14),
@@ -101,6 +108,10 @@ class MangaCatalogView extends StatelessWidget {
                         child: Container(
                           width: 268,
                           padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _tonalBorder),
+                          ),
                           child: Row(
                             children: [
                               ClipRRect(
@@ -112,14 +123,14 @@ class MangaCatalogView extends StatelessWidget {
                                             ? const {'Referer': 'https://remanga.org/'}
                                             : null,
                                         memCacheWidth: 360,
-                                        width: 50,
-                                        height: 70,
+                                        width: 48,
+                                        height: 68,
                                         fit: BoxFit.cover,
                                       )
                                     : Container(
-                                        width: 50,
-                                        height: 70,
-                                        color: const Color(0xFF1A2030),
+                                        width: 48,
+                                        height: 68,
+                                        color: _surfaceElevated,
                                         child: const Icon(
                                           Icons.menu_book_rounded,
                                           color: AppColors.textMuted,
@@ -149,7 +160,7 @@ class MangaCatalogView extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        color: Color(0xFF35D9D5),
+                                        color: AppColors.textSecondary,
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -158,7 +169,7 @@ class MangaCatalogView extends StatelessWidget {
                                     const Text(
                                       'Читать',
                                       style: TextStyle(
-                                        color: Color(0xFFFF6B4A),
+                                        color: _coralAccent,
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -174,7 +185,7 @@ class MangaCatalogView extends StatelessWidget {
                   },
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
           ),
         );
@@ -201,34 +212,21 @@ class MangaCatalogView extends StatelessWidget {
     }
   }
 
-  Widget _buildLangPill({
-    required Key key,
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      key: key,
-      color: isSelected
-          ? const Color(0xFF35D9D5).withValues(alpha: 0.18)
-          : const Color(0xFF151923),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? const Color(0xFF35D9D5) : AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
+  String _formatLabel(MangaDexManga manga) {
+    if (manga.originalLanguage == 'ko') return 'Манхва';
+    if (manga.originalLanguage == 'zh') return 'Маньхуа';
+    return 'Манга';
+  }
+
+  String _metaLine(MangaDexManga manga) {
+    final parts = <String>[_formatLabel(manga)];
+    if (manga.chaptersCount != null && manga.chaptersCount! > 0) {
+      parts.add('${manga.chaptersCount} гл.');
+    }
+    if (manga.rating != null && manga.rating! > 0) {
+      parts.add(manga.rating!.toStringAsFixed(1));
+    }
+    return parts.join(' • ');
   }
 
   @override
@@ -241,74 +239,72 @@ class MangaCatalogView extends StatelessWidget {
         final cubit = context.read<CatalogCubit>();
         final loaded = state is CatalogLoaded ? state : null;
         final activeTab = loaded?.mangaTab ?? 'all';
-        final russianOnly = loaded?.mangaRussianOnly ?? true;
         final isLoading = loaded?.isMangaLoading ?? false;
         final isLoadingMore = loaded?.isMangaLoadingMore ?? false;
         final items = loaded?.mangaItems ?? const <MangaDexManga>[];
+        final isListMode = loaded?.viewMode == CatalogViewMode.list;
+        final mobileCols = screenWidth < 390
+            ? 2
+            : (loaded?.gridDensity.mobileColumns ?? 2);
+
+        final Map<String, MangaListStatus> listStatusById = {};
+        if (getIt.isRegistered<UserMangaListCubit>()) {
+          for (final entry in getIt<UserMangaListCubit>().state.entries) {
+            listStatusById[entry.mangaId] = entry.status;
+          }
+        }
 
         return SliverMainAxisGroup(
           slivers: [
             _buildContinueReadingStrip(context, horizontalPad),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 8),
-                child: Row(
-                  children: [
-                    _buildLangPill(
-                      key: const ValueKey('manga_lang_ru'),
-                      label: 'Русский',
-                      isSelected: russianOnly,
-                      onTap: () => cubit.setMangaRussianOnly(true),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildLangPill(
-                      key: const ValueKey('manga_lang_all'),
-                      label: 'Все языки',
-                      isSelected: !russianOnly,
-                      onTap: () => cubit.setMangaRussianOnly(false),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Чистая строка вкладок с 2.5px коралловым индикатором (как в каталоге Аниме)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: 44,
+                height: 40,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                   itemCount: _tabs.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, __) => const SizedBox(width: 18),
                   itemBuilder: (context, index) {
                     final tab = _tabs[index];
                     final isSelected = tab.id == activeTab;
-                    return Material(
-                      color: isSelected
-                          ? const Color(0xFFFF6B4A)
-                          : const Color(0xFF1A2030),
-                      borderRadius: BorderRadius.circular(10),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => cubit.selectMangaTab(tab.id),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          child: Center(
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => cubit.selectMangaTab(tab.id),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
                             child: Text(
                               tab.label,
                               style: TextStyle(
-                                color: isSelected ? Colors.white : AppColors.textSecondary,
-                                fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                                color: isSelected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                                fontSize: 13.5,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                               ),
                             ),
                           ),
-                        ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            height: 2.5,
+                            width: isSelected ? 28 : 0,
+                            decoration: BoxDecoration(
+                              color: _coralAccent,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
                 ),
               ),
             ),
+            const SliverToBoxAdapter(child: Divider(height: 1, color: _tonalBorder)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
             if (isLoading && items.isEmpty)
               const SliverToBoxAdapter(
@@ -323,11 +319,22 @@ class MangaCatalogView extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
                   child: Center(
                     child: Text(
-                      activeTab == 'lists'
-                          ? 'Вы ещё не начали читать мангу'
-                          : 'Ничего не найдено',
+                      'Ничего не найдено',
                       style: AppTypography.bodyMedium.copyWith(color: AppColors.textMuted),
                     ),
+                  ),
+                ),
+              )
+            else if (isListMode)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 20),
+                sliver: SliverList.separated(
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) => _buildListRow(
+                    context,
+                    items[index],
+                    listStatusById[items[index].id],
                   ),
                 ),
               )
@@ -335,128 +342,26 @@ class MangaCatalogView extends StatelessWidget {
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 16),
                 sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: screenWidth >= 900 ? 210 : 170,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 14,
-                    childAspectRatio: 0.56,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final manga = items[index];
-                      final typeLabel = manga.originalLanguage == 'ko'
-                          ? 'Манхва'
-                          : (manga.originalLanguage == 'zh' ? 'Маньхуа' : 'Манга');
-                      return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => _openManga(context, manga),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (manga.coverUrl.isNotEmpty)
-                                        CachedNetworkImage(
-                                          imageUrl: wrapCorsSafeUrl(manga.coverUrl),
-                                          httpHeaders: manga.coverUrl.contains('remanga')
-                                              ? const {'Referer': 'https://remanga.org/'}
-                                              : null,
-                                          memCacheWidth: 360,
-                                          fit: BoxFit.cover,
-                                          errorWidget: (_, __, ___) => Container(
-                                            color: const Color(0xFF151923),
-                                            child: const Icon(
-                                              Icons.menu_book_rounded,
-                                              color: AppColors.textMuted,
-                                              size: 32,
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          color: const Color(0xFF151923),
-                                          child: const Icon(
-                                            Icons.menu_book_rounded,
-                                            color: AppColors.textMuted,
-                                            size: 32,
-                                          ),
-                                        ),
-                                      Positioned(
-                                        left: 8,
-                                        top: 8,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 7,
-                                                vertical: 3,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withValues(alpha: 0.72),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                typeLabel,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                            if (manga.hasVerifiedRussianChapters) ...[
-                                              const SizedBox(width: 4),
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 3,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFF35D9D5)
-                                                      .withValues(alpha: 0.85),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                ),
-                                                child: const Text(
-                                                  'RU',
-                                                  style: TextStyle(
-                                                    color: Color(0xFF0A0D14),
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                manga.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12.5,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ],
-                          ),
+                  gridDelegate: screenWidth >= 900
+                      ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 215,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 0.56,
+                        )
+                      : SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: screenWidth >= 600 ? 3 : mobileCols,
+                          crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
+                          mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
+                          childAspectRatio: mobileCols == 3 ? 0.52 : 0.56,
                         ),
-                      );
-                    },
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildGridCard(
+                      context,
+                      items[index],
+                      listStatusById[items[index].id],
+                      isCompact: screenWidth < 600 && mobileCols == 3,
+                    ),
                     childCount: items.length,
                   ),
                 ),
@@ -478,6 +383,268 @@ class MangaCatalogView extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildGridCard(
+    BuildContext context,
+    MangaDexManga manga,
+    MangaListStatus? listStatus, {
+    bool isCompact = false,
+  }) {
+    final formatLabel = _formatLabel(manga);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openManga(context, manga),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _surfaceCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _tonalBorder),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (manga.coverUrl.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(manga.coverUrl),
+                          httpHeaders: manga.coverUrl.contains('remanga')
+                              ? const {'Referer': 'https://remanga.org/'}
+                              : null,
+                          memCacheWidth: 360,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const ColoredBox(
+                            color: _surfaceCard,
+                            child: Icon(
+                              Icons.menu_book_rounded,
+                              color: AppColors.textMuted,
+                              size: 30,
+                            ),
+                          ),
+                        )
+                      else
+                        const ColoredBox(
+                          color: _surfaceCard,
+                          child: Icon(
+                            Icons.menu_book_rounded,
+                            color: AppColors.textMuted,
+                            size: 30,
+                          ),
+                        ),
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            formatLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (listStatus != null)
+                        Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _coralAccent.withValues(alpha: 0.92),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              listStatus.labelRu,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              manga.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: isCompact ? 11.5 : 12.5,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _metaLine(manga),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: isCompact ? 10.5 : 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListRow(
+    BuildContext context,
+    MangaDexManga manga,
+    MangaListStatus? listStatus,
+  ) {
+    return Material(
+      color: _surfaceCard,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openManga(context, manga),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _tonalBorder),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 76,
+                  height: 108,
+                  child: manga.coverUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: wrapCorsSafeUrl(manga.coverUrl),
+                          httpHeaders: manga.coverUrl.contains('remanga')
+                              ? const {'Referer': 'https://remanga.org/'}
+                              : null,
+                          memCacheWidth: 360,
+                          fit: BoxFit.cover,
+                        )
+                      : const ColoredBox(
+                          color: _surfaceElevated,
+                          child: Icon(
+                            Icons.menu_book_rounded,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      manga.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (manga.originalTitle != null &&
+                        manga.originalTitle!.trim().isNotEmpty &&
+                        manga.originalTitle != manga.title) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        manga.originalTitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      _metaLine(manga),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (listStatus != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _coralAccent.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          listStatus.labelRu,
+                          style: const TextStyle(
+                            color: _coralAccent,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Читать',
+                  style: TextStyle(
+                    color: _coralAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

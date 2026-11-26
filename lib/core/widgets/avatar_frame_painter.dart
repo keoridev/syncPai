@@ -127,8 +127,7 @@ class ThematicAvatarFramePainter extends CustomPainter {
 
     final glowPaint = Paint()
       ..strokeWidth = 5.0
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      ..style = PaintingStyle.stroke;
 
     // Левая и правая катаны под 45 градусов
     const angles = [-math.pi / 4, math.pi / 4];
@@ -386,8 +385,7 @@ class ThematicAvatarFramePainter extends CustomPainter {
     final glowPaint = Paint()
       ..color = glowCyan.withValues(alpha: 0.5)
       ..strokeWidth = 5.0
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+      ..style = PaintingStyle.stroke;
 
     final bandPaint = Paint()
       ..color = cyan
@@ -444,8 +442,7 @@ class ThematicAvatarFramePainter extends CustomPainter {
       ..color = cyan
       ..style = PaintingStyle.fill;
     final earcupGlow = Paint()
-      ..color = glowCyan.withValues(alpha: 0.6)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+      ..color = glowCyan.withValues(alpha: 0.6);
 
     final cupAngles = [-math.pi * 0.88, -math.pi * 0.12];
     for (final ca in cupAngles) {
@@ -510,8 +507,7 @@ class ThematicAvatarFramePainter extends CustomPainter {
     // Личико Пай-тян (круглая форма головы)
     final facePaint = Paint()..color = const Color(0xFFFFF3E0);
     final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      ..color = Colors.black.withValues(alpha: 0.4);
     canvas.drawCircle(Offset.zero, 8.5, shadowPaint);
     canvas.drawCircle(Offset.zero, 8.0, facePaint);
 
@@ -635,8 +631,7 @@ class ThematicAvatarFramePainter extends CustomPainter {
     final sy = center.dy + (radius + 2.0) * math.sin(scanAngle);
 
     final beamPaint = Paint()
-      ..color = Colors.white
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+      ..color = Colors.white;
     canvas.drawCircle(Offset(sx, sy), 2.2, beamPaint);
 
     // 5. Дрейфующие пиксели матрицы

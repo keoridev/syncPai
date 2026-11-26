@@ -61,6 +61,7 @@ class MomentsPageView extends StatelessWidget {
                 isActive: index == pool.currentIndex,
                 onDoubleTapLike: () => onToggleLike?.call(clip),
                 onOpenYouTube: () => onOpenYouTube?.call(clip),
+                onWatchInPlayer: () => onWatchFromMoment?.call(clip),
               ),
 
               // Правая колонка действий: Лайк, Сохраненка, О тайтле, YouTube

@@ -154,6 +154,82 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
     }
   }
 
+  static String _normalizeTitleForMatch(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static double _titleSimilarityScore(AnimeTitle candidate, AnimeClip clip) {
+    final targetRu = _normalizeTitleForMatch(clip.animeTitle);
+    final targetEn = _normalizeTitleForMatch(clip.englishTitle);
+    final candRu = _normalizeTitleForMatch(candidate.russianTitle);
+    final candEn = _normalizeTitleForMatch(candidate.englishTitle);
+
+    double best = 0.0;
+    for (final t in [targetRu, targetEn]) {
+      if (t.isEmpty) continue;
+      for (final c in [candRu, candEn]) {
+        if (c.isEmpty) continue;
+        if (t == c) return 1.0;
+        if (c.contains(t) || t.contains(c)) {
+          final ratio = t.length < c.length
+              ? t.length / c.length
+              : c.length / t.length;
+          if (ratio >= 0.55 && ratio > best) best = ratio;
+        }
+        final tTokens = t.split(' ').where((w) => w.length >= 2).toSet();
+        final cTokens = c.split(' ').where((w) => w.length >= 2).toSet();
+        if (tTokens.isNotEmpty && cTokens.isNotEmpty) {
+          final overlap = tTokens.intersection(cTokens).length;
+          final jaccard = overlap / tTokens.union(cTokens).length;
+          if (jaccard > best) best = jaccard;
+        }
+      }
+    }
+    return best;
+  }
+
+  Future<AnimeTitle?> _resolveClipTitle(AnimeClip clip) async {
+    if (!getIt.isRegistered<CatalogRepository>()) return null;
+    final catalogRepo = getIt<CatalogRepository>();
+
+    // Если ID <= 12000, это может быть AniLibria ID — пробуем получить детали,
+    // но обязательно сверяем название, чтобы исключить коллизию с Shikimori ID.
+    if (clip.animeId > 0 && clip.animeId <= 12000) {
+      try {
+        final direct = await catalogRepo.getTitleDetails(id: clip.animeId);
+        if (_titleSimilarityScore(direct, clip) >= 0.45) {
+          return direct;
+        }
+      } catch (_) {}
+    }
+
+    // Поиск по русскому и английскому названию с проверкой релевантности
+    AnimeTitle? bestMatch;
+    double bestScore = 0.0;
+    for (final q in [clip.animeTitle, clip.englishTitle]) {
+      final clean = q.trim();
+      if (clean.isEmpty) continue;
+      try {
+        final results = await catalogRepo.searchTitles(clean);
+        for (final item in results) {
+          final score = _titleSimilarityScore(item, clip);
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = item;
+          }
+        }
+        if (bestScore >= 0.75) break;
+      } catch (_) {}
+    }
+
+    return bestScore >= 0.45 ? bestMatch : null;
+  }
+
   /// КИЛЛЕР-ФИЧА: Открытие серии в плеере с точного таймкода
   Future<void> _handleWatchFromMoment(AnimeClip clip) async {
     if (_isResolvingPlayback) return;
@@ -163,23 +239,14 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
     setState(() => _isResolvingPlayback = true);
 
     try {
-      AnimeTitle? resolvedTitle;
-
-      if (getIt.isRegistered<CatalogRepository>()) {
-        final catalogRepo = getIt<CatalogRepository>();
-        try {
-          resolvedTitle = await catalogRepo.getTitleDetails(id: clip.animeId);
-        } catch (_) {
-          final results = await catalogRepo.searchTitles(clip.animeTitle);
-          if (results.isNotEmpty) {
-            resolvedTitle = results.first;
-          }
-        }
-      }
+      AnimeTitle? resolvedTitle = await _resolveClipTitle(clip);
 
       resolvedTitle ??= AnimeTitle(
         id: clip.animeId,
-        code: clip.englishTitle.toLowerCase().replaceAll(' ', '-'),
+        shikimoriId: clip.animeId > 12000 ? clip.animeId : null,
+        code: clip.animeId > 12000
+            ? 'shikimori_${clip.animeId}'
+            : clip.englishTitle.toLowerCase().replaceAll(' ', '-'),
         russianTitle: clip.animeTitle,
         englishTitle: clip.englishTitle,
         posterSmall: clip.posterUrl,
@@ -241,20 +308,14 @@ class _AnimeShortsScreenState extends State<AnimeShortsScreen> {
   /// Открытие страницы сведений об аниме
   Future<void> _handleOpenDetails(AnimeClip clip) async {
     _pool.getEntry(_currentIndex)?.player.pause();
-    AnimeTitle? targetTitle;
-
-    if (getIt.isRegistered<CatalogRepository>()) {
-      try {
-        targetTitle = await getIt<CatalogRepository>().getTitleDetails(id: clip.animeId);
-      } catch (_) {
-        final results = await getIt<CatalogRepository>().searchTitles(clip.animeTitle);
-        if (results.isNotEmpty) targetTitle = results.first;
-      }
-    }
+    AnimeTitle? targetTitle = await _resolveClipTitle(clip);
 
     targetTitle ??= AnimeTitle(
       id: clip.animeId,
-      code: clip.englishTitle.toLowerCase().replaceAll(' ', '-'),
+      shikimoriId: clip.animeId > 12000 ? clip.animeId : null,
+      code: clip.animeId > 12000
+          ? 'shikimori_${clip.animeId}'
+          : clip.englishTitle.toLowerCase().replaceAll(' ', '-'),
       russianTitle: clip.animeTitle,
       englishTitle: clip.englishTitle,
       posterSmall: clip.posterUrl,

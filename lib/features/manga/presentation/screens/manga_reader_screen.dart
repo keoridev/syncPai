@@ -983,7 +983,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                                     borderRadius: BorderRadius.circular(5),
                                   ),
                                   child: Text(
-                                    '${currentChapter.translatedLanguage.toUpperCase()} • ${currentChapter.source}',
+                                    currentChapter.translatedLanguage.toUpperCase(),
                                     style: TextStyle(
                                       color: currentChapter.translatedLanguage == 'ru'
                                           ? const Color(0xFF35D9D5)

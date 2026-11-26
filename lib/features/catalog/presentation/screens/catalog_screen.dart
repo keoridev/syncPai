@@ -583,6 +583,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
+                                      flex: 2,
                                       child: Column(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -609,40 +610,50 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                         ],
                                       ),
                                     ),
-                                    if (isSingleHeroDesktop) ...[
-                                      const SizedBox(width: 16),
-                                      SizedBox(
-                                        width: 140,
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              'Просмотрено $pct%',
-                                              style: TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
+                                    if (isSingleHeroDesktop &&
+                                        MediaQuery.sizeOf(context).width >= 760) ...[
+                                      const SizedBox(width: 12),
+                                      Flexible(
+                                        flex: 1,
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(maxWidth: 140),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                'Просмотрено $pct%',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: AppColors.textSecondary,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 5),
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(4),
-                                              child: LinearProgressIndicator(
-                                                value: item.progress,
-                                                minHeight: 4,
-                                                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                                valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                              const SizedBox(height: 5),
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: LinearProgressIndicator(
+                                                  value: item.progress,
+                                                  minHeight: 4,
+                                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                                  valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                                ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ],
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 8),
                                     if (isDesktop)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      Flexible(
+                                        flex: 0,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                         decoration: BoxDecoration(
                                           color: themePrimary.withValues(alpha: 0.16),
                                           borderRadius: BorderRadius.circular(8),
@@ -663,7 +674,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                             Icon(Icons.play_arrow_rounded, size: 14, color: themePrimaryLight),
                                           ],
                                         ),
-                                      )
+                                        ),
+                                      ),
+                                    )
                                     else
                                       Icon(
                                         Icons.arrow_forward_ios_rounded,

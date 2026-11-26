@@ -28,6 +28,7 @@ import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../auth/presentation/widgets/auth_modal_sheet.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
+import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../manga/data/datasources/mangadex_datasource.dart';
 import '../../../manga/data/repositories/manga_progress_repository.dart';
 import '../../../manga/domain/entities/manga_bridge.dart';
@@ -50,7 +51,9 @@ import '../widgets/live_backgrounds/live_background_widget.dart';
 import '../widgets/profile_activity_chart.dart';
 import '../widgets/steam_profile_customizer_sheet.dart';
 import '../widgets/steam_style_profile_header.dart';
+import '../../services/duo_sync_service.dart';
 import '../../services/friends_service.dart';
+import '../widgets/duo_profile_sheet.dart';
 
 /// Экран профиля пользователя (UserProfileScreen) SyncPai:
 /// Концепция: Гибрид Steam Showcase и Discord Nitro.
@@ -88,32 +91,24 @@ class _ProfileScreenState extends State<ProfileScreen>
   FeaturedMangaShowcase? get _featuredManga => _showcaseConfig.selectedManga;
   int _totalChaptersRead = 0;
   List<Map<String, dynamic>> _onlineFriends = [];
-  List<Map<String, String>> _wallComments = [
-    {
-      'author': 'Senpai_Kun',
-      'text': '+rep за витрину и киберпанк тему 🔥',
-      'time': '2 ч. назад',
-      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Senpai',
-    },
-    {
-      'author': 'NekoChan',
-      'text': 'Когда совместный просмотр второго сезона? Жду в лобби!',
-      'time': 'Вчера',
-      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Neko',
-    },
-    {
-      'author': 'OtakuMaster',
-      'text': 'Топ 1 по времени за эту неделю 👏',
-      'time': '3 дн. назад',
-      'avatar': 'https://api.dicebear.com/7.x/bottts/png?seed=Otaku',
-    },
-  ];
+  List<Map<String, String>> _wallComments = [];
 
   static const List<String> _avatarPresets = [
     'cat', 'fox', 'panda', 'wolf', 'bolt', 'flower', 'shield', 'fire', 'gamer', 'star', 'bot'
   ];
 
   String? _remoteProfileTier;
+  DuoLinkRecord? _duoLink;
+
+  Future<void> _loadDuoLink() async {
+    if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) return;
+    final link = await DuoSyncService.instance.getCurrentDuoLink(
+      userId: widget.userId,
+    );
+    if (mounted) {
+      setState(() => _duoLink = link);
+    }
+  }
 
   Future<void> _loadRemoteTier() async {
     try {
@@ -143,6 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _loadWatchHistory();
     _loadMangaShowcase();
     _loadRemoteTier();
+    _loadDuoLink();
     _onlineFriends = FriendsService.getCachedFriends();
     FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadRealFriends();
@@ -191,29 +187,82 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  void _loadWallComments() {
+  String _formatCommentTime(String? isoDate) {
+    if (isoDate == null || isoDate.isEmpty) return '';
+    final dt = DateTime.tryParse(isoDate)?.toLocal();
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'Только что';
+    if (diff.inHours < 1) return '${diff.inMinutes} мин. назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч. назад';
+    if (diff.inDays == 1) return 'Вчера';
+    if (diff.inDays < 7) return '${diff.inDays} дн. назад';
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    return '$d.$m.${dt.year}';
+  }
+
+  Future<void> _loadWallComments() async {
+    final targetUserId =
+        widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+    final cacheKey = 'profile_wall_comments_${targetUserId ?? "me"}';
+
     if (getIt.isRegistered<SharedPreferences>()) {
       try {
-        final key = 'profile_wall_comments_${widget.userId ?? "me"}';
-        final raw = getIt<SharedPreferences>().getString(key);
+        final raw = getIt<SharedPreferences>().getString(cacheKey);
         if (raw != null && raw.isNotEmpty) {
           final decoded = jsonDecode(raw) as List<dynamic>;
           final parsed = decoded
               .whereType<Map>()
               .map((m) => m.map((k, v) => MapEntry(k.toString(), v.toString())))
               .toList();
-          if (parsed.isNotEmpty) {
-            _wallComments = parsed;
+          if (mounted) {
+            setState(() => _wallComments = parsed);
           }
         }
       } catch (_) {}
     }
+
+    if (targetUserId == null || targetUserId.isEmpty) return;
+
+    try {
+      final rows = await Supabase.instance.client
+          .from('profile_comments')
+          .select('id, author_name, author_avatar, body, created_at')
+          .eq('profile_user_id', targetUserId)
+          .order('created_at', ascending: false)
+          .limit(30);
+
+      final parsed = (rows as List<dynamic>)
+          .whereType<Map>()
+          .map((row) => <String, String>{
+                'id': (row['id'] ?? '').toString(),
+                'author': (row['author_name'] ?? 'Пользователь').toString(),
+                'text': (row['body'] ?? '').toString(),
+                'time': _formatCommentTime(row['created_at']?.toString()),
+                'avatar': (row['author_avatar'] ?? 'cat').toString(),
+              })
+          .toList();
+
+      if (mounted) {
+        setState(() => _wallComments = parsed);
+      }
+
+      if (getIt.isRegistered<SharedPreferences>()) {
+        await getIt<SharedPreferences>().setString(cacheKey, jsonEncode(parsed));
+      }
+    } catch (_) {}
   }
 
-  void _submitWallComment(UserProfile currentProfile) {
+  Future<void> _submitWallComment(UserProfile currentProfile) async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
     HapticFeedback.lightImpact();
+
+    final targetUserId =
+        widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final cacheKey = 'profile_wall_comments_${targetUserId ?? "me"}';
 
     setState(() {
       _wallComments.insert(0, {
@@ -227,8 +276,23 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     if (getIt.isRegistered<SharedPreferences>()) {
       try {
-        final key = 'profile_wall_comments_${widget.userId ?? "me"}';
-        getIt<SharedPreferences>().setString(key, jsonEncode(_wallComments));
+        await getIt<SharedPreferences>()
+            .setString(cacheKey, jsonEncode(_wallComments));
+      } catch (_) {}
+    }
+
+    if (targetUserId != null &&
+        targetUserId.isNotEmpty &&
+        currentUserId != null &&
+        currentUserId.isNotEmpty) {
+      try {
+        await Supabase.instance.client.from('profile_comments').insert({
+          'profile_user_id': targetUserId,
+          'author_id': currentUserId,
+          'author_name': currentProfile.username,
+          'author_avatar': currentProfile.avatarUrl,
+          'body': text,
+        });
       } catch (_) {}
     }
   }
@@ -1458,6 +1522,24 @@ class _ProfileScreenState extends State<ProfileScreen>
             _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
           if (mode == ShowcaseMode.manga || mode == ShowcaseMode.dual)
             _buildMangaShowcaseCard(context, currentAccentColor),
+          if (widget.userId == null || (_duoLink != null && _duoLink!.isActive))
+            DuoProfileCard(
+              profile: profile,
+              duoLink: _duoLink,
+              onManageTap: () async {
+                final updated = await DuoProfileSheet.show(
+                  context,
+                  profile: profile,
+                  initialLink: _duoLink,
+                  onUpdated: (next) {
+                    if (mounted) setState(() => _duoLink = next);
+                  },
+                );
+                if (mounted && updated != _duoLink) {
+                  setState(() => _duoLink = updated);
+                }
+              },
+            ),
         ],
       ),
     );
@@ -1467,30 +1549,230 @@ class _ProfileScreenState extends State<ProfileScreen>
     BuildContext context,
     Color accent,
   ) async {
+    const Color matteModalBg = Color(0xFF131722);
+    const Color matteCardBg = Color(0xFF1A202E);
+    const Color matteCoral = Color(0xFFFF6B4A);
+    const Color matteBorder = Color(0x14FFFFFF);
+    const Color modalBorder = Color(0x18FFFFFF);
+
     var draft = _showcaseConfig;
+    final currentProfile = _profileCubit.state.profile;
+    String? draftFavAnimeId = currentProfile.favoriteAnimeId;
+    String? draftFavAnimeTitle = currentProfile.favoriteAnimeTitle;
+    String? draftFavAnimePoster = currentProfile.favoriteAnimePoster;
+
+    // 0 = Слот 1 (Любимое аниме), 1 = Слот 2 (Любимая манга)
+    int activeSlot = draft.mode == ShowcaseMode.manga ? 1 : 0;
+
     final captionController = TextEditingController(text: draft.customCaption);
     final searchController = TextEditingController();
-    List<MangaDexManga> searchResults = const [];
+    List<MangaDexManga> mangaSearchResults = const [];
+    List<AnimeTitle> animeSearchResults = const [];
     bool isSearching = false;
 
     final userManga = getIt.isRegistered<UserMangaListCubit>()
         ? getIt<UserMangaListCubit>().state.entries
         : const <UserMangaEntry>[];
 
+    final userAnime = getIt.isRegistered<AnimeListCubit>()
+        ? getIt<AnimeListCubit>().state.allEntries
+        : const <UserAnimeEntry>[];
+
+    // Объединяем закладки аниме и историю просмотра (дедупликация по ID)
+    final defaultAnimeItems = <({
+      String id,
+      String title,
+      String posterUrl,
+      String subtitle,
+    })>[];
+    final seenAnimeIds = <String>{};
+    for (final a in userAnime) {
+      final idStr = a.animeId.toString();
+      if (seenAnimeIds.add(idStr)) {
+        defaultAnimeItems.add((
+          id: idStr,
+          title: a.titleRu,
+          posterUrl: a.posterUrl ?? '',
+          subtitle: a.episodesTotal != null
+              ? 'Аниме • ${a.episodesTotal} эп.'
+              : 'Аниме • ${a.status.labelRu}',
+        ));
+      }
+    }
+    for (final h in _watchHistory) {
+      final idStr = h.titleId.toString();
+      if (seenAnimeIds.add(idStr)) {
+        defaultAnimeItems.add((
+          id: idStr,
+          title: h.titleName,
+          posterUrl: h.posterUrl,
+          subtitle: 'История • ${h.episode} эп.',
+        ));
+      }
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF131722),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            return Padding(
+            final isAnimeSlot = draft.mode == ShowcaseMode.anime ||
+                (draft.mode == ShowcaseMode.dual && activeSlot == 0);
+
+            Future<void> runSearch() async {
+              final q = searchController.text.trim();
+              if (q.isEmpty) {
+                setSheetState(() {
+                  mangaSearchResults = const [];
+                  animeSearchResults = const [];
+                });
+                return;
+              }
+              setSheetState(() => isSearching = true);
+              if (isAnimeSlot) {
+                List<AnimeTitle> found = const [];
+                if (getIt.isRegistered<CatalogRepository>()) {
+                  try {
+                    found = await getIt<CatalogRepository>().searchTitles(q, limit: 15);
+                  } catch (_) {}
+                }
+                if (!ctx.mounted) return;
+                setSheetState(() {
+                  animeSearchResults = found;
+                  isSearching = false;
+                });
+              } else {
+                final ds = getIt.isRegistered<MangaDexDataSource>()
+                    ? getIt<MangaDexDataSource>()
+                    : MangaDexDataSource();
+                final found = await ds.searchManga(q);
+                if (!ctx.mounted) return;
+                setSheetState(() {
+                  mangaSearchResults = found;
+                  isSearching = false;
+                });
+              }
+            }
+
+            // Формируем карточки для 3-колоночной сетки
+            final gridCards = <Widget>[];
+            if (isAnimeSlot) {
+              if (animeSearchResults.isNotEmpty) {
+                for (final a in animeSearchResults) {
+                  final idStr = a.id.toString();
+                  final displayTitle = a.russianTitle.isNotEmpty
+                      ? a.russianTitle
+                      : a.englishTitle;
+                  final kindText = (a.kind != null && a.kind!.isNotEmpty)
+                      ? a.kind!
+                      : 'Аниме';
+                  final isSelected = draftFavAnimeId == idStr ||
+                      (draftFavAnimeId == null && draftFavAnimeTitle == displayTitle);
+                  gridCards.add(
+                    _buildShowcasePickerCard(
+                      title: displayTitle,
+                      subtitle: a.year != null ? '$kindText • ${a.year}' : kindText,
+                      coverUrl: a.posterUrl,
+                      isSelected: isSelected,
+                      onTap: () {
+                        setSheetState(() {
+                          draftFavAnimeId = idStr;
+                          draftFavAnimeTitle = displayTitle;
+                          draftFavAnimePoster = a.posterUrl;
+                        });
+                      },
+                    ),
+                  );
+                }
+              } else {
+                for (final a in defaultAnimeItems) {
+                  final isSelected = draftFavAnimeId == a.id ||
+                      (draftFavAnimeId == null && draftFavAnimeTitle == a.title);
+                  gridCards.add(
+                    _buildShowcasePickerCard(
+                      title: a.title,
+                      subtitle: a.subtitle,
+                      coverUrl: a.posterUrl,
+                      isSelected: isSelected,
+                      onTap: () {
+                        setSheetState(() {
+                          draftFavAnimeId = a.id;
+                          draftFavAnimeTitle = a.title;
+                          draftFavAnimePoster = a.posterUrl;
+                        });
+                      },
+                    ),
+                  );
+                }
+              }
+            } else {
+              if (mangaSearchResults.isNotEmpty) {
+                for (final m in mangaSearchResults) {
+                  gridCards.add(
+                    _buildShowcasePickerCard(
+                      title: m.title,
+                      subtitle: 'Манга • Поиск',
+                      coverUrl: m.coverUrl,
+                      isSelected: draft.selectedManga?.mangaId == m.id,
+                      onTap: () {
+                        setSheetState(() {
+                          draft = draft.copyWith(
+                            selectedManga: FeaturedMangaShowcase(
+                              mangaId: m.id,
+                              mangaTitle: m.title,
+                              coverUrl: m.coverUrl,
+                              chapterLabel: '1',
+                            ),
+                          );
+                        });
+                      },
+                    ),
+                  );
+                }
+              } else {
+                for (final u in userManga) {
+                  gridCards.add(
+                    _buildShowcasePickerCard(
+                      title: u.mangaTitle,
+                      subtitle: u.chaptersCount != null
+                          ? 'Манга • ${u.chaptersCount} гл.'
+                          : 'Манга • Гл. ${u.lastReadChapter}',
+                      coverUrl: u.coverUrl,
+                      isSelected: draft.selectedManga?.mangaId == u.mangaId,
+                      onTap: () {
+                        setSheetState(() {
+                          draft = draft.copyWith(
+                            selectedManga: FeaturedMangaShowcase(
+                              mangaId: u.mangaId,
+                              mangaTitle: u.mangaTitle,
+                              coverUrl: u.coverUrl,
+                              chapterLabel: u.lastReadChapter,
+                              totalChapters: u.chaptersCount,
+                            ),
+                          );
+                        });
+                      },
+                    ),
+                  );
+                }
+              }
+            }
+
+            return Container(
+              decoration: const BoxDecoration(
+                color: matteModalBg,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                border: Border(
+                  top: BorderSide(color: modalBorder, width: 1),
+                  left: BorderSide(color: modalBorder, width: 1),
+                  right: BorderSide(color: modalBorder, width: 1),
+                ),
+              ),
               padding: EdgeInsets.fromLTRB(
                 20,
-                16,
+                14,
                 20,
                 MediaQuery.viewInsetsOf(ctx).bottom + 24,
               ),
@@ -1499,80 +1781,230 @@ class _ProfileScreenState extends State<ProfileScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Настроить витрину',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0x33FFFFFF),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Настроить витрину',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetCtx),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Color(0xFF94A3B8),
+                            size: 20,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Переключатель режима витрины
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: ShowcaseMode.values.map((m) {
                         final selected = draft.mode == m;
-                        return ChoiceChip(
-                          label: Text(m.labelRu),
-                          selected: selected,
-                          selectedColor: accent,
-                          labelStyle: TextStyle(
-                            color: selected ? Colors.white : Colors.white70,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                          onSelected: (_) {
-                            setSheetState(() => draft = draft.copyWith(mode: m));
+                        return InkWell(
+                          onTap: () {
+                            setSheetState(() {
+                              draft = draft.copyWith(mode: m);
+                              if (m == ShowcaseMode.anime) activeSlot = 0;
+                              if (m == ShowcaseMode.manga) activeSlot = 1;
+                            });
                           },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected ? matteCoral : matteCardBg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selected ? matteCoral : matteBorder,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              m.labelRu,
+                              style: TextStyle(
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFFCBD5E1),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
                         );
                       }).toList(),
                     ),
+
+                    if (draft.mode == ShowcaseMode.dual) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDualSlotTab(
+                              label: 'Слот 1 • Любимое аниме',
+                              currentTitle: draftFavAnimeTitle ?? 'Не выбрано',
+                              isSelected: activeSlot == 0,
+                              onTap: () {
+                                setSheetState(() {
+                                  activeSlot = 0;
+                                  searchController.clear();
+                                  mangaSearchResults = const [];
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildDualSlotTab(
+                              label: 'Слот 2 • Любимая манга',
+                              currentTitle: draft.selectedManga?.mangaTitle ?? 'Не выбрано',
+                              isSelected: activeSlot == 1,
+                              onTap: () {
+                                setSheetState(() {
+                                  activeSlot = 1;
+                                  searchController.clear();
+                                  animeSearchResults = const [];
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     const SizedBox(height: 14),
+                    const Text(
+                      'Заголовок витрины',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     TextField(
                       controller: captionController,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
                       decoration: InputDecoration(
-                        labelText: 'Заголовок витрины',
-                        labelStyle: const TextStyle(color: Colors.white60),
+                        hintText: 'Например: Любимая манга',
+                        hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: const Color(0xFF1A2030),
-                        border: OutlineInputBorder(
+                        fillColor: matteCardBg,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                          borderSide: const BorderSide(color: matteBorder, width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: matteCoral, width: 1.5),
                         ),
                       ),
                       onChanged: (val) {
                         draft = draft.copyWith(customCaption: val);
                       },
                     ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Полноразмерный фон обложки',
-                        style: TextStyle(color: Colors.white, fontSize: 13.5),
+
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: matteCardBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: matteBorder, width: 1),
                       ),
-                      value: draft.fullBleedBackdrop,
-                      activeThumbColor: accent,
-                      onChanged: (val) {
-                        setSheetState(() {
-                          draft = draft.copyWith(fullBleedBackdrop: val);
-                        });
-                      },
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Полноразмерный фон обложки',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Показывать размытый арт тайтла на фоне карточки',
+                                  style: TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Switch(
+                            value: draft.fullBleedBackdrop,
+                            activeThumbColor: Colors.white,
+                            activeTrackColor: matteCoral,
+                            inactiveThumbColor: const Color(0xFF94A3B8),
+                            inactiveTrackColor: matteModalBg,
+                            onChanged: (val) {
+                              setSheetState(() {
+                                draft = draft.copyWith(fullBleedBackdrop: val);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
+
+                    const SizedBox(height: 16),
                     TextField(
                       controller: searchController,
-                      style: const TextStyle(color: Colors.white),
+                      onSubmitted: (_) => runSearch(),
+                      style: const TextStyle(color: Colors.white, fontSize: 13.5),
                       decoration: InputDecoration(
-                        hintText: 'Найти мангу для витрины...',
+                        hintText: isAnimeSlot
+                            ? 'Найти аниме для витрины...'
+                            : 'Найти мангу для витрины...',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: const Color(0xFF1A2030),
-                        border: OutlineInputBorder(
+                        fillColor: matteCardBg,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                          borderSide: const BorderSide(color: matteBorder, width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: matteCoral, width: 1.5),
                         ),
                         suffixIcon: isSearching
                             ? const Padding(
@@ -1580,86 +2012,45 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 child: SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: matteCoral,
+                                  ),
                                 ),
                               )
                             : IconButton(
                                 icon: const Icon(Icons.search_rounded, color: Colors.white70),
-                                onPressed: () async {
-                                  final q = searchController.text.trim();
-                                  if (q.isEmpty) return;
-                                  setSheetState(() => isSearching = true);
-                                  final ds = getIt.isRegistered<MangaDexDataSource>()
-                                      ? getIt<MangaDexDataSource>()
-                                      : MangaDexDataSource();
-                                  final found = await ds.searchManga(q);
-                                  if (!ctx.mounted) return;
-                                  setSheetState(() {
-                                    searchResults = found;
-                                    isSearching = false;
-                                  });
-                                },
+                                onPressed: runSearch,
                               ),
                       ),
                     ),
-                    if (userManga.isNotEmpty || searchResults.isNotEmpty) ...[
-                      const SizedBox(height: 10),
+
+                    if (gridCards.isNotEmpty) ...[
+                      const SizedBox(height: 14),
                       SizedBox(
-                        height: 120,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: [
-                            for (final m in searchResults)
-                              _buildShowcasePickerTile(
-                                title: m.title,
-                                coverUrl: m.coverUrl,
-                                isSelected: draft.selectedManga?.mangaId == m.id,
-                                accent: accent,
-                                onTap: () {
-                                  setSheetState(() {
-                                    draft = draft.copyWith(
-                                      selectedManga: FeaturedMangaShowcase(
-                                        mangaId: m.id,
-                                        mangaTitle: m.title,
-                                        coverUrl: m.coverUrl,
-                                        chapterLabel: '1',
-                                      ),
-                                    );
-                                  });
-                                },
-                              ),
-                            for (final u in userManga)
-                              _buildShowcasePickerTile(
-                                title: u.mangaTitle,
-                                coverUrl: u.coverUrl,
-                                isSelected: draft.selectedManga?.mangaId == u.mangaId,
-                                accent: accent,
-                                onTap: () {
-                                  setSheetState(() {
-                                    draft = draft.copyWith(
-                                      selectedManga: FeaturedMangaShowcase(
-                                        mangaId: u.mangaId,
-                                        mangaTitle: u.mangaTitle,
-                                        coverUrl: u.coverUrl,
-                                        chapterLabel: u.lastReadChapter,
-                                        totalChapters: u.chaptersCount,
-                                      ),
-                                    );
-                                  });
-                                },
-                              ),
-                          ],
+                        height: 260,
+                        child: GridView.builder(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            childAspectRatio: 0.62,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                          ),
+                          itemCount: gridCards.length,
+                          itemBuilder: (_, index) => gridCards[index],
                         ),
                       ),
                     ],
+
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
-                      height: 44,
+                      height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: accent,
+                          backgroundColor: matteCoral,
                           foregroundColor: Colors.white,
+                          elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -1669,6 +2060,33 @@ class _ProfileScreenState extends State<ProfileScreen>
                               ? getIt<MangaProgressRepository>()
                               : MangaProgressRepository();
                           await repo.saveShowcaseConfig(draft);
+
+                          final animeChanged =
+                              draftFavAnimeTitle != currentProfile.favoriteAnimeTitle ||
+                              draftFavAnimeId != currentProfile.favoriteAnimeId ||
+                              draftFavAnimePoster != currentProfile.favoriteAnimePoster;
+                          if (animeChanged && draftFavAnimeTitle != null) {
+                            await _profileCubit.applyCustomization(
+                              frameId: currentProfile.frameId ?? 'none',
+                              backgroundId: currentProfile.backgroundId ?? 'none',
+                              customTitle: currentProfile.customTitle,
+                              customStatus: currentProfile.customStatus,
+                              bio: currentProfile.bio,
+                              badgeId: currentProfile.badgeId,
+                              favoriteAnimeTitle: draftFavAnimeTitle,
+                              favoriteAnimeId: draftFavAnimeId,
+                              favoriteAnimePoster: draftFavAnimePoster,
+                              artworkUrl: currentProfile.artworkUrl,
+                              artworkTitle: currentProfile.artworkTitle,
+                              accentColor: currentProfile.accentColor,
+                              showcaseType: currentProfile.showcaseType,
+                              countryFlag: currentProfile.countryFlag,
+                              countryName: currentProfile.countryName,
+                              avatarShape: currentProfile.avatarShape,
+                              avatarUrl: currentProfile.avatarUrl,
+                            );
+                          }
+
                           if (mounted) {
                             setState(() => _showcaseConfig = draft);
                           }
@@ -1678,7 +2096,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                         },
                         child: const Text(
                           'Сохранить витрину',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14.5,
+                          ),
                         ),
                       ),
                     ),
@@ -1694,51 +2115,157 @@ class _ProfileScreenState extends State<ProfileScreen>
     searchController.dispose();
   }
 
-  Widget _buildShowcasePickerTile({
-    required String title,
-    required String coverUrl,
+  Widget _buildDualSlotTab({
+    required String label,
+    required String currentTitle,
     required bool isSelected,
-    required Color accent,
     required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 78,
-          decoration: BoxDecoration(
-            color: isSelected ? accent.withValues(alpha: 0.25) : const Color(0xFF1A2030),
-            borderRadius: BorderRadius.circular(10),
+    const Color matteCoral = Color(0xFFFF6B4A);
+    const Color matteCardBg = Color(0xFF1A202E);
+    const Color matteBorder = Color(0x14FFFFFF);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? matteCoral.withValues(alpha: 0.14)
+              : matteCardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? matteCoral : matteBorder,
+            width: isSelected ? 1.5 : 1,
           ),
-          padding: const EdgeInsets.all(6),
-          child: Column(
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: coverUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: wrapCorsSafeUrl(coverUrl),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        )
-                      : const ColoredBox(
-                          color: Color(0xFF121620),
-                          child: Icon(Icons.menu_book_rounded, color: Colors.white38),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected ? matteCoral : const Color(0xFF94A3B8),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              currentTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShowcasePickerCard({
+    required String title,
+    required String subtitle,
+    required String coverUrl,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    const Color matteCoral = Color(0xFFFF6B4A);
+    const Color matteCardBg = Color(0xFF1A202E);
+    const Color matteBorder = Color(0x14FFFFFF);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: matteCardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? matteCoral : matteBorder,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: coverUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(coverUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : const ColoredBox(
+                            color: Color(0xFF131722),
+                            child: Icon(Icons.menu_book_rounded, color: Colors.white38),
+                          ),
+                  ),
+                  if (isSelected)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: matteCoral,
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_rounded, size: 11, color: Colors.white),
+                            SizedBox(width: 2),
+                            Text(
+                              'Выбрано',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 10),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 10.5,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1772,19 +2299,20 @@ class _ProfileScreenState extends State<ProfileScreen>
     final parsedChap = double.tryParse(
       RegExp(r'\d+(?:\.\d+)?').firstMatch(showcase.chapterLabel)?.group(0) ?? '',
     );
-    final showTotal = showcase.totalChapters != null &&
-        parsedChap != null &&
-        showcase.totalChapters! >= parsedChap;
-    final chapterText = showTotal
-        ? 'Глава ${showcase.chapterLabel} / ${showcase.totalChapters}'
-        : 'Глава ${showcase.chapterLabel}';
-    final caption = _showcaseConfig.customCaption.trim().isNotEmpty
-        ? _showcaseConfig.customCaption.trim().toUpperCase()
-        : 'ВИТРИНА МАНГИ';
+    final chapterPillText = parsedChap != null
+        ? 'Читаю • Гл. ${showcase.chapterLabel}'
+        : 'Читаю';
+    final subtitleMeta =
+        (showcase.totalChapters != null && showcase.totalChapters! > 1)
+            ? 'Манга • ${showcase.totalChapters} гл.'
+            : 'Манга • Онгоинг';
+    final headerTitle = _showcaseConfig.customCaption.trim().isNotEmpty
+        ? _showcaseConfig.customCaption.trim()
+        : 'Любимая манга';
 
     return _GlassCard(
       accentColor: currentAccentColor,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
@@ -1793,10 +2321,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             if (_showcaseConfig.fullBleedBackdrop && showcase.coverUrl.isNotEmpty) ...[
               Positioned.fill(
                 child: Opacity(
-                  opacity: 0.22,
+                  opacity: 0.26,
                   child: CachedNetworkImage(
                     imageUrl: wrapCorsSafeUrl(showcase.coverUrl),
                     fit: BoxFit.cover,
+                    alignment: Alignment.centerRight,
                   ),
                 ),
               ),
@@ -1807,8 +2336,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                       colors: [
-                        Color(0xE6121620),
-                        Color(0xA6121620),
+                        Color(0xFF11151E),
+                        Color(0x5511151E),
                       ],
                     ),
                   ),
@@ -1816,23 +2345,43 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
             Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.menu_book_rounded, size: 15, color: currentAccentColor),
+                      const Icon(
+                        Icons.menu_book_rounded,
+                        size: 16,
+                        color: Color(0xFFFF6B4A),
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          caption,
+                          headerTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF6B4A).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          chapterPillText,
+                          style: const TextStyle(
+                            color: Color(0xFFFF6B4A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -1844,8 +2393,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox(
-                          width: 58,
-                          height: 84,
+                          width: 64,
+                          height: 92,
                           child: showcase.coverUrl.isNotEmpty
                               ? CachedNetworkImage(
                                   imageUrl: wrapCorsSafeUrl(showcase.coverUrl),
@@ -1871,24 +2420,21 @@ class _ProfileScreenState extends State<ProfileScreen>
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 14.5,
+                                color: Colors.white,
+                                fontSize: 16.5,
                                 fontWeight: FontWeight.w700,
+                                height: 1.25,
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF35D9D5).withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                chapterText,
-                                style: const TextStyle(
-                                  color: Color(0xFF35D9D5),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            Text(
+                              subtitleMeta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -1896,9 +2442,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                               height: 34,
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: currentAccentColor,
+                                  backgroundColor: const Color(0xFFFF6B4A),
                                   foregroundColor: Colors.white,
                                   elevation: 0,
+                                  shadowColor: Colors.transparent,
                                   padding: const EdgeInsets.symmetric(horizontal: 14),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
@@ -2888,7 +3435,26 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           const SizedBox(height: 12),
-          ...comments.map((c) {
+          if (comments.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF11151E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+              ),
+              child: Text(
+                'Пока нет записей на стене. Оставьте первый комментарий.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 11.5,
+                ),
+              ),
+            )
+          else
+            ...comments.map((c) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Row(
@@ -3071,7 +3637,7 @@ class _StatsCard extends StatelessWidget {
                   context,
                   icon: Icons.play_circle_outline_rounded,
                   value: '$totalEpisodes',
-                  label: 'Эпизодов',
+                  label: 'Просмотрено серий',
                 ),
               ),
               Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),

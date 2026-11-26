@@ -189,12 +189,24 @@ class MangaDexChapter extends Equatable {
     return prefix;
   }
 
+  static const Set<String> _internalSourceNames = {
+    'senkuro',
+    'mangalib',
+    'desu',
+    'desu.uno',
+    'mangadex',
+    'remanga',
+  };
+
   String get secondaryMeta {
     final pagesPart = pagesCount > 0 ? '$pagesCount стр.' : '';
-    final groupPart = (translatorGroup != null && translatorGroup!.trim().isNotEmpty)
-        ? translatorGroup!.trim()
-        : 'Перевод';
-    return pagesPart.isNotEmpty ? '$pagesPart • $groupPart' : groupPart;
+    final rawGroup = translatorGroup?.trim() ?? '';
+    final isInternal = rawGroup.isEmpty ||
+        _internalSourceNames.contains(rawGroup.toLowerCase());
+    if (isInternal) {
+      return pagesPart;
+    }
+    return pagesPart.isNotEmpty ? '$pagesPart • $rawGroup' : rawGroup;
   }
 
   @override

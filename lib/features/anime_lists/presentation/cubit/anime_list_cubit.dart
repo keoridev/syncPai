@@ -21,24 +21,114 @@ class AnimeListCubit extends Cubit<AnimeListState> {
     loadLists();
   }
 
+  static String normalizeTitle(String title) {
+    return title
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool _isValidPoster(String? url) {
+    if (url == null || url.trim().isEmpty) return false;
+    final lower = url.toLowerCase();
+    return !lower.contains('missing_original') &&
+        !lower.contains('missing_preview') &&
+        !lower.contains('missing_x');
+  }
+
+  static int _posterQualityScore(String? url) {
+    if (!_isValidPoster(url)) return 0;
+    final lower = url!.toLowerCase();
+    if (lower.contains('original')) return 3;
+    if (lower.contains('medium') || lower.contains('preview')) return 2;
+    return 1;
+  }
+
+  static UserAnimeEntry _mergeDuplicateEntries(
+    UserAnimeEntry a,
+    UserAnimeEntry b,
+  ) {
+    final aIsAnilibria = a.animeId > 0 && a.animeId <= 12000;
+    final bIsAnilibria = b.animeId > 0 && b.animeId <= 12000;
+    final primary = (bIsAnilibria && !aIsAnilibria)
+        ? b
+        : (aIsAnilibria && !bIsAnilibria)
+            ? a
+            : (b.lastEpisode > a.lastEpisode ? b : a);
+    final secondary = identical(primary, a) ? b : a;
+
+    final bestEpisode = a.lastEpisode >= b.lastEpisode ? a.lastEpisode : b.lastEpisode;
+    final bestPosition = a.lastEpisode > b.lastEpisode
+        ? a.positionMs
+        : (b.lastEpisode > a.lastEpisode
+            ? b.positionMs
+            : (a.positionMs >= b.positionMs ? a.positionMs : b.positionMs));
+    final bestPoster = _posterQualityScore(a.posterUrl) >= _posterQualityScore(b.posterUrl)
+        ? (_isValidPoster(a.posterUrl) ? a.posterUrl : b.posterUrl)
+        : (_isValidPoster(b.posterUrl) ? b.posterUrl : a.posterUrl);
+    final bestUpdated = a.updatedAt.isAfter(b.updatedAt) ? a.updatedAt : b.updatedAt;
+
+    return primary.copyWith(
+      posterUrl: bestPoster,
+      lastEpisode: bestEpisode,
+      positionMs: bestPosition,
+      episodesTotal: primary.episodesTotal ?? secondary.episodesTotal,
+      score: primary.score ?? secondary.score,
+      updatedAt: bestUpdated,
+    );
+  }
+
   Future<void> loadLists() async {
     emit(state.copyWith(isLoading: true));
     try {
       final rawEntries = await repository.getAllEntries();
 
       // Очищаем старые авто-добавленные записи из истории (с префиксом history_),
-      // так как вкладка «Смотрю» заполняется ТОЛЬКО вручную пользователем,
-      // а просмотренные тайтлы сохраняются исключительно во вкладке «История».
-      final entries = <UserAnimeEntry>[];
+      // а также объединяем дубликаты одного тайтла (AniLibria ID vs Shikimori ID).
+      final nonHistory = <UserAnimeEntry>[];
       for (final entry in rawEntries) {
         if (entry.id.startsWith('history_')) {
           try {
             await repository.removeEntry(entry.animeId);
           } catch (_) {}
         } else {
-          entries.add(entry);
+          nonHistory.add(entry);
         }
       }
+
+      final dedupMap = <String, UserAnimeEntry>{};
+      final duplicateIdsToRemove = <int>[];
+
+      for (final entry in nonHistory) {
+        final norm = normalizeTitle(entry.titleRu);
+        final key = norm.isNotEmpty
+            ? '${entry.status.name}::$norm'
+            : '${entry.status.name}::id_${entry.animeId}';
+
+        final existing = dedupMap[key];
+        if (existing == null) {
+          dedupMap[key] = entry;
+        } else {
+          final merged = _mergeDuplicateEntries(existing, entry);
+          dedupMap[key] = merged;
+          final droppedId =
+              merged.animeId == existing.animeId ? entry.animeId : existing.animeId;
+          if (droppedId != merged.animeId) {
+            duplicateIdsToRemove.add(droppedId);
+          }
+        }
+      }
+
+      for (final dupId in duplicateIdsToRemove) {
+        try {
+          await repository.removeEntry(dupId);
+        } catch (_) {}
+      }
+
+      final entries = dedupMap.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       final stats = UserAnimeStats.compute(entries);
       emit(state.copyWith(

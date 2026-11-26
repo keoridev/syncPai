@@ -712,7 +712,20 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     return AnimeReviewsProvider.getReviewsForTitle(title);
   }
 
-  /// Отфильтровывает синтетические заглушки (`rel_...`) и оставляет список только если есть реальные связанные релизы.
+  static bool isShikimoriMissingPoster(String? url) {
+    if (url == null || url.trim().isEmpty) return true;
+    final lower = url.toLowerCase();
+    return lower.contains('missing_original') ||
+        lower.contains('missing_preview') ||
+        lower.contains('missing_x');
+  }
+
+  static bool _isExcludedRelatedKind(String? kindRaw) {
+    final lower = (kindRaw ?? '').trim().toLowerCase();
+    return lower == 'music' || lower == 'cm' || lower == 'commercial';
+  }
+
+  /// Отфильтровывает синтетические заглушки (`rel_...`), клипы (`music`) и оставляет список только если есть реальные связанные релизы.
   static List<RelatedAnimeRelease> _sanitizeRelatedReleases(
     List<RelatedAnimeRelease> items,
   ) {
@@ -721,7 +734,9 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           (r) =>
               r.id.trim().isNotEmpty &&
               !r.id.startsWith('rel_') &&
-              r.title.trim().isNotEmpty,
+              r.title.trim().isNotEmpty &&
+              !_isExcludedRelatedKind(r.kind) &&
+              r.kind.trim().toLowerCase() != 'клип',
         )
         .toList();
     final hasNonCurrent = real.any((r) => !r.isCurrent);
@@ -965,10 +980,13 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           final animeMap = item['anime'] as Map<String, dynamic>?;
           if (animeMap == null) continue;
 
-          // Исключаем чужие тайтлы со связью "Общий персонаж" (character)
+          // Исключаем чужие тайтлы со связью "Общий персонаж" (character), а также клипы и рекламу (music/cm)
           final relKey = '${item['relation'] ?? ''}'.toLowerCase();
           final relRu = '${item['relation_russian'] ?? ''}'.toLowerCase();
-          if (relKey == 'character' || relRu.contains('персонаж')) {
+          final kindRaw = (animeMap['kind'] as String? ?? 'tv').toLowerCase();
+          if (relKey == 'character' ||
+              relRu.contains('персонаж') ||
+              _isExcludedRelatedKind(kindRaw)) {
             continue;
           }
 
@@ -992,11 +1010,16 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           final rawPosterUrl = rawPoster.startsWith('http')
               ? rawPoster
               : (rawPoster.isNotEmpty ? 'https://shikimori.io$rawPoster' : '');
-          final posterUrl = wrapCorsSafeUrl(rawPosterUrl);
+          final parentPoster = currentTitle.posterMedium.isNotEmpty
+              ? currentTitle.posterMedium
+              : currentTitle.posterSmall;
+          final effectivePoster = isShikimoriMissingPoster(rawPosterUrl)
+              ? (isShikimoriMissingPoster(parentPoster) ? '' : parentPoster)
+              : rawPosterUrl;
+          final posterUrl = effectivePoster.isNotEmpty ? wrapCorsSafeUrl(effectivePoster) : '';
 
           final airedOn = animeMap['aired_on'] as String?;
           final year = airedOn != null && airedOn.length >= 4 ? '${airedOn.substring(0, 4)} год' : null;
-          final kindRaw = animeMap['kind'] as String? ?? 'tv';
           final kind = _mapKind(kindRaw);
           final relationRaw = item['relation_russian'] as String? ?? item['relation'] as String? ?? 'Связанное';
 
@@ -1035,7 +1058,10 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
                 final hRelKey = '${hItem['relation'] ?? ''}'.toLowerCase();
                 final hRelRu = '${hItem['relation_russian'] ?? ''}'.toLowerCase();
-                if (hRelKey == 'character' || hRelRu.contains('персонаж')) {
+                final hKindRaw = (aMap['kind'] as String? ?? 'tv').toLowerCase();
+                if (hRelKey == 'character' ||
+                    hRelRu.contains('персонаж') ||
+                    _isExcludedRelatedKind(hKindRaw)) {
                   continue;
                 }
 
@@ -1053,13 +1079,19 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
                 final imgMap = aMap['image'] as Map<String, dynamic>?;
                 final rawP = imgMap?['preview'] as String? ?? imgMap?['original'] as String? ?? '';
-                final pUrl = rawP.startsWith('http')
+                final rawPUrl = rawP.startsWith('http')
                     ? rawP
                     : (rawP.isNotEmpty ? 'https://shikimori.io$rawP' : '');
+                final parentPoster = currentTitle.posterMedium.isNotEmpty
+                    ? currentTitle.posterMedium
+                    : currentTitle.posterSmall;
+                final pUrl = isShikimoriMissingPoster(rawPUrl)
+                    ? (isShikimoriMissingPoster(parentPoster) ? '' : parentPoster)
+                    : rawPUrl;
 
                 final aired = aMap['aired_on'] as String?;
                 final y = aired != null && aired.length >= 4 ? '${aired.substring(0, 4)} год' : null;
-                final k = _mapKind(aMap['kind'] as String? ?? 'tv');
+                final k = _mapKind(hKindRaw);
                 final rel = hItem['relation_russian'] as String? ?? hItem['relation'] as String? ?? 'Связанное';
 
                 results.add(RelatedAnimeRelease(
@@ -1844,6 +1876,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
   }
 
   /// Поиск манги/манхвы на Shikimori для разрешения русских названий в английские/ромадзи.
+  @override
   Future<List<({String russian, String english})>> searchMangas(
     String query, {
     int limit = 8,

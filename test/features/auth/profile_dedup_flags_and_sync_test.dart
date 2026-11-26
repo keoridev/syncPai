@@ -1,4 +1,3 @@
-import 'package:country_flags/country_flags.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,7 +57,7 @@ void main() {
     );
   });
 
-  testWidgets('VectorCountryFlag uses CountryFlag.fromCountryCode and defaults to KG', (tester) async {
+  testWidgets('VectorCountryFlag uses zero-asset CustomPaint and defaults to KG', (tester) async {
     expect(VectorCountryFlag.resolveCountryCode('🇰🇬', 'Kyrgyzstan'), 'KG');
     expect(VectorCountryFlag.resolveCountryCode(null, null), 'KG');
     expect(VectorCountryFlag.resolveCountryCode('🇯🇵', 'Japan'), 'JP');
@@ -74,7 +73,8 @@ void main() {
       ),
     );
 
-    expect(find.byType(CountryFlag), findsOneWidget);
+    expect(find.byType(VectorCountryFlag), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
   });
 
   test('ListsSyncService maps UserAnimeEntry to exact user_anime_lists columns', () {

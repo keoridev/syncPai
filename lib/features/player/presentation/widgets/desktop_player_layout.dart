@@ -1192,8 +1192,17 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
           const SizedBox(height: 2),
 
           // 2. Вторая строка: единый ряд контролов (слева и справа)
-          Row(
-            children: [
+          LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
               // Кнопка Play/Pause (36px)
               IconButton(
                 iconSize: 32,
@@ -1251,9 +1260,10 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                       ),
                       onPressed: _toggleMute,
                     ),
-                    SizedBox(
-                      width: 90,
-                      child: SliderTheme(
+                    if (constraints.maxWidth >= 680)
+                      SizedBox(
+                        width: 90,
+                        child: SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 3.5,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -1294,7 +1304,12 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                 ),
               ),
 
-              const Spacer(),
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 8),
 
               // Выбор скорости воспроизведения (1.0x)
               PopupMenuButton<double>(
@@ -1425,10 +1440,15 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   color: Colors.white,
                   size: 24,
                 ),
-                onPressed: _toggleFullScreen,
+                        onPressed: _toggleFullScreen,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
+        ),
         ],
       ),
     );
@@ -1449,40 +1469,34 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Text(
+            title.displayTitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Серия ${ep.episode}${ep.name != null && ep.name!.isNotEmpty ? ' — ${ep.name}' : ''}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Панель кнопок: Озвучка, В закладки, Смотреть вместе
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title.displayTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 20,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Серия ${ep.episode}${ep.name != null && ep.name!.isNotEmpty ? ' — ${ep.name}' : ''}',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Панель кнопок: Озвучка, В закладки, Смотреть вместе
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
                   // Переключатель озвучки
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
@@ -1544,8 +1558,6 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                     ),
                 ],
               ),
-            ],
-          ),
 
           if (title.description.isNotEmpty) ...[
             const SizedBox(height: 14),

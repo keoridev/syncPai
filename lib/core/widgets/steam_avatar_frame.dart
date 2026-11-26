@@ -72,13 +72,23 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
     if (clean.contains('sakura') || clean.contains('blossom')) {
       return 'sakura';
     }
-    if (clean.contains('dragon')) {
+    if (clean.contains('gold') || clean.contains('dragon')) {
       return 'golden_dragon';
     }
-    if (clean.contains('cyber') || clean.contains('blade') || clean.contains('samurai')) {
+    if (clean.contains('katana') ||
+        clean.contains('techno') ||
+        clean.contains('cyber') ||
+        clean.contains('blade') ||
+        clean.contains('samurai')) {
       return 'cyber_blade';
     }
-    if (clean.contains('shadow') || clean.contains('monarch') || clean.contains('void') || clean.contains('cursed') || clean.contains('oni')) {
+    if (clean.contains('monolith') ||
+        clean.contains('ice') ||
+        clean.contains('shadow') ||
+        clean.contains('monarch') ||
+        clean.contains('void') ||
+        clean.contains('cursed') ||
+        clean.contains('oni')) {
       return 'shadow_monarch';
     }
     if (clean.contains('matrix') || clean.contains('terminal')) {
@@ -113,23 +123,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // 1. Внешнее свечение квадратной рамки
-                  Container(
-                    width: frameOuterSize,
-                    height: frameOuterSize,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 2. Квадратный градиентный контур Steam
+                  // 1. Плоский матовый контур рамки Steam (без размытых теней)
                   Container(
                     width: frameOuterSize,
                     height: frameOuterSize,
@@ -143,13 +137,13 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                             : [primaryFrameColor, primaryFrameColor.withValues(alpha: 0.6)],
                       ),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.3),
+                        color: Colors.white.withValues(alpha: 0.16),
                         width: 1.0,
                       ),
                     ),
                   ),
 
-                  // 3. Подложка под аватар
+                  // 2. Подложка под аватар
                   Container(
                     width: widget.size + 2,
                     height: widget.size + 2,
@@ -159,8 +153,23 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                     ),
                   ),
 
-                  // 4. Сам аватар
+                  // 3. Сам аватар
                   widget.child,
+
+                  // 4. Чёткий векторный слой архитектурной рамки
+                  IgnorePointer(
+                    child: CustomPaint(
+                      size: Size(frameOuterSize + 16, frameOuterSize + 16),
+                      painter: ThematicAvatarFramePainter(
+                        animationValue: t,
+                        frameType: _resolveThematicType(frame.id),
+                        colors: frame.colors.isNotEmpty
+                            ? frame.colors
+                            : [primaryFrameColor],
+                        outerSize: frameOuterSize,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -172,23 +181,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // 1. Внешняя пульсирующая аура (излучение)
-                Container(
-                  width: frameOuterSize,
-                  height: frameOuterSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 2. Внутренняя подложка для чистого разделения рамки и аватара
+                // 1. Внутренняя подложка для чистого разделения рамки и аватара
                 Container(
                   width: widget.size + 4,
                   height: widget.size + 4,
@@ -198,10 +191,10 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                   ),
                 ),
 
-                // 3. Сам аватар пользователя
+                // 2. Сам аватар пользователя
                 widget.child,
 
-                // 4. Тематический слой сюжетной рамки (CustomPainter)
+                // 3. Тематический слой сюжетной рамки (CustomPainter)
                 IgnorePointer(
                   child: CustomPaint(
                     size: Size(frameOuterSize + 20, frameOuterSize + 20),

@@ -143,16 +143,11 @@ class CustomizationTierPolicy {
     'sunset_orange',
   };
 
-  /// Бесплатные статичные и базовые рамки
+  /// Бесплатные 4 архитектурные рамки
   static const Set<String> freeFrameIds = {
     'none',
     'minimal',
-    'steel',
-    'neon_static',
-    'neon_ring',
-    'spirit_realm',
-    'mech_core',
-    'frame_ramen_cyan',
+    'coral_contour',
     'pai_headphones',
   };
 
@@ -363,6 +358,26 @@ class CustomizationTierPolicy {
 
   static int maxFavoriteAnimeCount(SupporterTier userTier) =>
       hasTier(userTier, SupporterTier.vip) ? 3 : 1;
+
+  static const Set<String> freeAccentHexes = {
+    '#ff6b4a',
+    '#22d3ee',
+    '#10b981',
+    '#94a3b8',
+  };
+
+  static SupporterTier requiredTierForAccent(String? hex) {
+    if (hex == null || hex.trim().isEmpty) return SupporterTier.free;
+    if (freeAccentHexes.contains(hex.trim().toLowerCase())) {
+      return SupporterTier.free;
+    }
+    return SupporterTier.supporter;
+  }
+
+  static bool isAccentUnlocked(SupporterTier userTier, String? hex) {
+    final req = requiredTierForAccent(hex);
+    return hasTier(userTier, req);
+  }
 
   /// Финальная санитизация кастомизации перед сохранением в Supabase / ProfileState.
   static ({

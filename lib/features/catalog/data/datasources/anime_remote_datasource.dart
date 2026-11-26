@@ -647,12 +647,80 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return getCatalog(page: 1, limit: limit, cancelToken: cancelToken);
     }
 
+    return _searchReleasesDeduplicated(clean, cancelToken: cancelToken);
+  }
+
+  static final Map<String, Future<List<AnimeCatalogModel>>> _inFlightSearches = {};
+  static final Set<String> _emptySearchCache = {};
+
+  static String _stripSubtitle(String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return '';
+
+    final bangIdx = trimmed.indexOf('!');
+    if (bangIdx != -1 && bangIdx < trimmed.length - 1) {
+      return trimmed.substring(0, bangIdx + 1).trim();
+    }
+    for (final sep in [':', '~', '(']) {
+      final idx = trimmed.indexOf(sep);
+      if (idx > 2) {
+        return trimmed.substring(0, idx).trim();
+      }
+    }
+    return trimmed;
+  }
+
+  Future<List<AnimeCatalogModel>> _searchReleasesDeduplicated(
+    String query, {
+    CancelToken? cancelToken,
+  }) {
+    final clean = query.trim();
+    final key = clean.toLowerCase();
+    if (clean.isEmpty || _emptySearchCache.contains(key)) {
+      return Future.value(const []);
+    }
+
+    final existing = _inFlightSearches[key];
+    if (existing != null) {
+      return existing;
+    }
+
+    final future = () async {
+      try {
+        var results = await _executeSingleSearch(clean, cancelToken: cancelToken);
+        if (results.isEmpty) {
+          final baseTitle = _stripSubtitle(clean);
+          final baseKey = baseTitle.toLowerCase();
+          if (baseTitle.isNotEmpty &&
+              baseKey != key &&
+              !_emptySearchCache.contains(baseKey)) {
+            results = await _executeSingleSearch(baseTitle, cancelToken: cancelToken);
+            if (results.isEmpty) {
+              _emptySearchCache.add(baseKey);
+            }
+          }
+        }
+        if (results.isEmpty) {
+          _emptySearchCache.add(key);
+        }
+        return results;
+      } finally {
+        _inFlightSearches.remove(key);
+      }
+    }();
+
+    _inFlightSearches[key] = future;
+    return future;
+  }
+
+  Future<List<AnimeCatalogModel>> _executeSingleSearch(
+    String clean, {
+    CancelToken? cancelToken,
+  }) async {
     try {
       final response = await _dio.get(
         _searchUrl,
-        queryParameters: {
-          'query': clean,
-        },
+        queryParameters: {'query': clean},
         cancelToken: cancelToken,
       );
       return await _parseReleasesAsync(response.data);
@@ -661,9 +729,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       try {
         final fallbackRes = await _dio.get(
           _fallbackSearchUrl,
-          queryParameters: {
-            'query': clean,
-          },
+          queryParameters: {'query': clean},
           cancelToken: cancelToken,
         );
         return await _parseReleasesAsync(fallbackRes.data);
@@ -674,9 +740,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       try {
         final fallbackRes = await _dio.get(
           _fallbackSearchUrl,
-          queryParameters: {
-            'query': clean,
-          },
+          queryParameters: {'query': clean},
           cancelToken: cancelToken,
         );
         return await _parseReleasesAsync(fallbackRes.data);
@@ -755,11 +819,14 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       final mappedId = _externalIdToReleaseIdCache[releaseId] ??
           (normalizedTitleKey.isNotEmpty ? _titleToReleaseIdCache[normalizedTitleKey] : null);
 
-      // Если есть закэшированный маппинг или обычный AniLibria ID (> 0 и без search:), пробуем прямой запрос
+      // Пропускаем прямой запрос, если это Shikimori ID (> 12000 без маппинга) или ID уже вернул 404
       final effectiveId = mappedId ?? '$releaseId';
+      final isLikelyExternalShikimoriId =
+          mappedId == null && releaseId > 12000 && isSearchableTitle;
       final skipDirectIdLookup =
           (mappedId == null && releaseId <= 0) ||
           rawTitle.startsWith('search:') ||
+          isLikelyExternalShikimoriId ||
           (mappedId == null && _missingReleaseIds.contains(releaseId));
 
       if (!skipDirectIdLookup) {
@@ -777,36 +844,43 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
       if (res == null && isSearchableTitle) {
         try {
-          final sRes = await _dio.get(
-            _searchUrl,
-            queryParameters: {'query': cleanTitle},
-          );
-          final items = _parseReleases(sRes.data);
-          if (items.isNotEmpty) {
-            final relId = items.first.id;
-            if (releaseId > 0) _externalIdToReleaseIdCache[releaseId] = relId;
-            if (normalizedTitleKey.isNotEmpty) {
-              _titleToReleaseIdCache[normalizedTitleKey] = relId;
+          final items = await _searchReleasesDeduplicated(cleanTitle);
+          AnimeCatalogModel? bestMatch;
+          double bestScore = 0.0;
+          final targetTokens = normalizedTitleKey
+              .replaceAll('ё', 'е')
+              .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+              .split(RegExp(r'\s+'))
+              .where((w) => w.length >= 2)
+              .toSet();
+          for (final item in items) {
+            final candNorm = '${item.titleRu} ${item.titleEn}'
+                .toLowerCase()
+                .replaceAll('ё', 'е')
+                .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ');
+            final candTokens = candNorm
+                .split(RegExp(r'\s+'))
+                .where((w) => w.length >= 2)
+                .toSet();
+            if (targetTokens.isEmpty || candTokens.isEmpty) continue;
+            final overlap = targetTokens.intersection(candTokens).length;
+            final score = overlap / targetTokens.union(candTokens).length;
+            if (score > bestScore) {
+              bestScore = score;
+              bestMatch = item;
             }
-            res = await _dio.get('$_releaseUrl/$relId');
           }
-        } catch (_) {}
-      }
-
-      if (res == null && isSearchableTitle) {
-        try {
-          final fallbackSRes = await _dio.get(
-            _fallbackSearchUrl,
-            queryParameters: {'query': cleanTitle},
-          );
-          final items = _parseReleases(fallbackSRes.data);
-          if (items.isNotEmpty) {
-            final relId = items.first.id;
+          if (bestMatch != null && bestScore >= 0.45) {
+            final relId = bestMatch.id.toString();
             if (releaseId > 0) _externalIdToReleaseIdCache[releaseId] = relId;
             if (normalizedTitleKey.isNotEmpty) {
               _titleToReleaseIdCache[normalizedTitleKey] = relId;
             }
-            res = await _dio.get('$_fallbackReleaseUrl/$relId');
+            try {
+              res = await _dio.get('$_releaseUrl/$relId');
+            } catch (_) {
+              res = await _dio.get('$_fallbackReleaseUrl/$relId');
+            }
           }
         } catch (_) {}
       }
@@ -929,10 +1003,6 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return parseAnimeCatalogReleasesInIsolate(data);
     }
     return compute(parseAnimeCatalogReleasesInIsolate, data);
-  }
-
-  List<AnimeCatalogModel> _parseReleases(dynamic data) {
-    return parseAnimeCatalogReleasesInIsolate(data);
   }
 }
 

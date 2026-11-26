@@ -22,6 +22,7 @@ import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../../manga/data/repositories/manga_progress_repository.dart';
+import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../../manga/presentation/widgets/manga_panel_cropper_sheet.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../../services/friends_service.dart';
@@ -247,6 +248,12 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       return;
     }
 
+    final activePanel = _mangaShowcasePanel;
+    if (activePanel != null && activePanel.isValid) {
+      _showArtworkActionDialog(context);
+      return;
+    }
+
     final favId = widget.profile.favoriteAnimeId;
     if (favId != null && favId.isNotEmpty) {
       _showArtworkActionDialog(context);
@@ -256,9 +263,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   }
 
   void _showArtworkActionDialog(BuildContext context) {
-    final favId = widget.profile.favoriteAnimeId!;
+    final activePanel = _mangaShowcasePanel;
+    final hasMangaPanel = activePanel != null && activePanel.isValid;
+    final favId = widget.profile.favoriteAnimeId;
     final accent = _resolveAccentColor(context);
     final scheme = Theme.of(context).colorScheme;
+    final headerTitle =
+        hasMangaPanel ? activePanel.displayCaption : _resolveArtworkTitle();
 
     showModalBottomSheet<void>(
       context: context,
@@ -285,7 +296,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               ),
               const SizedBox(height: 16),
               Text(
-                _resolveArtworkTitle(),
+                headerTitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: scheme.onSurface,
@@ -294,26 +305,58 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
               ),
               const SizedBox(height: 20),
-              Material(
-                type: MaterialType.transparency,
-                child: ListTile(
-                  leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
-                  title: Text('Открыть страницу аниме', style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  tileColor: scheme.surfaceContainer,
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    context.pushNamed(
-                      'details',
-                      queryParameters: {'id': favId},
-                      extra: {
-                        'id': favId,
-                        'russianTitle': _resolveArtworkTitle(),
-                      },
-                    );
-                  },
+              if (hasMangaPanel)
+                Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    key: const ValueKey('showcase_open_manga_tile'),
+                    leading: Icon(Icons.menu_book_rounded, color: accent, size: 26),
+                    title: Text(
+                      'Открыть мангу',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    tileColor: scheme.surfaceContainer,
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      context.pushNamed(
+                        'manga_details',
+                        pathParameters: {'id': activePanel.mangaId},
+                        extra: MangaDexManga(
+                          id: activePanel.mangaId,
+                          title: activePanel.mangaTitle,
+                          coverUrl: '',
+                        ),
+                      );
+                    },
+                  ),
+                )
+              else if (favId != null && favId.isNotEmpty)
+                Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    leading: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
+                    title: Text('Открыть страницу аниме', style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    tileColor: scheme.surfaceContainer,
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      context.pushNamed(
+                        'details',
+                        queryParameters: {'id': favId},
+                        extra: {
+                          'id': favId,
+                          'russianTitle': _resolveArtworkTitle(),
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
               if (widget.isCurrentUser) ...[
                 const SizedBox(height: 10),
                 Material(

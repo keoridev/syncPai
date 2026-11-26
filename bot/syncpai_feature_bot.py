@@ -88,24 +88,34 @@ async def _send_to_admin(
     )
 
 
-@router.message(CommandStart(deep_link=True))
-async def cmd_start_deeplink(
+def _main_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Заказать фичу (7 дней)",
+                    callback_data="menu:order_feature",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="SyncPai Sponsor",
+                    callback_data="menu:sponsor",
+                ),
+                InlineKeyboardButton(
+                    text="Мои заявки",
+                    callback_data="menu:my_requests",
+                ),
+            ],
+        ]
+    )
+
+
+async def _start_feature_flow(
     message: Message,
-    command: CommandObject,
     state: FSMContext,
+    user_id: str,
 ) -> None:
-    args = (command.args or "").strip()
-    if not args.startswith("feat_"):
-        await message.answer(
-            "Откройте «Поддержать -> Заказать фичу в Telegram» в приложении SyncPai, чтобы привязать заявку к вашему профилю."
-        )
-        return
-
-    user_id = args.replace("feat_", "", 1).strip()
-    if not user_id:
-        await message.answer("Некорректная ссылка привязки профиля.")
-        return
-
     profile_res = (
         supabase.table("profiles")
         .select("id, username, display_name")
@@ -134,10 +144,93 @@ async def cmd_start_deeplink(
 
 
 @router.message(CommandStart())
-async def cmd_start_plain(message: Message) -> None:
+async def cmd_start(
+    message: Message,
+    command: CommandObject,
+    state: FSMContext,
+) -> None:
+    args = (command.args or "").strip()
+
+    if args.startswith("feat_"):
+        user_id = args.replace("feat_", "", 1).strip()
+        if not user_id:
+            await message.answer("Некорректная ссылка привязки профиля.")
+            return
+        await _start_feature_flow(message, state, user_id)
+        return
+
+    if args.startswith("duo_"):
+        invite_code = args.replace("duo_", "", 1).strip()
+        await state.clear()
+        if not invite_code:
+            await message.answer("Некорректный код приглашения Парного профиля.")
+            return
+        await message.answer(
+            "<b>Приглашение в Парный профиль SyncPai</b>\n\n"
+            f"Код приглашения: <code>{invite_code}</code>\n\n"
+            "1. Откройте приложение SyncPai.\n"
+            "2. Перейдите в <b>Профиль -> Парный профиль</b>.\n"
+            "3. Введите код или откройте ссылку:\n"
+            f"<code>syncpai://duo/{invite_code}</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    await state.clear()
     await message.answer(
-        "Для заказа функции перейдите в профиль SyncPai -> «Поддержать» -> «Заказать фичу в Telegram»."
+        "<b>Официальный бот SyncPai (@syncpai_bot)</b>\n\n"
+        "Выберите действие в меню ниже:",
+        parse_mode="HTML",
+        reply_markup=_main_menu_keyboard(),
     )
+
+
+@router.callback_query(F.data == "menu:order_feature")
+async def menu_order_feature(callback: CallbackQuery) -> None:
+    await callback.message.answer(
+        "<b>Заказать фичу (7 дней)</b>\n\n"
+        "Чтобы привязать заявку к вашему аккаунту SyncPai:\n"
+        "1. Откройте <b>Профиль -> Поддержать -> Заказать фичу в Telegram</b>.\n"
+        "2. Либо нажмите <b>«Скопировать код заявки»</b> в приложении и отправьте команду вида <code>/start feat_...</code> сюда.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:sponsor")
+async def menu_sponsor(callback: CallbackQuery) -> None:
+    await callback.message.answer(
+        "<b>SyncPai Sponsor</b>\n\n"
+        "Открывает кастомные цвета профиля, анимированные рамки, живые фоны, двойную витрину и статус спонсора.\n"
+        "Оформить можно прямо в приложении SyncPai (раздел <b>Поддержать</b>) или вместе с заявкой Priority Feature Pass.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:my_requests")
+async def menu_my_requests(callback: CallbackQuery) -> None:
+    res = (
+        supabase.table("feature_requests")
+        .select("title, implementation_status, payment_status")
+        .eq("telegram_user_id", callback.from_user.id)
+        .order("created_at", ascending=False)
+        .limit(5)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        await callback.message.answer("У вас пока нет активных заявок в Priority Feature Pass.")
+        await callback.answer()
+        return
+
+    lines = ["<b>Ваши последние заявки:</b>"]
+    for row in rows:
+        lines.append(
+            f"• <b>{row.get('title', 'Без названия')}</b> — статус: {row.get('implementation_status', 'review')} (оплата: {row.get('payment_status', 'pending')})"
+        )
+    await callback.message.answer("\n".join(lines), parse_mode="HTML")
+    await callback.answer()
 
 
 @router.message(FeatureRequestStates.waiting_for_title)

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
 
 import '../../../../app/di/injection.dart';
@@ -53,7 +54,7 @@ String? resolveMangaImageReferer(String url, {String? explicitReferer}) {
     return (cropX: 0.0, cropY: 0.0, cropWidth: 1.0, cropHeight: 1.0);
   }
 
-  final scale = transform.getMaxScaleOnAxis().clamp(1.0, 10.0);
+  final scale = transform.getMaxScaleOnAxis().clamp(0.6, 10.0);
   final translation = transform.getTranslation();
   final leftPx = (-translation.x) / scale;
   final topPx = (-translation.y) / scale;
@@ -75,8 +76,8 @@ String? resolveMangaImageReferer(String url, {String? explicitReferer}) {
   );
 }
 
-/// Рендерит сохранённый кадр манги/манхвы по нормализованным координатам без хранения обрезанных файлов.
-class MangaShowcasePanelBanner extends StatelessWidget {
+/// Рендерит сохранённый кадр манги/манхвы по нормализованным координатам с сохранением пропорций (scaleX == scaleY).
+class MangaShowcasePanelBanner extends StatefulWidget {
   final MangaShowcasePanel panel;
   final double width;
   final double height;
@@ -91,7 +92,62 @@ class MangaShowcasePanelBanner extends StatelessWidget {
   });
 
   @override
+  State<MangaShowcasePanelBanner> createState() =>
+      _MangaShowcasePanelBannerState();
+}
+
+class _MangaShowcasePanelBannerState extends State<MangaShowcasePanelBanner> {
+  double _naturalAspectRatio = 0.707;
+  String? _resolvedUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveNaturalAspect();
+  }
+
+  @override
+  void didUpdateWidget(covariant MangaShowcasePanelBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.panel.pageUrl != widget.panel.pageUrl) {
+      _resolveNaturalAspect();
+    }
+  }
+
+  void _resolveNaturalAspect() {
+    final url = widget.panel.pageUrl.trim();
+    if (url.isEmpty || _resolvedUrl == url) return;
+    _resolvedUrl = url;
+    final referer = resolveMangaImageReferer(
+      url,
+      explicitReferer: widget.panel.refererHeader,
+    );
+    final provider = CachedNetworkImageProvider(
+      wrapCorsSafeUrl(url),
+      headers: referer != null ? {'Referer': referer} : null,
+    );
+    final stream = provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (mounted && info.image.height > 0) {
+          final ratio = info.image.width / info.image.height;
+          if ((ratio - _naturalAspectRatio).abs() > 0.005) {
+            setState(() => _naturalAspectRatio = ratio);
+          }
+        }
+      },
+      onError: (_, __) => stream.removeListener(listener),
+    );
+    stream.addListener(listener);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final panel = widget.panel;
+    final width = widget.width;
+    final height = widget.height;
     final referer = resolveMangaImageReferer(
       panel.pageUrl,
       explicitReferer: panel.refererHeader,
@@ -100,17 +156,19 @@ class MangaShowcasePanelBanner extends StatelessWidget {
       if (referer != null) 'Referer': referer,
     };
 
+    // Равномерное масштабирование (scaleX == scaleY): ширина задаётся cropWidth,
+    // а высота строго следует за естественным соотношением сторон изображения.
     final safeCropW = panel.cropWidth.clamp(0.05, 1.0);
-    final safeCropH = panel.cropHeight.clamp(0.05, 1.0);
     final imgWidth = width / safeCropW;
-    final imgHeight = height / safeCropH;
+    final imgHeight = (imgWidth / _naturalAspectRatio).clamp(height, 20000.0);
+    final maxTopShift = (imgHeight - height).clamp(0.0, imgHeight);
     final leftOffset = -panel.cropX.clamp(0.0, 1.0 - safeCropW) * imgWidth;
-    final topOffset = -panel.cropY.clamp(0.0, 1.0 - safeCropH) * imgHeight;
+    final topOffset = -(panel.cropY.clamp(0.0, 1.0) * imgHeight).clamp(0.0, maxTopShift);
 
     final subtitle = panel.displayCaption;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: SizedBox(
@@ -127,7 +185,7 @@ class MangaShowcasePanelBanner extends StatelessWidget {
                 child: CachedNetworkImage(
                   imageUrl: wrapCorsSafeUrl(panel.pageUrl),
                   httpHeaders: headers.isEmpty ? null : headers,
-                  fit: BoxFit.fill,
+                  fit: BoxFit.cover,
                   placeholder: (_, __) => Container(
                     color: const Color(0xFF141821),
                     child: const Center(
@@ -327,6 +385,26 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
     super.dispose();
   }
 
+  void _zoomBy(double factor) {
+    final current = _transformController.value.clone();
+    final currentScale = current.getMaxScaleOnAxis().clamp(0.6, 5.0);
+    final nextScale = (currentScale * factor).clamp(0.6, 5.0);
+    final appliedFactor = nextScale / currentScale;
+    if ((appliedFactor - 1.0).abs() < 0.001) return;
+
+    final viewport = _lastViewportSize.isEmpty
+        ? const Size(320, 140)
+        : _lastViewportSize;
+    final cx = viewport.width / 2.0;
+    final cy = viewport.height / 2.0;
+    final next = Matrix4.identity()
+      ..translateByDouble(cx, cy, 0.0, 1.0)
+      ..scaleByDouble(appliedFactor, appliedFactor, 1.0, 1.0)
+      ..translateByDouble(-cx, -cy, 0.0, 1.0)
+      ..multiply(current);
+    _transformController.value = next;
+  }
+
   Future<void> _saveCrop() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -336,7 +414,7 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
         : _lastViewportSize;
     final contentWidth = viewport.width;
     final contentHeight =
-        (contentWidth / _imageAspectRatio).clamp(viewport.height, 2000.0);
+        (contentWidth / _imageAspectRatio).clamp(viewport.height, 20000.0);
 
     final rect = computeNormalizedCropRect(
       viewportSize: viewport,
@@ -433,32 +511,41 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
                             final contentWidth = constraints.maxWidth;
                             final contentHeight =
                                 (contentWidth / _imageAspectRatio)
-                                    .clamp(constraints.maxHeight, 2000.0);
+                                    .clamp(constraints.maxHeight, 20000.0);
 
-                            return InteractiveViewer(
-                              transformationController: _transformController,
-                              minScale: 1.0,
-                              maxScale: 5.0,
-                              constrained: false,
-                              boundaryMargin: const EdgeInsets.all(80),
-                              child: SizedBox(
-                                width: contentWidth,
-                                height: contentHeight,
-                                child: CachedNetworkImage(
-                                  imageUrl: wrapCorsSafeUrl(widget.pageUrl),
-                                  httpHeaders:
-                                      headers.isEmpty ? null : headers,
-                                  fit: BoxFit.fill,
-                                  placeholder: (_, __) => const Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                            return Listener(
+                              onPointerSignal: (signal) {
+                                if (signal is PointerScrollEvent) {
+                                  _zoomBy(signal.scrollDelta.dy < 0 ? 1.12 : 0.89);
+                                }
+                              },
+                              child: InteractiveViewer(
+                                transformationController: _transformController,
+                                minScale: 0.6,
+                                maxScale: 5.0,
+                                panEnabled: true,
+                                scaleEnabled: true,
+                                constrained: false,
+                                boundaryMargin: const EdgeInsets.all(600),
+                                child: SizedBox(
+                                  width: contentWidth,
+                                  height: contentHeight,
+                                  child: CachedNetworkImage(
+                                    imageUrl: wrapCorsSafeUrl(widget.pageUrl),
+                                    httpHeaders:
+                                        headers.isEmpty ? null : headers,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => const Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     ),
-                                  ),
-                                  errorWidget: (_, __, ___) => const Center(
-                                    child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: Colors.white38,
-                                      size: 32,
+                                    errorWidget: (_, __, ___) => const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.white38,
+                                        size: 32,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -509,25 +596,61 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        _transformController.value = Matrix4.identity();
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: const BorderSide(color: Color(0x1FFFFFFF)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                  OutlinedButton(
+                    key: const ValueKey('cropper_zoom_out_btn'),
+                    onPressed: () => _zoomBy(0.85),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Color(0x1FFFFFFF)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
                       ),
-                      child: const Text('Сбросить'),
+                      minimumSize: Size.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
+                    child: const Icon(Icons.remove_rounded, size: 17),
+                  ),
+                  const SizedBox(width: 6),
+                  OutlinedButton(
+                    key: const ValueKey('cropper_zoom_in_btn'),
+                    onPressed: () => _zoomBy(1.18),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Color(0x1FFFFFFF)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
+                      minimumSize: Size.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Icon(Icons.add_rounded, size: 17),
+                  ),
+                  const SizedBox(width: 6),
+                  OutlinedButton(
+                    onPressed: () {
+                      _transformController.value = Matrix4.identity();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Color(0x1FFFFFFF)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('Сбросить'),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    flex: 2,
                     child: FilledButton.icon(
                       onPressed: _isSaving ? null : _saveCrop,
                       style: FilledButton.styleFrom(

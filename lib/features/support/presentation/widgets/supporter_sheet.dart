@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/telegram_launcher.dart';
 
 class FeatureRequestItem {
   final String id;
@@ -84,10 +86,7 @@ class SupporterSheet extends StatefulWidget {
     super.key,
     this.userIdOverride,
     this.requestsLoaderOverride,
-    this.botUsername = const String.fromEnvironment(
-      'SYNCPAI_BOT_USERNAME',
-      defaultValue: 'SyncPaiFeatureBot',
-    ),
+    this.botUsername = kTelegramBotUsername,
   });
 
   static Future<void> show(BuildContext context) {
@@ -178,6 +177,36 @@ class _SupporterSheetState extends State<SupporterSheet> {
       'https://t.me/${widget.botUsername}?start=feat_$uid',
     );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _copyFeatureCommand() async {
+    final uid = _currentUserId;
+    if (uid == null || uid.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Войдите в аккаунт, чтобы привязать заявку к профилю'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: '/start feat_$uid'));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: _surfaceElevated,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: _tonalBorder),
+        ),
+        content: Text(
+          'Команда скопирована — вставьте её в @${widget.botUsername}',
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+      ),
+    );
   }
 
   @override
@@ -345,26 +374,58 @@ class _SupporterSheetState extends State<SupporterSheet> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton.icon(
-                          key: const ValueKey('supporter_order_feature_btn'),
-                          onPressed: _launchFeatureBot,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _coralAccent,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                key: const ValueKey('supporter_order_feature_btn'),
+                                onPressed: _launchFeatureBot,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _coralAccent,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.send_rounded, size: 17),
+                                label: const Text(
+                                  'Заказать фичу в Telegram',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
                             ),
                           ),
-                          icon: const Icon(Icons.send_rounded, size: 17),
-                          label: const Text(
-                            'Заказать фичу в Telegram',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 44,
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('supporter_copy_feature_cmd_btn'),
+                              onPressed: _copyFeatureCommand,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: _surface,
+                                foregroundColor: AppColors.textPrimary,
+                                side: const BorderSide(color: _tonalBorder),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.copy_rounded, size: 15),
+                              label: const Text(
+                                'Скопировать код заявки',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

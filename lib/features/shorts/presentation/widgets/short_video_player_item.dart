@@ -26,6 +26,7 @@ class ShortVideoPlayerItem extends StatefulWidget {
   final VoidCallback? onDoubleTapLike;
   final VoidCallback? onToggleMute;
   final VoidCallback? onOpenYouTube;
+  final VoidCallback? onWatchInPlayer;
 
   const ShortVideoPlayerItem({
     super.key,
@@ -38,6 +39,7 @@ class ShortVideoPlayerItem extends StatefulWidget {
     this.onDoubleTapLike,
     this.onToggleMute,
     this.onOpenYouTube,
+    this.onWatchInPlayer,
   });
 
   @override
@@ -130,10 +132,21 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
   }
 
   bool get _isYouTubeOnly {
-    final hasNoDirect = widget.clip.videoUrl.isEmpty;
+    final url = widget.clip.videoUrl.trim().toLowerCase();
+    final hasNoDirect = url.isEmpty ||
+        url.contains('youtube.com') ||
+        url.contains('youtu.be');
     final hasYt = (widget.clip.youtubeId != null && widget.clip.youtubeId!.isNotEmpty) ||
-        (widget.clip.youtubeUrl != null && widget.clip.youtubeUrl!.isNotEmpty);
+        (widget.clip.youtubeUrl != null && widget.clip.youtubeUrl!.isNotEmpty) ||
+        url.contains('youtube.com') ||
+        url.contains('youtu.be');
     return hasNoDirect && hasYt;
+  }
+
+  String _formatTimestamp(int totalSeconds) {
+    final m = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -259,55 +272,79 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
             ),
             Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(26),
+                  color: const Color(0xFF131722).withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: const Color(0xFFFF0000).withValues(alpha: 0.8),
-                    width: 1.5,
+                    color: const Color(0x18FFFFFF),
+                    width: 1,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFF0000).withValues(alpha: 0.3),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
                 ),
-                child: Row(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFF0000),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.play_arrow_rounded,
+                    const Text(
+                      'Момент доступен на YouTube',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
                         color: Colors.white,
-                        size: 26,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14.5,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      alignment: WrapAlignment.center,
                       children: [
-                        const Text(
-                          'Смотреть в YouTube Shorts',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                        if (widget.onWatchInPlayer != null)
+                          ElevatedButton.icon(
+                            onPressed: widget.onWatchInPlayer,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF6B4A),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                            label: Text(
+                              'Смотреть с ${_formatTimestamp(widget.clip.targetTimestampSeconds)} в плеере',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                        ),
-                        Text(
-                          'Нативный запуск без лагов WebView',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 11,
+                        OutlinedButton.icon(
+                          onPressed: widget.onOpenYouTube,
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A202E),
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Color(0x14FFFFFF)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: const Text(
+                            'Открыть на YouTube',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -371,7 +408,7 @@ class _ShortVideoPlayerItemState extends State<ShortVideoPlayerItem>
                         padding:
                             const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: AppColors.primary,
+                          color: const Color(0xFFFF6B4A),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Text(

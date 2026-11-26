@@ -780,7 +780,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '${ch.translatedLanguage.toUpperCase()} • ${ch.source}',
+                  ch.translatedLanguage.toUpperCase(),
                   style: TextStyle(
                     color: ch.translatedLanguage == 'ru'
                         ? const Color(0xFF35D9D5)

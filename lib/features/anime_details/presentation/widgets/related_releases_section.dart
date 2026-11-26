@@ -126,28 +126,14 @@ class RelatedReleasesSection extends StatelessWidget {
                 child: SizedBox(
                   width: 48,
                   height: 68,
-                  child: release.posterUrl.isNotEmpty
+                  child: _isValidPosterUrl(release.posterUrl)
                       ? CachedNetworkImage(
                           imageUrl: release.posterUrl,
                           fit: BoxFit.cover,
                           placeholder: (_, __) => const ShimmerPlaceholder.card(),
-                          errorWidget: (_, __, ___) => Container(
-                            color: AppColors.surfaceElevated,
-                            child: const Icon(
-                              Icons.movie_outlined,
-                              color: AppColors.textMuted,
-                              size: 22,
-                            ),
-                          ),
+                          errorWidget: (_, __, ___) => _buildMonogramFallback(release.title),
                         )
-                      : Container(
-                          color: AppColors.surfaceElevated,
-                          child: const Icon(
-                            Icons.movie_outlined,
-                            color: AppColors.textMuted,
-                            size: 22,
-                          ),
-                        ),
+                      : _buildMonogramFallback(release.title),
                 ),
               ),
 
@@ -247,6 +233,35 @@ class RelatedReleasesSection extends StatelessWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  static bool _isValidPosterUrl(String url) {
+    if (url.trim().isEmpty) return false;
+    final lower = url.toLowerCase();
+    return !lower.contains('missing_original') &&
+        !lower.contains('missing_preview') &&
+        !lower.contains('missing_x');
+  }
+
+  Widget _buildMonogramFallback(String title) {
+    final trimmed = title.trim();
+    final initial = trimmed.isNotEmpty ? trimmed[0].toUpperCase() : 'A';
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A202E),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Color(0xFFCBD5E1),
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

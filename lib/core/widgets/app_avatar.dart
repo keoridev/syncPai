@@ -68,7 +68,46 @@ class AppAvatar extends StatelessWidget {
       return ClipOval(child: child);
     }
 
-    // 1. Проверяем, выбран ли аниме-силуэтный пресет
+    // 1. Плоские монограммы SyncPai (`monogram:graphite|coral|indigo|emerald`)
+    if (cleanUrl.startsWith('monogram:')) {
+      final key = cleanUrl.substring('monogram:'.length).trim();
+      final bgColor = switch (key) {
+        'coral' => const Color(0xFF3A1D19),
+        'indigo' => const Color(0xFF1E223D),
+        'emerald' => const Color(0xFF132E24),
+        _ => const Color(0xFF1C212E),
+      };
+      final accent = switch (key) {
+        'coral' => const Color(0xFFFF6B4A),
+        'indigo' => const Color(0xFF818CF8),
+        'emerald' => const Color(0xFF10B981),
+        _ => Colors.white70,
+      };
+      final initial = (username != null && username!.trim().isNotEmpty)
+          ? username!.trim()[0].toUpperCase()
+          : 'S';
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: bgColor,
+          shape: effectiveShape,
+          borderRadius: borderRadius,
+          border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          initial,
+          style: TextStyle(
+            color: accent,
+            fontSize: size * 0.42,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    // 1b. Проверяем, выбран ли аниме-силуэтный пресет
     final silhouette = AnimeSilhouettePreset.find(cleanUrl);
     if (silhouette != null) {
       return Container(

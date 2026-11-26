@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,11 +32,8 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
-import '../../../../core/widgets/anime_silhouette_avatars.dart';
-import '../../../../core/widgets/holographic_monogram_avatar.dart';
 import '../../services/friends_service.dart';
 import 'achievement_badge_artwork.dart';
-import 'badge_details_sheet.dart';
 import 'duo_pairing_widgets.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
@@ -139,6 +137,12 @@ class _SteamProfileCustomizerSheetState
   List<AnimeTitle> _searchedCatalogTitles = [];
   bool _isSearchingTitles = false;
 
+  // Поиск персонажей и тайтлов для аватара (Shikimori)
+  final TextEditingController _avatarSearchController = TextEditingController();
+  Timer? _avatarSearchDebounce;
+  List<({String name, String subtitle, String imageUrl})> _avatarSearchResults = [];
+  bool _isSearchingAvatars = false;
+
   @override
   void initState() {
     super.initState();
@@ -147,6 +151,9 @@ class _SteamProfileCustomizerSheetState
       vsync: this,
       initialIndex: widget.initialTabIndex.clamp(0, 5),
     );
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _selectedFrameId = widget.profile.frameId ?? 'none';
     _selectedBgId = widget.profile.backgroundId ?? 'none';
     _selectedAccentHex = widget.profile.accentColor ??
@@ -211,6 +218,8 @@ class _SteamProfileCustomizerSheetState
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _avatarSearchDebounce?.cancel();
+    _avatarSearchController.dispose();
     _tabController.dispose();
     _customUrlController.dispose();
     _customAvatarUrlController.dispose();
@@ -243,8 +252,19 @@ class _SteamProfileCustomizerSheetState
     _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
       try {
         if (getIt.isRegistered<CatalogRepository>()) {
-          final results =
-              await getIt<CatalogRepository>().searchTitles(q, limit: 10);
+          final rawResults =
+              await getIt<CatalogRepository>().searchTitles(q, limit: 15);
+          final seenTitles = <String>{};
+          final results = <AnimeTitle>[];
+          for (final item in rawResults) {
+            final hasPoster = item.posterOriginal.trim().isNotEmpty ||
+                item.posterMedium.trim().isNotEmpty ||
+                item.posterSmall.trim().isNotEmpty;
+            if (!hasPoster) continue;
+            final norm = item.displayTitle.trim().toLowerCase();
+            if (norm.isEmpty || !seenTitles.add(norm)) continue;
+            results.add(item);
+          }
           if (mounted) {
             setState(() {
               _searchedCatalogTitles = results;
@@ -256,6 +276,84 @@ class _SteamProfileCustomizerSheetState
         }
       } catch (_) {
         if (mounted) setState(() => _isSearchingTitles = false);
+      }
+    });
+  }
+
+  void _onAvatarSearchChanged(String raw) {
+    _avatarSearchDebounce?.cancel();
+    final q = raw.trim();
+    if (q.length < 2) {
+      setState(() {
+        _avatarSearchResults = [];
+        _isSearchingAvatars = false;
+      });
+      return;
+    }
+    setState(() => _isSearchingAvatars = true);
+    _avatarSearchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final results = <({String name, String subtitle, String imageUrl})>[];
+      try {
+        final dio = Dio(
+          BaseOptions(
+            baseUrl: 'https://shikimori.one/api',
+            connectTimeout: const Duration(seconds: 6),
+            receiveTimeout: const Duration(seconds: 8),
+            headers: const {'User-Agent': 'SyncPai/1.0'},
+          ),
+        );
+        final charRes = await dio.get<dynamic>(
+          '/characters/search',
+          queryParameters: {'q': q},
+        );
+        if (charRes.data is List) {
+          for (final item in (charRes.data as List).take(6)) {
+            if (item is! Map) continue;
+            final ru = (item['russian'] ?? '').toString().trim();
+            final en = (item['name'] ?? '').toString().trim();
+            final name = ru.isNotEmpty ? ru : en;
+            final img = item['image'] is Map
+                ? (item['image']['original'] ?? item['image']['preview'] ?? '')
+                    .toString()
+                    .trim()
+                : '';
+            if (name.isEmpty || img.isEmpty || img.contains('missing_')) continue;
+            final fullUrl = img.startsWith('http')
+                ? img
+                : 'https://shikimori.one$img';
+            results.add((name: name, subtitle: 'Персонаж', imageUrl: fullUrl));
+          }
+        }
+        if (results.length < 6) {
+          final animeRes = await dio.get<dynamic>(
+            '/animes',
+            queryParameters: {'search': q, 'limit': 6},
+          );
+          if (animeRes.data is List) {
+            for (final item in (animeRes.data as List).take(6)) {
+              if (item is! Map) continue;
+              final ru = (item['russian'] ?? '').toString().trim();
+              final en = (item['name'] ?? '').toString().trim();
+              final name = ru.isNotEmpty ? ru : en;
+              final img = item['image'] is Map
+                  ? (item['image']['original'] ?? item['image']['preview'] ?? '')
+                      .toString()
+                      .trim()
+                  : '';
+              if (name.isEmpty || img.isEmpty) continue;
+              final fullUrl = img.startsWith('http')
+                  ? img
+                  : 'https://shikimori.one$img';
+              results.add((name: name, subtitle: 'Тайтл', imageUrl: fullUrl));
+            }
+          }
+        }
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _avatarSearchResults = results.take(9).toList();
+          _isSearchingAvatars = false;
+        });
       }
     });
   }
@@ -525,6 +623,10 @@ class _SteamProfileCustomizerSheetState
     );
     final isTitleLocked = _titleController.text.trim().isNotEmpty &&
         !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
+    final isAccentLocked = !CustomizationTierPolicy.isAccentUnlocked(
+      widget.profile.supporterTier,
+      _selectedAccentHex,
+    );
     final isArtworkLocked = _selectedArtworkUrl != null &&
         _selectedArtworkUrl!.isNotEmpty &&
         !CustomizationTierPolicy.isArtworkUnlocked(
@@ -532,27 +634,47 @@ class _SteamProfileCustomizerSheetState
           _selectedArtworkUrl,
           unlockedBadges: widget.profile.unlockedBadges,
         );
-    final hasLockedSelection = isFrameLocked || isBgLocked || isTitleLocked || isArtworkLocked;
+    final activeTab = _tabController.index;
+    final isAvatarLocked = !CustomizationTierPolicy.isAvatarUnlocked(
+      effectiveAvatar,
+      unlockedBadges: widget.profile.unlockedBadges,
+    );
+    final hasLockedSelection = switch (activeTab) {
+      0 => isBgLocked,
+      1 => isFrameLocked,
+      2 => isAvatarLocked,
+      3 => false,
+      4 => isArtworkLocked,
+      5 => isAccentLocked || isTitleLocked,
+      _ => false,
+    };
 
     SupporterTier requiredTier = SupporterTier.free;
-    if (isFrameLocked) {
+    if (activeTab == 1 && isFrameLocked) {
       final fTier = CustomizationTierPolicy.requiredTierForFrame(_selectedFrameId);
       if (fTier.index > requiredTier.index) requiredTier = fTier;
     }
-    if (isBgLocked) {
+    if (activeTab == 0 && isBgLocked) {
       final bTier = CustomizationTierPolicy.requiredTierForBanner(effectiveBg);
       if (bTier.index > requiredTier.index) requiredTier = bTier;
     }
-    if (isTitleLocked) {
+    if (activeTab == 5 && isAccentLocked) {
+      final cTier = CustomizationTierPolicy.requiredTierForAccent(_selectedAccentHex);
+      if (cTier.index > requiredTier.index) requiredTier = cTier;
+    }
+    if (activeTab == 5 && isTitleLocked) {
       if (SupporterTier.vip.index > requiredTier.index) requiredTier = SupporterTier.vip;
     }
-    if (isArtworkLocked) {
+    if (activeTab == 4 && isArtworkLocked) {
       final aTier = CustomizationTierPolicy.requiredTierForArtwork(_selectedArtworkUrl ?? '');
       if (aTier.index > requiredTier.index) requiredTier = aTier;
     }
     if (hasLockedSelection && requiredTier == SupporterTier.free) {
       requiredTier = SupporterTier.supporter;
     }
+    final requiredTierDisplay = requiredTier == SupporterTier.supporter
+        ? 'SyncPai Sponsor'
+        : requiredTier.title;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.90,
@@ -867,11 +989,11 @@ class _SteamProfileCustomizerSheetState
                         foregroundColor: Colors.black,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
-                        elevation: 2,
+                        elevation: 0,
                       ),
                       icon: const Icon(Icons.workspace_premium_rounded, size: 20),
                       label: Text(
-                        'Применить (требуется ${requiredTier.title})',
+                        'Открыть доступ ($requiredTierDisplay)',
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
                       ),
                       onPressed: () {
@@ -879,6 +1001,9 @@ class _SteamProfileCustomizerSheetState
                         final lockedDetails = <String>[];
                         if (isFrameLocked) lockedDetails.add('рамка «${frame.name}»');
                         if (isBgLocked) lockedDetails.add('фон «${bgTheme.name}»');
+                        if (isAccentLocked) {
+                          lockedDetails.add('цвет «${SteamProfileThemeAccent.fromHex(_selectedAccentHex).name}»');
+                        }
                         if (isTitleLocked) lockedDetails.add('кастомный титул');
                         if (isArtworkLocked) lockedDetails.add('витрина иллюстраций');
 
@@ -897,16 +1022,16 @@ class _SteamProfileCustomizerSheetState
                     )
                   : ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: accent,
+                        backgroundColor: const Color(0xFFFF6B4A),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                         elevation: 0,
                       ),
                       onPressed: _applyChanges,
-                      child: const Text(
-                        'Применить кастомизацию',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      child: Text(
+                        activeTab == 5 ? 'Применить цвет' : 'Применить изменения',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                       ),
                     ),
             ),
@@ -1579,222 +1704,147 @@ class _SteamProfileCustomizerSheetState
         ),
 
         const SizedBox(height: 18),
-        Text('Персонажи аниме (Anime Character Avatars):',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+        Text(
+          'Поиск персонажа или тайтла (Shikimori):',
+          style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _avatarSearchController,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'Найти персонажа или тайтл...',
+            hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: Colors.white54,
+              size: 18,
+            ),
+            suffixIcon: _avatarSearchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 18),
+                    onPressed: () {
+                      setState(() {
+                        _avatarSearchController.clear();
+                        _avatarSearchResults = [];
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: AppColors.surface,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
+            ),
+          ),
+          onChanged: _onAvatarSearchChanged,
+        ),
+        const SizedBox(height: 10),
+        if (_isSearchingAvatars)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_avatarSearchResults.isNotEmpty) ...[
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _avatarSearchResults.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.85,
+            ),
+            itemBuilder: (context, index) {
+              final item = _avatarSearchResults[index];
+              return _buildCharacterAvatarTile(
+                name: item.name,
+                anime: item.subtitle,
+                url: item.imageUrl,
+                accent: accent,
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        const SizedBox(height: 8),
+        Text(
+          'Монограммы SyncPai:',
+          style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+        ),
         const SizedBox(height: 10),
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 3,
+          crossAxisCount: 2,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 0.92,
+          childAspectRatio: 2.5,
           children: [
-            _buildCharacterAvatarTile(
-              name: 'Gojo Satoru',
-              anime: 'Jujutsu Kaisen',
-              url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-            _buildCharacterAvatarTile(
-              name: 'Sung Jinwoo',
-              anime: 'Solo Leveling',
-              url: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-            _buildCharacterAvatarTile(
-              name: 'Lucy',
-              anime: 'Edgerunners',
-              url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-            _buildCharacterAvatarTile(
-              name: 'Itachi Uchiha',
-              anime: 'Naruto',
-              url: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-            _buildCharacterAvatarTile(
-              name: 'Frieren',
-              anime: 'Beyond Journey',
-              url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-            _buildCharacterAvatarTile(
-              name: 'Mitsuha',
-              anime: 'Your Name',
-              url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80',
-              accent: accent,
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 18),
-        Text('Премиальные арт-пресеты (Anime Silhouettes & Hologram):',
-            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 10),
-
-        // Голографическая монограмма из матового стекла
-        InkWell(
-          onTap: () {
-            setState(() {
-              _selectedAvatar = '';
-              _customAvatarUrlController.clear();
-            });
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: (_selectedAvatar.isEmpty &&
-                      _customAvatarUrlController.text.isEmpty)
-                  ? accent.withValues(alpha: 0.16)
-                  : AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: (_selectedAvatar.isEmpty &&
-                        _customAvatarUrlController.text.isEmpty)
-                    ? accent
-                    : AppColors.strokeMedium,
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                HolographicMonogramAvatar(
-                  text: widget.profile.username,
-                  size: 48,
-                  accentColor: accent,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            for (final mono in const [
+              (id: 'monogram:graphite', label: 'Графит', color: Color(0xFF94A3B8)),
+              (id: 'monogram:coral', label: 'Коралл', color: Color(0xFFFF6B4A)),
+              (id: 'monogram:indigo', label: 'Индиго', color: Color(0xFF818CF8)),
+              (id: 'monogram:emerald', label: 'Изумруд', color: Color(0xFF10B981)),
+            ])
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedAvatar = mono.id;
+                    _customAvatarUrlController.clear();
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _selectedAvatar == mono.id &&
+                            _customAvatarUrlController.text.isEmpty
+                        ? mono.color.withValues(alpha: 0.16)
+                        : AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _selectedAvatar == mono.id &&
+                              _customAvatarUrlController.text.isEmpty
+                          ? mono.color
+                          : AppColors.strokeMedium,
+                    ),
+                  ),
+                  child: Row(
                     children: [
-                      const Text(
-                        'Голографическая монограмма',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13.5,
-                        ),
+                      AppAvatar(
+                        avatarUrl: mono.id,
+                        username: widget.profile.username,
+                        size: 36,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Стеклянный Glassmorphism с радужным переливом и инициалом',
-                        style:
-                            TextStyle(color: AppColors.textMuted, fontSize: 11),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          mono.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (_selectedAvatar.isEmpty &&
-                    _customAvatarUrlController.text.isEmpty)
-                  Icon(Icons.check_circle_rounded, color: accent, size: 20),
-              ],
-            ),
-          ),
-        ),
-
-        // Сетка Dark Cyberpunk аниме-силуэтов
-        ...AnimeSilhouettePreset.presets.map((preset) {
-          final isSelected = _selectedAvatar == preset.id &&
-              _customAvatarUrlController.text.isEmpty;
-          final isAvatarUnlocked = CustomizationTierPolicy.isAvatarUnlocked(
-            preset.id,
-            unlockedBadges: widget.profile.unlockedBadges,
-          );
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: InkWell(
-              onTap: () {
-                if (!isAvatarUnlocked) {
-                  _showBugHunterUnlockPrompt(context);
-                  return;
-                }
-                setState(() {
-                  _selectedAvatar = preset.id;
-                  _customAvatarUrlController.clear();
-                });
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? preset.eyeColor.withValues(alpha: 0.15)
-                      : AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color:
-                        isSelected ? preset.eyeColor : AppColors.strokeMedium,
-                    width: isSelected ? 1.8 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    AppAvatar(
-                      avatarUrl: preset.id,
-                      size: 46,
-                      borderColor:
-                          isSelected ? preset.eyeColor : AppColors.strokeMedium,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            preset.name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                          if (!isAvatarUnlocked) ...[
-                            const SizedBox(height: 3),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00E676).withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: const Color(0xFF00E676).withValues(alpha: 0.45),
-                                ),
-                              ),
-                              child: const Text(
-                                '👾 За найденный баг',
-                                style: TextStyle(
-                                  color: Color(0xFF00E676),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 2),
-                          Text(
-                            preset.title,
-                            style: TextStyle(
-                                color: preset.eyeColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (isSelected)
-                      Icon(Icons.check_circle_rounded,
-                          color: preset.eyeColor, size: 20),
-                  ],
-                ),
               ),
-            ),
-          );
-        }),
+          ],
+        ),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1909,12 +1959,16 @@ class _SteamProfileCustomizerSheetState
                     children: [
                       Row(
                         children: [
-                          Text(
-                            b.title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
+                          Flexible(
+                            child: Text(
+                              b.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1938,7 +1992,11 @@ class _SteamProfileCustomizerSheetState
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        b.description,
+                        b.unlockCriteria.isNotEmpty
+                            ? b.unlockCriteria
+                            : b.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 11.5,
@@ -1947,25 +2005,8 @@ class _SteamProfileCustomizerSheetState
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: Icon(
-                    Icons.info_outline_rounded,
-                    color: b.color.withValues(alpha: 0.8),
-                    size: 20,
-                  ),
-                  tooltip: 'Перки и детали значка',
-                  onPressed: () {
-                    BadgeDetailsSheet.show(
-                      context,
-                      badge: b,
-                      onSelectBadge: () {
-                        setState(() => _selectedBadgeId = b.id);
-                      },
-                    );
-                  },
-                ),
                 if (isSelected) ...[
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   Icon(Icons.check_circle_rounded, color: b.color, size: 20),
                 ],
               ],
@@ -2107,7 +2148,7 @@ class _SteamProfileCustomizerSheetState
                           requiredTier: requiredTier,
                           featureTitle: 'Витрина «${preset.title}»',
                           featureDescription: isPlusPai
-                              ? 'Эксклюзивная витрина Пай-тян доступна для подписчиков SyncPai Plus.'
+                              ? 'Эксклюзивная витрина Пай-тян доступна для подписчиков SyncPai Sponsor.'
                               : 'Анимированные LIVE-сцены витрины доступны с SyncPai Pro.',
                         );
                         return;
@@ -3682,70 +3723,129 @@ class _SteamProfileCustomizerSheetState
       padding: const EdgeInsets.symmetric(
           horizontal: AppDimensions.spacingXl, vertical: 14),
       children: [
-        Text('Неоновые акцентные темы профиля:',
+        Text('Акцентная палитра профиля:',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 2.4,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.85,
           ),
           itemCount: SteamProfileThemeAccent.all.length,
           itemBuilder: (context, index) {
             final a = SteamProfileThemeAccent.all[index];
             final isSelected =
                 _selectedAccentHex.toLowerCase() == a.hex.toLowerCase();
+            final isUnlocked = CustomizationTierPolicy.isAccentUnlocked(
+              widget.profile.supporterTier,
+              a.hex,
+            );
+            final isFree = CustomizationTierPolicy.requiredTierForAccent(a.hex) ==
+                SupporterTier.free;
 
             return InkWell(
               onTap: () => setState(() => _selectedAccentHex = a.hex),
               borderRadius: BorderRadius.circular(14),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? a.color.withValues(alpha: 0.16)
-                      : AppColors.surface,
+                      ? a.color.withValues(alpha: 0.14)
+                      : const Color(0xFF161B26),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: isSelected ? a.color : AppColors.strokeMedium,
-                    width: isSelected ? 2 : 1,
+                    color: isSelected ? a.color : const Color(0x14FFFFFF),
+                    width: isSelected ? 1.5 : 1,
                   ),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: a.color,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: a.color.withValues(alpha: 0.4),
-                            blurRadius: 6,
+                    Row(
+                      children: [
+                        Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: a.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0x33FFFFFF),
+                              width: 1,
+                            ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        a.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isSelected
-                              ? Colors.white
-                              : AppColors.textSecondary,
-                          fontWeight:
-                              isSelected ? FontWeight.w700 : FontWeight.w500,
-                          fontSize: 12,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            a.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppColors.textSecondary,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        if (!isUnlocked)
+                          const Icon(
+                            Icons.lock_outline_rounded,
+                            size: 13,
+                            color: Color(0xFF94A3B8),
+                          ),
+                      ],
+                    ),
+                    // Мини-превью пилюли и кнопки с выбранным акцентом
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: a.color.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: a.color.withValues(alpha: 0.45),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            isFree ? 'Бесплатно' : 'Sponsor',
+                            style: TextStyle(
+                              color: a.color,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: a.color,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Кнопка',
+                            style: TextStyle(
+                              color: Color(0xFF0B0E14),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

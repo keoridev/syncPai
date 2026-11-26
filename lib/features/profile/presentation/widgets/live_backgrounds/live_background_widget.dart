@@ -76,7 +76,7 @@ class _LiveBackgroundWidgetState extends State<LiveBackgroundWidget>
         bgId.contains('frost') ||
         media == 'snow' ||
         media == 'snowfall' ||
-        bgId.contains('cyberpunk') ||
+        bgId == 'cyberpunk_grid_3d' ||
         media == 'cyberpunk' ||
         bgId.contains('space') ||
         bgId.contains('void') ||

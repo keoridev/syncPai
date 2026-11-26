@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
+import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../domain/entities/anime_clip.dart';
 import '../models/anime_moment_model.dart';
@@ -110,49 +111,8 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
           }
         }
       } catch (_) {}
-
-      // Резолвим реальные HLS-потоки AniLibria для золотой коллекции моментов
-      for (var i = 0; i < rawClips.length; i++) {
-        final clip = rawClips[i];
-        if (clip.videoUrl.contains('_ep1_720')) {
-          String? realUrl = _resolvedStreamCache[clip.animeId];
-          if (realUrl == null) {
-            try {
-              final details = await repo.getTitleDetails(id: clip.animeId);
-              final ep = details.episodes.firstWhere(
-                (e) => e.episode == clip.episodeNumber,
-                orElse: () => details.episodes.isNotEmpty
-                    ? details.episodes.first
-                    : details.episodes.first,
-              );
-              realUrl = ep.hdUrl ?? ep.fhdUrl ?? ep.sdUrl;
-              if (realUrl != null && realUrl.isNotEmpty) {
-                _resolvedStreamCache[clip.animeId] = realUrl;
-              }
-            } catch (_) {}
-          }
-          if (realUrl != null && realUrl.isNotEmpty) {
-            rawClips[i] = clip.copyWith(videoUrl: realUrl);
-          } else {
-            // Фолбек на гарантированно живой HLS поток Solo Leveling
-            rawClips[i] = clip.copyWith(
-              videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
-            );
-          }
-        }
-      }
-    } else {
-      for (var i = 0; i < rawClips.length; i++) {
-        final clip = rawClips[i];
-        if (clip.videoUrl.contains('_ep1_720')) {
-          rawClips[i] = clip.copyWith(
-            videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
-          );
-        }
-      }
     }
 
-    // Объединяем Supabase-моменты, проверенную золотую коллекцию и динамические обновления без дубликатов
     final allClips = <AnimeClip>[
       ...supabaseClips,
       ...rawClips.where((c) => !supabaseClips.any((sc) => sc.animeId == c.animeId)),
@@ -160,6 +120,63 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
           !supabaseClips.any((sc) => sc.animeId == c.animeId) &&
           !rawClips.any((rc) => rc.animeId == c.animeId)),
     ];
+
+    // Резолвим реальные .m3u8 потоки AniLibria для моментов с пустым/плейсхолдерным/YouTube URL
+    if (repo != null) {
+      for (var i = 0; i < allClips.length; i++) {
+        final clip = allClips[i];
+        final lowerUrl = clip.videoUrl.toLowerCase();
+        final needsResolve = clip.videoUrl.isEmpty ||
+            clip.videoUrl.contains('_ep1_720') ||
+            lowerUrl.contains('youtube.com') ||
+            lowerUrl.contains('youtu.be');
+        if (!needsResolve) continue;
+
+        final cacheKey = clip.animeId;
+        String? realUrl = _resolvedStreamCache[cacheKey];
+        if (realUrl == null) {
+          try {
+            AnimeTitle? details;
+            if (clip.animeId > 0 && clip.animeId <= 12000) {
+              try {
+                final direct = await repo.getTitleDetails(id: clip.animeId);
+                if (direct.russianTitle.toLowerCase().contains(
+                      clip.animeTitle.split(' ').first.toLowerCase(),
+                    ) ||
+                    direct.englishTitle.toLowerCase().contains(
+                      clip.englishTitle.split(' ').first.toLowerCase(),
+                    )) {
+                  details = direct;
+                }
+              } catch (_) {}
+            }
+            if (details == null && clip.animeTitle.trim().isNotEmpty) {
+              final found = await repo.searchTitles(clip.animeTitle);
+              if (found.isNotEmpty) {
+                details = found.first;
+              }
+            }
+            if (details != null && details.episodes.isNotEmpty) {
+              final ep = details.episodes.firstWhere(
+                (e) => e.episode == clip.episodeNumber,
+                orElse: () => details!.episodes.first,
+              );
+              realUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
+              if (realUrl != null && realUrl.isNotEmpty) {
+                _resolvedStreamCache[cacheKey] = realUrl;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (realUrl != null && realUrl.isNotEmpty) {
+          allClips[i] = clip.copyWith(videoUrl: realUrl);
+        } else {
+          // Не передаём YouTube/битый URL в media_kit — покажется карточка с кнопками
+          allClips[i] = clip.copyWith(videoUrl: '');
+        }
+      }
+    }
 
     return allClips.map((clip) {
       final isLiked = likedIds.contains(clip.id);
@@ -230,7 +247,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/51009/main-27103a89052ce525ee82c5f1fa536098.jpg',
         episodeNumber: 17,
         targetTimestampSeconds: 860, // 14:20
-        caption: '⚡ Битва титанов в Сибуе: Король проклятий Сукуна раскрывает истинное пламя против генерала Махораги.',
+        caption: 'Битва титанов в Сибуе: Король проклятий Сукуна раскрывает истинное пламя против генерала Махораги.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/8789/1/720/8789_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=0kFhyjHhQ9g',
         likesCount: 35190,
@@ -245,7 +262,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/38000/main-459d89ee5e49520e5c1d68351b033d52.jpg',
         episodeNumber: 19,
         targetTimestampSeconds: 1155, // 19:15
-        caption: '⚔️ Легендарная 19-я серия: Тандзиро впервые вспоминает Танец Бога Огня в битве с Руи.',
+        caption: 'Легендарная 19-я серия: Тандзиро впервые вспоминает Танец Бога Огня в битве с Руи.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/8246/1/720/8246_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=7aMOurgDB-o',
         likesCount: 42800,
@@ -260,7 +277,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/52991/main-3560706540c49a620d4107b34b6b66a5.jpg',
         episodeNumber: 9,
         targetTimestampSeconds: 970, // 16:10
-        caption: '🪄 «Аура, подчинись мне». Фрирен демонстрирует истинную бездонную ауру маны, скрываемую веками.',
+        caption: '«Аура, подчинись мне». Фрирен демонстрирует истинную бездонную ауру маны, скрываемую веками.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10338/1/720/10338_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=qgQunxD0qVU',
         likesCount: 19830,

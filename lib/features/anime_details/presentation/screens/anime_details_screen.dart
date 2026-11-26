@@ -849,16 +849,17 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               ),
             const SizedBox(height: 6),
             SizedBox(
-              width: 66,
+              width: 78,
               child: Text(
                 label,
                 textAlign: TextAlign.center,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption.copyWith(
                   fontSize: 11,
                   color: AppColors.textSecondary,
                   fontWeight: FontWeight.w500,
+                  height: 1.2,
                 ),
               ),
             ),
@@ -1620,8 +1621,9 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
             : Icons.group_outlined;
 
         if (isDesktop) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
+          return Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
               _buildDesktopActionButton(
                 icon: watchTogetherIcon,
@@ -1629,7 +1631,6 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                 label: watchTogetherLabel,
                 onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
               ),
-              const SizedBox(width: 10),
               _buildDesktopActionButton(
                 icon: Icons.movie_outlined,
                 label: 'Трейлеры',
@@ -1641,7 +1642,6 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   });
                 },
               ),
-              const SizedBox(width: 10),
               if (getIt.isRegistered<AnimeListCubit>())
                 BlocBuilder<AnimeListCubit, AnimeListState>(
                   bloc: getIt<AnimeListCubit>(),
@@ -1656,14 +1656,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                     );
                   },
                 ),
-              const SizedBox(width: 10),
               _buildDesktopActionButton(
                 icon: Icons.cloud_download_outlined,
                 label: 'Скачать',
                 onTap: () => _openTorrentsSheet(context),
               ),
-              if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed) ...[
-                const SizedBox(width: 10),
+              if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
                 _buildDesktopActionButton(
                   icon: Icons.menu_book_rounded,
                   iconColor: AppColors.primaryLight,
@@ -1673,7 +1671,6 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       : 'Читать мангу',
                   onTap: () => _handleReadMangaTap(title),
                 ),
-              ],
             ],
           );
         }
@@ -2491,16 +2488,16 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         : (widget.title.posterMedium.isNotEmpty ? widget.title.posterMedium : widget.title.posterSmall);
 
     String backdropUrl;
-    if (initialPoster.isNotEmpty && !initialPoster.contains('anilibria.top/upload/release/350x500')) {
+    if (_currentTitle.posterOriginal.isNotEmpty) {
+      backdropUrl = _currentTitle.posterOriginal;
+    } else if (_currentTitle.posterMedium.isNotEmpty) {
+      backdropUrl = _currentTitle.posterMedium;
+    } else if (initialPoster.isNotEmpty) {
       backdropUrl = initialPoster;
-    } else if (widget.title.shikimoriId != null && widget.title.shikimoriId! > 0) {
-      backdropUrl = 'https://shikimori.io/system/animes/original/${widget.title.shikimoriId}.jpg';
-    } else if (widget.title.id > 0) {
-      backdropUrl = 'https://shikimori.io/system/animes/original/${widget.title.id}.jpg';
+    } else if (title.shikimoriId != null && title.shikimoriId! > 0) {
+      backdropUrl = 'https://shikimori.io/system/animes/original/${title.shikimoriId}.jpg';
     } else {
-      backdropUrl = _currentTitle.posterOriginal.isNotEmpty
-          ? _currentTitle.posterOriginal
-          : (_currentTitle.posterMedium.isNotEmpty ? _currentTitle.posterMedium : _currentTitle.posterSmall);
+      backdropUrl = _currentTitle.posterSmall;
     }
     backdropUrl = backdropUrl
         .replaceFirst('https://shikimori.me', 'https://shikimori.io')
@@ -2565,36 +2562,86 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             return Stack(
                               fit: StackFit.expand,
                               children: [
-                                // Четкий оригинальный HD-арт без размытия и потери детализации
-                                if (backdropUrl.isNotEmpty)
-                                  Hero(
-                                    tag: 'anime-poster-${title.id}',
+                                // Размытый фон + чёткий постер по центру без обрезания лица
+                                if (backdropUrl.isNotEmpty) ...[
+                                  ImageFiltered(
+                                    imageFilter: ImageFilter.blur(
+                                      sigmaX: 20,
+                                      sigmaY: 20,
+                                    ),
                                     child: CachedNetworkImage(
                                       imageUrl: wrapCorsSafeUrl(backdropUrl),
                                       fit: BoxFit.cover,
-                                      alignment: Alignment.topCenter,
-                                      memCacheWidth: 1080,
-                                      filterQuality: FilterQuality.medium,
+                                      memCacheWidth: 480,
                                       httpHeaders: const {
                                         'User-Agent': 'SyncPai-App/1.0',
                                         'Referer': 'https://shikimori.io/',
                                       },
-                                      placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                                      errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
-                                        imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
-                                        memCacheWidth: 1080,
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.topCenter,
-                                        placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                                        errorWidget: (context, fallbackUrl, error) => Container(
-                                          color: AppColors.surface,
-                                          child: const Center(
-                                            child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                                      errorWidget: (_, __, ___) =>
+                                          const ColoredBox(
+                                        color: Color(0xFF0B0E14),
+                                      ),
+                                    ),
+                                  ),
+                                  const ColoredBox(color: Color(0x880B0E14)),
+                                  Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        top: MediaQuery.paddingOf(context).top + 14,
+                                        bottom: 22,
+                                      ),
+                                      child: Hero(
+                                        tag: 'anime-poster-${title.id}',
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          child: AspectRatio(
+                                            aspectRatio: 2 / 3,
+                                            child: CachedNetworkImage(
+                                              imageUrl:
+                                                  wrapCorsSafeUrl(backdropUrl),
+                                              fit: BoxFit.cover,
+                                              alignment: Alignment.topCenter,
+                                              memCacheWidth: 1080,
+                                              filterQuality: FilterQuality.medium,
+                                              httpHeaders: const {
+                                                'User-Agent': 'SyncPai-App/1.0',
+                                                'Referer':
+                                                    'https://shikimori.io/',
+                                              },
+                                              placeholder: (context, url) =>
+                                                  const ColoredBox(
+                                                      color: Colors.black26),
+                                              errorWidget:
+                                                  (context, primaryUrl, error) =>
+                                                      CachedNetworkImage(
+                                                imageUrl: wrapCorsSafeUrl(
+                                                    title.effectiveFallbackPoster),
+                                                memCacheWidth: 1080,
+                                                fit: BoxFit.cover,
+                                                alignment: Alignment.topCenter,
+                                                placeholder: (context, url) =>
+                                                    const ColoredBox(
+                                                        color: Colors.black26),
+                                                errorWidget: (context,
+                                                        fallbackUrl, error) =>
+                                                    Container(
+                                                  color: AppColors.surface,
+                                                  child: const Center(
+                                                    child: Icon(
+                                                        Icons.broken_image,
+                                                        color: Colors.white54,
+                                                        size: 48),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
+                                ],
 
                                 // Затемнение при сжатии
                                 DecoratedBox(
@@ -3119,26 +3166,42 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                       ),
                                     ),
                                     const SizedBox(height: 12),
-                                    Text(
-                                      _currentTitle.status.toLowerCase().contains('скоро') ||
-                                              _currentTitle.status.toLowerCase().contains('анонс')
-                                          ? 'Статус: Скоро / Анонс'
-                                          : 'Серии пока не вышли в озвучке',
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.titleMedium.copyWith(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Этот сезон еще не начался или серии только готовятся к публикации. Вы можете добавить его в избранное или в планы.',
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodySmall.copyWith(
-                                        color: AppColors.textSecondary,
-                                        height: 1.4,
-                                      ),
+                                    Builder(
+                                      builder: (context) {
+                                        final statusLower = _currentTitle.status.toLowerCase();
+                                        final isUpcoming = statusLower.contains('anons') ||
+                                            statusLower.contains('анонс') ||
+                                            statusLower.contains('скоро') ||
+                                            ((_currentTitle.year ?? 0) >= 2026 &&
+                                                !statusLower.contains('released') &&
+                                                !statusLower.contains('вышел'));
+                                        return Column(
+                                          children: [
+                                            Text(
+                                              isUpcoming
+                                                  ? 'Статус: Скоро / Анонс'
+                                                  : 'Озвучка отсутствует в базе',
+                                              textAlign: TextAlign.center,
+                                              style: AppTypography.titleMedium.copyWith(
+                                                color: AppColors.textPrimary,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              isUpcoming
+                                                  ? 'Этот сезон ещё не начался или серии только готовятся к публикации. Вы можете добавить его в избранное или в планы.'
+                                                  : 'Этот релиз (OVA / спецвыпуск) не озвучен в текущем каталоге',
+                                              textAlign: TextAlign.center,
+                                              style: AppTypography.bodySmall.copyWith(
+                                                color: AppColors.textSecondary,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
                                     const SizedBox(height: 16),
                                     Wrap(
@@ -3146,6 +3209,24 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                       runSpacing: 10,
                                       alignment: WrapAlignment.center,
                                       children: [
+                                        if (_mangaBridge != null)
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFFFF6B4A),
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 10,
+                                              ),
+                                            ),
+                                            icon: const Icon(Icons.menu_book_rounded, size: 18),
+                                            label: const Text('Читать мангу'),
+                                            onPressed: () => _openMangaReader(_mangaBridge!),
+                                          ),
                                         OutlinedButton.icon(
                                           style: OutlinedButton.styleFrom(
                                             foregroundColor: AppColors.primary,

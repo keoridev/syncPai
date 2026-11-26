@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
@@ -87,29 +86,15 @@ class MomentsPlayerPool extends ChangeNotifier {
     super.notifyListeners();
   }
 
-  /// Обновление активного индекса при свайпе
+  /// Обновление активного индекса при свайпе: держим ровно 1 активный Player
+  /// для текущего индекса, чтобы не дублировать текстуры VideoOutput.
   void updateActiveIndex(int newIndex, List<AnimeClip> clips) {
     if (_isDisposed || clips.isEmpty) return;
     _currentIndex = newIndex;
 
-    // На Android держим только 1 активный VideoOutputManager (текущий newIndex),
-    // чтобы не плодить параллельные MediaCodec/SurfaceView декодеры.
-    final isAndroid = !kIsWeb && Platform.isAndroid;
     final neededIndices = <int>{};
-    if (isAndroid) {
-      if (newIndex >= 0 && newIndex < clips.length) {
-        neededIndices.add(newIndex);
-      }
-    } else {
-      if (newIndex - 1 >= 0 && newIndex - 1 < clips.length) {
-        neededIndices.add(newIndex - 1);
-      }
-      if (newIndex >= 0 && newIndex < clips.length) {
-        neededIndices.add(newIndex);
-      }
-      if (newIndex + 1 < clips.length) {
-        neededIndices.add(newIndex + 1);
-      }
+    if (newIndex >= 0 && newIndex < clips.length) {
+      neededIndices.add(newIndex);
     }
 
     // 1. Освобождаем (dispose) контроллеры, вышедшие за пределы окна N-1..N+1
@@ -188,10 +173,29 @@ class MomentsPlayerPool extends ChangeNotifier {
         isPlaying: shouldPlay,
       );
 
+      final clipStart = Duration(seconds: clip.targetTimestampSeconds);
+      const clipWindow = Duration(seconds: 45);
+      final clipEnd = clipStart + clipWindow;
+      bool seekApplied = clip.targetTimestampSeconds <= 0;
+
       entry.posSub = player.stream.position.listen((pos) {
         final dur = player.state.duration;
         if (dur.inMilliseconds > 0) {
-          entry.progress = (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
+          if (!seekApplied && clipStart < dur) {
+            seekApplied = true;
+            player.seek(clipStart);
+            return;
+          }
+          if (clip.targetTimestampSeconds > 0 && pos >= clipEnd) {
+            player.seek(clipStart);
+            return;
+          }
+          if (clip.targetTimestampSeconds > 0) {
+            final rel = (pos - clipStart).inMilliseconds;
+            entry.progress = (rel / clipWindow.inMilliseconds).clamp(0.0, 1.0);
+          } else {
+            entry.progress = (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
+          }
           notifyListeners();
         }
       });
@@ -215,13 +219,15 @@ class MomentsPlayerPool extends ChangeNotifier {
 
       _pool[index] = entry;
 
-      // Открываем видео. Если это текущий — play: true, если предзагрузка N+1 — play: false
-      String targetUrl = clip.videoUrl;
-      if (targetUrl.contains('_ep1_720')) {
-        targetUrl = 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8';
-      }
+      // Открываем только прямой видеопоток (.m3u8 / .mp4), не YouTube
+      final targetUrl = clip.videoUrl.trim();
+      final lowerUrl = targetUrl.toLowerCase();
+      final isYouTube = lowerUrl.contains('youtube.com') || lowerUrl.contains('youtu.be');
 
-      if (targetUrl.isNotEmpty && targetUrl.startsWith('http')) {
+      if (targetUrl.isNotEmpty &&
+          targetUrl.startsWith('http') &&
+          !isYouTube &&
+          !targetUrl.contains('_ep1_720')) {
         player.open(Media(targetUrl), play: shouldPlay);
         if (!shouldPlay) {
           player.pause();

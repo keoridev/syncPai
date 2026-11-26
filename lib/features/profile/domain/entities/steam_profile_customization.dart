@@ -69,7 +69,7 @@ class SteamBadge {
     ),
     SteamBadge(
       id: 'anixart_collector',
-      title: 'Коллекционер Anixart',
+      title: 'Коллекционер',
       description: 'Импортировал легендарную библиотеку закладок',
       icon: Icons.auto_stories_rounded,
       color: Color(0xFF00FF87),
@@ -127,18 +127,6 @@ class SteamBadge {
       perkDescription: 'Автоматически подключает лучший доступный видеопоток без ожидания',
       unlockCriteria: 'Просмотреть 20 серий в максимальном качестве 1080p',
     ),
-    SteamBadge(
-      id: 'skip_legend',
-      title: 'Скиппер Опенингов',
-      description: 'Сэкономил более 24 часов жизни умным автопропуском',
-      icon: Icons.fast_forward_rounded,
-      color: Color(0xFFE06C53),
-      level: 10,
-      rarity: BadgeRarity.common,
-      perkTitle: 'Мгновенный авто-скип без голосования',
-      perkDescription: 'В соло-режиме пропускает опенинг за 0.1 секунды',
-      unlockCriteria: 'Пропустить более 50 опенингов умным таймкодом',
-    ),
   ];
 
   static SteamBadge fromId(String? id) {
@@ -165,208 +153,121 @@ class SteamAvatarFrame {
   });
 
   static const List<SteamAvatarFrame> all = [
-    // --- 1. Бесплатные рамки для всех пользователей ---
+    // --- 1. Бесплатные рамки (4 уникальных векторных дизайна) ---
     SteamAvatarFrame(
       id: 'none',
       name: 'Классическая',
       colors: [Color(0xFF2C303B), Color(0xFF1A1C22)],
-      previewIcon: Icons.circle_outlined,
-      animation: SteamFrameAnimation.none,
-    ),
-    SteamAvatarFrame(
-      id: 'minimal',
-      name: 'Минимал',
-      colors: [Color(0x40FFFFFF), Color(0x20FFFFFF)],
       previewIcon: Icons.crop_square_rounded,
       animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
-      id: 'steel',
-      name: 'Сталь',
-      colors: [Color(0xFF94A3B8), Color(0xFF475569)],
-      previewIcon: Icons.shield_outlined,
+      id: 'minimal',
+      name: 'Двойная фаска',
+      colors: [Color(0xFF64748B), Color(0xFF334155)],
+      previewIcon: Icons.filter_frames_rounded,
       animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
-      id: 'neon_ring',
-      name: 'Неоновое кольцо',
-      colors: [Color(0xFF00F0FF), Color(0xFF0072FF)],
-      previewIcon: Icons.radio_button_checked_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-    SteamAvatarFrame(
-      id: 'frame_ramen_cyan',
-      name: 'Neon Cyan (Рамен 🍜)',
-      colors: [Color(0xFF22D3EE), Color(0xFF06B6D4), Color(0xFF67E8F9)],
-      previewIcon: Icons.ramen_dining_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-    SteamAvatarFrame(
-      id: 'spirit_realm',
-      name: 'Мир Духов',
-      colors: [Color(0xFF80DEEA), Color(0xFFCE93D8), Color(0xFF80DEEA)],
-      previewIcon: Icons.cloud_queue_rounded,
-      animation: SteamFrameAnimation.wave,
-    ),
-    SteamAvatarFrame(
-      id: 'mech_core',
-      name: 'Ядро Меха',
-      colors: [Color(0xFF455A64), Color(0xFF00BCD4), Color(0xFF455A64)],
-      previewIcon: Icons.precision_manufacturing_rounded,
-      animation: SteamFrameAnimation.rotate,
+      id: 'coral_contour',
+      name: 'Коралловый контур',
+      colors: [Color(0xFFFF6B4A), Color(0xFFEA580C)],
+      previewIcon: Icons.border_outer_rounded,
+      animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
       id: 'pai_headphones',
-      name: 'Наушники Пай-тян',
-      colors: [Color(0xFF35D9D5), Color(0xFF00B4D8), Color(0xFF90E0EF)],
+      name: 'Ушки Пай-тян',
+      colors: [Color(0xFF35D9D5), Color(0xFF0EA5E9)],
       previewIcon: Icons.headphones_rounded,
       animation: SteamFrameAnimation.pulse,
     ),
 
-    // --- 2. Рамки SyncPai Plus ---
+    // --- 2. Рамки SyncPai Sponsor и награды (8 архитектурных дизайнов) ---
     SteamAvatarFrame(
-      id: 'pai_peek',
-      name: 'Пай-тян рядом',
-      colors: [Color(0xFF35D9D5), Color(0xFF8B5CF6), Color(0xFFFF76AC)],
-      previewIcon: Icons.pets_rounded,
-      animation: SteamFrameAnimation.wave,
+      id: 'katana_guard',
+      name: 'Гарда катаны',
+      colors: [Color(0xFF94A3B8), Color(0xFF475569)],
+      previewIcon: Icons.shield_rounded,
+      animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
       id: 'sakura_blossom',
-      name: 'Цветение Сакуры',
-      colors: [Color(0xFFFF9EB5), Color(0xFFE056FD), Color(0xFFFF9EB5)],
+      name: 'Лепестки сакуры',
+      colors: [Color(0xFFF472B6), Color(0xFFDB2777)],
       previewIcon: Icons.local_florist_rounded,
       animation: SteamFrameAnimation.rotate,
     ),
     SteamAvatarFrame(
-      id: 'glitch_aurora',
-      name: 'Северное Сияние',
-      colors: [Color(0xFF00FF87), Color(0xFF60EFFF), Color(0xFF00FF87)],
-      previewIcon: Icons.waves_rounded,
-      animation: SteamFrameAnimation.wave,
+      id: 'techno_bevel',
+      name: 'Техно-срез 45°',
+      colors: [Color(0xFF22D3EE), Color(0xFF0284C7)],
+      previewIcon: Icons.precision_manufacturing_rounded,
+      animation: SteamFrameAnimation.none,
     ),
     SteamAvatarFrame(
-      id: 'glacial_frost',
-      name: 'Ледяной Клинок',
-      colors: [Color(0xFF00E5FF), Color(0xFF80D8FF), Color(0xFF2979FF)],
+      id: 'monolith',
+      name: 'Монолит',
+      colors: [Color(0xFF475569), Color(0xFF1E293B)],
+      previewIcon: Icons.view_in_ar_rounded,
+      animation: SteamFrameAnimation.none,
+    ),
+    SteamAvatarFrame(
+      id: 'ice_crystal',
+      name: 'Кристалл льда',
+      colors: [Color(0xFF7DD3FC), Color(0xFF0284C7)],
       previewIcon: Icons.ac_unit_rounded,
       animation: SteamFrameAnimation.snow,
     ),
     SteamAvatarFrame(
-      id: 'demon_horns',
-      name: 'Демонические рожки',
-      colors: [Color(0xFFFF1744), Color(0xFFD50000), Color(0xFF880E4F)],
-      previewIcon: Icons.warning_rounded,
-      animation: SteamFrameAnimation.fire,
-    ),
-    SteamAvatarFrame(
-      id: 'blood_moon',
-      name: 'Кровавая Луна',
-      colors: [Color(0xFFFF1744), Color(0xFFFF5252), Color(0xFF880E4F)],
-      previewIcon: Icons.nights_stay_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-    SteamAvatarFrame(
-      id: 'neon_cyber',
-      name: 'Неон Киберпанк',
-      colors: [Color(0xFF00F0FF), Color(0xFFFF007F), Color(0xFF00F0FF)],
-      previewIcon: Icons.bolt_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-    SteamAvatarFrame(
-      id: 'infernal_flame',
-      name: 'Адское Пламя',
-      colors: [Color(0xFFFF3D00), Color(0xFFFF9100), Color(0xFFFFD600)],
+      id: 'rank_ember',
+      name: 'Пламя ранга',
+      colors: [Color(0xFFFF6B4A), Color(0xFFB91C1C)],
       previewIcon: Icons.local_fire_department_rounded,
       animation: SteamFrameAnimation.fire,
     ),
     SteamAvatarFrame(
-      id: 'rainbow_prism',
-      name: 'Радужная Призма',
-      colors: [Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF0000FF)],
-      previewIcon: Icons.blur_on_rounded,
-      animation: SteamFrameAnimation.rainbow,
-    ),
-    SteamAvatarFrame(
-      id: 'plasma_storm',
-      name: 'Плазменный Разряд',
-      colors: [Color(0xFF00E5FF), Color(0xFF7C4DFF), Color(0xFFFF007F)],
-      previewIcon: Icons.flash_on_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-
-    // --- 3. Рамки SyncPai Pro ---
-    SteamAvatarFrame(
-      id: 'cyber_samurai',
-      name: 'Кибер-Самурай',
-      colors: [Color(0xFFFFD700), Color(0xFF00F0FF), Color(0xFFFF007F)],
-      previewIcon: Icons.shield_rounded,
-      animation: SteamFrameAnimation.pulse,
-    ),
-    SteamAvatarFrame(
-      id: 'cosmic_void',
-      name: 'Космический Войд',
-      colors: [Color(0xFF7C83FD), Color(0xFF8A2BE2), Color(0xFF00D2FF)],
-      previewIcon: Icons.auto_awesome_rounded,
-      animation: SteamFrameAnimation.shimmer,
-    ),
-    SteamAvatarFrame(
-      id: 'shadow_oni',
-      name: 'Тень Они',
-      colors: [Color(0xFF4A0000), Color(0xFFCC0000), Color(0xFF4A0000)],
-      previewIcon: Icons.sports_martial_arts_rounded,
-      animation: SteamFrameAnimation.fire,
-    ),
-    SteamAvatarFrame(
-      id: 'golden_dragon',
-      name: 'Золотой Дракон',
-      colors: [Color(0xFFFFD700), Color(0xFFFF6B4A), Color(0xFFFFD700)],
-      previewIcon: Icons.whatshot_rounded,
-      animation: SteamFrameAnimation.fire,
-    ),
-    SteamAvatarFrame(
-      id: 'cursed_seal',
-      name: 'Проклятая Печать',
-      colors: [Color(0xFF1A0A2E), Color(0xFF7B1FA2), Color(0xFF1A0A2E)],
-      previewIcon: Icons.hexagon_rounded,
-      animation: SteamFrameAnimation.shimmer,
-    ),
-    SteamAvatarFrame(
-      id: 'terminal_matrix',
-      name: 'Матрица Hacker',
-      colors: [Color(0xFF00FF66), Color(0xFF00E676), Color(0xFF1DE9B6)],
-      previewIcon: Icons.terminal_rounded,
-      animation: SteamFrameAnimation.matrix,
-    ),
-
-    // --- 4. Эксклюзивная рамка Founders Club ---
-    SteamAvatarFrame(
       id: 'golden_rank',
-      name: 'Золотой Ореол (Founders)',
-      colors: [Color(0xFFFFD700), Color(0xFFFFB300), Color(0xFFFFA000)],
+      name: 'Золото Основателя',
+      colors: [Color(0xFFD97706), Color(0xFFB45309)],
       previewIcon: Icons.stars_rounded,
       animation: SteamFrameAnimation.shimmer,
     ),
-
-    // --- 5. Эксклюзивная награда Охотника за багами ---
     SteamAvatarFrame(
       id: 'hacker_glitch',
-      name: 'Код Хакера',
-      colors: [Color(0xFF00E676), Color(0xFF00F0FF), Color(0xFF00C853)],
+      name: 'Охотник за багами',
+      colors: [Color(0xFF10B981), Color(0xFF059669)],
       previewIcon: Icons.terminal_rounded,
       animation: SteamFrameAnimation.matrix,
-    ),
-    SteamAvatarFrame(
-      id: 'pai_hacker',
-      name: 'Кибер-Пай-тян',
-      colors: [Color(0xFF00FF87), Color(0xFF00F0FF), Color(0xFF059669)],
-      previewIcon: Icons.bug_report_rounded,
-      animation: SteamFrameAnimation.rotate,
     ),
   ];
 
   static SteamAvatarFrame fromId(String? id) {
-    return all.firstWhere((f) => f.id == id, orElse: () => all.first);
+    if (id == null || id.isEmpty) return all.first;
+    for (final f in all) {
+      if (f.id == id) return f;
+    }
+    // Обратная совместимость со старыми ID рамок
+    final lower = id.toLowerCase();
+    if (lower.contains('sakura') || lower.contains('blossom')) {
+      return all.firstWhere((f) => f.id == 'sakura_blossom');
+    }
+    if (lower.contains('cyber') || lower.contains('samurai') || lower.contains('mech')) {
+      return all.firstWhere((f) => f.id == 'katana_guard');
+    }
+    if (lower.contains('ice') || lower.contains('frost') || lower.contains('glacial')) {
+      return all.firstWhere((f) => f.id == 'ice_crystal');
+    }
+    if (lower.contains('flame') || lower.contains('fire') || lower.contains('dragon')) {
+      return all.firstWhere((f) => f.id == 'rank_ember');
+    }
+    if (lower.contains('hacker') || lower.contains('matrix') || lower.contains('terminal')) {
+      return all.firstWhere((f) => f.id == 'hacker_glitch');
+    }
+    if (lower.contains('gold') || lower.contains('founder')) {
+      return all.firstWhere((f) => f.id == 'golden_rank');
+    }
+    return all.first;
   }
 }
 
@@ -403,7 +304,7 @@ class SteamBackgroundTheme {
     SteamBackgroundTheme(
       id: 'none',
       name: 'Cinema Dark',
-      gradient: [Color(0xFF1E1F24), Color(0xFF121316)],
+      gradient: [Color(0xFF1F2430), Color(0xFF12151C)],
       icon: Icons.dark_mode_rounded,
     ),
     SteamBackgroundTheme(
@@ -456,7 +357,7 @@ class SteamBackgroundTheme {
       icon: Icons.nightlife_rounded,
     ),
 
-    // --- 2. Фоны SyncPai Plus (Арт-хиты и базовые Live-эффекты) ---
+    // --- 2. Фоны SyncPai Sponsor (Арт-хиты и базовые Live-эффекты) ---
     SteamBackgroundTheme(
       id: 'falling_sakura_live',
       name: 'Цветение Сакуры (Live)',
@@ -467,7 +368,7 @@ class SteamBackgroundTheme {
     SteamBackgroundTheme(
       id: 'snowy_mountain',
       name: 'Падающий Снег (Live)',
-      gradient: [Color(0xFF0D1B2A), Color(0xFF1B263B), Color(0xFF121316)],
+      gradient: [Color(0xFF132A45), Color(0xFF1E3F66), Color(0xFF0F1B2B)],
       assetOrUrl: 'snow',
       icon: Icons.ac_unit_rounded,
     ),
@@ -477,13 +378,6 @@ class SteamBackgroundTheme {
       gradient: [Color(0xFF06060F), Color(0xFF140D2B)],
       assetOrUrl: 'starfield',
       icon: Icons.auto_awesome_rounded,
-    ),
-    SteamBackgroundTheme(
-      id: 'retro_synthwave',
-      name: 'Ретро Синтвейв 80s',
-      gradient: [Color(0xFF370617), Color(0xFF6A040F), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=1200&q=80',
-      icon: Icons.radio_rounded,
     ),
     SteamBackgroundTheme(
       id: 'cyberpunk_city',
@@ -503,7 +397,7 @@ class SteamBackgroundTheme {
       id: 'neon_samurai',
       name: 'Неоновый Самурай',
       gradient: [Color(0xFF2B0938), Color(0xFF1C0A35), Color(0xFF121316)],
-      assetOrUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1200&q=80',
+      assetOrUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=1200&q=80',
       icon: Icons.sports_martial_arts_rounded,
     ),
     SteamBackgroundTheme(
@@ -551,13 +445,6 @@ class SteamBackgroundTheme {
       icon: Icons.all_inclusive_rounded,
     ),
     SteamBackgroundTheme(
-      id: 'demon_slayer',
-      name: 'Клинок Рассекающий (Хиноками Live)',
-      gradient: [Color(0xFF3E120A), Color(0xFF2A0F1E), Color(0xFF121316)],
-      assetOrUrl: 'bleach_bankai',
-      icon: Icons.whatshot_rounded,
-    ),
-    SteamBackgroundTheme(
       id: 'evangelion',
       name: 'Евангелион (A.T. Field Live)',
       gradient: [Color(0xFF260D38), Color(0xFF142419), Color(0xFF121316)],
@@ -571,20 +458,16 @@ class SteamBackgroundTheme {
       assetOrUrl: 'bleach_bankai',
       icon: Icons.colorize_rounded,
     ),
-
-    // --- 4. Награда Охотника за багами ---
-    SteamBackgroundTheme(
-      id: 'hacker_matrix',
-      name: 'Терминал Хакера',
-      gradient: [Color(0xFF02120A), Color(0xFF063A22), Color(0xFF00E676)],
-      assetOrUrl: 'matrix',
-      icon: Icons.terminal_rounded,
-    ),
   ];
 
   static SteamBackgroundTheme fromId(String? idOrUrl) {
     if (idOrUrl == null || idOrUrl.isEmpty || idOrUrl == 'none') {
       return all.first;
+    }
+    if (idOrUrl == 'hacker_matrix') {
+      for (final bg in all) {
+        if (bg.id == 'matrix_digital_rain') return bg;
+      }
     }
     for (final bg in all) {
       if (bg.id == idOrUrl) return bg;
@@ -620,14 +503,14 @@ class SteamProfileThemeAccent {
   });
 
   static const List<SteamProfileThemeAccent> all = [
-    SteamProfileThemeAccent(hex: '#E06C53', name: 'SyncPai Orange', color: Color(0xFFE06C53)),
-    SteamProfileThemeAccent(hex: '#00E5FF', name: 'Cyber Cyan', color: Color(0xFF00E5FF)),
-    SteamProfileThemeAccent(hex: '#B388FF', name: 'EVA Neon Violet', color: Color(0xFFB388FF)),
-    SteamProfileThemeAccent(hex: '#FF2A68', name: 'Ruby Sakura', color: Color(0xFFFF2A68)),
-    SteamProfileThemeAccent(hex: '#00FF87', name: 'Emerald Glitch', color: Color(0xFF00FF87)),
-    SteamProfileThemeAccent(hex: '#FFD700', name: 'Solar Dragon', color: Color(0xFFFFD700)),
-    SteamProfileThemeAccent(hex: '#FF1744', name: 'Blood Crimson', color: Color(0xFFFF1744)),
-    SteamProfileThemeAccent(hex: '#9D4EDD', name: 'Deep Void', color: Color(0xFF9D4EDD)),
+    SteamProfileThemeAccent(hex: '#FF6B4A', name: 'SyncPai Coral', color: Color(0xFFFF6B4A)),
+    SteamProfileThemeAccent(hex: '#22D3EE', name: 'Arctic Cyan', color: Color(0xFF22D3EE)),
+    SteamProfileThemeAccent(hex: '#10B981', name: 'Emerald Mint', color: Color(0xFF10B981)),
+    SteamProfileThemeAccent(hex: '#94A3B8', name: 'Slate Silver', color: Color(0xFF94A3B8)),
+    SteamProfileThemeAccent(hex: '#A855F7', name: 'Royal Amethyst', color: Color(0xFFA855F7)),
+    SteamProfileThemeAccent(hex: '#F59E0B', name: 'Solar Amber', color: Color(0xFFF59E0B)),
+    SteamProfileThemeAccent(hex: '#F43F5E', name: 'Crimson Rose', color: Color(0xFFF43F5E)),
+    SteamProfileThemeAccent(hex: '#6366F1', name: 'Cobalt Indigo', color: Color(0xFF6366F1)),
   ];
 
   static SteamProfileThemeAccent fromHex(String? hex) {

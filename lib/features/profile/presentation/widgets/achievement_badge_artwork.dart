@@ -272,21 +272,12 @@ class _AchievementBadgeArtworkState extends State<AchievementBadgeArtwork>
         color: widget.isUnlocked
             ? const Color(0xFF0D1320)
             : const Color(0xFF090C14),
-        boxShadow: widget.isUnlocked
-            ? [
-                BoxShadow(
-                  color: style.glowColor.withValues(
-                    alpha: style.tier == AchievementRarityTier.legendary
-                        ? 0.42
-                        : style.tier == AchievementRarityTier.epic
-                            ? 0.30
-                            : 0.22,
-                  ),
-                  blurRadius: size * 0.34,
-                  spreadRadius: size * 0.03,
-                ),
-              ]
-            : null,
+        border: Border.all(
+          color: widget.isUnlocked
+              ? style.glowColor.withValues(alpha: 0.45)
+              : const Color(0x14FFFFFF),
+          width: 1.2,
+        ),
       ),
       child: Stack(
         fit: StackFit.expand,

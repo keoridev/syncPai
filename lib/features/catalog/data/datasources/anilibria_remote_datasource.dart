@@ -115,6 +115,23 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   static final Set<int> _missingReleaseIds = {};
   static final Map<String, Future<List<AnimeTitleDto>>> _inFlightSearchRequests = {};
   static final Map<String, List<AnimeTitleDto>> _searchCache = {};
+  static final Set<String> _emptySearchCache = {};
+
+  static String _stripSubtitle(String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return '';
+    final bangIdx = trimmed.indexOf('!');
+    if (bangIdx != -1 && bangIdx < trimmed.length - 1) {
+      return trimmed.substring(0, bangIdx + 1).trim();
+    }
+    for (final sep in [':', '~', '(']) {
+      final idx = trimmed.indexOf(sep);
+      if (idx > 2) {
+        return trimmed.substring(0, idx).trim();
+      }
+    }
+    return trimmed;
+  }
 
   @override
   Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
@@ -123,19 +140,37 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       return const [];
     }
     final cacheKey = trimmed.toLowerCase();
+    if (_emptySearchCache.contains(cacheKey)) return const [];
     final cached = _searchCache[cacheKey];
     if (cached != null) return cached;
     final inFlight = _inFlightSearchRequests[cacheKey];
     if (inFlight != null) return inFlight;
 
-    final future = _executeSearchTitles(trimmed);
-    _inFlightSearchRequests[cacheKey] = future;
-    try {
-      final result = await future;
+    final future = () async {
+      var result = await _executeSearchTitles(trimmed);
+      if (result.isEmpty) {
+        final baseTitle = _stripSubtitle(trimmed);
+        final baseKey = baseTitle.toLowerCase();
+        if (baseTitle.isNotEmpty &&
+            baseKey != cacheKey &&
+            !_emptySearchCache.contains(baseKey)) {
+          result = _searchCache[baseKey] ?? await _executeSearchTitles(baseTitle);
+          if (result.isEmpty) {
+            _emptySearchCache.add(baseKey);
+          }
+        }
+      }
       if (result.isNotEmpty) {
         _searchCache[cacheKey] = result;
+      } else {
+        _emptySearchCache.add(cacheKey);
       }
       return result;
+    }();
+
+    _inFlightSearchRequests[cacheKey] = future;
+    try {
+      return await future;
     } finally {
       _inFlightSearchRequests.remove(cacheKey);
     }
@@ -214,9 +249,13 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
           ? _shikimoriToAnilibriaIdCache[id]
           : id;
 
-      // Если код вида shikimori_<id> ещё не сопоставлен с AniLibria ID — не делаем заведомый 404-запрос
-      if (isShikimoriCode &&
-          (id == null || !_shikimoriToAnilibriaIdCache.containsKey(id))) {
+      // Если код вида shikimori_<id> или внешний ID (> 12000) ещё не сопоставлен с AniLibria ID — не делаем заведомый 404-запрос
+      final isUnmappedExternalId = id != null &&
+          id > 12000 &&
+          !_shikimoriToAnilibriaIdCache.containsKey(id);
+      if ((isShikimoriCode &&
+              (id == null || !_shikimoriToAnilibriaIdCache.containsKey(id))) ||
+          isUnmappedExternalId) {
         return _buildFallbackShikimoriDto(id: id, code: rawCode);
       }
 

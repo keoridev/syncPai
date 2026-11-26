@@ -108,7 +108,7 @@ void main() {
       final viewer = tester.widget<InteractiveViewer>(
         find.byType(InteractiveViewer),
       );
-      expect(viewer.minScale, 1.0);
+      expect(viewer.minScale, 0.6);
       expect(viewer.maxScale, 5.0);
 
       final aspect = tester.widget<AspectRatio>(find.byType(AspectRatio));

@@ -709,9 +709,9 @@ class ThematicAvatarFramePainter extends CustomPainter {
     canvas.restore();
   }
 
-  // --- «ТЕХНО-СРЕЗ 45°» (Восьмиугольный Sci-Fi HUD со срезами и засечками) ---
+  // --- «ТЕХНО-СРЕЗ 45°» (Восьмиугольный Sci-Fi HUD с лазерным сканером и тиками) ---
   void _paintTechnoBevelFrame(Canvas canvas, Offset center, double radius) {
-    final r = radius + 2.0;
+    final r = radius + 2.5;
     final cut = r * 0.34;
     final rect = Rect.fromCircle(center: center, radius: r);
     final octPath = Path()
@@ -728,59 +728,115 @@ class ThematicAvatarFramePainter extends CustomPainter {
     canvas.drawPath(
       octPath,
       Paint()
+        ..color = const Color(0xFF0E7490)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0,
+    );
+    canvas.drawPath(
+      octPath,
+      Paint()
         ..color = const Color(0xFF22D3EE)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0,
+        ..strokeWidth = 1.4,
     );
 
+    // Чёткая анимированная линия лазерного сканера (без blur)
+    final scanY = rect.top + 4 + ((math.sin(animationValue * math.pi * 2) * 0.5 + 0.5) * (rect.height - 8));
+    canvas.save();
+    canvas.clipPath(octPath);
+    canvas.drawLine(
+      Offset(rect.left, scanY),
+      Offset(rect.right, scanY),
+      Paint()
+        ..color = const Color(0x6622D3EE)
+        ..strokeWidth = 1.5,
+    );
+    canvas.restore();
+
+    // Мигающие HUD-тики по углам
+    final tickAlpha = (0.45 + 0.55 * (math.sin(animationValue * math.pi * 4) * 0.5 + 0.5));
     final tickPaint = Paint()
-      ..color = const Color(0xFF0284C7)
-      ..strokeWidth = 2.2
+      ..color = const Color(0xFF38BDF8).withValues(alpha: tickAlpha)
+      ..strokeWidth = 2.0
       ..strokeCap = StrokeCap.square;
     canvas.drawLine(Offset(center.dx - 8, rect.top - 2.5), Offset(center.dx + 8, rect.top - 2.5), tickPaint);
     canvas.drawLine(Offset(center.dx - 8, rect.bottom + 2.5), Offset(center.dx + 8, rect.bottom + 2.5), tickPaint);
   }
 
-  // --- «МОНОЛИТ» (Массивная матовая обсидиановая рамка со стальными болтами) ---
+  // --- «МОНОЛИТ» (Обсидиановая архитектурная рамка с пульсирующими каналами энергии) ---
   void _paintMonolithFrame(Canvas canvas, Offset center, double radius) {
     final r = radius + 2.5;
     final outerRect = RRect.fromRectAndRadius(
       Rect.fromCircle(center: center, radius: r),
-      const Radius.circular(12),
+      const Radius.circular(14),
     );
     canvas.drawRRect(
       outerRect,
       Paint()
-        ..color = const Color(0xFF334155)
+        ..color = const Color(0xFF0F172A)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.5,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCircle(center: center, radius: r - 3),
-        const Radius.circular(10),
-      ),
-      Paint()
-        ..color = const Color(0xFF64748B)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0,
+        ..strokeWidth = 4.0,
     );
 
-    // 4 стальных заклёпки по углам
-    final boltPaint = Paint()..color = const Color(0xFF94A3B8);
-    final offset = r - 5;
+    final pulse = 0.55 + 0.45 * math.sin(animationValue * math.pi * 2);
+    final veinColor = Color.lerp(
+      const Color(0xFF38BDF8),
+      const Color(0xFFF8FAFC),
+      pulse * 0.5,
+    )!;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCircle(center: center, radius: r - 2.5),
+        const Radius.circular(11),
+      ),
+      Paint()
+        ..color = veinColor.withValues(alpha: 0.75 + 0.25 * pulse)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
+    // 4 энергетических узла по углам
+    final nodePaint = Paint()..color = veinColor;
+    final offset = r - 4.5;
     for (final dx in [-offset, offset]) {
       for (final dy in [-offset, offset]) {
-        canvas.drawCircle(Offset(center.dx + dx, center.dy + dy), 2.3, boltPaint);
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(center.dx + dx, center.dy + dy),
+            width: 4.0,
+            height: 4.0,
+          ),
+          nodePaint,
+        );
       }
     }
   }
 
-  // --- «КРИСТАЛЛ ЛЬДА» (Острые ледяные грани по углам) ---
+  // --- «КРИСТАЛЛ ЛЬДА» (Острые ледяные грани + бегущий блик по контуру) ---
   void _paintIceCrystalFrame(Canvas canvas, Offset center, double radius) {
+    final r = radius + 1.5;
+    final rect = Rect.fromCircle(center: center, radius: r);
+    final sweepPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFF38BDF8),
+          Color(0xFFF8FAFC),
+          Color(0xFF7DD3FC),
+          Color(0xFF38BDF8),
+        ],
+        stops: const [0.0, 0.14, 0.28, 1.0],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(18)),
+      sweepPaint,
+    );
+
     final shardPaint = Paint()..color = const Color(0xFF7DD3FC);
     final edgePaint = Paint()
-      ..color = const Color(0xFFE0F2FE)
+      ..color = const Color(0xFFF0F9FF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -788,14 +844,14 @@ class ThematicAvatarFramePainter extends CustomPainter {
       final angle = i * math.pi / 2 + math.pi / 4;
       canvas.save();
       canvas.translate(
-        center.dx + (radius + 2) * math.cos(angle),
-        center.dy + (radius + 2) * math.sin(angle),
+        center.dx + (radius + 2.5) * math.cos(angle),
+        center.dy + (radius + 2.5) * math.sin(angle),
       );
       canvas.rotate(angle + math.pi / 2);
       final shard = Path()
-        ..moveTo(0, -7)
+        ..moveTo(0, -8)
         ..lineTo(4.5, 2)
-        ..lineTo(0, 5)
+        ..lineTo(0, 5.5)
         ..lineTo(-4.5, 2)
         ..close();
       canvas.drawPath(shard, shardPaint);
@@ -827,17 +883,54 @@ class ThematicAvatarFramePainter extends CustomPainter {
   }
 
   void _paintRankEmberFrame(Canvas canvas, Offset center, double radius) {
-    final paint = Paint()
-      ..color = const Color(0xFFFF6B4A)
+    final r = radius + 1.5;
+    final rect = Rect.fromCircle(center: center, radius: r);
+    final ringPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFFFF6B4A),
+          Color(0xFFF59E0B),
+          Color(0xFFFF6B4A),
+        ],
+        transform: GradientRotation(animationValue * math.pi * 2),
+      ).createShader(rect)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.4;
-    canvas.drawCircle(center, radius + 1, paint);
-    final emberPaint = Paint()..color = const Color(0xFFF59E0B);
-    for (int i = 0; i < 6; i++) {
-      final a = i * (math.pi / 3) + animationValue * math.pi * 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(18)),
+      ringPaint,
+    );
+
+    // Чёткие языки пламени по контуру
+    final flamePaint = Paint()..color = const Color(0xFFFF6B4A);
+    final goldFlamePaint = Paint()..color = const Color(0xFFF59E0B);
+    for (int i = 0; i < 8; i++) {
+      final baseAngle = i * (math.pi / 4) - math.pi / 2;
+      final wave = math.sin(animationValue * math.pi * 2 + i * 0.9);
+      final tipLen = 6.5 + wave * 2.5;
+      canvas.save();
+      canvas.translate(
+        center.dx + (r + 1) * math.cos(baseAngle),
+        center.dy + (r + 1) * math.sin(baseAngle),
+      );
+      canvas.rotate(baseAngle + math.pi / 2);
+      final tongue = Path()
+        ..moveTo(-3.2, 1)
+        ..quadraticBezierTo(wave * 1.5, -tipLen * 0.5, 0, -tipLen)
+        ..quadraticBezierTo(-wave * 1.5, -tipLen * 0.5, 3.2, 1)
+        ..close();
+      canvas.drawPath(tongue, i.isEven ? flamePaint : goldFlamePaint);
+      canvas.restore();
+    }
+
+    // Искры
+    final emberPaint = Paint()..color = const Color(0xFFFBBF24);
+    for (int i = 0; i < 5; i++) {
+      final a = i * (math.pi * 2 / 5) + animationValue * math.pi * 2;
+      final dist = r + 4.0 + ((i.isEven ? 1 : -1) * 1.5 * math.sin(animationValue * math.pi * 2));
       canvas.drawCircle(
-        Offset(center.dx + (radius + 3.5) * math.cos(a), center.dy + (radius + 3.5) * math.sin(a)),
-        2.0,
+        Offset(center.dx + dist * math.cos(a), center.dy + dist * math.sin(a)),
+        1.6,
         emberPaint,
       );
     }

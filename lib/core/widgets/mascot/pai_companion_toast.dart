@@ -164,24 +164,23 @@ class PaiCompanionToast extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(width: 4),
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          key: const ValueKey('pai_companion_close_btn'),
-                          onPressed: service.dismiss,
-                          icon: const Icon(
+                      GestureDetector(
+                        key: const Key('pai_companion_close_btn'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: service.dismiss,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0x14FFFFFF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
                             Icons.close_rounded,
-                            color: Colors.white54,
-                            size: 16,
+                            size: 15,
+                            color: Color(0xFF94A3B8),
                           ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Закрыть',
                         ),
                       ),
                     ],

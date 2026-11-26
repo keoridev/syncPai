@@ -16,6 +16,7 @@ class DuoLinkRecord {
   final String status; // 'pending' | 'active' | 'dissolved'
   final String relationLabel;
   final String diptychThemeId;
+  final String? duoBannerUrl;
   final String? customLeftArtUrl;
   final String? customRightArtUrl;
   final String? pairedAvatarPreset;
@@ -30,6 +31,7 @@ class DuoLinkRecord {
     required this.status,
     required this.relationLabel,
     required this.diptychThemeId,
+    this.duoBannerUrl,
     this.customLeftArtUrl,
     this.customRightArtUrl,
     this.pairedAvatarPreset,
@@ -38,6 +40,14 @@ class DuoLinkRecord {
   });
 
   bool get isActive => status == 'active' && userB != null && userB!.isNotEmpty;
+
+  String? get resolvedBannerUrl {
+    final direct = duoBannerUrl?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final left = customLeftArtUrl?.trim();
+    if (left != null && left.isNotEmpty) return left;
+    return null;
+  }
 
   String? partnerIdFor(String myUserId) {
     if (userA == myUserId) return userB;
@@ -55,6 +65,7 @@ class DuoLinkRecord {
     String? status,
     String? relationLabel,
     String? diptychThemeId,
+    String? duoBannerUrl,
     String? customLeftArtUrl,
     String? customRightArtUrl,
     String? pairedAvatarPreset,
@@ -69,6 +80,7 @@ class DuoLinkRecord {
       status: status ?? this.status,
       relationLabel: relationLabel ?? this.relationLabel,
       diptychThemeId: diptychThemeId ?? this.diptychThemeId,
+      duoBannerUrl: duoBannerUrl ?? this.duoBannerUrl,
       customLeftArtUrl: customLeftArtUrl ?? this.customLeftArtUrl,
       customRightArtUrl: customRightArtUrl ?? this.customRightArtUrl,
       pairedAvatarPreset: pairedAvatarPreset ?? this.pairedAvatarPreset,
@@ -85,6 +97,7 @@ class DuoLinkRecord {
         'status': status,
         'relation_label': relationLabel,
         'diptych_theme_id': diptychThemeId,
+        'duo_banner_url': duoBannerUrl,
         'custom_left_art_url': customLeftArtUrl,
         'custom_right_art_url': customRightArtUrl,
         'paired_avatar_preset': pairedAvatarPreset,
@@ -101,6 +114,7 @@ class DuoLinkRecord {
       status: (json['status'] ?? 'pending').toString(),
       relationLabel: (json['relation_label'] ?? 'Напарники по аниме').toString(),
       diptychThemeId: (json['diptych_theme_id'] ?? 'sunset_bridge').toString(),
+      duoBannerUrl: json['duo_banner_url']?.toString(),
       customLeftArtUrl: json['custom_left_art_url']?.toString(),
       customRightArtUrl: json['custom_right_art_url']?.toString(),
       pairedAvatarPreset: json['paired_avatar_preset']?.toString(),
@@ -286,25 +300,38 @@ class DuoSyncService {
     DuoLinkRecord current, {
     String? relationLabel,
     String? diptychThemeId,
+    String? duoBannerUrl,
     String? customLeftArtUrl,
     String? customRightArtUrl,
   }) async {
     final next = current.copyWith(
       relationLabel: relationLabel,
       diptychThemeId: diptychThemeId,
-      customLeftArtUrl: customLeftArtUrl,
+      duoBannerUrl: duoBannerUrl,
+      customLeftArtUrl: customLeftArtUrl ?? duoBannerUrl,
       customRightArtUrl: customRightArtUrl,
     );
     await _writeLocalCache(next);
 
     try {
       final client = Supabase.instance.client;
-      await client.from('duo_links').update({
-        'relation_label': next.relationLabel,
-        'diptych_theme_id': next.diptychThemeId,
-        'custom_left_art_url': next.customLeftArtUrl,
-        'custom_right_art_url': next.customRightArtUrl,
-      }).eq('id', next.id);
+      try {
+        await client.from('duo_links').update({
+          'relation_label': next.relationLabel,
+          'diptych_theme_id': next.diptychThemeId,
+          'duo_banner_url': next.duoBannerUrl,
+          'custom_left_art_url': next.customLeftArtUrl,
+          'custom_right_art_url': next.customRightArtUrl,
+        }).eq('id', next.id);
+      } catch (_) {
+        // Fallback if duo_banner_url column is not yet migrated in remote DB
+        await client.from('duo_links').update({
+          'relation_label': next.relationLabel,
+          'diptych_theme_id': next.diptychThemeId,
+          'custom_left_art_url': next.customLeftArtUrl,
+          'custom_right_art_url': next.customRightArtUrl,
+        }).eq('id', next.id);
+      }
     } catch (_) {}
     return next;
   }

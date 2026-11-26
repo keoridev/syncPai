@@ -133,10 +133,17 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     return trimmed;
   }
 
+  static final RegExp _slugQueryRegex = RegExp(
+    r'^(shiki|shikimori|mal|kodik|saved|rel)_\d*$',
+    caseSensitive: false,
+  );
+
   @override
   Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
     final trimmed = query.trim();
-    if (trimmed.isEmpty || _placeholderTitleRegex.hasMatch(trimmed)) {
+    if (trimmed.isEmpty ||
+        _slugQueryRegex.hasMatch(trimmed) ||
+        _placeholderTitleRegex.hasMatch(trimmed)) {
       return const [];
     }
     final cacheKey = trimmed.toLowerCase();
@@ -177,6 +184,11 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
   }
 
   Future<List<AnimeTitleDto>> _executeSearchTitles(String trimmed) async {
+    if (trimmed.isEmpty ||
+        _slugQueryRegex.hasMatch(trimmed) ||
+        _placeholderTitleRegex.hasMatch(trimmed)) {
+      return const [];
+    }
     try {
       final response = await _getWithMirrorFailover(
         ApiConstants.searchReleases,

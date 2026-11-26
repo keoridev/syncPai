@@ -16,6 +16,7 @@ import 'package:sync_pai/core/theme/app_dimensions.dart';
 import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/auth_gate_sheet.dart';
 import 'package:sync_pai/core/widgets/glass_container.dart';
+import 'package:sync_pai/core/widgets/safe_anime_poster.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sync_pai/features/auth/presentation/cubit/auth_state.dart';
@@ -231,6 +232,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   List<AnimeTitle> _shikimoriSimilar = const [];
   bool? _manualCompactEpisodeGrid;
   int? _selectedEpisodeRangeIndex;
+  StreamSubscription<KodikState>? _kodikSub;
 
   @override
   void initState() {
@@ -338,12 +340,62 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }());
 
     if (getIt.isRegistered<KodikCubit>()) {
+      final kodikCubit = getIt<KodikCubit>();
+      _kodikSub = kodikCubit.stream.listen(_syncKodikFallbackEpisodes);
       unawaited(
-        getIt<KodikCubit>().loadVoiceovers(
+        kodikCubit.loadVoiceovers(
           shikimoriId: _currentTitle.shikimoriId,
           title: _currentTitle.displayTitle,
         ),
       );
+    }
+  }
+
+  bool _isUpcomingAnnouncement(AnimeTitle t) {
+    final s = t.status.toLowerCase();
+    return s.contains('anons') ||
+        s.contains('анонс') ||
+        (t.isAnnounced && t.episodes.isEmpty && (t.year ?? 0) > 2026);
+  }
+
+  void _syncKodikFallbackEpisodes(KodikState kodikState) {
+    if (!mounted ||
+        kodikState.isLoading ||
+        _currentTitle.episodes.isNotEmpty ||
+        _isUpcomingAnnouncement(_currentTitle)) {
+      return;
+    }
+    final available = kodikState.translations
+        .where((t) => !t.isAniLibria && t.episodesCount > 0)
+        .toList();
+    if (available.isEmpty) return;
+
+    final best = kodikState.selectedTranslation.isAniLibria
+        ? available.first
+        : kodikState.selectedTranslation;
+    if (best.episodesCount <= 0) return;
+
+    if (kodikState.isAniLibriaActive && getIt.isRegistered<KodikCubit>()) {
+      unawaited(getIt<KodikCubit>().selectVoiceover(best));
+    }
+
+    final generated = List.generate(
+      best.episodesCount,
+      (i) => EpisodeItem(
+        episode: i + 1,
+        name: '',
+      ),
+    );
+    final updated = _currentTitle.copyWith(
+      episodes: generated,
+      episodesTotal: generated.length,
+    );
+    AnimeDetailsCache.putTitle(updated);
+    if (mounted) {
+      setState(() {
+        _currentTitle = updated;
+        _isLoadingDetails = false;
+      });
     }
   }
 
@@ -827,6 +879,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
   @override
   void dispose() {
+    _kodikSub?.cancel();
     CatalogCubit.popForegroundScreen();
     _tabController.dispose();
     _scrollController.dispose();
@@ -1043,12 +1096,19 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         : rawDisplayTitle;
     final isExternalSourceId = _currentTitle.code.startsWith('search:') ||
         _currentTitle.code.startsWith('shikimori_') ||
+        _currentTitle.code.startsWith('shiki_') ||
         (_currentTitle.shikimoriId != null &&
             _currentTitle.shikimoriId == releaseId);
     final playerReleaseId = isExternalSourceId ? 0 : releaseId;
+    final statusLower = _currentTitle.status.toLowerCase();
+    final isUpcomingAnons = (_currentTitle.isAnnounced &&
+            _currentTitle.episodes.isEmpty) ||
+        statusLower.contains('anons') ||
+        statusLower.contains('анонс');
 
     // 1. Независимая быстрая загрузка серий/потоков AniLibria (не ждёт метаданные)
-    if (getIt.isRegistered<GetPlayerLinksUseCase>()) {
+    // Для анонсов без вышедших серий не подтягиваем эпизоды из предыдущих сезонов.
+    if (!isUpcomingAnons && getIt.isRegistered<GetPlayerLinksUseCase>()) {
       unawaited(Future<void>(() async {
         try {
           final translations = await getIt<GetPlayerLinksUseCase>().call(
@@ -1117,16 +1177,21 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               }
             } catch (_) {}
           }
-          final resolvedEpisodes = _currentTitle.episodes.length > 1
+          final resolvedEpisodes = isUpcomingAnons
               ? _currentTitle.episodes
-              : (fetchedDetails.episodes.isNotEmpty
-                  ? fetchedDetails.episodes
-                  : _currentTitle.episodes);
+              : (_currentTitle.episodes.length > 1
+                  ? _currentTitle.episodes
+                  : (fetchedDetails.episodes.isNotEmpty
+                      ? fetchedDetails.episodes
+                      : _currentTitle.episodes));
           final updatedTitle = _currentTitle.copyWith(
             episodes: resolvedEpisodes,
-            episodesTotal: resolvedEpisodes.isNotEmpty
-                ? resolvedEpisodes.length
-                : (_currentTitle.episodesTotal ?? fetchedDetails.episodesTotal),
+            episodesTotal: isUpcomingAnons
+                ? _currentTitle.episodesTotal
+                : (resolvedEpisodes.isNotEmpty
+                    ? resolvedEpisodes.length
+                    : (_currentTitle.episodesTotal ??
+                        fetchedDetails.episodesTotal)),
             description: _currentTitle.description.isNotEmpty
                 ? _currentTitle.description
                 : fetchedDetails.description,
@@ -1851,45 +1916,27 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Слева: четкий постер 2:3 (240x360) со скругленными углами и тенью
+          // Слева: четкий постер 2:3 (240x360) со скругленными углами (flat matte)
           Container(
             width: 240,
             height: 360,
             decoration: BoxDecoration(
+              color: const Color(0xFF161B26),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-                width: 1.2,
+                color: const Color(0x14FFFFFF),
+                width: 1,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(15),
               child: Hero(
                 tag: 'anime-poster-${title.id}',
-                child: CachedNetworkImage(
-                  imageUrl: wrapCorsSafeUrl(posterImage),
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                  errorWidget: (context, primaryUrl, error) => CachedNetworkImage(
-                    imageUrl: wrapCorsSafeUrl(title.effectiveFallbackPoster),
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                    placeholder: (context, url) => const ColoredBox(color: Colors.black26),
-                    errorWidget: (context, fallbackUrl, error) => Container(
-                      color: AppColors.surface,
-                      child: const Center(
-                        child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
-                      ),
-                    ),
-                  ),
+                child: SafeAnimePoster(
+                  imageUrl: posterImage,
+                  fallbackUrl: title.effectiveFallbackPoster,
+                  title: title.displayTitle,
+                  monogramFontSize: 56,
                 ),
               ),
             ),
@@ -2622,44 +2669,39 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                               BorderRadius.circular(14),
                                           child: AspectRatio(
                                             aspectRatio: 2 / 3,
-                                            child: CachedNetworkImage(
-                                              imageUrl:
-                                                  wrapCorsSafeUrl(backdropUrl),
-                                              fit: BoxFit.cover,
-                                              alignment: Alignment.topCenter,
-                                              memCacheWidth: 1080,
-                                              filterQuality: FilterQuality.medium,
-                                              httpHeaders: const {
-                                                'User-Agent': 'SyncPai-App/1.0',
-                                                'Referer':
-                                                    'https://shikimori.io/',
-                                              },
-                                              placeholder: (context, url) =>
-                                                  const ColoredBox(
-                                                      color: Colors.black26),
-                                              errorWidget:
-                                                  (context, primaryUrl, error) =>
-                                                      CachedNetworkImage(
-                                                imageUrl: wrapCorsSafeUrl(
-                                                    title.effectiveFallbackPoster),
-                                                memCacheWidth: 1080,
-                                                fit: BoxFit.cover,
-                                                alignment: Alignment.topCenter,
-                                                placeholder: (context, url) =>
-                                                    const ColoredBox(
-                                                        color: Colors.black26),
-                                                errorWidget: (context,
-                                                        fallbackUrl, error) =>
-                                                    Container(
-                                                  color: AppColors.surface,
-                                                  child: const Center(
-                                                    child: Icon(
-                                                        Icons.broken_image,
-                                                        color: Colors.white54,
-                                                        size: 48),
-                                                  ),
-                                                ),
-                                              ),
+                                            child: SafeAnimePoster(
+                                              imageUrl: backdropUrl,
+                                              fallbackUrl:
+                                                  title.effectiveFallbackPoster,
+                                              title: title.displayTitle,
+                                              monogramFontSize: 48,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  const ColoredBox(color: Color(0xFF0B0E14)),
+                                  Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        top: MediaQuery.paddingOf(context).top + 14,
+                                        bottom: 22,
+                                      ),
+                                      child: Hero(
+                                        tag: 'anime-poster-${title.id}',
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          child: AspectRatio(
+                                            aspectRatio: 2 / 3,
+                                            child: SafeAnimePoster(
+                                              imageUrl: backdropUrl,
+                                              fallbackUrl:
+                                                  title.effectiveFallbackPoster,
+                                              title: title.displayTitle,
+                                              monogramFontSize: 48,
                                             ),
                                           ),
                                         ),
@@ -3165,16 +3207,9 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
                                 decoration: BoxDecoration(
-                                  color: AppColors.surfaceElevated.withValues(alpha: 0.7),
+                                  color: const Color(0xFF161B26),
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.4),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
+                                  border: Border.all(color: const Color(0x18FFFFFF)),
                                 ),
                                 child: Column(
                                   children: [
@@ -3197,15 +3232,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                         final isUpcoming = statusLower.contains('anons') ||
                                             statusLower.contains('анонс') ||
                                             statusLower.contains('скоро') ||
-                                            ((_currentTitle.year ?? 0) >= 2026 &&
+                                            ((_currentTitle.year ?? 0) > 2026 &&
                                                 !statusLower.contains('released') &&
                                                 !statusLower.contains('вышел'));
+                                        final isSearchingDubs = !isUpcoming &&
+                                            getIt.isRegistered<KodikCubit>() &&
+                                            getIt<KodikCubit>().state.isLoading;
                                         return Column(
                                           children: [
                                             Text(
-                                              isUpcoming
-                                                  ? 'Статус: Скоро / Анонс'
-                                                  : 'Озвучка отсутствует в базе',
+                                              isSearchingDubs
+                                                  ? 'Поиск доступных озвучек...'
+                                                  : (isUpcoming
+                                                      ? 'Ожидается выход • Серии ещё не вышли в озвучке'
+                                                      : 'Озвучка отсутствует в базе'),
                                               textAlign: TextAlign.center,
                                               style: AppTypography.titleMedium.copyWith(
                                                 color: AppColors.textPrimary,
@@ -3213,6 +3253,16 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                                 fontSize: 16,
                                               ),
                                             ),
+                                            if (isSearchingDubs) ...[
+                                              const SizedBox(height: 10),
+                                              const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                            ],
                                             const SizedBox(height: 6),
                                             Text(
                                               isUpcoming

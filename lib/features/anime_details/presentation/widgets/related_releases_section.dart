@@ -113,10 +113,22 @@ class RelatedReleasesSection extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         onTap: release.isCurrent ? null : () => onReleaseSelected?.call(release),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          decoration: BoxDecoration(
+            color: release.isCurrent
+                ? const Color(0xFF131722)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: release.isCurrent
+                  ? const Color(0x26FFFFFF)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -243,12 +255,19 @@ class RelatedReleasesSection extends StatelessWidget {
     final lower = url.toLowerCase();
     return !lower.contains('missing_original') &&
         !lower.contains('missing_preview') &&
-        !lower.contains('missing_x');
+        !lower.contains('missing_x') &&
+        !lower.contains('missing_') &&
+        !lower.contains('no_image') &&
+        !lower.contains('noimage') &&
+        !lower.contains('/assets/globals/');
   }
 
   Widget _buildMonogramFallback(String title) {
-    final trimmed = title.trim();
-    final initial = trimmed.isNotEmpty ? trimmed[0].toUpperCase() : 'A';
+    final initial = RegExp(r'[А-Яа-яЁёA-Za-z]')
+            .firstMatch(title.trim())
+            ?.group(0)
+            ?.toUpperCase() ??
+        'A';
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1A202E),

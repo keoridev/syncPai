@@ -717,7 +717,11 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     final lower = url.toLowerCase();
     return lower.contains('missing_original') ||
         lower.contains('missing_preview') ||
-        lower.contains('missing_x');
+        lower.contains('missing_x') ||
+        lower.contains('missing_') ||
+        lower.contains('no_image') ||
+        lower.contains('noimage') ||
+        lower.contains('/assets/globals/');
   }
 
   static bool _isExcludedRelatedKind(String? kindRaw) {

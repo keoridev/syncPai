@@ -5,9 +5,6 @@ import '../../../../app/di/injection.dart';
 import '../../../features/auth/domain/entities/user_profile.dart';
 import '../../../features/auth/presentation/cubit/auth_cubit.dart';
 import '../../../features/auth/presentation/cubit/auth_state.dart';
-import '../../../features/profile/domain/entities/customization_tier_policy.dart';
-import '../../../features/support/domain/entities/supporter_tier.dart';
-import '../../widgets/supporter_gate_sheet.dart';
 import '../app_colors.dart';
 import '../app_typography.dart';
 import '../cubit/theme_cubit.dart';
@@ -133,12 +130,6 @@ class ThemeSelectorSheet extends StatelessWidget {
                       final aState = getIt<AuthCubit>().state;
                       if (aState is Authenticated) activeProfile = aState.profile;
                     }
-                    final userTier = activeProfile?.supporterTier ?? SupporterTier.free;
-                    final isUnlocked = CustomizationTierPolicy.isThemeUnlocked(
-                      userTier,
-                      preset.id,
-                    );
-
                     return Material(
                       color: isSelected
                           ? preset.primaryColor.withValues(alpha: 0.15)
@@ -148,17 +139,6 @@ class ThemeSelectorSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         onTap: () {
                           HapticFeedback.lightImpact();
-                          if (!isUnlocked) {
-                            SupporterGateSheet.show(
-                              context,
-                              profile: activeProfile,
-                              requiredTier: SupporterTier.supporter,
-                              featureTitle: preset.name,
-                              featureDescription:
-                                  'Полная палитра акцентных тем открывается с SyncPai Plus или Pro.',
-                            );
-                            return;
-                          }
                           context.read<ThemeCubit>().setPreset(preset);
                           // Синхронизируем акцентный цвет профиля пользователя с выбранной темой
                           try {
@@ -240,24 +220,8 @@ class ThemeSelectorSheet extends StatelessWidget {
                                 ),
                               ),
 
-                              // Иконка темы / замок Plus
-                              if (!isUnlocked)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: SupporterTier.supporter.accentColor.withValues(alpha: 0.16),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Plus',
-                                    style: TextStyle(
-                                      color: SupporterTier.supporter.accentColor,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                )
-                              else
+                              // Иконка темы
+                              if (isSelected)
                                 Icon(
                                   preset.icon,
                                   color: isSelected ? preset.primaryColor : Colors.white38,

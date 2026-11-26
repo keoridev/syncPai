@@ -11,6 +11,7 @@ class SteamAvatarFrameWidget extends StatefulWidget {
   final String? frameId;
   final double size;
   final String shape; // 'circle' или 'square'
+  final bool animate;
 
   const SteamAvatarFrameWidget({
     super.key,
@@ -18,6 +19,7 @@ class SteamAvatarFrameWidget extends StatefulWidget {
     this.frameId,
     required this.size,
     this.shape = 'circle',
+    this.animate = true,
   });
 
   @override
@@ -35,7 +37,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
       vsync: this,
       duration: const Duration(seconds: 4),
     );
-    if (widget.frameId != null && widget.frameId != 'none') {
+    if (widget.animate && widget.frameId != null && widget.frameId != 'none') {
       _animController.repeat();
     }
   }
@@ -43,8 +45,11 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
   @override
   void didUpdateWidget(covariant SteamAvatarFrameWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.frameId != oldWidget.frameId) {
-      if (widget.frameId != null && widget.frameId != 'none') {
+    if (widget.frameId != oldWidget.frameId ||
+        widget.animate != oldWidget.animate) {
+      if (widget.animate &&
+          widget.frameId != null &&
+          widget.frameId != 'none') {
         if (!_animController.isAnimating) _animController.repeat();
       } else {
         _animController.stop();
@@ -134,40 +139,13 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // 1. Плоский матовый контур рамки Steam (без размытых теней)
-                  Container(
-                    width: frameOuterSize,
-                    height: frameOuterSize,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: frame.colors.isNotEmpty
-                            ? frame.colors
-                            : [primaryFrameColor, primaryFrameColor.withValues(alpha: 0.6)],
-                      ),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        width: 1.0,
-                      ),
-                    ),
+                  // 1. Сам аватар (без перекрывающей внутренней рамки)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: widget.child,
                   ),
 
-                  // 2. Подложка под аватар
-                  Container(
-                    width: widget.size + 2,
-                    height: widget.size + 2,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF121316),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-
-                  // 3. Сам аватар
-                  widget.child,
-
-                  // 4. Чёткий векторный слой архитектурной рамки
+                  // 2. Чёткий векторный слой архитектурной рамки (без glow)
                   IgnorePointer(
                     child: CustomPaint(
                       size: Size(frameOuterSize + 16, frameOuterSize + 16),
@@ -192,20 +170,10 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // 1. Внутренняя подложка для чистого разделения рамки и аватара
-                Container(
-                  width: widget.size + 4,
-                  height: widget.size + 4,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF121316),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-
-                // 2. Сам аватар пользователя
+                // 1. Сам аватар пользователя (без перекрывающей внутренней рамки)
                 widget.child,
 
-                // 3. Тематический слой сюжетной рамки (CustomPainter)
+                // 2. Тематический слой сюжетной рамки (CustomPainter)
                 IgnorePointer(
                   child: CustomPaint(
                     size: Size(frameOuterSize + 20, frameOuterSize + 20),

@@ -52,14 +52,29 @@ class AnimeTitle extends Equatable {
     this.shikimoriUrl,
   });
 
-  /// Основной постер
-  String get posterUrl => posterMedium.isNotEmpty
-      ? posterMedium
-      : (posterOriginal.isNotEmpty ? posterOriginal : posterSmall);
+  static bool isMissingPosterUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return true;
+    final lower = url.toLowerCase();
+    return lower.contains('missing_original') ||
+        lower.contains('missing_preview') ||
+        lower.contains('missing_x') ||
+        lower.contains('missing_') ||
+        lower.contains('no_image') ||
+        lower.contains('noimage') ||
+        lower.contains('/assets/globals/');
+  }
+
+  /// Основной постер (без 404/placeholder URL)
+  String get posterUrl {
+    if (!isMissingPosterUrl(posterMedium)) return posterMedium;
+    if (!isMissingPosterUrl(posterOriginal)) return posterOriginal;
+    if (!isMissingPosterUrl(posterSmall)) return posterSmall;
+    return '';
+  }
 
   /// Резервный постер при 404 японского постера Shikimori
   String get effectiveFallbackPoster {
-    if (fallbackPosterUrl.isNotEmpty) return fallbackPosterUrl;
+    if (!isMissingPosterUrl(fallbackPosterUrl)) return fallbackPosterUrl;
     return posterUrl;
   }
 

@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/steam_avatar_frame.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
 import '../../../auth/domain/entities/user_profile.dart';
 import '../../services/duo_sync_service.dart';
@@ -22,6 +23,7 @@ class DuoDiptychThemeSpec {
   final String title;
   final bool isPlus;
   final bool isCustomSpread;
+  final String? imageUrl;
   final List<Color> leftGradient;
   final List<Color> rightGradient;
   final Color accent;
@@ -31,6 +33,7 @@ class DuoDiptychThemeSpec {
     required this.title,
     this.isPlus = false,
     this.isCustomSpread = false,
+    this.imageUrl,
     required this.leftGradient,
     required this.rightGradient,
     required this.accent,
@@ -39,7 +42,9 @@ class DuoDiptychThemeSpec {
   static const List<DuoDiptychThemeSpec> all = [
     DuoDiptychThemeSpec(
       id: 'sunset_bridge',
-      title: 'Закатный мост (Токио)',
+      title: 'Закат у побережья',
+      imageUrl:
+          'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=80',
       leftGradient: [Color(0xFF1A1428), Color(0xFF4A1D42), Color(0xFFFF6B4A)],
       rightGradient: [Color(0xFFFF6B4A), Color(0xFF4A1D42), Color(0xFF1A1428)],
       accent: Color(0xFFFF6B4A),
@@ -47,37 +52,54 @@ class DuoDiptychThemeSpec {
     DuoDiptychThemeSpec(
       id: 'shibuya_rain',
       title: 'Ночной Сибуя (Дождь)',
+      imageUrl:
+          'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=1600&q=80',
       leftGradient: [Color(0xFF0E1826), Color(0xFF1B2E48), Color(0xFF38BDF8)],
       rightGradient: [Color(0xFF38BDF8), Color(0xFF1B2E48), Color(0xFF0E1826)],
       accent: Color(0xFF38BDF8),
     ),
     DuoDiptychThemeSpec(
       id: 'cyber_neon_2099',
-      title: 'Кибер-неон 2099',
+      title: 'Ночной Токио с крыши',
       isPlus: true,
+      imageUrl:
+          'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=1600&q=80',
       leftGradient: [Color(0xFF0A1424), Color(0xFF132D4A), Color(0xFF22D3EE)],
       rightGradient: [Color(0xFF22D3EE), Color(0xFF3B1A54), Color(0xFF0F1320)],
       accent: Color(0xFF22D3EE),
     ),
     DuoDiptychThemeSpec(
       id: 'sakura_dawn',
-      title: 'Сакура на рассвете',
+      title: 'Сакура у реки',
       isPlus: true,
+      imageUrl:
+          'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=1600&q=80',
       leftGradient: [Color(0xFF241322), Color(0xFF4F1D3D), Color(0xFFF472B6)],
       rightGradient: [Color(0xFFF472B6), Color(0xFF4F1D3D), Color(0xFF241322)],
       accent: Color(0xFFF472B6),
     ),
     DuoDiptychThemeSpec(
       id: 'shadow_monarch',
-      title: 'Теневой Монарх (Solo)',
+      title: 'Звёздное небо над городом',
       isPlus: true,
+      imageUrl:
+          'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1600&q=80',
       leftGradient: [Color(0xFF0B0E1A), Color(0xFF22164A), Color(0xFF818CF8)],
       rightGradient: [Color(0xFF818CF8), Color(0xFF22164A), Color(0xFF0B0E1A)],
       accent: Color(0xFF818CF8),
     ),
     DuoDiptychThemeSpec(
+      id: 'kyoto_bamboo',
+      title: 'Летний Токио на закате',
+      imageUrl:
+          'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=1600&q=80',
+      leftGradient: [Color(0xFF10221C), Color(0xFF1E3A30), Color(0xFF34D399)],
+      rightGradient: [Color(0xFF34D399), Color(0xFF1E3A30), Color(0xFF10221C)],
+      accent: Color(0xFF34D399),
+    ),
+    DuoDiptychThemeSpec(
       id: 'custom_spread',
-      title: 'Своя парная раскадровка (Из манги / фото)',
+      title: 'Своя панорама (Wallhaven / фото)',
       isCustomSpread: true,
       leftGradient: [Color(0xFF141821), Color(0xFF1E2433)],
       rightGradient: [Color(0xFF1E2433), Color(0xFF141821)],
@@ -110,9 +132,11 @@ class DuoDiptychHalfBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spec = DuoDiptychThemeSpec.fromId(themeId);
-    final url = customImageUrl?.trim() ?? '';
+    final customUrl = customImageUrl?.trim() ?? '';
+    final effectiveUrl =
+        customUrl.isNotEmpty ? customUrl : (spec.imageUrl ?? '');
 
-    if (spec.isCustomSpread && url.isNotEmpty) {
+    if (effectiveUrl.isNotEmpty) {
       return ClipRect(
         child: SizedBox(
           width: width,
@@ -124,21 +148,47 @@ class DuoDiptychHalfBanner extends StatelessWidget {
                 top: 0,
                 width: width * 2,
                 height: height,
-                child: url.startsWith('http')
+                child: effectiveUrl.startsWith('http')
                     ? CachedNetworkImage(
-                        imageUrl: wrapCorsSafeUrl(url),
+                        imageUrl: wrapCorsSafeUrl(effectiveUrl),
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => Container(
-                          color: const Color(0xFF141821),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isLeft
+                                  ? spec.leftGradient
+                                  : spec.rightGradient,
+                            ),
+                          ),
                         ),
                       )
                     : Image.file(
-                        File(url),
+                        File(effectiveUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFF141821),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isLeft
+                                  ? spec.leftGradient
+                                  : spec.rightGradient,
+                            ),
+                          ),
                         ),
                       ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        const Color(0x990B0E14),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -457,39 +507,61 @@ class _DuoProfileSheetState extends State<DuoProfileSheet> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0x14FFFFFF)),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      pendingCode,
-                      style: const TextStyle(
-                        color: Color(0xFFFF6B4A),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.4,
-                      ),
+                  SelectableText(
+                    pendingCode,
+                    style: const TextStyle(
+                      color: Color(0xFFFF6B4A),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: pendingCode));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Код скопирован'),
-                          behavior: SnackBarBehavior.floating,
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                      );
-                    },
-                    child: const Text('Скопировать код'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      final url = Uri.parse(
-                        'https://t.me/syncpai_bot?start=duo_$pendingCode',
-                      );
-                      launchUrl(url, mode: LaunchMode.externalApplication);
-                    },
-                    child: const Text('Поделиться ссылкой'),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: pendingCode));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Код скопирован'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: const Text('Скопировать код'),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          final url = Uri.parse(
+                            'https://t.me/syncpai_bot?start=duo_$pendingCode',
+                          );
+                          launchUrl(url, mode: LaunchMode.externalApplication);
+                        },
+                        child: const Text('Поделиться ссылкой'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -517,32 +589,42 @@ class _DuoProfileSheetState extends State<DuoProfileSheet> {
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _partnerCodeCtrl,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: InputDecoration(
-                    hintText: 'Ввести код партнёра (PAI-...)',
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
-                    filled: true,
-                    fillColor: const Color(0xFF11151E),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0x14FFFFFF)),
+                child: SizedBox(
+                  height: 44,
+                  child: TextField(
+                    controller: _partnerCodeCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      hintText: 'Ввести код партнёра (PAI-...)',
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
+                      filled: true,
+                      fillColor: const Color(0xFF11151E),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0x14FFFFFF)),
+                      ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _isBusy ? null : _acceptCode,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1C212E),
-                  foregroundColor: Colors.white,
+              SizedBox(
+                height: 44,
+                child: FilledButton(
+                  onPressed: _isBusy ? null : _acceptCode,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1C212E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Подтвердить пару'),
                 ),
-                child: const Text('Подтвердить пару'),
               ),
             ],
           ),
@@ -841,10 +923,10 @@ class _DuoProfileSheetState extends State<DuoProfileSheet> {
                           ),
                         ),
                       ),
-                      Text(
-                        theme.isPlus ? 'SyncPai Plus' : 'Бесплатно',
+                      const Text(
+                        'Бесплатно',
                         style: TextStyle(
-                          color: theme.isPlus ? theme.accent : Colors.white54,
+                          color: Colors.white54,
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -860,50 +942,65 @@ class _DuoProfileSheetState extends State<DuoProfileSheet> {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _customSpreadCtrl,
-                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
-                    decoration: InputDecoration(
-                      hintText: 'URL или путь к развороту манги / фото...',
-                      hintStyle:
-                          const TextStyle(color: Colors.white38, fontSize: 12),
-                      filled: true,
-                      fillColor: const Color(0xFF11151E),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                  child: SizedBox(
+                    height: 44,
+                    child: TextField(
+                      controller: _customSpreadCtrl,
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                      decoration: InputDecoration(
+                        hintText: 'URL или путь к развороту манги / фото...',
+                        hintStyle:
+                            const TextStyle(color: Colors.white38, fontSize: 12),
+                        filled: true,
+                        fillColor: const Color(0xFF11151E),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0x14FFFFFF)),
+                        ),
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0x14FFFFFF)),
-                      ),
+                      onChanged: (_) => setState(() {}),
                     ),
-                    onChanged: (_) => setState(() {}),
                   ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: _pickCustomSpread,
-                  child: const Text('Выбрать'),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton(
+                    onPressed: _pickCustomSpread,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Выбрать'),
+                  ),
                 ),
               ],
             ),
           ],
           if (_link != null) ...[
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _isBusy ? null : _saveSettings,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFF6B4A),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+            SizedBox(
+              height: 44,
+              child: FilledButton(
+                onPressed: _isBusy ? null : _saveSettings,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6B4A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-              ),
-              child: const Text(
-                'Сохранить настройки Duo',
-                style: TextStyle(fontWeight: FontWeight.w700),
+                child: const Text(
+                  'Сохранить настройки Duo',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],
@@ -935,6 +1032,7 @@ class DuoProfileCard extends StatefulWidget {
 class _DuoProfileCardState extends State<DuoProfileCard> {
   final GlobalKey _exportKey = GlobalKey();
   DuoAnalyticsSummary? _analytics;
+  Map<String, dynamic>? _partnerProfile;
 
   @override
   void initState() {
@@ -946,7 +1044,8 @@ class _DuoProfileCardState extends State<DuoProfileCard> {
   void didUpdateWidget(covariant DuoProfileCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duoLink?.id != widget.duoLink?.id ||
-        oldWidget.duoLink?.status != widget.duoLink?.status) {
+        oldWidget.duoLink?.status != widget.duoLink?.status ||
+        oldWidget.duoLink?.userB != widget.duoLink?.userB) {
       _loadAnalytics();
     }
   }
@@ -960,12 +1059,18 @@ class _DuoProfileCardState extends State<DuoProfileCard> {
     final myEntries = getIt.isRegistered<AnimeListCubit>()
         ? getIt<AnimeListCubit>().state.allEntries
         : const [];
-    final summary = await DuoSyncService.instance.computeSharedAnalytics(
-      partnerId: partnerId,
-      myEntries: List.from(myEntries),
-    );
+    final results = await Future.wait<dynamic>([
+      DuoSyncService.instance.computeSharedAnalytics(
+        partnerId: partnerId,
+        myEntries: List.from(myEntries),
+      ),
+      FriendsService.fetchFriendFullProfile(partnerId),
+    ]);
     if (mounted) {
-      setState(() => _analytics = summary);
+      setState(() {
+        _analytics = results[0] as DuoAnalyticsSummary?;
+        _partnerProfile = results[1] as Map<String, dynamic>?;
+      });
     }
   }
 
@@ -1122,21 +1227,24 @@ class _DuoProfileCardState extends State<DuoProfileCard> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(
-                key: const ValueKey('duo_open_sheet_btn'),
-                onPressed: widget.onManageTap,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF6B4A),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  minimumSize: Size.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              SizedBox(
+                height: 40,
+                child: FilledButton(
+                  key: const ValueKey('duo_open_sheet_btn'),
+                  onPressed: widget.onManageTap,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B4A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Настроить',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  child: const Text(
+                    'Создать парный профиль',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ],
@@ -1148,132 +1256,333 @@ class _DuoProfileCardState extends State<DuoProfileCard> {
     final compat = _analytics?.compatibilityPercent ?? 78;
     final sharedCount = _analytics?.sharedTitlesCount ?? 0;
     final sharedHours = (_analytics?.sharedHours ?? 0.0).toStringAsFixed(1);
+    final spec = DuoDiptychThemeSpec.fromId(link.diptychThemeId);
+    final bannerUrl = link.resolvedBannerUrl ?? spec.imageUrl ?? '';
+
+    final myName =
+        widget.profile.username.trim().isNotEmpty ? widget.profile.username.trim() : 'Вы';
+    final myFrameId = widget.profile.frameId ?? 'none';
+    final myActivity = (widget.profile.customStatus ?? '').trim().isNotEmpty
+        ? widget.profile.customStatus!.trim()
+        : 'В сети';
+
+    final partnerName =
+        (_partnerProfile?['username'] ?? '').toString().trim().isNotEmpty
+            ? _partnerProfile!['username'].toString().trim()
+            : 'Напарник';
+    final partnerAvatarUrl = _partnerProfile?['avatar_url']?.toString();
+    final partnerFrameId = (_partnerProfile?['frame_id'] ??
+            _partnerProfile?['avatar_frame_id'] ??
+            _partnerProfile?['avatar_frame'] ??
+            'none')
+        .toString();
+    final partnerStatusRaw =
+        (_partnerProfile?['custom_status'] ?? '').toString().trim();
+    final partnerActivity =
+        partnerStatusRaw.isNotEmpty ? partnerStatusRaw : 'В сети';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       child: RepaintBoundary(
         key: _exportKey,
-        child: Container(
-          key: const ValueKey('duo_profile_active_card'),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF11151E),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x14FFFFFF)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.people_alt_rounded,
-                    color: Color(0xFFFF6B4A),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      link.relationLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            key: const ValueKey('duo_profile_active_card'),
+            decoration: BoxDecoration(
+              color: const Color(0xFF11151E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0x18FFFFFF)),
+            ),
+            child: Stack(
+              children: [
+                if (bannerUrl.isNotEmpty)
+                  Positioned.fill(
+                    child: bannerUrl.startsWith('http')
+                        ? CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(bannerUrl),
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: spec.leftGradient,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Image.file(
+                            File(bannerUrl),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: spec.leftGradient,
+                                ),
+                              ),
+                            ),
+                          ),
+                  )
+                else
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: spec.leftGradient),
                       ),
                     ),
                   ),
-                  TextButton(
-                    onPressed: widget.onManageTap,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Настроить Duo',
-                      style: TextStyle(fontSize: 11.5),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DuoMetricTile(
-                      label: 'Совместимость',
-                      value: '$compat%',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: InkWell(
-                      onTap: _showSharedTitlesModal,
-                      borderRadius: BorderRadius.circular(10),
-                      child: _DuoMetricTile(
-                        label: 'Общие тайтлы',
-                        value: '$sharedCount',
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: const [
+                          Color(0xCC0B0E14),
+                          Color(0x330B0E14),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _DuoMetricTile(
-                      label: 'Совместные часы',
-                      value: '$sharedHours ч.',
-                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xCC0B0E14),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0x18FFFFFF)),
+                            ),
+                            child: Text(
+                              'ПАРНЫЙ ПРОФИЛЬ • ${link.relationLabel}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: _exportDuoCard,
+                            tooltip: 'Поделиться парной карточкой',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              Icons.share_rounded,
+                              color: Colors.white70,
+                              size: 16,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: widget.onManageTap,
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xCC0B0E14),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(
+                                  color: Color(0x18FFFFFF),
+                                ),
+                              ),
+                            ),
+                            child: const Text(
+                              'Настроить',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SteamAvatarFrameWidget(
+                                  frameId: myFrameId,
+                                  size: 52,
+                                  child: AppAvatar(
+                                    avatarUrl: widget.profile.avatarUrl,
+                                    username: myName,
+                                    size: 46,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  myName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  myActivity,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD90B0E14),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: const Color(0x18FFFFFF),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Синхронизированы • ${link.daysTogether} дн.',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                FilledButton.icon(
+                                  onPressed: widget.onWatchTogetherTap ??
+                                      widget.onManageTap,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFF6B4A),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 7,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.play_arrow_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'Смотреть вместе',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                SteamAvatarFrameWidget(
+                                  frameId: partnerFrameId,
+                                  size: 52,
+                                  child: AppAvatar(
+                                    avatarUrl: partnerAvatarUrl,
+                                    username: partnerName,
+                                    size: 46,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  partnerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  partnerActivity,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DuoMetricTile(
+                              label: 'Совместимость',
+                              value: '$compat%',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: InkWell(
+                              onTap: _showSharedTitlesModal,
+                              borderRadius: BorderRadius.circular(10),
+                              child: _DuoMetricTile(
+                                label: 'Общие тайтлы',
+                                value: '$sharedCount',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _DuoMetricTile(
+                              label: 'Совместные часы',
+                              value: '$sharedHours ч.',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (widget.onWatchTogetherTap != null)
-                    FilledButton.icon(
-                      onPressed: widget.onWatchTogetherTap,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF6B4A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        minimumSize: Size.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                      label: const Text(
-                        'В комнату вместе',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: _exportDuoCard,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Color(0x14FFFFFF)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      minimumSize: Size.zero,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    icon: const Icon(Icons.share_rounded, size: 15),
-                    label: const Text(
-                      'Поделиться парной карточкой',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

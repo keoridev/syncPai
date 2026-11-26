@@ -182,8 +182,7 @@ class CustomizationTierPolicy {
   }
 
   static bool isThemeUnlocked(SupporterTier userTier, String presetId) {
-    if (freeThemeIds.contains(presetId)) return true;
-    return hasTier(userTier, SupporterTier.supporter);
+    return true;
   }
 
   static SupporterTier requiredTierForFrame(String frameId) {

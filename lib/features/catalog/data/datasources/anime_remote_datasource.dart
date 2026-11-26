@@ -676,7 +676,9 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }) {
     final clean = query.trim();
     final key = clean.toLowerCase();
-    if (clean.isEmpty || _emptySearchCache.contains(key)) {
+    if (clean.isEmpty ||
+        _placeholderTitleRegex.hasMatch(clean) ||
+        _emptySearchCache.contains(key)) {
       return Future.value(const []);
     }
 
@@ -751,7 +753,51 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }
 
   static final Map<int, String> _externalIdToReleaseIdCache = {};
-  static final RegExp _placeholderTitleRegex = RegExp(r'^Аниме #\d+$');
+  static final RegExp _placeholderTitleRegex = RegExp(
+    r'^(Аниме #\d+|(?:shiki|shikimori|mal|kodik|saved|rel)_[\w-]*)$',
+    caseSensitive: false,
+  );
+
+  static int? _extractSequelNumber(String raw) {
+    final s = raw.toLowerCase().trim();
+    if (s.isEmpty) return null;
+    final explicit = RegExp(
+      r'(?:сезон|season|часть|part|cour)\s*(\d+)|(\d+)\s*(?:сезон|season|nd\s*season|rd\s*season|th\s*season)',
+    ).firstMatch(s);
+    if (explicit != null) {
+      return int.tryParse(explicit.group(1) ?? explicit.group(2) ?? '');
+    }
+    final trailingNum = RegExp(r'(?:^|\s)([2-9]|1\d)(?:\s|$)').firstMatch(s);
+    if (trailingNum != null) {
+      return int.tryParse(trailingNum.group(1) ?? '');
+    }
+    final roman = RegExp(r'\b(ii|iii|iv|v)\b$').firstMatch(s);
+    if (roman != null) {
+      switch (roman.group(1)) {
+        case 'ii':
+          return 2;
+        case 'iii':
+          return 3;
+        case 'iv':
+          return 4;
+        case 'v':
+          return 5;
+      }
+    }
+    return null;
+  }
+
+  static bool _isMovieTitle(String raw) {
+    final s = raw.toLowerCase();
+    return s.contains('фильм') ||
+        s.contains('movie') ||
+        s.contains('gekijouban');
+  }
+
+  static int? _extractYearHint(String raw) {
+    final m = RegExp(r'\b(19\d{2}|20[2-3]\d)\b').firstMatch(raw);
+    return m != null ? int.tryParse(m.group(1)!) : null;
+  }
   static final Map<String, String> _titleToReleaseIdCache = {};
   static final Map<int, Future<AnimePlayerDataModel>> _inFlightPlayerLinks = {};
   static final Map<String, Future<AnimePlayerDataModel>> _inFlightPlayerLinksByKey = {};
@@ -847,6 +893,9 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
           final items = await _searchReleasesDeduplicated(cleanTitle);
           AnimeCatalogModel? bestMatch;
           double bestScore = 0.0;
+          final targetSeason = _extractSequelNumber(cleanTitle);
+          final targetIsMovie = _isMovieTitle(cleanTitle);
+          final targetYear = _extractYearHint(cleanTitle);
           final targetTokens = normalizedTitleKey
               .replaceAll('ё', 'е')
               .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
@@ -854,7 +903,26 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
               .where((w) => w.length >= 2)
               .toSet();
           for (final item in items) {
-            final candNorm = '${item.titleRu} ${item.titleEn}'
+            final candRaw = '${item.titleRu} ${item.titleEn}'.trim();
+            final candSeason = _extractSequelNumber(item.titleRu) ??
+                _extractSequelNumber(item.titleEn);
+            // Строгий фильтр сиквелов: 2-й+ сезон или фильм не должен матчиться на 1-й сезон
+            if (targetSeason != null && targetSeason > 1) {
+              if (candSeason != targetSeason) continue;
+            } else if (targetSeason == null &&
+                candSeason != null &&
+                candSeason > 1) {
+              continue;
+            }
+            if (targetIsMovie != _isMovieTitle(candRaw)) {
+              continue;
+            }
+            if (targetYear != null &&
+                item.year != null &&
+                item.year! < targetYear) {
+              continue;
+            }
+            final candNorm = candRaw
                 .toLowerCase()
                 .replaceAll('ё', 'е')
                 .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ');

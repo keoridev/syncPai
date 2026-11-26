@@ -19,6 +19,7 @@ abstract final class AppTheme {
       backgroundColor: preset.backgroundColor,
       surfaceColor: preset.surfaceColor,
       surfaceElevatedColor: preset.surfaceElevatedColor,
+      isManga: preset.id == 'manga',
     );
   }
 
@@ -28,12 +29,17 @@ abstract final class AppTheme {
     Color? backgroundColor,
     Color? surfaceColor,
     Color? surfaceElevatedColor,
+    bool isManga = false,
   }) {
     final primary = primaryColor ?? AppColors.primary;
-    final onPrimary = AppColors.onColor(primary);
+    final onPrimary = isManga
+        ? const Color(0xFF0A0A0C)
+        : AppColors.onColor(primary);
     final bg = backgroundColor ?? AppColors.background;
     final surf = surfaceColor ?? AppColors.surface;
     final surfElevated = surfaceElevatedColor ?? AppColors.surfaceElevated;
+    final panelBorder = isManga ? const Color(0x38FFFFFF) : AppColors.stroke;
+    final panelBorderWidth = isManga ? 1.5 : 1.0;
 
     return ThemeData(
       useMaterial3: true,
@@ -104,7 +110,7 @@ abstract final class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: AppDimensions.borderRadiusCard,
-          side: const BorderSide(color: AppColors.stroke, width: 1.0),
+          side: BorderSide(color: panelBorder, width: panelBorderWidth),
         ),
       ),
 
@@ -112,7 +118,7 @@ abstract final class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
-          foregroundColor: AppColors.textPrimary,
+          foregroundColor: onPrimary,
           elevation: 0,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
@@ -127,7 +133,10 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
-          side: const BorderSide(color: AppColors.strokeMedium, width: 1.0),
+          side: BorderSide(
+            color: isManga ? const Color(0x38FFFFFF) : AppColors.strokeMedium,
+            width: panelBorderWidth,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
           shape: const RoundedRectangleBorder(
             borderRadius: AppDimensions.borderRadiusMedium,

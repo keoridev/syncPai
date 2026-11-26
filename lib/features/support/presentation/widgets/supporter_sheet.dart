@@ -386,6 +386,7 @@ class _SupporterSheetState extends State<SupporterSheet> {
                                   backgroundColor: _coralAccent,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -401,26 +402,30 @@ class _SupporterSheetState extends State<SupporterSheet> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          SizedBox(
-                            height: 44,
-                            child: OutlinedButton.icon(
-                              key: const ValueKey('supporter_copy_feature_cmd_btn'),
-                              onPressed: _copyFeatureCommand,
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: _surface,
-                                foregroundColor: AppColors.textPrimary,
-                                side: const BorderSide(color: _tonalBorder),
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 44,
+                              child: OutlinedButton.icon(
+                                key: const ValueKey('supporter_copy_feature_cmd_btn'),
+                                onPressed: _copyFeatureCommand,
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: _surface,
+                                  foregroundColor: AppColors.textPrimary,
+                                  side: const BorderSide(color: _tonalBorder),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
-                              ),
-                              icon: const Icon(Icons.copy_rounded, size: 15),
-                              label: const Text(
-                                'Скопировать код заявки',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                                icon: const Icon(Icons.copy_rounded, size: 15),
+                                label: const Text(
+                                  'Скопировать код заявки',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),

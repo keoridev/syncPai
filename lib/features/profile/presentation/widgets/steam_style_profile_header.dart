@@ -432,26 +432,36 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMangaTheme = Theme.of(context).scaffoldBackgroundColor == const Color(0xFF0A0A0C) &&
+        scheme.primary == const Color(0xFFF8FAFC);
 
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isDark
-              ? const Color(0xFF131720)
-              : scheme.surfaceContainerLowest.withValues(alpha: 0.94),
+          color: isMangaTheme
+              ? const Color(0xFF131316)
+              : (isDark
+                  ? const Color(0xFF131720)
+                  : scheme.surfaceContainerLowest.withValues(alpha: 0.94)),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          border: isMangaTheme
+              ? Border.all(color: const Color(0x38FFFFFF), width: 1.5)
+              : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            if (isMangaTheme)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _HalftoneScreentonePainter(),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -489,8 +499,10 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
               ],
             ),
-          ),
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -607,14 +619,12 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.16),
+                    color: const Color(0xFF161B26),
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.14 + ((_idleController?.value ?? 0.5) * 0.20)),
-                        blurRadius: 8 + ((_idleController?.value ?? 0.5) * 5),
-                      ),
-                    ],
+                    border: Border.all(
+                      color: const Color(0x26FFFFFF),
+                      width: 1.0,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1117,8 +1127,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   username: widget.profile.username,
                   size: avatarSize,
                   shape: BoxShape.circle,
-                  borderColor: Colors.black,
-                  borderWidth: 2.0,
+                  borderColor: Colors.transparent,
+                  borderWidth: 0,
                 ),
               )
             else
@@ -1132,13 +1142,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     color: Colors.white.withValues(alpha: 0.08),
                     width: 1.0,
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black38,
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
                 ),
                 child: Center(
                   child: AppAvatar(
@@ -1152,7 +1155,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 ),
               ),
           ] else ...[
-            // 1. Квадратная рамка Steam с внешним неоновым свечением
+            // 1. Квадратная рамка Steam (без перекрывающей внутренней рамки и без glow)
             if (hasFrame)
               SteamAvatarFrameWidget(
                 frameId: widget.profile.frameId,
@@ -1163,9 +1166,9 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                   username: widget.profile.username,
                   size: avatarSize,
                   shape: BoxShape.rectangle,
-                  borderRadius: BorderRadius.circular(12),
-                  borderColor: Colors.black,
-                  borderWidth: 2.0,
+                  borderRadius: BorderRadius.circular(18),
+                  borderColor: Colors.transparent,
+                  borderWidth: 0,
                 ),
               )
             else ...[
@@ -1179,13 +1182,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                     color: Colors.white.withValues(alpha: 0.08),
                     width: 1.0,
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black38,
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
                 ),
               ),
 
@@ -1226,8 +1222,8 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
           // 4. Индикатор онлайн-статуса / Инкогнито (переключение в 1 тап для своего профиля)
           Positioned(
-            bottom: -2,
-            right: -2,
+            bottom: -4,
+            right: 0,
             child: ListenableBuilder(
               listenable: PresenceService.instance,
               builder: (context, _) {
@@ -1665,6 +1661,26 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       ),
     );
   }
+}
+
+/// Тонкий полутоновый скринтон (4% белой прозрачности) для темы «Манга».
+class _HalftoneScreentonePainter extends CustomPainter {
+  const _HalftoneScreentonePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0x0AFFFFFF);
+    const step = 8.0;
+    for (double y = 4.0; y < size.height; y += step) {
+      final offsetX = ((y ~/ step).isOdd) ? step * 0.5 : 0.0;
+      for (double x = 4.0 + offsetX; x < size.width; x += step) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class SteamArtworkPreset {

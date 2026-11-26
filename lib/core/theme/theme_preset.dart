@@ -165,6 +165,16 @@ class ThemePreset extends Equatable {
       surfaceElevatedColor: Color(0xFF281117),
       icon: Icons.nightlight_round,
     ),
+    ThemePreset(
+      id: 'manga',
+      name: 'Манга',
+      description: 'Чёрно-белые манга-панели, чёткие контуры и скринтон',
+      primaryColor: Color(0xFFF8FAFC),
+      backgroundColor: Color(0xFF0A0A0C),
+      surfaceColor: Color(0xFF131316),
+      surfaceElevatedColor: Color(0xFF1B1B20),
+      icon: Icons.auto_stories_rounded,
+    ),
   ];
 
   static ThemePreset fromId(String? id) {

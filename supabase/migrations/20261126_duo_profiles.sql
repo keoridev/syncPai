@@ -7,6 +7,7 @@ create table if not exists public.duo_links (
   status text not null default 'pending',
   relation_label text not null default 'Напарники по аниме',
   diptych_theme_id text not null default 'sunset_bridge',
+  duo_banner_url text,
   custom_left_art_url text,
   custom_right_art_url text,
   paired_avatar_preset text,
@@ -41,4 +42,7 @@ create policy "duo_links_update_participants_or_accept"
     or auth.uid() = user_b
     or (status = 'pending' and user_b is null)
   );
+
+alter table public.duo_links
+  add column if not exists duo_banner_url text;
 

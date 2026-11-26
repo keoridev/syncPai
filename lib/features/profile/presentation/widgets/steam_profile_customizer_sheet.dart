@@ -7,7 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/avatar_upload_service.dart';
+import '../../services/duo_sync_service.dart';
+import 'duo_profile_sheet.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/utils/telegram_launcher.dart';
@@ -32,9 +35,7 @@ import '../../../catalog/domain/repositories/catalog_repository.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
 import '../../domain/entities/steam_profile_customization.dart';
-import '../../services/friends_service.dart';
 import 'achievement_badge_artwork.dart';
-import 'duo_pairing_widgets.dart';
 import 'live_backgrounds/live_background_widget.dart';
 import 'media_crop_editor_modal.dart';
 import 'pai_chan_artwork_banner.dart';
@@ -149,18 +150,33 @@ class _SteamProfileCustomizerSheetState
   List<({String id, String thumbUrl, String fullUrl})> _wallhavenResults = [];
   bool _isSearchingWallhaven = false;
 
+  // Вкладка «Пара» (Duo Profile)
+  DuoLinkRecord? _duoLink;
+  bool _isLoadingDuo = false;
+  final TextEditingController _duoBannerUrlController = TextEditingController();
+  final TextEditingController _duoWallhavenController = TextEditingController();
+  final TextEditingController _duoInviteCodeController = TextEditingController();
+  Timer? _duoWallhavenDebounce;
+  List<({String id, String thumbUrl, String fullUrl})> _duoWallhavenResults = [];
+  bool _isSearchingDuoWallhaven = false;
+  String _selectedDuoThemeId = 'sunset_bridge';
+  String? _selectedDuoBannerUrl;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 6,
+      length: 7,
       vsync: this,
-      initialIndex: widget.initialTabIndex.clamp(0, 5),
+      initialIndex: widget.initialTabIndex.clamp(0, 6),
     );
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
     _searchWallhaven('anime scenery');
+    _preloadPopularAvatars();
+    _loadDuoState();
+    _searchDuoWallhaven('anime landscape');
     _selectedFrameId = widget.profile.frameId ?? 'none';
     _selectedBgId = widget.profile.backgroundId ?? 'none';
     _selectedAccentHex = widget.profile.accentColor ??
@@ -207,6 +223,49 @@ class _SteamProfileCustomizerSheetState
       ..addListener(() => _ensureFocusVisible(_favAnimeFocusNode));
   }
 
+  Future<void> _preloadPopularAvatars() async {
+    if (_avatarSearchResults.isNotEmpty) return;
+    if (mounted) setState(() => _isSearchingAvatars = true);
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 8),
+      ));
+      final res = await dio.get(
+        'https://api.jikan.moe/v4/characters',
+        queryParameters: {
+          'order_by': 'favorites',
+          'sort': 'desc',
+          'limit': 18,
+        },
+      );
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data['data'];
+        if (data is List) {
+          final parsed = <({String name, String subtitle, String imageUrl})>[];
+          for (final item in data) {
+            if (item is! Map) continue;
+            final name = (item['name'] ?? '').toString().trim();
+            final images = item['images'] is Map ? item['images'] as Map : null;
+            final jpg = images?['jpg'] is Map ? images!['jpg'] as Map : null;
+            final imgUrl = (jpg?['image_url'] ?? '').toString().trim();
+            if (name.isNotEmpty && imgUrl.isNotEmpty) {
+              parsed.add((name: name, subtitle: 'Популярное', imageUrl: imgUrl));
+            }
+          }
+          if (mounted && _avatarSearchController.text.trim().isEmpty) {
+            setState(() {
+              _avatarSearchResults = parsed;
+              _isSearchingAvatars = false;
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isSearchingAvatars = false);
+  }
+
   void _ensureFocusVisible(FocusNode node) {
     if (node.hasFocus) {
       Future.delayed(const Duration(milliseconds: 150), () {
@@ -229,6 +288,10 @@ class _SteamProfileCustomizerSheetState
     _avatarSearchController.dispose();
     _wallhavenDebounce?.cancel();
     _wallhavenController.dispose();
+    _duoWallhavenDebounce?.cancel();
+    _duoBannerUrlController.dispose();
+    _duoWallhavenController.dispose();
+    _duoInviteCodeController.dispose();
     _tabController.dispose();
     _customUrlController.dispose();
     _customAvatarUrlController.dispose();
@@ -967,6 +1030,7 @@ class _SteamProfileCustomizerSheetState
               const Tab(text: 'Значки'),
               const Tab(text: 'Витрина'),
               const Tab(text: 'Цвета'),
+              const Tab(text: 'Пара'),
             ],
           ),
 
@@ -981,6 +1045,7 @@ class _SteamProfileCustomizerSheetState
                 _buildBadgesTab(accent),
                 _buildShowcaseTab(accent),
                 _buildColorsTab(accent),
+                _buildDuoTab(accent),
               ],
             ),
           ),
@@ -1093,6 +1158,678 @@ class _SteamProfileCustomizerSheetState
       }
     } catch (_) {}
     if (mounted) setState(() => _isSearchingWallhaven = false);
+  }
+
+  Future<void> _loadDuoState() async {
+    if (mounted) setState(() => _isLoadingDuo = true);
+    final link = await DuoSyncService.instance.getCurrentDuoLink(
+      userId: widget.profile.id,
+    );
+    if (!mounted) return;
+    setState(() {
+      _duoLink = link;
+      _isLoadingDuo = false;
+      if (link != null) {
+        _selectedDuoThemeId = link.diptychThemeId;
+        _selectedDuoBannerUrl = link.resolvedBannerUrl;
+        _duoBannerUrlController.text = _selectedDuoBannerUrl ?? '';
+      }
+    });
+  }
+
+  Future<void> _searchDuoWallhaven(String query) async {
+    final clean = query.trim().isEmpty ? 'anime landscape' : query.trim();
+    if (mounted) setState(() => _isSearchingDuoWallhaven = true);
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 8),
+      ));
+      final res = await dio.get(
+        'https://wallhaven.cc/api/v1/search',
+        queryParameters: {
+          'q': clean,
+          'categories': '010',
+          'purity': '100',
+          'ratios': '16x9,21x9',
+          'sorting': 'favorites',
+        },
+      );
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data['data'];
+        if (data is List) {
+          final parsed = <({String id, String thumbUrl, String fullUrl})>[];
+          for (final item in data.take(12)) {
+            if (item is! Map) continue;
+            final id = (item['id'] ?? '').toString();
+            final fullUrl = (item['path'] ?? '').toString();
+            final thumbs = item['thumbs'] is Map ? item['thumbs'] as Map : null;
+            final thumbUrl =
+                (thumbs?['small'] ?? thumbs?['large'] ?? fullUrl).toString();
+            if (fullUrl.isNotEmpty && thumbUrl.isNotEmpty) {
+              parsed.add((id: id, thumbUrl: thumbUrl, fullUrl: fullUrl));
+            }
+          }
+          if (mounted) {
+            setState(() {
+              _duoWallhavenResults = parsed;
+              _isSearchingDuoWallhaven = false;
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isSearchingDuoWallhaven = false);
+  }
+
+  Future<void> _applyDuoWallpaper({
+    required String themeId,
+    String? bannerUrl,
+  }) async {
+    setState(() {
+      _selectedDuoThemeId = themeId;
+      _selectedDuoBannerUrl = bannerUrl;
+      _duoBannerUrlController.text = bannerUrl ?? '';
+    });
+    final link = _duoLink;
+    if (link == null) return;
+    final updated = await DuoSyncService.instance.updateDuoSettings(
+      link,
+      diptychThemeId: themeId,
+      duoBannerUrl: bannerUrl ?? '',
+      customLeftArtUrl: bannerUrl ?? '',
+    );
+    if (mounted && updated != null) {
+      setState(() => _duoLink = updated);
+    }
+  }
+
+  Future<void> _pickDuoCustomImage() async {
+    final res = await FilePicker.platform.pickFiles(type: FileType.image);
+    final path = res?.files.single.path;
+    if (path == null || path.isEmpty) return;
+    await _applyDuoWallpaper(themeId: 'custom_spread', bannerUrl: path);
+  }
+
+  Future<void> _createDuoInvite() async {
+    setState(() => _isLoadingDuo = true);
+    final created = await DuoSyncService.instance.createOrGetPendingInvite(
+      diptychThemeId: _selectedDuoThemeId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _duoLink = created;
+      _isLoadingDuo = false;
+    });
+  }
+
+  Future<void> _acceptDuoInvite() async {
+    final code = _duoInviteCodeController.text.trim();
+    if (code.isEmpty) return;
+    setState(() => _isLoadingDuo = true);
+    final accepted = await DuoSyncService.instance.acceptInviteCode(code);
+    if (!mounted) return;
+    setState(() {
+      if (accepted != null) {
+        _duoLink = accepted;
+        _selectedDuoThemeId = accepted.diptychThemeId;
+        _selectedDuoBannerUrl = accepted.resolvedBannerUrl;
+      }
+      _isLoadingDuo = false;
+    });
+  }
+
+  Future<void> _dissolveDuo() async {
+    final link = _duoLink;
+    if (link == null) return;
+    setState(() => _isLoadingDuo = true);
+    await DuoSyncService.instance.dissolveDuoLink(link);
+    if (!mounted) return;
+    setState(() {
+      _duoLink = null;
+      _isLoadingDuo = false;
+    });
+  }
+
+  Widget _buildDuoTab(Color accent) {
+    final spec = DuoDiptychThemeSpec.fromId(_selectedDuoThemeId);
+    final effectiveBanner = (_selectedDuoBannerUrl ?? '').trim().isNotEmpty
+        ? _selectedDuoBannerUrl!.trim()
+        : (spec.imageUrl ?? '');
+    final inviteCode = _duoLink?.inviteCode ?? '';
+    final tgUrl = inviteCode.isNotEmpty
+        ? 'https://t.me/$kTelegramBotUsername?start=duo_$inviteCode'
+        : 'https://t.me/$kTelegramBotUsername';
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.spacingXl,
+        vertical: 12,
+      ),
+      children: [
+        if (_isLoadingDuo)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        // Живое превью панорамного баннера «Пара»
+        const Text(
+          'ПРЕВЬЮ ПАРНОГО БАННЕРА',
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_duoLink != null && _duoLink!.isActive)
+          DuoProfileCard(
+            profile: widget.profile,
+            duoLink: _duoLink!.copyWith(
+              diptychThemeId: _selectedDuoThemeId,
+              duoBannerUrl: _selectedDuoBannerUrl ?? '',
+              customLeftArtUrl: _selectedDuoBannerUrl ?? '',
+            ),
+            onManageTap: () {},
+          )
+        else
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 132),
+              decoration: BoxDecoration(
+                color: const Color(0xFF11151E),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x18FFFFFF)),
+              ),
+              child: Stack(
+                children: [
+                  if (effectiveBanner.isNotEmpty)
+                    Positioned.fill(
+                      child: effectiveBanner.startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: wrapCorsSafeUrl(effectiveBanner),
+                              fit: BoxFit.cover,
+                            )
+                          : Image.file(
+                              File(effectiveBanner),
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: const [Color(0xCC0B0E14), Color(0x330B0E14)],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SteamAvatarFrameWidget(
+                              frameId: _selectedFrameId,
+                              size: 50,
+                              child: AppAvatar(
+                                avatarUrl: _selectedAvatar,
+                                username: widget.profile.username,
+                                size: 44,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.profile.username,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xD90B0E14),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: const Color(0x18FFFFFF),
+                                ),
+                              ),
+                              child: const Text(
+                                'Синхронизация пары',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: Color(0xFF1A202E),
+                              child: Icon(
+                                Icons.person_add_alt_1_rounded,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Напарник',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+
+        // 1. Готовые панорамные аниме-сцены
+        const Text(
+          'ПАНОРАМНЫЕ СЦЕНЫ',
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 84,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: DuoDiptychThemeSpec.all
+                .where((e) => !e.isCustomSpread)
+                .length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, idx) {
+              final presets = DuoDiptychThemeSpec.all
+                  .where((e) => !e.isCustomSpread)
+                  .toList();
+              final item = presets[idx];
+              final isSelected = _selectedDuoThemeId == item.id &&
+                  (_selectedDuoBannerUrl ?? '').isEmpty;
+              return GestureDetector(
+                onTap: () => _applyDuoWallpaper(themeId: item.id),
+                child: Container(
+                  width: 146,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFFFF6B4A)
+                          : const Color(0x18FFFFFF),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (item.imageUrl != null)
+                          CachedNetworkImage(
+                            imageUrl: wrapCorsSafeUrl(item.imageUrl!),
+                            fit: BoxFit.cover,
+                          ),
+                        Container(color: const Color(0x550B0E14)),
+                        Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Text(
+                              item.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 2. Поиск широкоформатных обоев Wallhaven (16:9 / 21:9)
+        const Text(
+          'ПОИСК ОБОЕВ WALLHAVEN (16:9 / 21:9)',
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _duoWallhavenController,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'Например: tokyo night, cyberpunk, sakura...',
+            hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
+            filled: true,
+            fillColor: const Color(0xFF161B26),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0x18FFFFFF)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0x18FFFFFF)),
+            ),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search_rounded, color: Colors.white70),
+              onPressed: () =>
+                  _searchDuoWallhaven(_duoWallhavenController.text),
+            ),
+          ),
+          onChanged: (val) {
+            _duoWallhavenDebounce?.cancel();
+            _duoWallhavenDebounce = Timer(
+              const Duration(milliseconds: 500),
+              () => _searchDuoWallhaven(val),
+            );
+          },
+          onSubmitted: _searchDuoWallhaven,
+        ),
+        const SizedBox(height: 8),
+        if (_isSearchingDuoWallhaven)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_duoWallhavenResults.isNotEmpty)
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _duoWallhavenResults.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 16 / 9,
+            ),
+            itemBuilder: (_, i) {
+              final item = _duoWallhavenResults[i];
+              final isSelected = _selectedDuoBannerUrl == item.fullUrl;
+              return GestureDetector(
+                onTap: () => _applyDuoWallpaper(
+                  themeId: 'custom_spread',
+                  bannerUrl: item.fullUrl,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFFFF6B4A)
+                          : const Color(0x18FFFFFF),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: CachedNetworkImage(
+                      imageUrl: wrapCorsSafeUrl(item.thumbUrl),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        const SizedBox(height: 14),
+
+        // 3. Своя картинка или URL
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _duoBannerUrlController,
+                style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                decoration: InputDecoration(
+                  hintText: 'Прямая ссылка на панораму (https://...)',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                  filled: true,
+                  fillColor: const Color(0xFF161B26),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0x18FFFFFF)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0x18FFFFFF)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: () {
+                final url = _duoBannerUrlController.text.trim();
+                if (url.isNotEmpty) {
+                  _applyDuoWallpaper(themeId: 'custom_spread', bannerUrl: url);
+                }
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickDuoCustomImage,
+          icon: const Icon(Icons.upload_file_rounded, size: 18),
+          label: const Text('Загрузить панораму с устройства'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: Color(0x18FFFFFF)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 4. Приглашение напарника / отвязка пары
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141821),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0x18FFFFFF)),
+          ),
+          child: _duoLink?.isActive == true
+              ? Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Пара активна и синхронизирована',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: _dissolveDuo,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        side: const BorderSide(color: Color(0x44EF4444)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Отвязать пару'),
+                    ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'ПРИГЛАСИТЬ НАПАРНИКА',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _createDuoInvite,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF6B4A),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.link_rounded, size: 16),
+                          label: Text(
+                            inviteCode.isNotEmpty
+                                ? 'Код: $inviteCode'
+                                : 'Создать код пары',
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            launchUrl(
+                              Uri.parse(tgUrl),
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Color(0x18FFFFFF)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.send_rounded, size: 15),
+                          label: const Text('Открыть @syncpai_bot'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _duoInviteCodeController,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Введите код приглашения друга...',
+                              hintStyle: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 12,
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFF161B26),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 9,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: Color(0x18FFFFFF),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: Color(0x18FFFFFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _acceptDuoInvite,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text('Привязать'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _buildPreviewBg(SteamBackgroundTheme bgTheme) {
@@ -1622,6 +2359,7 @@ class _SteamProfileCustomizerSheetState
                                     frameId: frame.id,
                                     size: 30,
                                     shape: _selectedAvatarShape,
+                                    animate: isSelected,
                                     child: Container(
                                       width: 30,
                                       height: 30,
@@ -1921,13 +2659,7 @@ class _SteamProfileCustomizerSheetState
           style: AppTypography.caption.copyWith(color: AppColors.textMuted),
         ),
         const SizedBox(height: 10),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.5,
+        Row(
           children: [
             for (final mono in const [
               (id: 'monogram:graphite', label: 'Графит', color: Color(0xFF94A3B8)),
@@ -1935,50 +2667,42 @@ class _SteamProfileCustomizerSheetState
               (id: 'monogram:indigo', label: 'Индиго', color: Color(0xFF818CF8)),
               (id: 'monogram:emerald', label: 'Изумруд', color: Color(0xFF10B981)),
             ])
-              InkWell(
-                onTap: () {
-                  setState(() {
-                    _selectedAvatar = mono.id;
-                    _customAvatarUrlController.clear();
-                  });
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _selectedAvatar == mono.id &&
-                            _customAvatarUrlController.text.isEmpty
-                        ? mono.color.withValues(alpha: 0.16)
-                        : AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _selectedAvatar == mono.id &&
-                              _customAvatarUrlController.text.isEmpty
-                          ? mono.color
-                          : AppColors.strokeMedium,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      AppAvatar(
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Tooltip(
+                  message: mono.label,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedAvatar = mono.id;
+                        _customAvatarUrlController.clear();
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _selectedAvatar == mono.id &&
+                                  _customAvatarUrlController.text.isEmpty
+                              ? mono.color
+                              : const Color(0x18FFFFFF),
+                          width: _selectedAvatar == mono.id &&
+                                  _customAvatarUrlController.text.isEmpty
+                              ? 2.0
+                              : 1.0,
+                        ),
+                      ),
+                      child: AppAvatar(
                         avatarUrl: mono.id,
                         username: widget.profile.username,
                         size: 36,
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          mono.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -2524,8 +3248,6 @@ class _SteamProfileCustomizerSheetState
               },
             ),
           ),
-          const SizedBox(height: 16),
-          _buildDuoPairingSection(accent),
           const SizedBox(height: 16),
 
           // 2. Селектор типа дополнительной карточки витрины (Steam Showcase Mode)
@@ -3527,291 +4249,6 @@ class _SteamProfileCustomizerSheetState
     );
   }
 
-  Widget _buildDuoPairingSection(Color accent) {
-    final isPlusOrHigher = widget.profile.isPlusOrHigher;
-    final hasPartner = widget.profile.hasPartner;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFFFF4D94).withValues(alpha: 0.12),
-            accent.withValues(alpha: 0.08),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFFF4D94).withValues(alpha: 0.35),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.favorite_rounded,
-                size: 16,
-                color: Color(0xFFFF4D94),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Парный профиль (Duo)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              if (hasPartner)
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: () async {
-                    await FriendsService.unlinkDuoPartner();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Парный режим отключён')),
-                      );
-                    }
-                  },
-                  child: const Text('Отвязать', style: TextStyle(fontSize: 11)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Синхронизированные диптих-обои, парный статус и общая статистика просмотра с другом или второй половинкой.',
-            style: TextStyle(color: Colors.white70, fontSize: 11.5),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 82,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: DuoDiptychPreset.all.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (ctx, i) {
-                final preset = DuoDiptychPreset.all[i];
-                final locked = preset.isPremium && !isPlusOrHigher;
-                final isSelected = (_selectedArtworkUrl ?? '') == preset.id;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    if (locked) {
-                      TelegramLauncher.openBotStart(context, 'buy_duo');
-                      return;
-                    }
-                    setState(() {
-                      _selectedArtworkUrl = preset.id;
-                      _selectedArtworkTitle = '${preset.title} (${preset.sideLabel})';
-                    });
-                  },
-                  child: Container(
-                    width: 138,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFFF4D94)
-                            : Colors.white.withValues(alpha: 0.14),
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        DuoDiptychBanner(
-                          themeId: preset.id,
-                          width: 138,
-                          height: 82,
-                        ),
-                        if (locked)
-                          Positioned(
-                            top: 6,
-                            right: 6,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.72),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.lock_rounded, size: 9, color: Color(0xFFFF4D94)),
-                                  SizedBox(width: 2),
-                                  Text(
-                                    'Duo / Plus',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 8.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('duo_link_partner_btn'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: BorderSide(color: const Color(0xFFFF4D94).withValues(alpha: 0.55)),
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.person_add_alt_1_rounded, size: 15, color: Color(0xFFFF4D94)),
-                label: Text(
-                  hasPartner ? 'Сменить партнёра' : 'Отправить парный запрос',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                ),
-                onPressed: () => _openDuoPartnerPicker(context),
-              ),
-              OutlinedButton.icon(
-                key: const ValueKey('duo_share_compatibility_btn'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF38BDF8),
-                  side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.45)),
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.share_rounded, size: 15),
-                label: const Text(
-                  'Поделиться парной карточкой',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                ),
-                onPressed: () {
-                  showDuoCompatibilityCardSheet(
-                    context,
-                    myName: widget.profile.username,
-                    myAvatarUrl: widget.profile.avatarUrl,
-                    partnerName: hasPartner ? 'Партнёр' : 'Друг SyncPai',
-                    partnerAvatarUrl: null,
-                    daysTogether: widget.profile.daysInDuo,
-                    matchPercent: 88,
-                    sharedEpisodes: 12,
-                    sharedHours: 4.8,
-                  );
-                },
-              ),
-              if (!isPlusOrHigher)
-                ElevatedButton.icon(
-                  key: const ValueKey('duo_pack_buy_btn'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF4D94),
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: const Icon(Icons.auto_awesome_rounded, size: 15),
-                  label: const Text(
-                    'Парный пак (149 сом / 85 Stars)',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                  ),
-                  onPressed: () {
-                    TelegramLauncher.openBotStart(context, 'buy_duo');
-                  },
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openDuoPartnerPicker(BuildContext ctx) async {
-    final friends = await FriendsService.getFriends();
-    if (!ctx.mounted) return;
-    await showModalBottomSheet<void>(
-      context: ctx,
-      backgroundColor: Colors.transparent,
-      builder: (sCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF12161F),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Выберите партнёра из друзей',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (friends.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'Сначала добавьте друга в разделе «Друзья», чтобы отправить парный запрос.',
-                      style: TextStyle(color: Colors.white60, fontSize: 12.5),
-                    ),
-                  )
-                else
-                  for (final f in friends.take(8))
-                    ListTile(
-                      dense: true,
-                      leading: AppAvatar(
-                        avatarUrl: (f['avatar_url'] ?? f['avatar'])?.toString(),
-                        username: (f['username'] ?? f['name'] ?? 'Друг').toString(),
-                        size: 36,
-                      ),
-                      title: Text(
-                        (f['username'] ?? f['name'] ?? 'Друг').toString(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                      ),
-                      trailing: const Icon(Icons.favorite_border_rounded, color: Color(0xFFFF4D94), size: 18),
-                      onTap: () async {
-                        final fid = (f['id'] ?? '').toString();
-                        final theme = (_selectedArtworkUrl ?? '').startsWith('duo_')
-                            ? _selectedArtworkUrl!
-                            : 'duo_sunset_left';
-                        await FriendsService.sendDuoRequest(fid, duoThemeId: theme);
-                        await FriendsService.linkDuoPartner(partnerId: fid, myThemeId: theme);
-                        if (sCtx.mounted) Navigator.of(sCtx).pop();
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: Text('Парный запрос отправлен: ${(f['username'] ?? 'Друг')}'),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildShowcaseTypeOption({
     required String type,

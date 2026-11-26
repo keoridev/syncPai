@@ -33,7 +33,7 @@ class ForYouRecommendationsShelf extends StatelessWidget {
   Widget build(BuildContext context) {
     if (picks.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    final accent = scheme.primary;
+    final cleanTitle = title.replaceAll('✨', '').trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -42,11 +42,15 @@ class ForYouRecommendationsShelf extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, size: 17, color: accent),
+              const Icon(
+                Icons.auto_awesome_outlined,
+                size: 17,
+                color: Color(0xFFFF6B4A),
+              ),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  title,
+                  cleanTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -141,24 +145,39 @@ class ForYouRecommendationsShelf extends StatelessWidget {
                                     horizontal: 7,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xD10C1018),
+                                    color: const Color(0xD90B0E14),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: accent.withValues(alpha: 0.45),
-                                      width: 0.8,
+                                      color: const Color(0x22FFFFFF),
+                                      width: 1,
                                     ),
                                   ),
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    pick.reasonTag,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: accent,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.0,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 5,
+                                        height: 5,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFFF6B4A),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Flexible(
+                                        child: Text(
+                                          pick.reasonTag,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w700,
+                                            height: 1.0,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),

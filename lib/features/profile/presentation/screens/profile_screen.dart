@@ -1008,6 +1008,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                                                   ),
                                                 ],
                                                 const SizedBox(height: 8),
+                                                if (widget.userId == null ||
+                                                    (_duoLink != null &&
+                                                        _duoLink!.isActive))
+                                                  DuoProfileCard(
+                                                    profile: profile,
+                                                    duoLink: _duoLink,
+                                                    onManageTap: () =>
+                                                        _openDuoCustomizer(
+                                                            profile),
+                                                  ),
+                                                const SizedBox(height: 8),
                                                 _buildCentralShowcaseSection(context, profile, currentAccentColor),
                                                 const SizedBox(height: 8),
                                                 _RecentHistoryCarousel(
@@ -1101,6 +1112,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   child: _buildMobileSegmentedTabs(currentAccentColor),
                                 ),
                                 if (_selectedMobileTab == 0) ...[
+                                  if (widget.userId == null ||
+                                      (_duoLink != null && _duoLink!.isActive))
+                                    SliverToBoxAdapter(
+                                      child: DuoProfileCard(
+                                        profile: profile,
+                                        duoLink: _duoLink,
+                                        onManageTap: () =>
+                                            _openDuoCustomizer(profile),
+                                      ),
+                                    ),
                                   SliverToBoxAdapter(
                                     child: _buildCentralShowcaseSection(context, profile, currentAccentColor),
                                   ),
@@ -1524,27 +1545,23 @@ class _ProfileScreenState extends State<ProfileScreen>
             _buildFavoriteAnimeShowcase(context, profile, currentAccentColor),
           if (mode == ShowcaseMode.manga || mode == ShowcaseMode.dual)
             _buildMangaShowcaseCard(context, currentAccentColor),
-          if (widget.userId == null || (_duoLink != null && _duoLink!.isActive))
-            DuoProfileCard(
-              profile: profile,
-              duoLink: _duoLink,
-              onManageTap: () async {
-                final updated = await DuoProfileSheet.show(
-                  context,
-                  profile: profile,
-                  initialLink: _duoLink,
-                  onUpdated: (next) {
-                    if (mounted) setState(() => _duoLink = next);
-                  },
-                );
-                if (mounted && updated != _duoLink) {
-                  setState(() => _duoLink = updated);
-                }
-              },
-            ),
         ],
       ),
     );
+  }
+
+  Future<void> _openDuoCustomizer(UserProfile profile) async {
+    final updated = await DuoProfileSheet.show(
+      context,
+      profile: profile,
+      initialLink: _duoLink,
+      onUpdated: (next) {
+        if (mounted) setState(() => _duoLink = next);
+      },
+    );
+    if (mounted && updated != _duoLink) {
+      setState(() => _duoLink = updated);
+    }
   }
 
   Future<void> _openShowcaseCustomizerSheet(

@@ -29,7 +29,6 @@ import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import 'floating_pai_chan_reactions_overlay.dart';
 import 'player_progress_bar.dart';
-import 'player_settings_sheet.dart';
 
 /// Десктопный интерфейс видеоплеера в стиле YouTube / Crunchyroll Web:
 /// - Авто-скрытие контролов и курсора мыши при бездействии (3 секунды)
@@ -624,19 +623,12 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                       decoration: BoxDecoration(
                         color: Colors.black,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.7),
-                            blurRadius: 28,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
                       ),
                       child: _buildVideoSurface(isFullScreen: false),
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
 
                 // Метаданные под плеером: название аниме, номер серии, переключатель озвучки, закладки и совместный просмотр
                 _buildMetadataPanel(),
@@ -669,42 +661,58 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
 
     return Row(
       children: [
-        IconButton.filledTonal(
-          onPressed: widget.onBack,
-          tooltip: 'Назад к тайтлу (Esc)',
-          icon: const Icon(Icons.arrow_back_rounded, size: 20),
-          style: IconButton.styleFrom(
-            backgroundColor: Colors.white.withValues(alpha: 0.08),
-            foregroundColor: Colors.white,
+        InkWell(
+          onTap: widget.onBack,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A202E),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0x14FFFFFF)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back_rounded, size: 16, color: Colors.white),
+                SizedBox(width: 6),
+                Text(
+                  'К тайтлу',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.displayTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: title.displayTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Серия ${ep.episode}${ep.name != null && ep.name!.isNotEmpty ? ' — ${ep.name}' : ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                TextSpan(
+                  text: '  /  Серия ${ep.episode}',
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         if (widget.state.isSyncRoom) ...[
@@ -1268,9 +1276,9 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                           trackHeight: 3.5,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                           overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                          activeTrackColor: AppColors.primary,
+                          activeTrackColor: const Color(0xFFFF6B4A),
                           inactiveTrackColor: Colors.white.withValues(alpha: 0.25),
-                          thumbColor: Colors.white,
+                          thumbColor: const Color(0xFFFF6B4A),
                         ),
                         child: Slider(
                           value: state.volume.clamp(0.0, 100.0),
@@ -1389,40 +1397,15 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                     .toList(),
               ),
 
-              const SizedBox(width: 8),
-
-              // Кнопка Настройки (шторка плеера)
-              IconButton(
-                tooltip: 'Настройки плеера',
-                icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 21),
-                onPressed: () => PlayerSettingsSheet.show(
-                  context,
-                  cubit: widget.cubit,
-                  state: widget.state,
-                ),
-              ),
-
-              // Кнопка «Плавающее окно (PiP)»
-              IconButton(
-                tooltip: 'Плавающее окно (P)',
-                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 21),
-                onPressed: _minimizeToMiniPlayer,
-              ),
-
-              // Кнопка Горячие клавиши
-              IconButton(
-                tooltip: 'Горячие клавиши (?)',
-                icon: const Icon(Icons.keyboard_outlined, color: Colors.white, size: 21),
-                onPressed: () => _showHotkeysDialog(context),
-              ),
+              const SizedBox(width: 12),
 
               // Кнопка «Кинотеатр» (скрывает сайдбар серий)
-              if (!isFullScreen)
+              if (!isFullScreen) ...[
                 IconButton(
                   tooltip: _isTheaterMode ? 'Стандартный вид' : 'Театральный режим',
                   icon: Icon(
-                    _isTheaterMode ? Icons.crop_16_9_rounded : Icons.crop_landscape_rounded,
-                    color: _isTheaterMode ? AppColors.primary : Colors.white,
+                    Icons.crop_16_9_rounded,
+                    color: _isTheaterMode ? const Color(0xFFFF6B4A) : Colors.white,
                     size: 21,
                   ),
                   onPressed: () {
@@ -1431,6 +1414,17 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                     });
                   },
                 ),
+                const SizedBox(width: 12),
+              ],
+
+              // Кнопка «Плавающее окно (PiP)»
+              IconButton(
+                tooltip: 'Плавающее окно (P)',
+                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 20),
+                onPressed: _minimizeToMiniPlayer,
+              ),
+
+              const SizedBox(width: 12),
 
               // Кнопка «На весь экран» (F)
               IconButton(
@@ -1440,8 +1434,8 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                   color: Colors.white,
                   size: 24,
                 ),
-                        onPressed: _toggleFullScreen,
-                      ),
+                onPressed: _toggleFullScreen,
+              ),
                     ],
                   ),
                 ],
@@ -1454,125 +1448,224 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
     );
   }
 
-  /// Метаданные и кнопки действий под плеером
+  String _formatEpisodeSubtitle(int episodeNumber, String? episodeName) {
+    final rawName = (episodeName ?? '').trim();
+    String? voiceover;
+    String cleanSub = rawName;
+
+    // Извлекаем озвучку из суффикса "(AniDUB)" или "• AniDUB"
+    final parenMatch = RegExp(r'\(([^)]+)\)\s*$').firstMatch(cleanSub);
+    if (parenMatch != null) {
+      voiceover = parenMatch.group(1)?.trim();
+      cleanSub = cleanSub.substring(0, parenMatch.start).trim();
+    } else if (cleanSub.contains('•')) {
+      final parts = cleanSub.split('•');
+      if (parts.length >= 2) {
+        voiceover = parts.last.trim();
+        cleanSub = parts.sublist(0, parts.length - 1).join('•').trim();
+      }
+    }
+
+    // Убираем дублирование вида "Серия 1"
+    final epPrefix = RegExp(
+      '^серия\\s*$episodeNumber(?:\\s*[-—:])?\\s*',
+      caseSensitive: false,
+    );
+    cleanSub = cleanSub.replaceFirst(epPrefix, '').trim();
+
+    final base = cleanSub.isNotEmpty
+        ? 'Серия $episodeNumber: $cleanSub'
+        : 'Серия $episodeNumber';
+    if (voiceover != null && voiceover.isNotEmpty) {
+      return '$base • $voiceover';
+    }
+    return base;
+  }
+
+  /// Метаданные и кнопки действий под плеером (полноширинная карточка)
   Widget _buildMetadataPanel() {
     final title = widget.state.title;
     final ep = widget.state.episode;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF13151D),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: const Color(0xFF131722),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x14FFFFFF)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title.displayTitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 20,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Серия ${ep.episode}${ep.name != null && ep.name!.isNotEmpty ? ' — ${ep.name}' : ''}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Панель кнопок: Озвучка, В закладки, Смотреть вместе
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 720;
+          final infoColumn = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                  // Переключатель озвучки
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: Icon(Icons.record_voice_over_rounded, size: 16, color: AppColors.primary),
-                    label: Text(
+              Text(
+                title.displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  letterSpacing: 0.1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatEpisodeSubtitle(ep.episode, ep.name),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                ),
+              ),
+              if (title.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  title.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ],
+          );
+
+          final actionsWrap = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: isWide ? WrapAlignment.end : WrapAlignment.start,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Переключатель озвучки
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A202E),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: Color(0x14FFFFFF)),
+                  ),
+                ),
+                onPressed: () => VoiceoverSelectorSheet.show(
+                  context,
+                  episodeNumber: ep.episode,
+                  onVoiceoverChanged: (studio) => widget.cubit.switchVoiceoverStudio(studio),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
                       _currentVoiceoverTitle(),
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
-                    onPressed: () => VoiceoverSelectorSheet.show(
-                      context,
-                      episodeNumber: ep.episode,
-                      onVoiceoverChanged: (studio) => widget.cubit.switchVoiceoverStudio(studio),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 17, color: Color(0xFF94A3B8)),
+                  ],
+                ),
+              ),
+
+              // Кнопка «В закладки»
+              _buildBookmarkButton(title),
+
+              // Кнопка «Создать момент»
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A202E),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: Color(0x14FFFFFF)),
+                  ),
+                ),
+                icon: const Icon(Icons.bookmark_border_rounded, size: 16, color: Color(0xFF94A3B8)),
+                label: const Text(
+                  'Создать момент',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () {
+                  final pos = widget.cubit.state.position;
+                  final ts = _formatDuration(pos);
+                  Clipboard.setData(
+                    ClipboardData(text: '${title.displayTitle} • Серия ${ep.episode} ($ts)'),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Момент сохранён ($ts)'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+
+              // Кнопка «Смотреть вместе» (плоский коралловый акцент)
+              if (!widget.state.isSyncRoom)
+                FilledButton.icon(
+                  key: const ValueKey('desktop_watch_together_metadata_btn'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B4A),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.group_add_rounded, size: 17, color: Colors.white),
+                  label: const Text(
+                    'Смотреть вместе',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
-
-                  // Кнопка «В закладки»
-                  _buildBookmarkButton(title),
-
-                  // Кнопка «Смотреть вместе» (скрывается, когда уже находимся внутри активной комнаты)
-                  if (!widget.state.isSyncRoom)
-                    Builder(
-                      builder: (context) {
-                        final onAccent = AppColors.onColor(AppColors.primary);
-                        return FilledButton.icon(
-                          key: const ValueKey('desktop_watch_together_metadata_btn'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: onAccent,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: Icon(Icons.group_add_rounded, size: 18, color: onAccent),
-                          label: Text(
-                            'Смотреть вместе',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: onAccent,
-                            ),
-                          ),
-                          onPressed: () {
-                            SyncRoomLobbySheet.show(
-                              context,
-                              title: title,
-                              episode: ep,
-                              initialQuality: widget.state.selectedQuality,
-                              onStartPlayback: (room, isHost) {
-                                widget.cubit.attachRoomSession(room, isHost: isHost);
-                              },
-                            );
-                          },
-                        );
+                  onPressed: () {
+                    SyncRoomLobbySheet.show(
+                      context,
+                      title: title,
+                      episode: ep,
+                      initialQuality: widget.state.selectedQuality,
+                      onStartPlayback: (room, isHost) {
+                        widget.cubit.attachRoomSession(room, isHost: isHost);
                       },
-                    ),
-                ],
-              ),
+                    );
+                  },
+                ),
+            ],
+          );
 
-          if (title.description.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text(
-              title.description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.65),
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-          ],
-        ],
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: infoColumn),
+                const SizedBox(width: 20),
+                Flexible(child: actionsWrap),
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              infoColumn,
+              const SizedBox(height: 12),
+              actionsWrap,
+            ],
+          );
+        },
       ),
     );
   }
@@ -2115,12 +2208,12 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: isCurrent
-                  ? AppColors.primary.withValues(alpha: 0.16)
+                  ? const Color(0xFFFF6B4A).withValues(alpha: 0.14)
                   : Colors.white.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isCurrent
-                    ? AppColors.primary.withValues(alpha: 0.55)
+                    ? const Color(0xFFFF6B4A).withValues(alpha: 0.65)
                     : Colors.white.withValues(alpha: 0.06),
                 width: isCurrent ? 1.4 : 1.0,
               ),
@@ -2173,18 +2266,18 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: isCurrent ? AppColors.primary : Colors.white,
+                                color: isCurrent ? const Color(0xFFFF6B4A) : Colors.white,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13,
                               ),
                             ),
                           ),
                           if (isCurrent) ...[
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: AppColors.primary,
+                                color: const Color(0xFFFF6B4A),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: const Text(
@@ -2295,12 +2388,12 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: isCurrent
-                          ? AppColors.primary.withValues(alpha: 0.16)
+                          ? const Color(0xFFFF6B4A).withValues(alpha: 0.14)
                           : Colors.white.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isCurrent
-                            ? AppColors.primary.withValues(alpha: 0.55)
+                            ? const Color(0xFFFF6B4A).withValues(alpha: 0.65)
                             : Colors.white.withValues(alpha: 0.06),
                         width: isCurrent ? 1.4 : 1.0,
                       ),
@@ -2356,18 +2449,18 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: isCurrent ? AppColors.primary : Colors.white,
+                                        color: isCurrent ? const Color(0xFFFF6B4A) : Colors.white,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 13,
                                       ),
                                     ),
                                   ),
                                   if (isCurrent) ...[
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                       decoration: BoxDecoration(
-                                        color: AppColors.primary,
+                                        color: const Color(0xFFFF6B4A),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: const Text(

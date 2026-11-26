@@ -72,9 +72,16 @@ class CatalogRepositoryImpl implements CatalogRepository {
     // 2. Получаем прямые ссылки на видеопотоки эпизодов через getPlayerLinks
     if (animeCatalogRepository != null && id != null && id > 0) {
       try {
+        final candidateTitle = baseTitle?.displayTitle.trim() ?? '';
+        final safeTitle = candidateTitle.isNotEmpty &&
+                !candidateTitle.startsWith('shiki_') &&
+                !candidateTitle.startsWith('shikimori_') &&
+                !candidateTitle.startsWith('Аниме #')
+            ? candidateTitle
+            : null;
         final translations = await animeCatalogRepository!.getPlayerLinks(
           id,
-          title: baseTitle?.displayTitle ?? code,
+          title: safeTitle,
         );
         if (translations.isNotEmpty) {
           final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);

@@ -35,6 +35,64 @@ class MangaReadingProgress {
   }
 }
 
+class MangaShowcasePanel {
+  final String mangaId;
+  final String mangaTitle;
+  final String chapterLabel;
+  final String pageUrl;
+  final String? refererHeader;
+  final double cropX;
+  final double cropY;
+  final double cropWidth;
+  final double cropHeight;
+
+  const MangaShowcasePanel({
+    required this.mangaId,
+    required this.mangaTitle,
+    required this.chapterLabel,
+    required this.pageUrl,
+    this.refererHeader,
+    required this.cropX,
+    required this.cropY,
+    required this.cropWidth,
+    required this.cropHeight,
+  });
+
+  bool get isValid =>
+      pageUrl.trim().isNotEmpty && cropWidth > 0.0 && cropHeight > 0.0;
+
+  Map<String, dynamic> toJson() => {
+        'mangaId': mangaId,
+        'mangaTitle': mangaTitle,
+        'chapterLabel': chapterLabel,
+        'pageUrl': pageUrl,
+        if (refererHeader != null && refererHeader!.isNotEmpty)
+          'refererHeader': refererHeader,
+        'cropX': cropX.clamp(0.0, 1.0),
+        'cropY': cropY.clamp(0.0, 1.0),
+        'cropWidth': cropWidth.clamp(0.05, 1.0),
+        'cropHeight': cropHeight.clamp(0.05, 1.0),
+      };
+
+  factory MangaShowcasePanel.fromJson(Map<String, dynamic> json) {
+    final rawReferer = json['refererHeader']?.toString().trim();
+    return MangaShowcasePanel(
+      mangaId: (json['mangaId'] ?? '').toString(),
+      mangaTitle: (json['mangaTitle'] ?? '').toString(),
+      chapterLabel: (json['chapterLabel'] ?? '').toString(),
+      pageUrl: (json['pageUrl'] ?? '').toString(),
+      refererHeader:
+          (rawReferer == null || rawReferer.isEmpty) ? null : rawReferer,
+      cropX: ((json['cropX'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
+      cropY: ((json['cropY'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
+      cropWidth:
+          ((json['cropWidth'] as num?)?.toDouble() ?? 1.0).clamp(0.05, 1.0),
+      cropHeight:
+          ((json['cropHeight'] as num?)?.toDouble() ?? 1.0).clamp(0.05, 1.0),
+    );
+  }
+}
+
 class FeaturedMangaShowcase {
   final String mangaId;
   final String mangaTitle;
@@ -138,6 +196,7 @@ class MangaProgressRepository {
   static const String _prefsPrefix = 'syncpai_manga_progress_';
   static const String _featuredMangaKey = 'syncpai_featured_manga_showcase_v1';
   static const String _showcaseConfigKey = 'syncpai_profile_showcase_config_v1';
+  static const String _showcasePanelKey = 'syncpai_profile_showcase_art_config_v1';
 
   final SharedPreferences? _prefs;
 
@@ -314,6 +373,73 @@ class MangaProgressRepository {
       await client
           .from('profiles')
           .update({'showcase_config': config.toJson()})
+          .eq('id', userId);
+    } catch (_) {}
+  }
+
+  Future<MangaShowcasePanel?> getShowcasePanel() async {
+    try {
+      final prefs = await _getPrefs();
+      final raw = prefs.getString(_showcasePanelKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          final parsed = MangaShowcasePanel.fromJson(decoded);
+          if (parsed.isValid) return parsed;
+        }
+      }
+    } catch (_) {}
+    try {
+      final client = Supabase.instance.client;
+      final userId = client.auth.currentUser?.id;
+      if (userId != null && userId.isNotEmpty) {
+        final row = await client
+            .from('profiles')
+            .select('showcase_art_config')
+            .eq('id', userId)
+            .maybeSingle();
+        final remote = row?['showcase_art_config'];
+        if (remote is Map<String, dynamic>) {
+          final parsed = MangaShowcasePanel.fromJson(remote);
+          if (parsed.isValid) {
+            final prefs = await _getPrefs();
+            await prefs.setString(_showcasePanelKey, jsonEncode(parsed.toJson()));
+            return parsed;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> saveShowcasePanel(MangaShowcasePanel panel) async {
+    try {
+      final prefs = await _getPrefs();
+      await prefs.setString(_showcasePanelKey, jsonEncode(panel.toJson()));
+    } catch (_) {}
+    try {
+      final client = Supabase.instance.client;
+      final userId = client.auth.currentUser?.id;
+      if (userId == null || userId.isEmpty) return;
+      await client
+          .from('profiles')
+          .update({'showcase_art_config': panel.toJson()})
+          .eq('id', userId);
+    } catch (_) {}
+  }
+
+  Future<void> clearShowcasePanel() async {
+    try {
+      final prefs = await _getPrefs();
+      await prefs.remove(_showcasePanelKey);
+    } catch (_) {}
+    try {
+      final client = Supabase.instance.client;
+      final userId = client.auth.currentUser?.id;
+      if (userId == null || userId.isEmpty) return;
+      await client
+          .from('profiles')
+          .update({'showcase_art_config': null})
           .eq('id', userId);
     } catch (_) {}
   }

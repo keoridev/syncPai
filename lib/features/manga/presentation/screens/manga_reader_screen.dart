@@ -16,6 +16,7 @@ import '../../data/repositories/manga_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
+import '../widgets/manga_panel_cropper_sheet.dart';
 
 enum MangaReadingMode { webtoon, paged }
 
@@ -416,6 +417,53 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     );
   }
 
+  Future<void> _cropCurrentPageToShowcase() async {
+    HapticFeedback.lightImpact();
+    if (_pages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Дождитесь загрузки страниц главы'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final safeIdx = _currentPageNotifier.value.clamp(0, _pages.length - 1);
+    final pageUrl = _pages[safeIdx];
+    final chapter = _chapters.isNotEmpty &&
+            _currentChapterIndex >= 0 &&
+            _currentChapterIndex < _chapters.length
+        ? _chapters[_currentChapterIndex]
+        : null;
+    final chapterNum = chapter?.chapterLabel.trim() ?? '';
+    final chapterLabel = chapterNum.isNotEmpty ? 'Глава $chapterNum' : 'Глава 1';
+    final referer = chapter != null && chapter.id.startsWith('remanga:')
+        ? 'https://remanga.org/'
+        : (chapter != null && chapter.id.startsWith('desu:')
+            ? 'https://desu.uno/'
+            : null);
+
+    final saved = await MangaPanelCropperSheet.show(
+      context,
+      mangaId: widget.bridge.mangaDexId,
+      mangaTitle: widget.bridge.mangaTitle,
+      chapterLabel: chapterLabel,
+      pageUrl: pageUrl,
+      refererHeader: referer,
+    );
+    if (saved != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Кадр сохранён в витрину иллюстраций'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _toggleReadingMode() {
     HapticFeedback.selectionClick();
     final nextMode = _readingMode == MangaReadingMode.webtoon
@@ -716,6 +764,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                               ],
                             ),
                         ],
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('manga_crop_showcase_btn'),
+                      tooltip: 'В витрину',
+                      onPressed: _cropCurrentPageToShowcase,
+                      icon: const Icon(
+                        Icons.crop_rounded,
+                        color: Colors.white,
+                        size: 20,
                       ),
                     ),
                     IconButton(

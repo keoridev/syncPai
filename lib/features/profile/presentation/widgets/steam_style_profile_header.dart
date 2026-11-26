@@ -21,6 +21,8 @@ import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/widgets/pai_chan_auth_gate.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../catalog/presentation/cubit/catalog_state.dart';
+import '../../../manga/data/repositories/manga_progress_repository.dart';
+import '../../../manga/presentation/widgets/manga_panel_cropper_sheet.dart';
 import '../../domain/entities/steam_profile_customization.dart';
 import '../../services/friends_service.dart';
 import 'badge_details_sheet.dart';
@@ -155,6 +157,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   double _targetTiltX = 0.0;
   double _targetTiltY = 0.0;
   AnimationController? _idleController;
+  MangaShowcasePanel? _mangaShowcasePanel;
 
   static List<SteamArtworkPreset> get curatedPresets =>
       SteamStyleProfileHeader.curatedPresets;
@@ -170,6 +173,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
   @override
   void initState() {
     super.initState();
+    _loadShowcasePanel();
 
     _idleController = AnimationController(
       vsync: this,
@@ -334,16 +338,36 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
     );
   }
 
-  void _openArtworkSelectorSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _ArtworkSelectorSheet(
-        profile: widget.profile,
-        accentColor: _resolveAccentColor(context),
-      ),
+  Future<void> _loadShowcasePanel() async {
+    if (_isTestEnv) return;
+    final panel = await MangaProgressRepository().getShowcasePanel();
+    if (mounted && panel != null && panel.isValid) {
+      setState(() => _mangaShowcasePanel = panel);
+    }
+  }
+
+  Future<void> _openArtworkSelectorSheet(BuildContext context) async {
+    final result = await MangaPanelPickerSheet.show(
+      context,
+      profile: widget.profile,
+      accentColor: _resolveAccentColor(context),
     );
+    if (!mounted || result == null) return;
+    if (result.panel != null) {
+      setState(() => _mangaShowcasePanel = result.panel);
+      return;
+    }
+    final preset = result.preset;
+    if (preset != null) {
+      setState(() => _mangaShowcasePanel = null);
+      if (getIt.isRegistered<AuthCubit>()) {
+        await getIt<AuthCubit>().updateProfile(
+          username: widget.profile.username,
+          artworkUrl: preset.imageUrl,
+          artworkTitle: preset.title,
+        );
+      }
+    }
   }
 
   @override
@@ -1321,16 +1345,19 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF191F2B) : scheme.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(isHackerPanorama ? 16 : 14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.42 : 0.08),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                border: Border.all(color: const Color(0x14FFFFFF)),
               ),
               clipBehavior: Clip.antiAlias,
-              child: Stack(
+              child: (_mangaShowcasePanel != null && _mangaShowcasePanel!.isValid)
+                  ? LayoutBuilder(
+                      builder: (context, constraints) => MangaShowcasePanelBanner(
+                        panel: _mangaShowcasePanel!,
+                        width: constraints.maxWidth,
+                        height: showcaseHeight,
+                        onTap: _handleShowcaseTap,
+                      ),
+                    )
+                  : Stack(
                 children: [
                   // ЕДИНАЯ ВИТРИНА АРТА: Единое бесшовное изображение во всю ширину без вертикальной разделительной полосы
                   LayoutBuilder(

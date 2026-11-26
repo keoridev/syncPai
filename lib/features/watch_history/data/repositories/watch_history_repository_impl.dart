@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../domain/entities/watch_history_item.dart';
 import '../../domain/repositories/watch_history_repository.dart';
 
@@ -49,7 +50,20 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
         if (normName.isNotEmpty) {
           seenNames.add(normName);
         }
-        deduplicated.add(item);
+        final sanitizedItem =
+            AnimePosterResolver.isMissingOrPlaceholder(item.posterUrl)
+                ? WatchHistoryItem(
+                    titleId: item.titleId,
+                    titleName: item.titleName,
+                    posterUrl: '',
+                    episode: item.episode,
+                    episodeName: item.episodeName,
+                    positionMs: item.positionMs,
+                    durationMs: item.durationMs,
+                    updatedAt: item.updatedAt,
+                  )
+                : item;
+        deduplicated.add(sanitizedItem);
       }
       return deduplicated;
     } catch (_) {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/services/mascot_companion_service.dart';
 import '../../../anime_details/data/datasources/shikimori_remote_datasource.dart';
 import '../../../manga/data/datasources/mangadex_datasource.dart';
@@ -211,7 +212,7 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     final future = () async {
       try {
-        final List<AnimeTitle> incoming;
+        List<AnimeTitle> incoming;
         final bool hasMore;
 
         switch (source) {
@@ -250,6 +251,30 @@ class CatalogCubit extends Cubit<CatalogState> {
                 );
               }
               hasMore = false;
+            }
+            if (incoming.isNotEmpty) {
+              try {
+                final resolvedPosters = await AnimePosterResolver.instance
+                    .resolveBatchPosters(incoming)
+                    .timeout(const Duration(seconds: 4));
+                if (resolvedPosters.isNotEmpty) {
+                  incoming = incoming.map((t) {
+                    final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
+                        ? t.shikimoriId!
+                        : t.id;
+                    final enrichedUrl = resolvedPosters[malId];
+                    if (enrichedUrl != null &&
+                        AnimePosterResolver.isMissingOrPlaceholder(t.posterUrl)) {
+                      return t.copyWith(
+                        posterSmall: enrichedUrl,
+                        posterMedium: enrichedUrl,
+                        posterOriginal: enrichedUrl,
+                      );
+                    }
+                    return t;
+                  }).toList();
+                }
+              } catch (_) {}
             }
             break;
 

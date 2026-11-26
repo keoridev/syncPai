@@ -244,7 +244,8 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         return _buildFallbackShikimoriDto(id: id, code: cleanQuery);
       }
 
-      final isShikimoriCode = rawCode.startsWith('shikimori_');
+      final isShikimoriCode =
+          rawCode.startsWith('shikimori_') || rawCode.startsWith('shiki_');
       final resolvedId = (id != null && _shikimoriToAnilibriaIdCache.containsKey(id))
           ? _shikimoriToAnilibriaIdCache[id]
           : id;

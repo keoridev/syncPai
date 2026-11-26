@@ -180,6 +180,10 @@ class _SyncPaiAppState extends State<SyncPaiApp> {
             theme: themeState.themeData,
             routerConfig: appRouter,
             builder: (context, child) {
+              final size = MediaQuery.sizeOf(context);
+              if (!size.width.isFinite || size.width < 100 || size.height < 100) {
+                return const ColoredBox(color: Color(0xFF0B0E14));
+              }
               return Listener(
                 behavior: HitTestBehavior.translucent,
                 onPointerDown: (_) =>

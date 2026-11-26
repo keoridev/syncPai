@@ -122,6 +122,12 @@ query ($season: String, $limit: Int) {
 
       String normalizeUrl(String url) {
         if (url.isEmpty) return '';
+        final lower = url.toLowerCase();
+        if (lower.contains('missing_original') ||
+            lower.contains('missing_preview') ||
+            lower.contains('missing_x')) {
+          return '';
+        }
         if (url.startsWith('//')) return 'https:$url';
         if (!url.startsWith('http')) return 'https://shikimori.io$url';
         return url;

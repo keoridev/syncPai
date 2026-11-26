@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -35,13 +36,26 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
   MangaDexManga? _manga;
   List<MangaDexChapter> _chapters = const [];
   MangaReadingProgress? _savedProgress;
-  bool _isLoading = true;
+  bool _isLoadingDetails = false;
+  bool _isStreamingChapters = true;
   String? _selectedVolume;
+  String? _selectedTeam;
+  StreamSubscription<List<MangaDexChapter>>? _chaptersSub;
+
+  static const Set<String> _internalSources = {
+    'senkuro',
+    'mangalib',
+    'remanga',
+    'desu',
+    'desu.uno',
+    'mangadex',
+  };
 
   @override
   void initState() {
     super.initState();
     _manga = widget.initialManga;
+    _isLoadingDetails = _manga == null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       MascotCompanionService.instance.setMangaContext(true);
@@ -51,6 +65,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
 
   @override
   void dispose() {
+    _chaptersSub?.cancel();
     final nextMangaContext =
         getIt.isRegistered<CatalogCubit>() ? getIt<CatalogCubit>().isMangaMode : false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -67,28 +82,84 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
         ? getIt<MangaProgressRepository>()
         : null;
 
-    final loadedManga = _manga ?? await repo.getMangaDetails(widget.mangaId);
-    final chapterTarget = loadedManga ??
+    // 1. Загружаем прогресс и полные метаданные параллельно, не блокируя UI
+    if (progressRepo != null) {
+      progressRepo.getProgress(widget.mangaId).then((prog) {
+        if (mounted && prog != null) {
+          setState(() => _savedProgress = prog);
+        }
+      });
+    }
+
+    MangaDexManga? loadedManga = _manga;
+    final needsMetaEnrich = loadedManga == null ||
+        loadedManga.rating == null ||
+        (loadedManga.description?.trim().isEmpty ?? true) ||
+        loadedManga.status == null;
+
+    if (needsMetaEnrich) {
+      repo.getMangaDetails(widget.mangaId).then((details) {
+        if (!mounted || details == null) return;
+        setState(() {
+          _manga = _manga == null
+              ? details
+              : MangaDexManga(
+                  id: _manga!.id,
+                  title: _manga!.title.isNotEmpty ? _manga!.title : details.title,
+                  originalTitle: _manga!.originalTitle ?? details.originalTitle,
+                  coverUrl: _manga!.coverUrl.isNotEmpty ? _manga!.coverUrl : details.coverUrl,
+                  originalLanguage: _manga!.originalLanguage ?? details.originalLanguage,
+                  malId: _manga!.malId ?? details.malId,
+                  availableTranslatedLanguages: _manga!.availableTranslatedLanguages.isNotEmpty
+                      ? _manga!.availableTranslatedLanguages
+                      : details.availableTranslatedLanguages,
+                  latestUploadedChapter: _manga!.latestUploadedChapter ?? details.latestUploadedChapter,
+                  description: (_manga!.description?.trim().isNotEmpty ?? false)
+                      ? _manga!.description
+                      : details.description,
+                  status: _manga!.status ?? details.status,
+                  rating: _manga!.rating ?? details.rating,
+                  chaptersCount: _manga!.chaptersCount ?? details.chaptersCount,
+                  source: _manga!.source,
+                );
+          _isLoadingDetails = false;
+        });
+      });
+    }
+
+    loadedManga ??= await repo.getMangaDetails(widget.mangaId);
+    if (!mounted) return;
+    if (_manga == null && loadedManga != null) {
+      setState(() {
+        _manga = loadedManga;
+        _isLoadingDetails = false;
+      });
+    } else if (_isLoadingDetails) {
+      setState(() => _isLoadingDetails = false);
+    }
+
+    final chapterTarget = _manga ??
         MangaDexManga(
           id: widget.mangaId,
           title: 'Манга',
           coverUrl: '',
         );
-    final results = await Future.wait([
-      repo.getChapters(chapterTarget),
-      if (progressRepo != null)
-        progressRepo.getProgress(widget.mangaId)
-      else
-        Future.value(null),
-    ]);
 
-    if (!mounted) return;
-    setState(() {
-      _manga = loadedManga ?? _manga;
-      _chapters = results[0] as List<MangaDexChapter>;
-      _savedProgress = results[1] as MangaReadingProgress?;
-      _isLoading = false;
-    });
+    _chaptersSub?.cancel();
+    _chaptersSub = repo.fetchChaptersStream(chapterTarget).listen(
+      (batch) {
+        if (!mounted) return;
+        setState(() {
+          _chapters = batch;
+        });
+      },
+      onDone: () {
+        if (mounted) setState(() => _isStreamingChapters = false);
+      },
+      onError: (_) {
+        if (mounted) setState(() => _isStreamingChapters = false);
+      },
+    );
   }
 
   IconData _statusIcon(MangaListStatus status) {
@@ -271,17 +342,33 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
         : (manga?.status == 'ongoing' ? 'Онгоинг' : null);
 
     final volumes = <String>[];
+    final teams = <String>[];
     for (final ch in _chapters) {
       final vol = ch.volume?.trim() ?? '';
       if (vol.isNotEmpty && !volumes.contains(vol)) {
         volumes.add(vol);
       }
+      final rawTeam = (ch.translatorGroup ?? '').trim();
+      if (rawTeam.isNotEmpty &&
+          !_internalSources.contains(rawTeam.toLowerCase()) &&
+          !teams.contains(rawTeam)) {
+        teams.add(rawTeam);
+      }
     }
-    final filteredChapters = _selectedVolume == null
-        ? _chapters
-        : _chapters
-            .where((ch) => (ch.volume?.trim() ?? '') == _selectedVolume)
-            .toList();
+    final activeTeam = (_selectedTeam != null && teams.contains(_selectedTeam))
+        ? _selectedTeam
+        : null;
+    final filteredChapters = _chapters.where((ch) {
+      if (_selectedVolume != null &&
+          (ch.volume?.trim() ?? '') != _selectedVolume) {
+        return false;
+      }
+      if (activeTeam != null &&
+          (ch.translatorGroup ?? '').trim() != activeTeam) {
+        return false;
+      }
+      return true;
+    }).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -295,7 +382,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
           style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
-      body: _isLoading
+      body: (_manga == null && _isLoadingDetails)
           ? const Center(child: CircularProgressIndicator())
           : Center(
               child: ConstrainedBox(
@@ -376,6 +463,22 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                                                   color: AppColors.textSecondary,
                                                   fontSize: 11.5,
                                                   fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          if (manga?.rating != null && manga!.rating! > 0)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF1A2030),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                '★ ${manga.rating!.toStringAsFixed(1)}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFFFFB74D),
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w700,
                                                 ),
                                               ),
                                             ),
@@ -632,9 +735,88 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                       ),
                     ),
                   ),
+                if (_isStreamingChapters)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF151923),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0x14FFFFFF)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Синхронизация глав... (загружено ${_chapters.length})',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const ClipRRect(
+                              borderRadius: BorderRadius.all(Radius.circular(3)),
+                              child: LinearProgressIndicator(
+                                minHeight: 3,
+                                color: Color(0xFFFF6B4A),
+                                backgroundColor: Color(0xFF1A202E),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (teams.length > 1)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Перевод: Все'),
+                            selected: activeTeam == null,
+                            selectedColor: const Color(0xFFFF6B4A),
+                            backgroundColor: const Color(0xFF141821),
+                            side: const BorderSide(color: Color(0x14FFFFFF)),
+                            labelStyle: TextStyle(
+                              color: activeTeam == null
+                                  ? Colors.white
+                                  : AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            onSelected: (_) => setState(() => _selectedTeam = null),
+                          ),
+                          for (final team in teams)
+                            ChoiceChip(
+                              label: Text('Перевод: $team'),
+                              selected: activeTeam == team,
+                              selectedColor: const Color(0xFFFF6B4A),
+                              backgroundColor: const Color(0xFF141821),
+                              side: const BorderSide(color: Color(0x14FFFFFF)),
+                              labelStyle: TextStyle(
+                                color: activeTeam == team
+                                    ? Colors.white
+                                    : AppColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              onSelected: (_) => setState(() => _selectedTeam = team),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (volumes.length > 1)
                   const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                if (_chapters.isEmpty)
+                if (_chapters.isEmpty && !_isStreamingChapters)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(20),

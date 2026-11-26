@@ -75,20 +75,31 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
     if (clean.contains('gold') || clean.contains('dragon')) {
       return 'golden_dragon';
     }
-    if (clean.contains('katana') ||
-        clean.contains('techno') ||
-        clean.contains('cyber') ||
-        clean.contains('blade') ||
-        clean.contains('samurai')) {
+    if (clean.contains('katana') || clean.contains('samurai')) {
+      return 'katana_guard';
+    }
+    if (clean.contains('techno') || clean.contains('bevel')) {
+      return 'techno_bevel';
+    }
+    if (clean.contains('monolith')) {
+      return 'monolith';
+    }
+    if (clean.contains('ice') || clean.contains('crystal') || clean.contains('frost')) {
+      return 'ice_crystal';
+    }
+    if (clean.contains('minimal')) {
+      return 'minimal';
+    }
+    if (clean.contains('coral')) {
+      return 'coral_contour';
+    }
+    if (clean.contains('ember') || clean.contains('rank_ember') || clean.contains('flame')) {
+      return 'rank_ember';
+    }
+    if (clean.contains('cyber') || clean.contains('blade')) {
       return 'cyber_blade';
     }
-    if (clean.contains('monolith') ||
-        clean.contains('ice') ||
-        clean.contains('shadow') ||
-        clean.contains('monarch') ||
-        clean.contains('void') ||
-        clean.contains('cursed') ||
-        clean.contains('oni')) {
+    if (clean.contains('shadow') || clean.contains('monarch') || clean.contains('void')) {
       return 'shadow_monarch';
     }
     if (clean.contains('matrix') || clean.contains('terminal')) {

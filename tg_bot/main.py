@@ -6,7 +6,7 @@ from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
-from handlers import start_profile, support_payments, downloads, admin, inline_invite, bug_report
+from handlers import start_profile, support_payments, downloads, admin, inline_invite, bug_report, feature_requests
 from services.card_renderer import invalidate_card_cache
 from services.episode_notifier import check_and_notify_new_episodes
 from services.expiration_worker import check_expired_supporters
@@ -37,8 +37,9 @@ async def main():
     bot = Bot(token=settings.bot_token)
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Регистрация модулей (bug_report до общих catch-all обработчиков)
+    # Регистрация модулей (bug_report и feature_requests до общих catch-all обработчиков)
     dp.include_router(bug_report.router)
+    dp.include_router(feature_requests.router)
     dp.include_router(start_profile.router)
     dp.include_router(support_payments.router)
     dp.include_router(downloads.router)

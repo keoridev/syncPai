@@ -146,6 +146,7 @@ class DuoSyncService {
   static final DuoSyncService instance = DuoSyncService._();
 
   static const String _localCacheKey = 'syncpai_active_duo_link_v1';
+  static bool _schemaUnavailable = false;
 
   static const List<String> relationPresets = [
     'Напарники по аниме',
@@ -163,6 +164,7 @@ class DuoSyncService {
   }
 
   Future<DuoLinkRecord?> getCurrentDuoLink({String? userId}) async {
+    if (_schemaUnavailable) return _readLocalCache();
     final client = Supabase.instance.client;
     final uid = userId ?? client.auth.currentUser?.id;
     if (uid == null || uid.isEmpty) return _readLocalCache();
@@ -180,6 +182,12 @@ class DuoSyncService {
         final record = DuoLinkRecord.fromJson(Map<String, dynamic>.from(rows.first));
         await _writeLocalCache(record);
         return record;
+      }
+    } on PostgrestException catch (e) {
+      if (e.code == 'PGRST205' || e.code == '42P01') {
+        _schemaUnavailable = true;
+      } else if (kDebugMode) {
+        debugPrint('[DuoSyncService] getCurrentDuoLink error: $e');
       }
     } catch (e) {
       if (kDebugMode) {

@@ -101,7 +101,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
       String normalizeShikimoriImage(String path) {
         final clean = path.trim();
-        if (clean.isEmpty) return '';
+        if (clean.isEmpty || isShikimoriMissingPoster(clean)) return '';
         if (clean.startsWith('//')) return 'https:$clean';
         if (clean.startsWith('http')) return clean;
         return 'https://shikimori.io$clean';
@@ -204,7 +204,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
 
       String normalizeShikimoriImage(String path) {
         final clean = path.trim();
-        if (clean.isEmpty) return '';
+        if (clean.isEmpty || isShikimoriMissingPoster(clean)) return '';
         if (clean.startsWith('//')) return 'https:$clean';
         if (clean.startsWith('http')) return clean;
         return 'https://shikimori.io$clean';

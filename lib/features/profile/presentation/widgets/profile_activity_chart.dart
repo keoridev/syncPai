@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
+import '../../../watch_history/domain/entities/watch_history_item.dart';
 
 enum ProfileChartMode {
   weekly('Активность', Icons.bar_chart_rounded),
@@ -21,11 +22,17 @@ enum ProfileChartMode {
 /// 3. Горизонтальная диаграмма любимых жанров и предпочтений.
 class ProfileActivityChart extends StatefulWidget {
   final UserAnimeStats stats;
+  final List<WatchHistoryItem> watchHistory;
+  final bool isMangaTab;
+  final int mangaChaptersRead;
   final Color? accentColor;
 
   const ProfileActivityChart({
     super.key,
     required this.stats,
+    this.watchHistory = const [],
+    this.isMangaTab = false,
+    this.mangaChaptersRead = 0,
     this.accentColor,
   });
 
@@ -42,36 +49,51 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
   @override
   void initState() {
     super.initState();
-    _weekData = _computeWeekActivity(widget.stats);
+    _weekData = _computeWeekActivity(widget.watchHistory);
   }
 
   @override
   void didUpdateWidget(covariant ProfileActivityChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.stats != widget.stats) {
-      _weekData = _computeWeekActivity(widget.stats);
+    if (oldWidget.stats != widget.stats ||
+        oldWidget.watchHistory != widget.watchHistory) {
+      _weekData = _computeWeekActivity(widget.watchHistory);
     }
   }
 
-  static List<({String day, double hours, bool isPeak})> _computeWeekActivity(UserAnimeStats stats) {
-    final days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-    final totalHours = (stats.totalMinutesWatched / 60.0).clamp(4.5, 500.0);
-    final weights = [0.09, 0.11, 0.10, 0.13, 0.21, 0.23, 0.13];
-    final hoursList = weights.map((w) {
-      final h = double.parse((totalHours * w).clamp(0.5, 16.0).toStringAsFixed(1));
-      return h;
-    }).toList();
+  static List<({String day, double hours, bool isPeak})> _computeWeekActivity(
+    List<WatchHistoryItem> history,
+  ) {
+    const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month, now.day)
+        .subtract(const Duration(days: 6));
+
+    final hoursByDay = List<double>.filled(7, 0.0);
+    for (final item in history) {
+      final localDt = item.updatedAt.toLocal();
+      if (localDt.isBefore(cutoff)) continue;
+      final weekdayIdx = (localDt.weekday - 1).clamp(0, 6);
+      final watchedMs = item.positionMs > 0 ? item.positionMs : item.durationMs;
+      if (watchedMs > 0) {
+        hoursByDay[weekdayIdx] += watchedMs / 3600000.0;
+      }
+    }
+
+    final roundedHours = hoursByDay
+        .map((h) => double.parse(h.toStringAsFixed(1)))
+        .toList();
 
     double maxH = 0;
-    for (final h in hoursList) {
+    for (final h in roundedHours) {
       if (h > maxH) maxH = h;
     }
 
     return List.generate(7, (i) {
       return (
         day: days[i],
-        hours: hoursList[i],
-        isPeak: hoursList[i] == maxH,
+        hours: roundedHours[i],
+        isPeak: maxH > 0 && roundedHours[i] == maxH,
       );
     });
   }
@@ -97,12 +119,12 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Переключатель вида графика (Столбчатый / Кольцевой / Жанры)
+          // Переключатель вида графика (Дни / Списки / Жанры)
           Row(
             children: [
-              _buildChartTypeTab(0, 'По дням', Icons.bar_chart_rounded, accent, scheme, isDark),
+              _buildChartTypeTab(0, 'Дни', Icons.bar_chart_rounded, accent, scheme, isDark),
               const SizedBox(width: 6),
-              _buildChartTypeTab(1, 'Кольцевой', Icons.donut_large_rounded, accent, scheme, isDark),
+              _buildChartTypeTab(1, 'Списки', Icons.donut_large_rounded, accent, scheme, isDark),
               const SizedBox(width: 6),
               _buildChartTypeTab(2, 'Жанры', Icons.radar_rounded, accent, scheme, isDark),
             ],
@@ -132,12 +154,19 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              _GenreStatChip(label: 'Сёнэн', pct: '38%', color: accent),
-              _GenreStatChip(label: 'Экшен', pct: '26%', color: accent.withValues(alpha: 0.80)),
-              _GenreStatChip(label: 'Фэнтези', pct: '18%', color: accent.withValues(alpha: 0.65)),
-              _GenreStatChip(label: 'Романтика', pct: '12%', color: accent.withValues(alpha: 0.50)),
-            ],
+            children: widget.isMangaTab
+                ? [
+                    _GenreStatChip(label: 'Сёнэн', pct: '42%', color: accent),
+                    _GenreStatChip(label: 'Экшен', pct: '28%', color: accent.withValues(alpha: 0.80)),
+                    _GenreStatChip(label: 'Романтика', pct: '18%', color: accent.withValues(alpha: 0.65)),
+                    _GenreStatChip(label: 'Драма', pct: '12%', color: accent.withValues(alpha: 0.50)),
+                  ]
+                : [
+                    _GenreStatChip(label: 'Сёнэн', pct: '38%', color: accent),
+                    _GenreStatChip(label: 'Экшен', pct: '26%', color: accent.withValues(alpha: 0.80)),
+                    _GenreStatChip(label: 'Фэнтези', pct: '18%', color: accent.withValues(alpha: 0.65)),
+                    _GenreStatChip(label: 'Романтика', pct: '12%', color: accent.withValues(alpha: 0.50)),
+                  ],
           ),
         ],
       ),
@@ -161,28 +190,28 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 : (isDark ? Colors.white.withValues(alpha: 0.04) : scheme.surfaceContainerHigh.withValues(alpha: 0.4)),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 13,
-                color: isSelected ? accent : scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 13,
+                  color: isSelected ? accent : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 5),
+                Text(
                   label,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                     color: isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -190,6 +219,9 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
   }
 
   Widget _buildWeeklyBarChart(double maxHours, String totalWeekHours, Color accent, ColorScheme scheme) {
+    final totalBadgeText = widget.isMangaTab
+        ? '${widget.mangaChaptersRead} гл.'
+        : '$totalWeekHours ч.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -198,7 +230,7 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
           children: [
             Expanded(
               child: Text(
-                'АКТИВНОСТЬ ПРОСМОТРА',
+                'АКТИВНОСТЬ ЗА 7 ДНЕЙ',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption.copyWith(
@@ -209,23 +241,20 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
                 ),
               ),
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '$totalWeekHours ч. за 7 дней',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: accent,
-                  ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                totalBadgeText,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
                 ),
               ),
             ),
@@ -409,13 +438,20 @@ class _ProfileActivityChartState extends State<ProfileActivityChart> {
   }
 
   Widget _buildGenresRadarChart(Color accent, ColorScheme scheme) {
-    final genres = [
-      (name: 'Сёнэн / Экшен', pct: 0.38, label: '38%', color: accent),
-      (name: 'Фэнтези / Исекай', pct: 0.26, label: '26%', color: accent.withValues(alpha: 0.80)),
-      (name: 'Сэйнэн / Триллер', pct: 0.18, label: '18%', color: accent.withValues(alpha: 0.65)),
-      (name: 'Романтика / Драма', pct: 0.12, label: '12%', color: accent.withValues(alpha: 0.50)),
-      (name: 'Киберпанк / Sci-Fi', pct: 0.06, label: '6%', color: accent.withValues(alpha: 0.35)),
-    ];
+    final genres = widget.isMangaTab
+        ? [
+            (name: 'Сёнэн / Боевик', pct: 0.42, label: '42%', color: accent),
+            (name: 'Экшен / Спорт', pct: 0.28, label: '28%', color: accent.withValues(alpha: 0.80)),
+            (name: 'Романтика / Повседневность', pct: 0.18, label: '18%', color: accent.withValues(alpha: 0.65)),
+            (name: 'Драма / Психология', pct: 0.12, label: '12%', color: accent.withValues(alpha: 0.50)),
+          ]
+        : [
+            (name: 'Сёнэн / Экшен', pct: 0.38, label: '38%', color: accent),
+            (name: 'Фэнтези / Исекай', pct: 0.26, label: '26%', color: accent.withValues(alpha: 0.80)),
+            (name: 'Сэйнэн / Триллер', pct: 0.18, label: '18%', color: accent.withValues(alpha: 0.65)),
+            (name: 'Романтика / Драма', pct: 0.12, label: '12%', color: accent.withValues(alpha: 0.50)),
+            (name: 'Киберпанк / Sci-Fi', pct: 0.06, label: '6%', color: accent.withValues(alpha: 0.35)),
+          ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

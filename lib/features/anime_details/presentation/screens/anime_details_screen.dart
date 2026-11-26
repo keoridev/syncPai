@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/image_cors_helper.dart';
+import 'package:sync_pai/core/services/anime_poster_resolver.dart';
 import 'package:sync_pai/core/services/mascot_companion_service.dart';
 import 'package:sync_pai/core/theme/app_colors.dart';
 import 'package:sync_pai/core/theme/app_dimensions.dart';
@@ -268,6 +269,26 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
 
     _scrollController = ScrollController()..addListener(_handleScroll);
+    if (AnimePosterResolver.isMissingOrPlaceholder(_currentTitle.posterUrl)) {
+      final malId = (_currentTitle.shikimoriId != null && _currentTitle.shikimoriId! > 0)
+          ? _currentTitle.shikimoriId!
+          : _currentTitle.id;
+      if (malId > 0) {
+        AnimePosterResolver.instance
+            .resolveSinglePoster(malId: malId)
+            .then((resolvedUrl) {
+          if (resolvedUrl != null && mounted) {
+            setState(() {
+              _currentTitle = _currentTitle.copyWith(
+                posterSmall: resolvedUrl,
+                posterMedium: resolvedUrl,
+                posterOriginal: resolvedUrl,
+              );
+            });
+          }
+        });
+      }
+    }
     if (widget.scrollToSimilar) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Future.delayed(const Duration(milliseconds: 220), () {
@@ -2488,16 +2509,20 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         : (widget.title.posterMedium.isNotEmpty ? widget.title.posterMedium : widget.title.posterSmall);
 
     String backdropUrl;
-    if (_currentTitle.posterOriginal.isNotEmpty) {
+    if (!AnimePosterResolver.isMissingOrPlaceholder(_currentTitle.posterOriginal)) {
       backdropUrl = _currentTitle.posterOriginal;
-    } else if (_currentTitle.posterMedium.isNotEmpty) {
+    } else if (!AnimePosterResolver.isMissingOrPlaceholder(_currentTitle.posterMedium)) {
       backdropUrl = _currentTitle.posterMedium;
-    } else if (initialPoster.isNotEmpty) {
+    } else if (!AnimePosterResolver.isMissingOrPlaceholder(initialPoster)) {
       backdropUrl = initialPoster;
-    } else if (title.shikimoriId != null && title.shikimoriId! > 0) {
-      backdropUrl = 'https://shikimori.io/system/animes/original/${title.shikimoriId}.jpg';
     } else {
-      backdropUrl = _currentTitle.posterSmall;
+      final malId = (title.shikimoriId != null && title.shikimoriId! > 0)
+          ? title.shikimoriId!
+          : title.id;
+      backdropUrl = AnimePosterResolver.instance.getCachedPoster(malId) ??
+          (!AnimePosterResolver.isMissingOrPlaceholder(_currentTitle.posterSmall)
+              ? _currentTitle.posterSmall
+              : '');
     }
     backdropUrl = backdropUrl
         .replaceFirst('https://shikimori.me', 'https://shikimori.io')

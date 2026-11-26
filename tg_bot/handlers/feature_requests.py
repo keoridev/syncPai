@@ -1,10 +1,8 @@
-import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart, CommandObject
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -15,24 +13,40 @@ from aiogram.types import (
     Message,
     PreCheckoutQuery,
 )
-from dotenv import load_dotenv
-from supabase import Client, create_client
 
-load_dotenv()
-logging.basicConfig(level=logging.INFO)
+from config import settings
+from db.supabase_client import supabase
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-ADMIN_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])
+logger = logging.getLogger(__name__)
+router = Router(name="feature_requests")
+
 STARS_PRICE_XTR = int(os.getenv("STARS_PRICE_XTR", "500"))
 PAYMENT_QR_DETAILS = os.getenv(
     "PAYMENT_QR_DETAILS",
     "МБанк / СБП: свяжитесь с поддержкой или прикрепите чек",
 )
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-router = Router()
+
+def _get_admin_chat_id() -> int | None:
+    if settings.admin_telegram_id:
+        return settings.admin_telegram_id
+    for part in settings.admin_ids.split(","):
+        clean = part.strip()
+        if clean.isdigit():
+            return int(clean)
+    return None
+
+
+def _is_admin(tg_user_id: int) -> bool:
+    admin_id = _get_admin_chat_id()
+    if admin_id is not None and tg_user_id == admin_id:
+        return True
+    allowed = {
+        int(p.strip())
+        for p in settings.admin_ids.split(",")
+        if p.strip().isdigit()
+    }
+    return tg_user_id in allowed
 
 
 class FeatureRequestStates(StatesGroup):
@@ -48,17 +62,17 @@ def _admin_keyboard(req_id: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="Принять в работу (7 дней)",
-                    callback_data=f"approve:{req_id}",
+                    callback_data=f"feat_approve:{req_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Фича готова!",
-                    callback_data=f"done:{req_id}",
+                    callback_data=f"feat_done:{req_id}",
                 ),
                 InlineKeyboardButton(
                     text="Отклонить (Возврат)",
-                    callback_data=f"decline:{req_id}",
+                    callback_data=f"feat_decline:{req_id}",
                 ),
             ],
         ]
@@ -70,7 +84,16 @@ async def _send_to_admin(
     req: dict,
     syncpai_nick: str,
 ) -> None:
-    tg_user = f"@{req['telegram_username']}" if req.get("telegram_username") else f"id:{req.get('telegram_user_id')}"
+    admin_chat_id = _get_admin_chat_id()
+    if admin_chat_id is None:
+        logger.warning("ADMIN_TELEGRAM_ID / ADMIN_IDS not configured; skipping admin alert.")
+        return
+
+    tg_user = (
+        f"@{req['telegram_username']}"
+        if req.get("telegram_username")
+        else f"id:{req.get('telegram_user_id')}"
+    )
     text = (
         f"<b>Новая заявка Priority Feature Pass</b>\n"
         f"<b>SyncPai:</b> {syncpai_nick}\n"
@@ -81,52 +104,40 @@ async def _send_to_admin(
         f"<b>Оплата:</b> {req.get('payment_method', 'pending')} ({req.get('payment_status', 'pending')})"
     )
     await bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
+        chat_id=admin_chat_id,
         text=text,
         parse_mode="HTML",
         reply_markup=_admin_keyboard(req["id"]),
     )
 
 
-def _main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Заказать фичу (7 дней)",
-                    callback_data="menu:order_feature",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="SyncPai Sponsor",
-                    callback_data="menu:sponsor",
-                ),
-                InlineKeyboardButton(
-                    text="Мои заявки",
-                    callback_data="menu:my_requests",
-                ),
-            ],
-        ]
-    )
-
-
-async def _start_feature_flow(
+async def start_feature_flow(
     message: Message,
     state: FSMContext,
     user_id: str,
 ) -> None:
-    profile_res = (
-        supabase.table("profiles")
-        .select("id, username, display_name")
-        .eq("id", user_id)
-        .limit(1)
-        .execute()
-    )
-    rows = profile_res.data or []
+    if not user_id:
+        await message.answer("Некорректная ссылка привязки профиля.")
+        return
+
     syncpai_nick = "Пользователь SyncPai"
-    if rows:
-        syncpai_nick = rows[0].get("display_name") or rows[0].get("username") or syncpai_nick
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id, username, display_name")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = profile_res.data or []
+        if rows:
+            syncpai_nick = (
+                rows[0].get("display_name")
+                or rows[0].get("username")
+                or syncpai_nick
+            )
+    except Exception as e:
+        logger.warning(f"Failed to load profile {user_id}: {e}")
 
     await state.clear()
     await state.update_data(user_id=user_id, syncpai_nick=syncpai_nick)
@@ -143,45 +154,23 @@ async def _start_feature_flow(
     )
 
 
-@router.message(CommandStart())
-async def cmd_start(
+async def handle_duo_invite(
     message: Message,
-    command: CommandObject,
     state: FSMContext,
+    invite_code: str,
 ) -> None:
-    args = (command.args or "").strip()
-
-    if args.startswith("feat_"):
-        user_id = args.replace("feat_", "", 1).strip()
-        if not user_id:
-            await message.answer("Некорректная ссылка привязки профиля.")
-            return
-        await _start_feature_flow(message, state, user_id)
-        return
-
-    if args.startswith("duo_"):
-        invite_code = args.replace("duo_", "", 1).strip()
-        await state.clear()
-        if not invite_code:
-            await message.answer("Некорректный код приглашения Парного профиля.")
-            return
-        await message.answer(
-            "<b>Приглашение в Парный профиль SyncPai</b>\n\n"
-            f"Код приглашения: <code>{invite_code}</code>\n\n"
-            "1. Откройте приложение SyncPai.\n"
-            "2. Перейдите в <b>Профиль -> Парный профиль</b>.\n"
-            "3. Введите код или откройте ссылку:\n"
-            f"<code>syncpai://duo/{invite_code}</code>",
-            parse_mode="HTML",
-        )
-        return
-
     await state.clear()
+    if not invite_code:
+        await message.answer("Некорректный код приглашения Парного профиля.")
+        return
     await message.answer(
-        "<b>Официальный бот SyncPai (@syncpai_bot)</b>\n\n"
-        "Выберите действие в меню ниже:",
+        "<b>Приглашение в Парный профиль SyncPai</b>\n\n"
+        f"Код приглашения: <code>{invite_code}</code>\n\n"
+        "1. Откройте приложение SyncPai.\n"
+        "2. Перейдите в <b>Профиль -> Парный профиль</b>.\n"
+        "3. Введите код или откройте ссылку:\n"
+        f"<code>syncpai://duo/{invite_code}</code>",
         parse_mode="HTML",
-        reply_markup=_main_menu_keyboard(),
     )
 
 
@@ -214,13 +203,15 @@ async def menu_my_requests(callback: CallbackQuery) -> None:
         supabase.table("feature_requests")
         .select("title, implementation_status, payment_status")
         .eq("telegram_user_id", callback.from_user.id)
-        .order("created_at", ascending=False)
+        .order("created_at", desc=True)
         .limit(5)
         .execute()
     )
     rows = res.data or []
     if not rows:
-        await callback.message.answer("У вас пока нет активных заявок в Priority Feature Pass.")
+        await callback.message.answer(
+            "У вас пока нет активных заявок в Priority Feature Pass."
+        )
         await callback.answer()
         return
 
@@ -237,7 +228,9 @@ async def menu_my_requests(callback: CallbackQuery) -> None:
 async def process_title(message: Message, state: FSMContext) -> None:
     title = (message.text or "").strip()
     if not title or len(title) > 80:
-        await message.answer("Название должно быть не длиннее 80 символов. Попробуйте ещё раз:")
+        await message.answer(
+            "Название должно быть не длиннее 80 символов. Попробуйте ещё раз:"
+        )
         return
     await state.update_data(title=title)
     await state.set_state(FeatureRequestStates.waiting_for_description)
@@ -258,13 +251,13 @@ async def process_description(message: Message, state: FSMContext) -> None:
             [
                 InlineKeyboardButton(
                     text=f"Оплатить Telegram Stars ({STARS_PRICE_XTR} XTR)",
-                    callback_data="pay:stars",
+                    callback_data="feat_pay:stars",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="Оплата по QR / Переводом",
-                    callback_data="pay:qr",
+                    callback_data="feat_pay:qr",
                 )
             ],
         ]
@@ -272,7 +265,9 @@ async def process_description(message: Message, state: FSMContext) -> None:
     await message.answer("Выберите удобный способ оплаты:", reply_markup=kb)
 
 
-@router.callback_query(FeatureRequestStates.waiting_for_payment, F.data == "pay:stars")
+@router.callback_query(
+    FeatureRequestStates.waiting_for_payment, F.data == "feat_pay:stars"
+)
 async def pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     inserted = (
@@ -304,17 +299,17 @@ async def pay_stars(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.pre_checkout_query()
-async def on_pre_checkout(pre_checkout: PreCheckoutQuery) -> None:
+@router.pre_checkout_query(F.invoice_payload.startswith("feat_req:"))
+async def on_pre_checkout_feature(pre_checkout: PreCheckoutQuery) -> None:
     await pre_checkout.answer(ok=True)
 
 
-@router.message(F.successful_payment)
-async def on_successful_payment(message: Message, state: FSMContext, bot: Bot) -> None:
+@router.message(F.successful_payment.invoice_payload.startswith("feat_req:"))
+async def on_successful_payment_feature(
+    message: Message, state: FSMContext, bot: Bot
+) -> None:
     payload = message.successful_payment.invoice_payload
-    if not payload.startswith("feat_req:"):
-        return
-    req_id = payload.replace("feat_req:", "", 1)
+    req_id = payload.removeprefix("feat_req:")
     updated = (
         supabase.table("feature_requests")
         .update({"payment_status": "paid"})
@@ -323,19 +318,23 @@ async def on_successful_payment(message: Message, state: FSMContext, bot: Bot) -
     )
     data = await state.get_data()
     if updated.data:
-        await _send_to_admin(bot, updated.data[0], data.get("syncpai_nick", "Пользователь"))
+        await _send_to_admin(
+            bot, updated.data[0], data.get("syncpai_nick", "Пользователь")
+        )
     await state.clear()
     await message.answer(
         "Оплата Telegram Stars получена! Заявка отправлена на проверку, статус отображается в SyncPai -> «Мои заявки»."
     )
 
 
-@router.callback_query(FeatureRequestStates.waiting_for_payment, F.data == "pay:qr")
+@router.callback_query(
+    FeatureRequestStates.waiting_for_payment, F.data == "feat_pay:qr"
+)
 async def pay_qr(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(FeatureRequestStates.waiting_for_receipt)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Я оплатил", callback_data="qr:paid")]
+            [InlineKeyboardButton(text="Я оплатил", callback_data="feat_qr:paid")]
         ]
     )
     await callback.message.answer(
@@ -347,8 +346,12 @@ async def pay_qr(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.callback_query(FeatureRequestStates.waiting_for_receipt, F.data == "qr:paid")
-async def qr_paid_btn(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+@router.callback_query(
+    FeatureRequestStates.waiting_for_receipt, F.data == "feat_qr:paid"
+)
+async def qr_paid_btn(
+    callback: CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
     data = await state.get_data()
     inserted = (
         supabase.table("feature_requests")
@@ -367,7 +370,9 @@ async def qr_paid_btn(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
         .execute()
     )
     if inserted.data:
-        await _send_to_admin(bot, inserted.data[0], data.get("syncpai_nick", "Пользователь"))
+        await _send_to_admin(
+            bot, inserted.data[0], data.get("syncpai_nick", "Пользователь")
+        )
     await state.clear()
     await callback.message.answer(
         "Заявка отправлена на проверку! После подтверждения перевода мы начнём разработку."
@@ -376,7 +381,9 @@ async def qr_paid_btn(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
 
 
 @router.message(FeatureRequestStates.waiting_for_receipt, F.photo)
-async def qr_receipt_photo(message: Message, state: FSMContext, bot: Bot) -> None:
+async def qr_receipt_photo(
+    message: Message, state: FSMContext, bot: Bot
+) -> None:
     data = await state.get_data()
     inserted = (
         supabase.table("feature_requests")
@@ -395,15 +402,23 @@ async def qr_receipt_photo(message: Message, state: FSMContext, bot: Bot) -> Non
         .execute()
     )
     if inserted.data:
-        await _send_to_admin(bot, inserted.data[0], data.get("syncpai_nick", "Пользователь"))
-        await bot.forward_message(ADMIN_CHAT_ID, message.chat.id, message.message_id)
+        await _send_to_admin(
+            bot, inserted.data[0], data.get("syncpai_nick", "Пользователь")
+        )
+        admin_chat_id = _get_admin_chat_id()
+        if admin_chat_id is not None:
+            await bot.forward_message(
+                admin_chat_id, message.chat.id, message.message_id
+            )
     await state.clear()
-    await message.answer("Чек получен и передан администратору! Статус обновится в SyncPai.")
+    await message.answer(
+        "Чек получен и передан администратору! Статус обновится в SyncPai."
+    )
 
 
-@router.callback_query(F.data.startswith("approve:"))
+@router.callback_query(F.data.startswith("feat_approve:"))
 async def admin_approve(callback: CallbackQuery, bot: Bot) -> None:
-    if callback.from_user.id != ADMIN_CHAT_ID:
+    if not _is_admin(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     req_id = callback.data.split(":", 1)[1]
@@ -425,7 +440,9 @@ async def admin_approve(callback: CallbackQuery, bot: Bot) -> None:
         supabase.table("profiles").update(
             {
                 "tier": "sponsor",
-                "sponsor_until": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
+                "sponsor_until": (
+                    datetime.now(timezone.utc) + timedelta(days=365)
+                ).isoformat(),
             }
         ).eq("id", req["user_id"]).execute()
         if req.get("telegram_user_id"):
@@ -436,9 +453,9 @@ async def admin_approve(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("Принято в работу")
 
 
-@router.callback_query(F.data.startswith("decline:"))
+@router.callback_query(F.data.startswith("feat_decline:"))
 async def admin_decline(callback: CallbackQuery, bot: Bot) -> None:
-    if callback.from_user.id != ADMIN_CHAT_ID:
+    if not _is_admin(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     req_id = callback.data.split(":", 1)[1]
@@ -462,9 +479,9 @@ async def admin_decline(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer("Отклонено с возвратом")
 
 
-@router.callback_query(F.data.startswith("done:"))
+@router.callback_query(F.data.startswith("feat_done:"))
 async def admin_done(callback: CallbackQuery, bot: Bot) -> None:
-    if callback.from_user.id != ADMIN_CHAT_ID:
+    if not _is_admin(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     req_id = callback.data.split(":", 1)[1]
@@ -481,15 +498,4 @@ async def admin_done(callback: CallbackQuery, bot: Bot) -> None:
             f"Фича «{req['title']}» готова и войдёт в ближайшее обновление SyncPai!",
         )
     await callback.answer("Отмечено как готовое")
-
-
-async def main() -> None:
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
-    dp.include_router(router)
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
 

@@ -1030,6 +1030,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                               children: [
                                                 _StatsCard(
                                                   stats: stats,
+                                                  watchHistory: _watchHistory,
                                                   totalChaptersRead: _totalChaptersRead,
                                                   currentAccentColor: currentAccentColor,
                                                   showActivityCharts: _showActivityCharts,
@@ -1114,6 +1115,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   SliverToBoxAdapter(
                                     child: _StatsCard(
                                       stats: stats,
+                                      watchHistory: _watchHistory,
                                       totalChaptersRead: _totalChaptersRead,
                                       currentAccentColor: currentAccentColor,
                                       showActivityCharts: _showActivityCharts,
@@ -3520,8 +3522,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 // ============================================================================
 // 4. БЛОК «СТАТИСТИКА ПРОСМОТРА» (Watch Stats Card)
 // ============================================================================
-class _StatsCard extends StatelessWidget {
+class _StatsCard extends StatefulWidget {
   final UserAnimeStats stats;
+  final List<WatchHistoryItem> watchHistory;
   final int totalChaptersRead;
   final Color currentAccentColor;
   final bool showActivityCharts;
@@ -3529,6 +3532,7 @@ class _StatsCard extends StatelessWidget {
 
   const _StatsCard({
     required this.stats,
+    this.watchHistory = const [],
     this.totalChaptersRead = 0,
     required this.currentAccentColor,
     required this.showActivityCharts,
@@ -3536,186 +3540,368 @@ class _StatsCard extends StatelessWidget {
   });
 
   @override
+  State<_StatsCard> createState() => _StatsCardState();
+}
+
+class _StatsCardState extends State<_StatsCard> {
+  int _activeTab = 0; // 0 = Аниме, 1 = Манга и манхва
+
+  String _formatCompactWatchTime(int totalMinutes) {
+    if (totalMinutes <= 0) return '0 м.';
+    final totalHours = totalMinutes ~/ 60;
+    final mins = totalMinutes % 60;
+    if (totalHours >= 24) {
+      final days = totalHours ~/ 24;
+      final remHours = totalHours % 24;
+      return remHours > 0 ? '$days д. $remHours ч.' : '$days д.';
+    }
+    if (totalHours > 0) {
+      return mins > 0 ? '$totalHours ч. $mins м.' : '$totalHours ч.';
+    }
+    return '$mins м.';
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final watchTimeStr = (stats.formattedTime.isNotEmpty && stats.formattedTime != '0 мин.')
-        ? stats.formattedTime
-        : '4 ч. 36 мин.';
-    final totalTitles = stats.totalTitles > 0 ? stats.totalTitles : 4;
-    final totalEpisodes = stats.totalEpisodesCompleted > 0 ? stats.totalEpisodesCompleted : 13;
+    final stats = widget.stats;
+    final currentAccentColor = widget.currentAccentColor;
 
-    return _GlassCard(
-      accentColor: currentAccentColor,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Заголовок: иконка графика + СТАТИСТИКА ПРОСМОТРА + кнопка Графика / Детали
-          Row(
-            children: [
-              Icon(Icons.bar_chart_rounded, size: 15, color: currentAccentColor),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'СТАТИСТИКА ПРОСМОТРА',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    color: scheme.onSurface,
+    final watchTimeStr = _formatCompactWatchTime(stats.totalMinutesWatched);
+    final totalTitles = stats.totalTitles;
+    final totalEpisodes = stats.totalEpisodesCompleted;
+
+    Widget buildBody(List<UserMangaEntry> mangaEntries) {
+      final seenManga = <String>{};
+      final uniqueManga = <UserMangaEntry>[];
+      for (final e in mangaEntries) {
+        final key = e.mangaTitle.trim().toLowerCase();
+        if (seenManga.add(key.isNotEmpty ? key : e.mangaId)) {
+          uniqueManga.add(e);
+        }
+      }
+      int readingCount = 0;
+      int completedMangaCount = 0;
+      int plannedMangaCount = 0;
+      int droppedMangaCount = 0;
+      int entryChapters = 0;
+      for (final e in uniqueManga) {
+        switch (e.status) {
+          case MangaListStatus.reading:
+            readingCount++;
+            entryChapters += int.tryParse(e.lastReadChapter) ?? 0;
+            break;
+          case MangaListStatus.completed:
+            completedMangaCount++;
+            entryChapters += e.chaptersCount ?? (int.tryParse(e.lastReadChapter) ?? 0);
+            break;
+          case MangaListStatus.planned:
+            plannedMangaCount++;
+            break;
+          case MangaListStatus.dropped:
+            droppedMangaCount++;
+            entryChapters += int.tryParse(e.lastReadChapter) ?? 0;
+            break;
+        }
+      }
+      final chaptersRead = widget.totalChaptersRead > entryChapters
+          ? widget.totalChaptersRead
+          : entryChapters;
+
+      return _GlassCard(
+        accentColor: currentAccentColor,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Заголовок: иконка графика + СТАТИСТИКА + кнопка Графика / Детали
+            Row(
+              children: [
+                Icon(Icons.bar_chart_rounded, size: 15, color: currentAccentColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'СТАТИСТИКА',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: onToggleCharts,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : scheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        showActivityCharts ? Icons.keyboard_arrow_up_rounded : Icons.insights_rounded,
-                        size: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: widget.onToggleCharts,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF1A202E)
+                          : scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          widget.showActivityCharts
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.insights_rounded,
+                          size: 13,
                           color: scheme.onSurfaceVariant,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Text(
+                          widget.showActivityCharts ? 'Скрыть детали' : 'Графика / Детали',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Сегментированный переключатель: Аниме | Манга и манхва
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A202E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+              ),
+              child: Row(
+                children: [
+                  _buildSegmentTab(0, 'Аниме'),
+                  const SizedBox(width: 4),
+                  _buildSegmentTab(1, 'Манга и манхва'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // 3-колоночная сетка без вертикальных разделителей
+            if (_activeTab == 0)
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.access_time_rounded,
+                      value: watchTimeStr,
+                      label: 'Время просмотра',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.play_circle_outline_rounded,
+                      value: '$totalEpisodes',
+                      label: 'Просмотрено серий',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.video_library_rounded,
+                      value: '$totalTitles',
+                      label: 'Тайтлов в базе',
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.menu_book_rounded,
+                      value: '$chaptersRead',
+                      label: 'Прочитано глав',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.auto_stories_rounded,
+                      value: '${uniqueManga.length}',
+                      label: 'Тайтлов манги',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildStatTile(
+                      context,
+                      icon: Icons.check_circle_outline_rounded,
+                      value: '$completedMangaCount',
+                      label: 'Завершено',
+                    ),
+                  ),
+                ],
+              ),
+
+            const SizedBox(height: 12),
+            if (_activeTab == 0)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildCategoryPill(
+                    label: 'Смотрю: ${stats.watchingTitles}',
+                    color: currentAccentColor,
+                  ),
+                  _buildCategoryPill(
+                    label: 'Просмотрено: ${stats.completedTitles}',
+                    color: currentAccentColor.withValues(alpha: 0.85),
+                  ),
+                  _buildCategoryPill(
+                    label: 'В планах: ${stats.plannedTitles}',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  _buildCategoryPill(
+                    label: 'Брошено: ${stats.droppedTitles}',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildCategoryPill(
+                    label: 'Читаю: $readingCount',
+                    color: currentAccentColor,
+                  ),
+                  _buildCategoryPill(
+                    label: 'Прочитано: $completedMangaCount',
+                    color: currentAccentColor.withValues(alpha: 0.85),
+                  ),
+                  _buildCategoryPill(
+                    label: 'В планах: $plannedMangaCount',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  _buildCategoryPill(
+                    label: 'Брошено: $droppedMangaCount',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+
+            // Развернутая детальная аналитика и график активности
+            if (widget.showActivityCharts) ...[
+              const SizedBox(height: 14),
+              ProfileActivityChart(
+                stats: stats,
+                watchHistory: widget.watchHistory,
+                isMangaTab: _activeTab == 1,
+                mangaChaptersRead: chaptersRead,
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-
-          // Горизонтальный ряд из 3 равных колонок с разделителями
-          Row(
-            children: [
-              // 1. Время в аниме
-              Expanded(
-                child: _buildStatCol(
-                  context,
-                  icon: Icons.access_time_rounded,
-                  value: watchTimeStr,
-                  label: 'Общее время',
-                ),
-              ),
-              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
-
-              // 2. Тайтлы
-              Expanded(
-                child: _buildStatCol(
-                  context,
-                  icon: Icons.video_library_rounded,
-                  value: '$totalTitles',
-                  label: 'В коллекции',
-                ),
-              ),
-              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
-
-              // 3. Серии
-              Expanded(
-                child: _buildStatCol(
-                  context,
-                  icon: Icons.play_circle_outline_rounded,
-                  value: '$totalEpisodes',
-                  label: 'Просмотрено серий',
-                ),
-              ),
-              Container(width: 1, height: 38, color: scheme.outlineVariant.withValues(alpha: 0.35)),
-
-              // 4. Прочитано глав
-              Expanded(
-                child: _buildStatCol(
-                  context,
-                  icon: Icons.menu_book_rounded,
-                  value: '$totalChaptersRead',
-                  label: 'Прочитано глав',
-                ),
-              ),
-            ],
-          ),
-
-          // Дополнительные статусные метки коллекции (Смотрю, Просмотрено, В планах)
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _buildCategoryPill(
-                label: 'Смотрю: ${stats.watchingTitles > 0 ? stats.watchingTitles : 1}',
-                color: currentAccentColor,
-              ),
-              _buildCategoryPill(
-                label: 'Просмотрено: ${stats.completedTitles > 0 ? stats.completedTitles : 2}',
-                color: currentAccentColor.withValues(alpha: 0.80),
-              ),
-              _buildCategoryPill(
-                label: 'В планах: ${stats.plannedTitles > 0 ? stats.plannedTitles : 1}',
-                color: scheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-
-          // Развернутая детальная аналитика и график активности
-          if (showActivityCharts) ...[
-            const SizedBox(height: 14),
-            ProfileActivityChart(stats: stats),
           ],
-        ],
+        ),
+      );
+    }
+
+    if (getIt.isRegistered<UserMangaListCubit>()) {
+      return BlocBuilder<UserMangaListCubit, UserMangaListState>(
+        bloc: getIt<UserMangaListCubit>(),
+        builder: (context, mangaState) => buildBody(mangaState.entries),
+      );
+    }
+    return buildBody(const []);
+  }
+
+  Widget _buildSegmentTab(int index, String title) {
+    final isSelected = _activeTab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _activeTab = index),
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFFF6B4A) : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          alignment: Alignment.center,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildStatCol(
+  Widget _buildStatTile(
     BuildContext context, {
     required IconData icon,
     required String value,
     required String label,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20, color: currentAccentColor),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: scheme.onSurface,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B26),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: widget.currentAccentColor),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: scheme.onSurfaceVariant,
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

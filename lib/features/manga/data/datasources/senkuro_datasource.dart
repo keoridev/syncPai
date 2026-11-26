@@ -107,15 +107,26 @@ class SenkuroDataSource {
   }
 
   Future<List<MangaDexChapter>> getChapters(String slugOrId) async {
+    List<MangaDexChapter> latest = const [];
+    await for (final batch in getChaptersStream(slugOrId)) {
+      latest = batch;
+    }
+    return latest;
+  }
+
+  Stream<List<MangaDexChapter>> getChaptersStream(
+    String slugOrId, {
+    int pageSize = 100,
+  }) async* {
     final slug = slugOrId.replaceFirst('senkuro:', '').trim();
-    if (slug.isEmpty) return const [];
+    if (slug.isEmpty) return;
     try {
       final branchGql =
           '{ manga(slug: "${_escapeGql(slug)}") { id slug branches { id lang chapters } } }';
       final mangaData = await _postGraphql(branchGql);
       final mangaObj = mangaData?['manga'];
       final branches = mangaObj is Map ? mangaObj['branches'] : null;
-      if (branches is! List || branches.isEmpty) return const [];
+      if (branches is! List || branches.isEmpty) return;
 
       String? bestBranchId;
       int bestCount = -1;
@@ -141,17 +152,17 @@ class SenkuroDataSource {
           }
         }
       }
-      if (bestBranchId == null) return const [];
+      if (bestBranchId == null) return;
 
       final chapters = <MangaDexChapter>[];
       String? afterCursor;
       var pageLoops = 0;
-      while (pageLoops < 5) {
+      while (pageLoops < 10) {
         pageLoops++;
         final afterClause =
             afterCursor != null ? ', after: "${_escapeGql(afterCursor)}"' : '';
         final chGql =
-            '{ mangaChapters(branchId: "${_escapeGql(bestBranchId)}", first: 200$afterClause) { '
+            '{ mangaChapters(branchId: "${_escapeGql(bestBranchId)}", first: $pageSize$afterClause) { '
             'edges { node { id slug number volume name pages { image { original { url } } } } } '
             'pageInfo { hasNextPage endCursor } } }';
         final chData = await _postGraphql(chGql);
@@ -202,6 +213,14 @@ class SenkuroDataSource {
           );
         }
 
+        final sorted = List<MangaDexChapter>.from(chapters)
+          ..sort((a, b) {
+            final na = a.chapterNumber ?? 999999.0;
+            final nb = b.chapterNumber ?? 999999.0;
+            return na.compareTo(nb);
+          });
+        yield sorted;
+
         final pageInfo = conn['pageInfo'];
         final hasNext = pageInfo is Map && pageInfo['hasNextPage'] == true;
         final endCursor =
@@ -209,18 +228,10 @@ class SenkuroDataSource {
         if (!hasNext || endCursor.isEmpty) break;
         afterCursor = endCursor;
       }
-
-      chapters.sort((a, b) {
-        final na = a.chapterNumber ?? 999999.0;
-        final nb = b.chapterNumber ?? 999999.0;
-        return na.compareTo(nb);
-      });
-      return chapters;
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[Senkuro] getChapters("$slug") error: $e');
+        debugPrint('[Senkuro] getChaptersStream("$slug") error: $e');
       }
-      return const [];
     }
   }
 

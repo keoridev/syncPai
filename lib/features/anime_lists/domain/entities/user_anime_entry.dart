@@ -265,7 +265,7 @@ class UserAnimeStats extends Equatable {
       switch (e.status) {
         case AnimeListStatus.completed:
           completed++;
-          final count = e.episodesTotal ?? e.lastEpisode;
+          final count = (e.episodesTotal ?? e.lastEpisode).clamp(0, 99999);
           episodes += count;
           totalMinutes += count * 24; // 24 мин средняя серия
           break;
@@ -273,8 +273,8 @@ class UserAnimeStats extends Equatable {
           watching++;
           final finishedEps = (e.lastEpisode > 0 ? e.lastEpisode - 1 : 0);
           final currentEpDone = e.positionMs >= 20 * 60 * 1000;
-          final completed = finishedEps + (currentEpDone ? 1 : 0);
-          episodes += completed;
+          final watchedCount = finishedEps + (currentEpDone ? 1 : 0);
+          episodes += watchedCount;
           totalMinutes += finishedEps * 24;
           if (!currentEpDone) {
             totalMinutes += (e.positionMs ~/ 60000);
@@ -287,8 +287,9 @@ class UserAnimeStats extends Equatable {
           break;
         case AnimeListStatus.dropped:
           dropped++;
-          episodes += e.lastEpisode;
-          totalMinutes += e.lastEpisode * 24;
+          final droppedEps = e.lastEpisode.clamp(0, e.episodesTotal ?? 99999);
+          episodes += droppedEps;
+          totalMinutes += droppedEps * 24;
           break;
       }
     }

@@ -100,6 +100,22 @@ class _DesktopTitleBarState extends State<DesktopTitleBar> with WindowListener {
     if (mounted) setState(() => _isFullScreen = false);
   }
 
+  @override
+  void onWindowRestore() {
+    _handleWindowRestore();
+  }
+
+  Future<void> _handleWindowRestore() async {
+    try {
+      final isMin = await windowManager.isMinimized();
+      if (!isMin) {
+        await windowManager.show();
+        await windowManager.focus();
+      }
+      await _syncWindowState();
+    } catch (_) {}
+  }
+
   Future<void> _toggleMaximize() async {
     try {
       final isMax = await windowManager.isMaximized();

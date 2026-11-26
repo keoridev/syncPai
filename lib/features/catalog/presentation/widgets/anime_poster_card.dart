@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/network/syncpai_poster_cache_manager.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -97,7 +98,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (posterUrl.isNotEmpty)
+                            if (!AnimePosterResolver.isMissingOrPlaceholder(posterUrl))
                               Hero(
                                 tag: '${heroTagPrefix ?? 'anime-poster'}-${title.id}',
                                 child: CachedNetworkImage(

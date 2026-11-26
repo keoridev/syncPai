@@ -35,6 +35,27 @@ class ThematicAvatarFramePainter extends CustomPainter {
       case 'sakura':
         _paintSakuraFrame(canvas, center, radius);
         break;
+      case 'katana_guard':
+        _paintKatanaGuardFrame(canvas, center, radius);
+        break;
+      case 'techno_bevel':
+        _paintTechnoBevelFrame(canvas, center, radius);
+        break;
+      case 'monolith':
+        _paintMonolithFrame(canvas, center, radius);
+        break;
+      case 'ice_crystal':
+        _paintIceCrystalFrame(canvas, center, radius);
+        break;
+      case 'minimal':
+        _paintMinimalFrame(canvas, center, radius);
+        break;
+      case 'coral_contour':
+        _paintCoralContourFrame(canvas, center, radius);
+        break;
+      case 'rank_ember':
+        _paintRankEmberFrame(canvas, center, radius);
+        break;
       case 'cyber_blade':
         _paintCyberBladeFrame(canvas, center, radius);
         break;
@@ -566,86 +587,259 @@ class ThematicAvatarFramePainter extends CustomPainter {
     canvas.restore();
   }
 
-  // --- 0.3 ТЕМА «КИБЕР-ПАЙ-ТЯН» (Pai-chan Cyber Glitch — Bug Hunter) ---
+  // --- 0.3 ТЕМА «КИБЕР-ПАЙ-ТЯН / ОХОТНИК ЗА БАГАМИ» (Animated Code Rain) ---
   void _paintPaiHackerFrame(Canvas canvas, Offset center, double radius) {
-    const emerald = Color(0xFF00FF87);
-    const cyan = Color(0xFF00F0FF);
+    const emerald = Color(0xFF10B981);
+    const brightEmerald = Color(0xFF34D399);
 
-    // 1. Вращающееся матрично-глитчевое кольцо с неоновым свечением
+    // 1. Плоский матовый изумрудный контур с бегущим сегментом
     final ringPaint = Paint()
-      ..shader = SweepGradient(
-        colors: const [
-          Color(0xFF00FF87),
-          Color(0xFF00F0FF),
-          Color(0xFF059669),
-          Color(0xFF00FF87),
-        ],
-        transform: GradientRotation(animationValue * math.pi * 2),
-      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..color = emerald.withValues(alpha: 0.75)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4;
+      ..strokeWidth = 2.0;
     canvas.drawCircle(center, radius, ringPaint);
 
-    // 2. Кибернетические HUD-засечки по 8 сторонам
-    final hudPaint = Paint()
-      ..color = emerald.withValues(alpha: 0.85)
-      ..strokeWidth = 1.8
-      ..style = PaintingStyle.stroke;
+    final activeArcPaint = Paint()
+      ..color = brightEmerald
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      animationValue * math.pi * 2,
+      math.pi * 0.45,
+      false,
+      activeArcPaint,
+    );
 
-    for (int i = 0; i < 8; i++) {
-      final a = (i * math.pi / 4);
-      final x1 = center.dx + (radius - 1.5) * math.cos(a);
-      final y1 = center.dy + (radius - 1.5) * math.sin(a);
-      final x2 = center.dx + (radius + 4.0) * math.cos(a);
-      final y2 = center.dy + (radius + 4.0) * math.sin(a);
-      canvas.drawLine(Offset(x1, y1), Offset(x2, y2), hudPaint);
+    // 2. Анимированный каскад кода (0, 1, {, }, ;, </>) вдоль периметра рамки
+    const glyphs = ['0', '1', '{', '}', ';', '</>'];
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (int i = 0; i < 10; i++) {
+      final colX = center.dx - radius - 4 + (i * (radius * 2 + 8) / 9);
+      final speed = 1.0 + (i % 3) * 0.35;
+      final prog = (animationValue * speed + i * 0.17) % 1.0;
+      final yPos = center.dy - radius - 6 + prog * (radius * 2 + 12);
+      final distFromCenter = Offset(colX - center.dx, yPos - center.dy).distance;
+
+      // Рисуем глифы по краям/углам, не перекрывая центр лица на аватаре
+      if (distFromCenter >= radius * 0.85) {
+        final alpha = (1.0 - (prog - 0.5).abs() * 1.8).clamp(0.2, 0.95);
+        tp.text = TextSpan(
+          text: glyphs[(i + (animationValue * 6).floor()) % glyphs.length],
+          style: TextStyle(
+            color: (i % 2 == 0 ? brightEmerald : emerald).withValues(alpha: alpha),
+            fontSize: 8.5,
+            fontWeight: FontWeight.w800,
+            fontFamily: 'monospace',
+          ),
+        );
+        tp.layout();
+        tp.paint(canvas, Offset(colX - tp.width / 2, yPos - tp.height / 2));
+      }
+    }
+  }
+
+  // --- «ГАРДА КАТАНЫ» (Реалистичная диагональная катана: рукоять цука, гарда цуба, стальной клинок) ---
+  void _paintKatanaGuardFrame(Canvas canvas, Offset center, double radius) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-math.pi / 4);
+
+    final bladeStart = -radius - 8.0;
+    final guardX = radius * 0.52;
+    final hiltEnd = radius + 9.0;
+
+    // 1. Стальной клинок с острой фаской (без неонового свечения)
+    final bladePath = Path()
+      ..moveTo(bladeStart, 0)
+      ..lineTo(bladeStart + 7, -3.0)
+      ..lineTo(guardX, -3.0)
+      ..lineTo(guardX, 2.5)
+      ..lineTo(bladeStart + 5, 2.5)
+      ..close();
+    canvas.drawPath(bladePath, Paint()..color = const Color(0xFFCBD5E1));
+
+    // Блик по режущей кромке (хамон)
+    canvas.drawLine(
+      Offset(bladeStart + 5, 2.0),
+      Offset(guardX, 2.0),
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 1.0,
+    );
+
+    // 2. Бронзовая/стальная гарда (цуба)
+    final tsubaPaint = Paint()..color = const Color(0xFFD97706);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(guardX, 0), width: 4.5, height: 15.0),
+        const Radius.circular(2),
+      ),
+      tsubaPaint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(guardX, 0), width: 4.5, height: 15.0),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..color = const Color(0xFFFDE68A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
+
+    // 3. Обмотка рукояти (цука) с ромбовидным узором
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(guardX + 2.2, -3.0, hiltEnd, 3.0),
+        const Radius.circular(1.5),
+      ),
+      Paint()..color = const Color(0xFF1E293B),
+    );
+    final wrapPaint = Paint()
+      ..color = const Color(0xFFFF6B4A)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    for (double x = guardX + 4.5; x < hiltEnd - 2; x += 4.2) {
+      canvas.drawLine(Offset(x, -2.5), Offset(x + 2.5, 2.5), wrapPaint);
+      canvas.drawLine(Offset(x + 2.5, -2.5), Offset(x, 2.5), wrapPaint);
     }
 
-    // 3. Cyber-visor акцент в верхней части (светящаяся футуристическая полоса)
-    final visorPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [
-          cyan.withValues(alpha: 0.0),
-          cyan.withValues(alpha: 0.95),
-          emerald,
-          cyan.withValues(alpha: 0.95),
-          cyan.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromLTWH(center.dx - radius, center.dy - radius - 5, radius * 2, 8))
-      ..strokeWidth = 3.6
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    canvas.restore();
+  }
 
-    final visorPath = Path();
-    visorPath.addArc(
-      Rect.fromCircle(center: center, radius: radius + 2.0),
-      -math.pi * 0.78,
-      math.pi * 0.56,
+  // --- «ТЕХНО-СРЕЗ 45°» (Восьмиугольный Sci-Fi HUD со срезами и засечками) ---
+  void _paintTechnoBevelFrame(Canvas canvas, Offset center, double radius) {
+    final r = radius + 2.0;
+    final cut = r * 0.34;
+    final rect = Rect.fromCircle(center: center, radius: r);
+    final octPath = Path()
+      ..moveTo(rect.left + cut, rect.top)
+      ..lineTo(rect.right - cut, rect.top)
+      ..lineTo(rect.right, rect.top + cut)
+      ..lineTo(rect.right, rect.bottom - cut)
+      ..lineTo(rect.right - cut, rect.bottom)
+      ..lineTo(rect.left + cut, rect.bottom)
+      ..lineTo(rect.left, rect.bottom - cut)
+      ..lineTo(rect.left, rect.top + cut)
+      ..close();
+
+    canvas.drawPath(
+      octPath,
+      Paint()
+        ..color = const Color(0xFF22D3EE)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
     );
-    canvas.drawPath(visorPath, visorPaint);
 
-    // 4. Бегущая скан-линия по визору (glitch scanline)
-    final scanProgress = (animationValue * 2) % 1.0;
-    final scanAngle = -math.pi * 0.75 + (scanProgress * math.pi * 0.50);
-    final sx = center.dx + (radius + 2.0) * math.cos(scanAngle);
-    final sy = center.dy + (radius + 2.0) * math.sin(scanAngle);
+    final tickPaint = Paint()
+      ..color = const Color(0xFF0284C7)
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.square;
+    canvas.drawLine(Offset(center.dx - 8, rect.top - 2.5), Offset(center.dx + 8, rect.top - 2.5), tickPaint);
+    canvas.drawLine(Offset(center.dx - 8, rect.bottom + 2.5), Offset(center.dx + 8, rect.bottom + 2.5), tickPaint);
+  }
 
-    final beamPaint = Paint()
-      ..color = Colors.white;
-    canvas.drawCircle(Offset(sx, sy), 2.2, beamPaint);
+  // --- «МОНОЛИТ» (Массивная матовая обсидиановая рамка со стальными болтами) ---
+  void _paintMonolithFrame(Canvas canvas, Offset center, double radius) {
+    final r = radius + 2.5;
+    final outerRect = RRect.fromRectAndRadius(
+      Rect.fromCircle(center: center, radius: r),
+      const Radius.circular(12),
+    );
+    canvas.drawRRect(
+      outerRect,
+      Paint()
+        ..color = const Color(0xFF334155)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCircle(center: center, radius: r - 3),
+        const Radius.circular(10),
+      ),
+      Paint()
+        ..color = const Color(0xFF64748B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0,
+    );
 
-    // 5. Дрейфующие пиксели матрицы
-    final pixelPaint = Paint()..style = PaintingStyle.fill;
-    for (int i = 0; i < 7; i++) {
-      final seed = (i * 0.23);
-      final prog = (animationValue + seed) % 1.0;
-      final a = (i * 0.9) + prog * math.pi;
-      final dist = radius + 3.0 + prog * 6.0;
-      final px = center.dx + dist * math.cos(a);
-      final py = center.dy + dist * math.sin(a);
-      final alpha = (1.0 - (prog - 0.5).abs() * 2).clamp(0.2, 0.9);
-      pixelPaint.color = emerald.withValues(alpha: alpha);
-      canvas.drawRect(Rect.fromLTWH(px, py, 2.2, 2.2), pixelPaint);
+    // 4 стальных заклёпки по углам
+    final boltPaint = Paint()..color = const Color(0xFF94A3B8);
+    final offset = r - 5;
+    for (final dx in [-offset, offset]) {
+      for (final dy in [-offset, offset]) {
+        canvas.drawCircle(Offset(center.dx + dx, center.dy + dy), 2.3, boltPaint);
+      }
+    }
+  }
+
+  // --- «КРИСТАЛЛ ЛЬДА» (Острые ледяные грани по углам) ---
+  void _paintIceCrystalFrame(Canvas canvas, Offset center, double radius) {
+    final shardPaint = Paint()..color = const Color(0xFF7DD3FC);
+    final edgePaint = Paint()
+      ..color = const Color(0xFFE0F2FE)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (int i = 0; i < 4; i++) {
+      final angle = i * math.pi / 2 + math.pi / 4;
+      canvas.save();
+      canvas.translate(
+        center.dx + (radius + 2) * math.cos(angle),
+        center.dy + (radius + 2) * math.sin(angle),
+      );
+      canvas.rotate(angle + math.pi / 2);
+      final shard = Path()
+        ..moveTo(0, -7)
+        ..lineTo(4.5, 2)
+        ..lineTo(0, 5)
+        ..lineTo(-4.5, 2)
+        ..close();
+      canvas.drawPath(shard, shardPaint);
+      canvas.drawPath(shard, edgePaint);
+      canvas.restore();
+    }
+  }
+
+  void _paintMinimalFrame(Canvas canvas, Offset center, double radius) {
+    canvas.drawCircle(
+      center,
+      radius + 1,
+      Paint()
+        ..color = const Color(0xFF64748B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  void _paintCoralContourFrame(Canvas canvas, Offset center, double radius) {
+    canvas.drawCircle(
+      center,
+      radius + 1,
+      Paint()
+        ..color = const Color(0xFFFF6B4A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4,
+    );
+  }
+
+  void _paintRankEmberFrame(Canvas canvas, Offset center, double radius) {
+    final paint = Paint()
+      ..color = const Color(0xFFFF6B4A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4;
+    canvas.drawCircle(center, radius + 1, paint);
+    final emberPaint = Paint()..color = const Color(0xFFF59E0B);
+    for (int i = 0; i < 6; i++) {
+      final a = i * (math.pi / 3) + animationValue * math.pi * 2;
+      canvas.drawCircle(
+        Offset(center.dx + (radius + 3.5) * math.cos(a), center.dy + (radius + 3.5) * math.sin(a)),
+        2.0,
+        emberPaint,
+      );
     }
   }
 

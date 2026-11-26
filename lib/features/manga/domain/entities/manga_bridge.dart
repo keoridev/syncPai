@@ -209,6 +209,34 @@ class MangaDexChapter extends Equatable {
     return pagesPart.isNotEmpty ? '$pagesPart • $rawGroup' : rawGroup;
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'volume': volume,
+        'chapterNumber': chapterNumber,
+        'chapterLabel': chapterLabel,
+        'title': title,
+        'translatedLanguage': translatedLanguage,
+        'pagesCount': pagesCount,
+        'translatorGroup': translatorGroup,
+        'source': source,
+        'isPaid': isPaid,
+      };
+
+  factory MangaDexChapter.fromJson(Map<String, dynamic> json) {
+    return MangaDexChapter(
+      id: (json['id'] ?? '').toString(),
+      volume: json['volume']?.toString(),
+      chapterNumber: (json['chapterNumber'] as num?)?.toDouble(),
+      chapterLabel: (json['chapterLabel'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      translatedLanguage: (json['translatedLanguage'] ?? 'ru').toString(),
+      pagesCount: (json['pagesCount'] as num?)?.toInt() ?? 0,
+      translatorGroup: json['translatorGroup']?.toString(),
+      source: (json['source'] ?? 'MangaDex').toString(),
+      isPaid: json['isPaid'] as bool? ?? false,
+    );
+  }
+
   @override
   List<Object?> get props => [
         id,

@@ -52,7 +52,8 @@ class MangaReaderScreen extends StatefulWidget {
   State<MangaReaderScreen> createState() => _MangaReaderScreenState();
 }
 
-class _MangaReaderScreenState extends State<MangaReaderScreen> {
+class _MangaReaderScreenState extends State<MangaReaderScreen>
+    with SingleTickerProviderStateMixin {
   late final MangaDexDataSource _dataSource;
   late final MangaProgressRepository _progressRepo;
 
@@ -65,7 +66,18 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   final Map<int, double> _pageAspectRatios = {};
   final FocusNode _readerFocusNode = FocusNode();
   final TransformationController _pagedZoomController = TransformationController();
+  final TransformationController _webtoonZoomController = TransformationController();
+  late final AnimationController _zoomAnimController;
+  Animation<Matrix4>? _zoomAnimation;
+  Offset _doubleTapPosition = Offset.zero;
+  int _activePointers = 0;
   double _zoomScale = 1.0;
+
+  bool get _isDesktopPlatform =>
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+
+  double get _currentPagedScale =>
+      _pagedZoomController.value.getMaxScaleOnAxis();
   double _accumulatedOverscroll = 0.0;
   bool _isAutoTransitioningChapter = false;
   DateTime _lastPagedWheelAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -95,6 +107,18 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
             ? getIt<MangaProgressRepository>()
             : MangaProgressRepository());
     _readingMode = MangaReadingMode.webtoon;
+    _zoomAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    )..addListener(() {
+        if (_zoomAnimation == null) return;
+        if (_readingMode == MangaReadingMode.webtoon) {
+          _webtoonZoomController.value = _zoomAnimation!.value;
+        } else {
+          _pagedZoomController.value = _zoomAnimation!.value;
+        }
+      });
+    _pagedZoomController.addListener(_onPagedZoomChanged);
     _webtoonScrollController.addListener(_onWebtoonScroll);
     CatalogCubit.pushForegroundScreen();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -128,9 +152,38 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     _webtoonScrollController.dispose();
     _pageController.dispose();
     _currentPageNotifier.dispose();
+    _pagedZoomController.removeListener(_onPagedZoomChanged);
     _pagedZoomController.dispose();
+    _webtoonZoomController.dispose();
+    _zoomAnimController.dispose();
     _readerFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onPagedZoomChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _handleDoubleTapZoom(TransformationController controller) {
+    final currentScale = controller.value.getMaxScaleOnAxis();
+    final Matrix4 targetMatrix;
+    if (currentScale > 1.2) {
+      targetMatrix = Matrix4.identity();
+    } else {
+      const targetScale = 1.85;
+      final x = -_doubleTapPosition.dx * (targetScale - 1.0);
+      final y = -_doubleTapPosition.dy * (targetScale - 1.0);
+      targetMatrix = Matrix4.identity()
+        ..translateByDouble(x, y, 0.0, 1.0)
+        ..scaleByDouble(targetScale, targetScale, 1.0, 1.0);
+    }
+    _zoomAnimation = Matrix4Tween(
+      begin: controller.value,
+      end: targetMatrix,
+    ).animate(
+      CurvedAnimation(parent: _zoomAnimController, curve: Curves.easeOutCubic),
+    );
+    _zoomAnimController.forward(from: 0.0);
   }
 
   Future<void> _loadZoomScale() async {
@@ -146,7 +199,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   }
 
   void _syncPagedZoomMatrix(double scale) {
-    final s = scale.clamp(1.0, 2.25);
+    final s = scale.clamp(0.75, 3.5);
     _pagedZoomController.value =
         s == 1.0 ? Matrix4.identity() : (Matrix4.identity()..scaleByDouble(s, s, 1.0, 1.0));
   }
@@ -1174,8 +1227,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        _buildZoomControlPill(),
+                        if (_isDesktopPlatform) ...[
+                          const SizedBox(width: 6),
+                          _buildZoomControlPill(),
+                        ],
                         const SizedBox(width: 4),
                         TextButton.icon(
                           key: const ValueKey('manga_next_chapter_btn'),
@@ -1281,25 +1336,41 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     }
 
     if (_readingMode == MangaReadingMode.paged) {
-      return PageView.builder(
-        key: const ValueKey('manga_paged_view'),
-        controller: _pageController,
-        itemCount: _pages.length,
-        onPageChanged: (idx) {
-          _syncPagedZoomMatrix(_zoomScale);
-          _onPageChanged(idx);
-        },
-        itemBuilder: (context, index) {
-          return InteractiveViewer(
-            transformationController: _pagedZoomController,
-            minScale: 0.75,
-            maxScale: 3.0,
-            panEnabled: _zoomScale > 1.0,
-            child: Center(
-              child: _buildMangaPageImage(index, primary, fit: BoxFit.contain),
-            ),
-          );
-        },
+      return Listener(
+        onPointerDown: (_) => setState(() => _activePointers++),
+        onPointerUp: (_) =>
+            setState(() => _activePointers = (_activePointers - 1).clamp(0, 10)),
+        onPointerCancel: (_) =>
+            setState(() => _activePointers = (_activePointers - 1).clamp(0, 10)),
+        child: PageView.builder(
+          key: const ValueKey('manga_paged_view'),
+          controller: _pageController,
+          physics: (_activePointers >= 2 || _currentPagedScale > 1.02)
+              ? const NeverScrollableScrollPhysics()
+              : const PageScrollPhysics(),
+          itemCount: _pages.length,
+          onPageChanged: (idx) {
+            _syncPagedZoomMatrix(_zoomScale);
+            _onPageChanged(idx);
+          },
+          itemBuilder: (context, index) {
+            return GestureDetector(
+              onDoubleTapDown: (details) =>
+                  _doubleTapPosition = details.localPosition,
+              onDoubleTap: () => _handleDoubleTapZoom(_pagedZoomController),
+              child: InteractiveViewer(
+                transformationController: _pagedZoomController,
+                minScale: 0.75,
+                maxScale: 3.5,
+                panEnabled: true,
+                scaleEnabled: true,
+                child: Center(
+                  child: _buildMangaPageImage(index, primary, fit: BoxFit.contain),
+                ),
+              ),
+            );
+          },
+        ),
       );
     }
 
@@ -1316,33 +1387,53 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     final maxWebtoonWidth =
         (680.0 * _zoomScale).clamp(280.0, screenWidth);
 
-    return Center(
-      child: ConstrainedBox(
-        key: const ValueKey('manga_webtoon_max_width'),
-        constraints: BoxConstraints(maxWidth: maxWebtoonWidth),
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            if (nextChapter != null && notification is OverscrollNotification) {
-              if (notification.overscroll > 0) {
-                final nextAccum =
-                    _accumulatedOverscroll + notification.overscroll;
-                setState(() => _accumulatedOverscroll = nextAccum);
-                if (nextAccum > 140.0) {
-                  _goToNextChapter();
-                }
-              }
-            } else if (notification is ScrollUpdateNotification &&
-                _accumulatedOverscroll > 0 &&
-                notification.metrics.pixels <
-                    notification.metrics.maxScrollExtent - 10) {
-              setState(() => _accumulatedOverscroll = 0.0);
-            }
-            return false;
-          },
-          child: ListView.builder(
-            key: const ValueKey('manga_webtoon_list'),
-            controller: _webtoonScrollController,
-            cacheExtent: 1200,
+    return Listener(
+      onPointerDown: (_) => setState(() => _activePointers++),
+      onPointerUp: (_) =>
+          setState(() => _activePointers = (_activePointers - 1).clamp(0, 10)),
+      onPointerCancel: (_) =>
+          setState(() => _activePointers = (_activePointers - 1).clamp(0, 10)),
+      child: GestureDetector(
+        onDoubleTapDown: (details) =>
+            _doubleTapPosition = details.localPosition,
+        onDoubleTap: () => _handleDoubleTapZoom(_webtoonZoomController),
+        child: InteractiveViewer(
+          transformationController: _webtoonZoomController,
+          minScale: 0.75,
+          maxScale: 3.0,
+          panEnabled: true,
+          scaleEnabled: true,
+          boundaryMargin: const EdgeInsets.symmetric(horizontal: 140, vertical: 60),
+          child: Center(
+            child: ConstrainedBox(
+              key: const ValueKey('manga_webtoon_max_width'),
+              constraints: BoxConstraints(maxWidth: maxWebtoonWidth),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (nextChapter != null && notification is OverscrollNotification) {
+                    if (notification.overscroll > 0) {
+                      final nextAccum =
+                          _accumulatedOverscroll + notification.overscroll;
+                      setState(() => _accumulatedOverscroll = nextAccum);
+                      if (nextAccum > 140.0) {
+                        _goToNextChapter();
+                      }
+                    }
+                  } else if (notification is ScrollUpdateNotification &&
+                      _accumulatedOverscroll > 0 &&
+                      notification.metrics.pixels <
+                          notification.metrics.maxScrollExtent - 10) {
+                    setState(() => _accumulatedOverscroll = 0.0);
+                  }
+                  return false;
+                },
+                child: ListView.builder(
+                  key: const ValueKey('manga_webtoon_list'),
+                  controller: _webtoonScrollController,
+                  physics: _activePointers >= 2
+                      ? const NeverScrollableScrollPhysics()
+                      : const BouncingScrollPhysics(),
+                  cacheExtent: 1200,
             padding: EdgeInsets.only(
               top: MediaQuery.paddingOf(context).top + 56,
               bottom: MediaQuery.paddingOf(context).bottom + 72,
@@ -1427,6 +1518,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
           ),
         ),
       ),
+    ),
+    ),
+    ),
     );
   }
 

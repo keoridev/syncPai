@@ -541,6 +541,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
                     Widget buildResumeCard(WatchHistoryItem item, {required bool isSingleHeroDesktop}) {
                       final pct = (item.progress * 100).round().clamp(1, 99);
+                      String effectivePoster = item.posterUrl;
+                      if (effectivePoster.isEmpty ||
+                          effectivePoster.toLowerCase().contains('missing_original') ||
+                          effectivePoster.toLowerCase().contains('missing_preview')) {
+                        final catalogState = context.read<CatalogCubit>().state;
+                        if (catalogState is CatalogLoaded) {
+                          final normItem = item.titleName.trim().toLowerCase();
+                          for (final t in catalogState.titles) {
+                            if (t.id == item.titleId ||
+                                (normItem.isNotEmpty &&
+                                    t.russianTitle.trim().toLowerCase() == normItem)) {
+                              if (t.posterUrl.isNotEmpty) {
+                                effectivePoster = t.posterUrl;
+                              }
+                              break;
+                            }
+                          }
+                        }
+                      }
                       return InkWell(
                         onTap: () => handleResumeItem(item),
                         borderRadius: BorderRadius.circular(14),
@@ -566,9 +585,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                       child: SizedBox(
                                         width: 34,
                                         height: 46,
-                                        child: item.posterUrl.isNotEmpty
+                                        child: effectivePoster.isNotEmpty
                                             ? CachedNetworkImage(
-                                                imageUrl: wrapCorsSafeUrl(item.posterUrl),
+                                                imageUrl: wrapCorsSafeUrl(effectivePoster),
                                                 fit: BoxFit.cover,
                                                 errorWidget: (_, __, ___) => Container(
                                                   color: themePrimary.withValues(alpha: 0.16),

@@ -50,19 +50,22 @@ def get_profile_card_text(profile: dict) -> str:
 
 def _linked_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="view_profile")],
-        [InlineKeyboardButton(text="💎 Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
-        [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-        [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
+        [InlineKeyboardButton(text="Мой профиль", callback_data="view_profile")],
+        [InlineKeyboardButton(text="Заказать фичу (7 дней)", callback_data="menu:order_feature")],
+        [InlineKeyboardButton(text="Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="Мои заявки", callback_data="menu:my_requests")],
+        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="Нашел баг", callback_data="report_bug")],
     ])
 
 
 def _guest_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 Привязать аккаунт", callback_data="link_account")],
-        [InlineKeyboardButton(text="💎 Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
-        [InlineKeyboardButton(text="📥 Скачать приложение", callback_data="download_app")],
-        [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="report_bug")],
+        [InlineKeyboardButton(text="Привязать аккаунт", callback_data="link_account")],
+        [InlineKeyboardButton(text="Заказать фичу (7 дней)", callback_data="menu:order_feature")],
+        [InlineKeyboardButton(text="Уровни поддержки (от 99 сом)", callback_data="show_tiers")],
+        [InlineKeyboardButton(text="Скачать приложение", callback_data="download_app")],
+        [InlineKeyboardButton(text="Нашел баг", callback_data="report_bug")],
     ])
 
 
@@ -72,8 +75,22 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     tg_id = message.from_user.id
     profile = supabase_client.get_profile_by_tg_id(tg_id)
 
-    # Проверка deep link: /start link_SP-XXXXXX, /start bug_SP-XXXXXX, /start gift_SP-XXXXXX, /start buy_duo
+    # Проверка deep link: /start feat_<uid>, /start duo_<code>, /start bug_..., /start gift_...
     args = (command.args or "").strip()
+    if args.startswith("feat_"):
+        from handlers.feature_requests import start_feature_flow
+
+        user_id = args.removeprefix("feat_").strip()
+        await start_feature_flow(message, state, user_id=user_id)
+        return
+
+    if args.startswith("duo_"):
+        from handlers.feature_requests import handle_duo_invite
+
+        invite_code = args.removeprefix("duo_").strip()
+        await handle_duo_invite(message, state, invite_code=invite_code)
+        return
+
     if args.startswith("bug_"):
         from handlers.bug_report import start_bug_report_flow
 

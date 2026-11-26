@@ -143,6 +143,12 @@ class _SteamProfileCustomizerSheetState
   List<({String name, String subtitle, String imageUrl})> _avatarSearchResults = [];
   bool _isSearchingAvatars = false;
 
+  // Поиск аниме-фонов (Wallhaven SFW API)
+  final TextEditingController _wallhavenController = TextEditingController();
+  Timer? _wallhavenDebounce;
+  List<({String id, String thumbUrl, String fullUrl})> _wallhavenResults = [];
+  bool _isSearchingWallhaven = false;
+
   @override
   void initState() {
     super.initState();
@@ -154,6 +160,7 @@ class _SteamProfileCustomizerSheetState
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
+    _searchWallhaven('anime scenery');
     _selectedFrameId = widget.profile.frameId ?? 'none';
     _selectedBgId = widget.profile.backgroundId ?? 'none';
     _selectedAccentHex = widget.profile.accentColor ??
@@ -220,6 +227,8 @@ class _SteamProfileCustomizerSheetState
     _searchDebounceTimer?.cancel();
     _avatarSearchDebounce?.cancel();
     _avatarSearchController.dispose();
+    _wallhavenDebounce?.cancel();
+    _wallhavenController.dispose();
     _tabController.dispose();
     _customUrlController.dispose();
     _customAvatarUrlController.dispose();
@@ -1041,6 +1050,51 @@ class _SteamProfileCustomizerSheetState
     );
   }
 
+  Future<void> _searchWallhaven(String query) async {
+    final clean = query.trim().isEmpty ? 'anime scenery' : query.trim();
+    if (mounted) setState(() => _isSearchingWallhaven = true);
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 8),
+      ));
+      final res = await dio.get(
+        'https://wallhaven.cc/api/v1/search',
+        queryParameters: {
+          'q': clean,
+          'categories': '010',
+          'purity': '100',
+          'atleast': '1280x720',
+          'sorting': 'favorites',
+        },
+      );
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data['data'];
+        if (data is List) {
+          final parsed = <({String id, String thumbUrl, String fullUrl})>[];
+          for (final item in data.take(12)) {
+            if (item is! Map) continue;
+            final id = (item['id'] ?? '').toString();
+            final fullUrl = (item['path'] ?? '').toString();
+            final thumbs = item['thumbs'] is Map ? item['thumbs'] as Map : null;
+            final thumbUrl = (thumbs?['small'] ?? thumbs?['large'] ?? fullUrl).toString();
+            if (fullUrl.isNotEmpty && thumbUrl.isNotEmpty) {
+              parsed.add((id: id, thumbUrl: thumbUrl, fullUrl: fullUrl));
+            }
+          }
+          if (mounted) {
+            setState(() {
+              _wallhavenResults = parsed;
+              _isSearchingWallhaven = false;
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isSearchingWallhaven = false);
+  }
+
   Widget _buildPreviewBg(SteamBackgroundTheme bgTheme) {
     return LiveBackgroundWidget(
       backgroundId: _selectedBgId,
@@ -1176,7 +1230,93 @@ class _SteamProfileCustomizerSheetState
         ),
 
         const SizedBox(height: 18),
-        Text('Коллекция легендарных аниме фонов:',
+        Text('Найти аниме-фон (Wallhaven):',
+            style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _wallhavenController,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'Найти аниме-фон (Wallhaven)...',
+            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            filled: true,
+            fillColor: AppColors.surface,
+            prefixIcon: Icon(Icons.wallpaper_rounded, size: 18, color: accent),
+            suffixIcon: _isSearchingWallhaven
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
+                    onPressed: () => _searchWallhaven(_wallhavenController.text),
+                  ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.strokeMedium),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: accent, width: 1.5),
+            ),
+          ),
+          onChanged: (val) {
+            _wallhavenDebounce?.cancel();
+            _wallhavenDebounce = Timer(const Duration(milliseconds: 500), () {
+              _searchWallhaven(val);
+            });
+          },
+          onSubmitted: _searchWallhaven,
+        ),
+        if (_wallhavenResults.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 82,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _wallhavenResults.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, idx) {
+                final wp = _wallhavenResults[idx];
+                final isSelected = _selectedBgId == wp.fullUrl;
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedBgId = wp.fullUrl;
+                      _customUrlController.text = wp.fullUrl;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 136,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected ? accent : AppColors.strokeMedium,
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: CachedNetworkImage(
+                        imageUrl: wp.thumbUrl,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 18),
+        Text('Коллекция аниме фонов:',
             style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
         const SizedBox(height: 10),
 
@@ -1267,10 +1407,10 @@ class _SteamProfileCustomizerSheetState
                               ],
                               Text(
                                 isBugHunterItem
-                                    ? '👾 За баг'
+                                    ? 'За баг'
                                     : (requiredBgTier == SupporterTier.free
                                         ? 'Бесплатно'
-                                        : (requiredBgTier.badgeLabel ?? 'Plus')),
+                                        : 'Sponsor'),
                                 style: TextStyle(
                                   color: isBugHunterItem
                                       ? const Color(0xFF00E676)
@@ -1551,10 +1691,10 @@ class _SteamProfileCustomizerSheetState
                                   ],
                                   Text(
                                     isBugHunterFrame
-                                        ? '👾 За баг'
+                                        ? 'За баг'
                                         : (requiredFrameTier == SupporterTier.free
                                             ? 'Бесплатно'
-                                            : (requiredFrameTier.badgeLabel ?? 'Plus')),
+                                            : 'Sponsor'),
                                     style: TextStyle(
                                       color: isBugHunterFrame
                                           ? const Color(0xFF00E676)

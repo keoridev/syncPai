@@ -279,22 +279,43 @@ class MangaRepository {
     }
   }
 
+  static String _normalizeForDedup(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   Future<List<MangaDexManga>> searchManga(String query) {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return Future.value(const []);
-    final key = 'search_${trimmed.toLowerCase()}';
+    final normalized = trimmed.replaceAll('ё', 'е').replaceAll('Ё', 'Е');
+    final key = 'search_${_normalizeForDedup(trimmed)}';
     return _inFlight.putIfAbsent(key, () async {
       try {
-        final results = await Future.wait([
-          _remanga.searchCatalog(trimmed, count: 25),
-          _desu.browseCatalog(search: trimmed, limit: 25),
-        ]);
+        final queries = <String>[
+          trimmed,
+          if (normalized != trimmed) normalized,
+        ];
+        final futures = <Future<List<MangaDexManga>>>[];
+        for (final q in queries) {
+          futures.add(_senkuro.searchManga(q, first: 15).catchError((_) => const <MangaDexManga>[]));
+          futures.add(_mangalib.searchManga(q).catchError((_) => const <MangaDexManga>[]));
+          futures.add(_remanga.searchCatalog(q, count: 20).catchError((_) => const <MangaDexManga>[]));
+          futures.add(_desu.browseCatalog(search: q, limit: 20).catchError((_) => const <MangaDexManga>[]));
+        }
+        final results = await Future.wait(futures);
         final merged = <MangaDexManga>[];
-        final seenTitles = <String>{};
+        final seenKeys = <String>{};
         for (final list in results) {
           for (final item in list) {
-            final norm = item.title.trim().toLowerCase();
-            if (seenTitles.add(norm)) {
+            final norm = _normalizeForDedup(item.title);
+            final dedupKey = norm.isNotEmpty
+                ? '$norm|${item.originalLanguage ?? ''}'
+                : item.id;
+            if (seenKeys.add(dedupKey)) {
               merged.add(item);
             }
           }
@@ -315,6 +336,9 @@ class MangaRepository {
       final list = await _desu.browseCatalog(search: id.replaceFirst('desu:', ''), limit: 1);
       return list.isNotEmpty ? list.first : null;
     }
+    if (id.startsWith('senkuro:') || id.startsWith('mangalib:')) {
+      return null;
+    }
     return _mangadex.getMangaById(id);
   }
 
@@ -334,6 +358,10 @@ class MangaRepository {
       final t = val?.trim() ?? '';
       if (t.isNotEmpty && !candidates.contains(t)) {
         candidates.add(t);
+      }
+      final noYo = t.replaceAll('ё', 'е').replaceAll('Ё', 'Е');
+      if (noYo.isNotEmpty && !candidates.contains(noYo)) {
+        candidates.add(noYo);
       }
     }
 
@@ -441,9 +469,96 @@ class MangaRepository {
     debugPrint('[MangaRepository] "$title" -> $source ($count chapters)');
   }
 
+  static final Map<String, List<MangaDexChapter>> _chaptersMemCache = {};
+
+  /// Потоковая загрузка глав:
+  /// 1. Мгновенно отдаёт кэш (`manga_cache_v4_chapters_*`), если он есть.
+  /// 2. Потоково эмитит пачки по 100 глав из Senkuro или фолбек-источников.
+  Stream<List<MangaDexChapter>> fetchChaptersStream(MangaDexManga manga) async* {
+    final mem = _chaptersMemCache[manga.id];
+    if (mem != null && mem.isNotEmpty) {
+      yield mem;
+    } else {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('${_diskPrefix}chapters_${manga.id}');
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as List<dynamic>;
+          final cachedList = decoded
+              .whereType<Map>()
+              .map((m) => MangaDexChapter.fromJson(Map<String, dynamic>.from(m)))
+              .toList();
+          if (cachedList.isNotEmpty) {
+            _chaptersMemCache[manga.id] = cachedList;
+            yield cachedList;
+          }
+        }
+      } catch (_) {}
+    }
+
+    List<MangaDexChapter> latest = const [];
+    if (!manga.id.startsWith('remanga:') && !manga.id.startsWith('desu:')) {
+      final queries = buildNormalizedQueries(manga.originalTitle, manga.title);
+      for (final q in queries) {
+        try {
+          final matches = await _senkuro.searchManga(q, first: 5);
+          for (final match in matches.take(2)) {
+            await for (final batch in _senkuro.getChaptersStream(match.id)) {
+              if (batch.isNotEmpty) {
+                latest = batch;
+                yield batch;
+              }
+            }
+            if (latest.isNotEmpty && _startsFromChapterOne(latest)) {
+              _chaptersMemCache[manga.id] = latest;
+              _saveChaptersDiskCache(manga.id, latest);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    final full = await getChapters(manga);
+    if (full.isNotEmpty) {
+      _chaptersMemCache[manga.id] = full;
+      _saveChaptersDiskCache(manga.id, full);
+      yield full;
+    }
+  }
+
+  Future<void> _saveChaptersDiskCache(
+    String mangaId,
+    List<MangaDexChapter> chapters,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        '${_diskPrefix}chapters_$mangaId',
+        jsonEncode(chapters.map((c) => c.toJson()).toList()),
+      );
+    } catch (_) {}
+  }
+
   /// Загружает русские главы с ReManga, Desu.uno и MangaDex, выбирая самый полный ряд с 1-й главы.
   Future<List<MangaDexChapter>> getChapters(MangaDexManga manga) async {
     final queries = buildNormalizedQueries(manga.originalTitle, manga.title);
+
+    if (manga.id.startsWith('mangalib:')) {
+      final mlChapters = await _mangalib.getChapters(manga.id);
+      if (mlChapters.isNotEmpty && _startsFromChapterOne(mlChapters)) {
+        _logResolution('MangaLib', manga.title, mlChapters.length);
+        return mlChapters;
+      }
+    }
+
+    if (manga.id.startsWith('senkuro:')) {
+      final skChapters = await _senkuro.getChapters(manga.id);
+      if (skChapters.isNotEmpty && _startsFromChapterOne(skChapters)) {
+        _logResolution('Senkuro', manga.title, skChapters.length);
+        return skChapters;
+      }
+    }
 
     if (manga.id.startsWith('remanga:')) {
       final remangaChapters = await _remanga.getChaptersByDir(manga.id);

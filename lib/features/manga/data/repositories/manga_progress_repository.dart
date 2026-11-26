@@ -41,6 +41,7 @@ class MangaShowcasePanel {
   final String chapterLabel;
   final String pageUrl;
   final String? refererHeader;
+  final String? customCaption;
   final double cropX;
   final double cropY;
   final double cropWidth;
@@ -52,6 +53,7 @@ class MangaShowcasePanel {
     required this.chapterLabel,
     required this.pageUrl,
     this.refererHeader,
+    this.customCaption,
     required this.cropX,
     required this.cropY,
     required this.cropWidth,
@@ -61,6 +63,14 @@ class MangaShowcasePanel {
   bool get isValid =>
       pageUrl.trim().isNotEmpty && cropWidth > 0.0 && cropHeight > 0.0;
 
+  String get displayCaption {
+    final custom = customCaption?.trim() ?? '';
+    if (custom.isNotEmpty) return custom;
+    return chapterLabel.isNotEmpty
+        ? '$mangaTitle • $chapterLabel'
+        : mangaTitle;
+  }
+
   Map<String, dynamic> toJson() => {
         'mangaId': mangaId,
         'mangaTitle': mangaTitle,
@@ -68,6 +78,8 @@ class MangaShowcasePanel {
         'pageUrl': pageUrl,
         if (refererHeader != null && refererHeader!.isNotEmpty)
           'refererHeader': refererHeader,
+        if (customCaption != null && customCaption!.trim().isNotEmpty)
+          'customCaption': customCaption!.trim(),
         'cropX': cropX.clamp(0.0, 1.0),
         'cropY': cropY.clamp(0.0, 1.0),
         'cropWidth': cropWidth.clamp(0.05, 1.0),
@@ -76,6 +88,7 @@ class MangaShowcasePanel {
 
   factory MangaShowcasePanel.fromJson(Map<String, dynamic> json) {
     final rawReferer = json['refererHeader']?.toString().trim();
+    final rawCaption = json['customCaption']?.toString().trim();
     return MangaShowcasePanel(
       mangaId: (json['mangaId'] ?? '').toString(),
       mangaTitle: (json['mangaTitle'] ?? '').toString(),
@@ -83,6 +96,8 @@ class MangaShowcasePanel {
       pageUrl: (json['pageUrl'] ?? '').toString(),
       refererHeader:
           (rawReferer == null || rawReferer.isEmpty) ? null : rawReferer,
+      customCaption:
+          (rawCaption == null || rawCaption.isEmpty) ? null : rawCaption,
       cropX: ((json['cropX'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
       cropY: ((json['cropY'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
       cropWidth:

@@ -102,13 +102,14 @@ void main() {
         find.text('Клинок, рассекающий демонов • Глава 12'),
         findsOneWidget,
       );
-      expect(find.text('Сохранить в витрину'), findsOneWidget);
+      expect(find.text('Подпись / цитата (необязательно)'), findsOneWidget);
+      expect(find.text('Поставить в витрину'), findsOneWidget);
 
       final viewer = tester.widget<InteractiveViewer>(
         find.byType(InteractiveViewer),
       );
       expect(viewer.minScale, 1.0);
-      expect(viewer.maxScale, 4.0);
+      expect(viewer.maxScale, 5.0);
 
       final aspect = tester.widget<AspectRatio>(find.byType(AspectRatio));
       expect(aspect.aspectRatio, closeTo(16 / 7, 0.001));

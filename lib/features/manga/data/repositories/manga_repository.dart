@@ -2,12 +2,17 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../app/di/injection.dart';
+import '../../../anime_details/data/datasources/shikimori_remote_datasource.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../datasources/desu_datasource.dart';
 import '../datasources/mangadex_datasource.dart';
+import '../datasources/mangalib_datasource.dart';
 import '../datasources/remanga_datasource.dart';
+import '../datasources/senkuro_datasource.dart';
 
 /// Единый репозиторий манги и манхвы:
 /// - Первичные русскоязычные источники: ReManga + Desu.uno
@@ -18,7 +23,7 @@ class MangaRepository {
 
   static const int maxMemoryPages = 12;
   static const Duration diskCacheTtl = Duration(hours: 6);
-  static const String _diskPrefix = 'manga_cache_v3_';
+  static const String _diskPrefix = 'manga_cache_v4_';
   static const List<String> filterTabs = [
     'all',
     'manhwa',
@@ -30,7 +35,11 @@ class MangaRepository {
   final RemangaDataSource _remanga;
   final DesuDataSource _desu;
   final MangaDexDataSource _mangadex;
+  final SenkuroDataSource _senkuro;
+  final MangaLibDataSource _mangalib;
+  final ShikimoriRemoteDataSource? _shikimoriOverride;
   final SharedPreferences? _prefsOverride;
+  bool _legacyCachePurged = false;
 
   final LinkedHashMap<String, List<MangaDexManga>> _memoryLru = LinkedHashMap();
   final Map<String, Future<List<MangaDexManga>>> _inFlight = {};
@@ -39,14 +48,47 @@ class MangaRepository {
     RemangaDataSource? remanga,
     DesuDataSource? desu,
     MangaDexDataSource? mangadex,
+    SenkuroDataSource? senkuro,
+    MangaLibDataSource? mangalib,
+    ShikimoriRemoteDataSource? shikimori,
     SharedPreferences? prefs,
   })  : _remanga = remanga ?? RemangaDataSource(),
         _desu = desu ?? DesuDataSource(),
         _mangadex = mangadex ?? MangaDexDataSource(),
+        _senkuro = senkuro ?? SenkuroDataSource(),
+        _mangalib = mangalib ?? MangaLibDataSource(),
+        _shikimoriOverride = shikimori,
         _prefsOverride = prefs;
 
-  Future<SharedPreferences> _getPrefs() async =>
-      _prefsOverride ?? await SharedPreferences.getInstance();
+  Future<SharedPreferences> _getPrefs() async {
+    final prefs = _prefsOverride ?? await SharedPreferences.getInstance();
+    if (!_legacyCachePurged) {
+      _legacyCachePurged = true;
+      await purgeLegacyDiskCache(prefs);
+    }
+    return prefs;
+  }
+
+  /// Удаляет устаревшие ключи дискового кэша (`manga_cache_v1*`, `v2*`, `v3*`).
+  Future<void> purgeLegacyDiskCache([SharedPreferences? prefsOverride]) async {
+    try {
+      final prefs = prefsOverride ?? _prefsOverride ?? await SharedPreferences.getInstance();
+      final legacyKeys = prefs.getKeys().where(
+            (k) =>
+                k.startsWith('manga_cache_v1') ||
+                k.startsWith('manga_cache_v2') ||
+                k.startsWith('manga_cache_v3'),
+          ).toList();
+      for (final key in legacyKeys) {
+        await prefs.remove(key);
+      }
+      if (kDebugMode && legacyKeys.isNotEmpty) {
+        debugPrint(
+          '[MangaRepository] Purged ${legacyKeys.length} legacy disk cache entries',
+        );
+      }
+    } catch (_) {}
+  }
 
   List<MangaDexManga>? getCachedCatalogPage({
     required String tab,
@@ -306,6 +348,32 @@ class MangaRepository {
     return candidates;
   }
 
+  Future<List<MangaDexChapter>> _searchSenkuroChapters(
+    List<String> queries,
+  ) async {
+    for (final q in queries) {
+      final matches = await _senkuro.searchManga(q, first: 5);
+      for (final match in matches.take(2)) {
+        final chapters = await _senkuro.getChapters(match.id);
+        if (chapters.isNotEmpty) return chapters;
+      }
+    }
+    return const [];
+  }
+
+  Future<List<MangaDexChapter>> _searchMangaLibChapters(
+    List<String> queries,
+  ) async {
+    for (final q in queries) {
+      final matches = await _mangalib.searchManga(q);
+      for (final match in matches.take(2)) {
+        final chapters = await _mangalib.getChapters(match.id);
+        if (chapters.isNotEmpty) return chapters;
+      }
+    }
+    return const [];
+  }
+
   Future<List<MangaDexChapter>> _searchDesuChapters(List<String> queries) async {
     for (final q in queries) {
       final matches = await _desu.browseCatalog(search: q, limit: 5);
@@ -345,6 +413,34 @@ class MangaRepository {
     return pool.first;
   }
 
+  Future<List<String>> _resolveShikimoriRomajiQueries(String title) async {
+    final shiki = _shikimoriOverride ??
+        (getIt.isRegistered<ShikimoriRemoteDataSource>()
+            ? getIt<ShikimoriRemoteDataSource>()
+            : null);
+    if (shiki == null) return const [];
+    final cleaned = sanitizeSearchQuery(title);
+    if (cleaned.isEmpty) return const [];
+    try {
+      final matches = await shiki.searchMangas(cleaned, limit: 5);
+      final out = <String>[];
+      for (final m in matches) {
+        final en = sanitizeSearchQuery(m.english);
+        if (en.isNotEmpty && !out.contains(en)) out.add(en);
+        final rawEn = m.english.trim();
+        if (rawEn.isNotEmpty && !out.contains(rawEn)) out.add(rawEn);
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _logResolution(String source, String title, int count) {
+    if (!kDebugMode) return;
+    debugPrint('[MangaRepository] "$title" -> $source ($count chapters)');
+  }
+
   /// Загружает русские главы с ReManga, Desu.uno и MangaDex, выбирая самый полный ряд с 1-й главы.
   Future<List<MangaDexChapter>> getChapters(MangaDexManga manga) async {
     final queries = buildNormalizedQueries(manga.originalTitle, manga.title);
@@ -358,11 +454,19 @@ class MangaRepository {
           !_startsFromChapterOne(freeRemanga);
 
       if (!hasPaidGaps && freeRemanga.isNotEmpty) {
+        _logResolution('ReManga', manga.title, freeRemanga.length);
         return freeRemanga;
       }
 
-      final desuChapters = await _searchDesuChapters(queries);
+      var desuChapters = await _searchDesuChapters(queries);
+      if (freeRemanga.isEmpty && desuChapters.isEmpty) {
+        final shikiQueries = await _resolveShikimoriRomajiQueries(manga.title);
+        if (shikiQueries.isNotEmpty) {
+          desuChapters = await _searchDesuChapters(shikiQueries);
+        }
+      }
       if (freeRemanga.isEmpty && desuChapters.isNotEmpty) {
+        _logResolution('Desu', manga.title, desuChapters.length);
         return desuChapters;
       }
       if (freeRemanga.isNotEmpty && desuChapters.isNotEmpty) {
@@ -378,61 +482,126 @@ class MangaRepository {
             final nb = b.chapterNumber ?? 999999.0;
             return na.compareTo(nb);
           });
+        _logResolution('ReManga+Desu', manga.title, merged.length);
         return merged;
       }
-      if (freeRemanga.isNotEmpty) return freeRemanga;
+      if (freeRemanga.isNotEmpty) {
+        _logResolution('ReManga', manga.title, freeRemanga.length);
+        return freeRemanga;
+      }
 
-      return _mangadex.getChapters(
+      final mdFallback = await _mangadex.getChapters(
         manga.id,
         title: manga.title,
         originalTitle: manga.originalTitle,
       );
+      _logResolution('MangaDex', manga.title, mdFallback.length);
+      return mdFallback;
     }
 
     if (manga.id.startsWith('desu:')) {
       final desuChapters = await _desu.getChapters(manga.id);
       if (desuChapters.isNotEmpty && _startsFromChapterOne(desuChapters)) {
+        _logResolution('Desu', manga.title, desuChapters.length);
         return desuChapters;
       }
-      final remangaCh =
+      var remangaCh =
           (await _searchRemangaChapters(queries)).where((c) => !c.isPaid).toList();
+      if (desuChapters.isEmpty && remangaCh.isEmpty) {
+        final shikiQueries = await _resolveShikimoriRomajiQueries(manga.title);
+        if (shikiQueries.isNotEmpty) {
+          remangaCh = (await _searchRemangaChapters(shikiQueries))
+              .where((c) => !c.isPaid)
+              .toList();
+        }
+      }
       final best = _pickMostCompleteRun([desuChapters, remangaCh]);
-      if (best.isNotEmpty) return best;
-      return _mangadex.getChapters(
+      if (best.isNotEmpty) {
+        _logResolution(best.first.source, manga.title, best.length);
+        return best;
+      }
+      final mdFallback = await _mangadex.getChapters(
         manga.id,
         title: manga.title,
         originalTitle: manga.originalTitle,
       );
+      _logResolution('MangaDex', manga.title, mdFallback.length);
+      return mdFallback;
     }
 
-    // Для MangaDex ID (или из «Читать мангу») параллельно пробуем ReManga, Desu.uno и MangaDex,
-    // отдавая приоритет источнику, который начинается с 1-й главы и имеет максимум RU-глав.
-    final results = await Future.wait([
-      _searchRemangaChapters(queries),
-      _searchDesuChapters(queries),
-      _mangadex.getChapters(
-        manga.id,
-        title: manga.title,
-        originalTitle: manga.originalTitle,
-      ),
-    ]);
+    // Приоритетный порядок: Senkuro -> MangaLib -> ReManga -> Desu.uno -> MangaDex.
+    // Возвращаем первый источник с валидным русским рядом с ~1-й главы, либо самый полный ряд.
+    Future<List<MangaDexChapter>> tryAllRussianSources(
+      List<String> qList,
+    ) async {
+      final senkuroCh = await _searchSenkuroChapters(qList);
+      if (senkuroCh.isNotEmpty && _startsFromChapterOne(senkuroCh)) {
+        _logResolution('Senkuro', manga.title, senkuroCh.length);
+        return senkuroCh;
+      }
 
-    final remangaFree = results[0].where((c) => !c.isPaid).toList();
-    final desuCh = results[1];
-    final mdCh = results[2];
-    final mdRu =
-        mdCh.where((c) => c.translatedLanguage.toLowerCase() == 'ru').toList();
+      final mangalibCh = await _searchMangaLibChapters(qList);
+      if (mangalibCh.isNotEmpty && _startsFromChapterOne(mangalibCh)) {
+        _logResolution('MangaLib', manga.title, mangalibCh.length);
+        return mangalibCh;
+      }
 
-    final bestRu = _pickMostCompleteRun([remangaFree, desuCh, mdRu]);
+      final remangaFree = (await _searchRemangaChapters(qList))
+          .where((c) => !c.isPaid)
+          .toList();
+      if (remangaFree.isNotEmpty && _startsFromChapterOne(remangaFree)) {
+        _logResolution('ReManga', manga.title, remangaFree.length);
+        return remangaFree;
+      }
+
+      final desuCh = await _searchDesuChapters(qList);
+      if (desuCh.isNotEmpty && _startsFromChapterOne(desuCh)) {
+        _logResolution('Desu', manga.title, desuCh.length);
+        return desuCh;
+      }
+
+      return _pickMostCompleteRun([senkuroCh, mangalibCh, remangaFree, desuCh]);
+    }
+
+    var bestRu = await tryAllRussianSources(queries);
+    if (bestRu.isEmpty) {
+      final shikiQueries = await _resolveShikimoriRomajiQueries(manga.title);
+      if (shikiQueries.isNotEmpty) {
+        bestRu = await tryAllRussianSources(shikiQueries);
+      }
+    }
+
     if (bestRu.isNotEmpty) {
+      _logResolution(bestRu.first.source, manga.title, bestRu.length);
       return bestRu;
     }
 
+    final mdCh = await _mangadex.getChapters(
+      manga.id,
+      title: manga.title,
+      originalTitle: manga.originalTitle,
+    );
+    final mdRu =
+        mdCh.where((c) => c.translatedLanguage.toLowerCase() == 'ru').toList();
+    if (mdRu.isNotEmpty) {
+      _logResolution('MangaDex(ru)', manga.title, mdRu.length);
+      return mdRu;
+    }
+
+    _logResolution('MangaDex(fallback)', manga.title, mdCh.length);
     return mdCh;
   }
 
   Future<({List<String> dataUrls, List<String> dataSaverUrls})>
       getChapterPagesWithFallback(String chapterId) async {
+    if (chapterId.startsWith('senkuro:')) {
+      final urls = await _senkuro.getChapterPages(chapterId);
+      return (dataUrls: urls, dataSaverUrls: const <String>[]);
+    }
+    if (chapterId.startsWith('mangalib:')) {
+      final urls = await _mangalib.getChapterPages(chapterId);
+      return (dataUrls: urls, dataSaverUrls: const <String>[]);
+    }
     if (chapterId.startsWith('remanga:')) {
       final urls = await _remanga.getChapterPages(chapterId);
       return (dataUrls: urls, dataSaverUrls: const <String>[]);

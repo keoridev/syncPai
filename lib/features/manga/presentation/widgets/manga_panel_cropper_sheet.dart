@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/entities/user_profile.dart';
@@ -14,6 +14,30 @@ import '../../data/repositories/manga_repository.dart';
 import '../../domain/entities/manga_bridge.dart';
 import '../cubit/manga_read_history_cubit.dart';
 import '../cubit/user_manga_list_cubit.dart';
+
+/// Определяет нужный Referer-заголовок для CDN-изображений манги.
+String? resolveMangaImageReferer(String url, {String? explicitReferer}) {
+  if (explicitReferer != null && explicitReferer.trim().isNotEmpty) {
+    return explicitReferer.trim();
+  }
+  final lower = url.toLowerCase();
+  if (lower.contains('remanga.org') || lower.contains('reimg.org')) {
+    return 'https://remanga.org/';
+  }
+  if (lower.contains('imglib.info') ||
+      lower.contains('cdnlibs.org') ||
+      lower.contains('cdnrulib.link') ||
+      lower.contains('imgslib.link')) {
+    return 'https://mangalib.me/';
+  }
+  if (lower.contains('senkuro.net') || lower.contains('senkuro.com')) {
+    return 'https://senkuro.com/';
+  }
+  if (lower.contains('desu.')) {
+    return 'https://desu.uno/';
+  }
+  return null;
+}
 
 /// Вычисляет нормализованный прямоугольник кадрирования (0.0..1.0) для InteractiveViewer.
 ({double cropX, double cropY, double cropWidth, double cropHeight})
@@ -68,15 +92,13 @@ class MangaShowcasePanelBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final headers = <String, String>{};
-    if (panel.refererHeader != null && panel.refererHeader!.isNotEmpty) {
-      headers['Referer'] = panel.refererHeader!;
-    } else if (panel.pageUrl.contains('remanga.org') ||
-        panel.pageUrl.contains('reimg.org')) {
-      headers['Referer'] = 'https://remanga.org/';
-    } else if (panel.pageUrl.contains('desu.')) {
-      headers['Referer'] = 'https://desu.uno/';
-    }
+    final referer = resolveMangaImageReferer(
+      panel.pageUrl,
+      explicitReferer: panel.refererHeader,
+    );
+    final headers = <String, String>{
+      if (referer != null) 'Referer': referer,
+    };
 
     final safeCropW = panel.cropWidth.clamp(0.05, 1.0);
     final safeCropH = panel.cropHeight.clamp(0.05, 1.0);
@@ -85,9 +107,7 @@ class MangaShowcasePanelBanner extends StatelessWidget {
     final leftOffset = -panel.cropX.clamp(0.0, 1.0 - safeCropW) * imgWidth;
     final topOffset = -panel.cropY.clamp(0.0, 1.0 - safeCropH) * imgHeight;
 
-    final subtitle = panel.chapterLabel.isNotEmpty
-        ? '${panel.mangaTitle} • ${panel.chapterLabel}'
-        : panel.mangaTitle;
+    final subtitle = panel.displayCaption;
 
     return GestureDetector(
       onTap: onTap,
@@ -255,6 +275,7 @@ class MangaPanelCropperSheet extends StatefulWidget {
 class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
   final TransformationController _transformController =
       TransformationController();
+  final TextEditingController _captionController = TextEditingController();
   bool _isSaving = false;
   double _imageAspectRatio = 0.7;
   Size _lastViewportSize = Size.zero;
@@ -290,21 +311,19 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
   }
 
   Map<String, String> _buildHeaders() {
-    final headers = <String, String>{};
-    if (widget.refererHeader != null && widget.refererHeader!.isNotEmpty) {
-      headers['Referer'] = widget.refererHeader!;
-    } else if (widget.pageUrl.contains('remanga.org') ||
-        widget.pageUrl.contains('reimg.org')) {
-      headers['Referer'] = 'https://remanga.org/';
-    } else if (widget.pageUrl.contains('desu.')) {
-      headers['Referer'] = 'https://desu.uno/';
-    }
-    return headers;
+    final referer = resolveMangaImageReferer(
+      widget.pageUrl,
+      explicitReferer: widget.refererHeader,
+    );
+    return {
+      if (referer != null) 'Referer': referer,
+    };
   }
 
   @override
   void dispose() {
     _transformController.dispose();
+    _captionController.dispose();
     super.dispose();
   }
 
@@ -325,12 +344,14 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
       transform: _transformController.value,
     );
 
+    final customCaption = _captionController.text.trim();
     final panel = MangaShowcasePanel(
       mangaId: widget.mangaId,
       mangaTitle: widget.mangaTitle,
       chapterLabel: widget.chapterLabel,
       pageUrl: widget.pageUrl,
       refererHeader: widget.refererHeader,
+      customCaption: customCaption.isNotEmpty ? customCaption : null,
       cropX: rect.cropX,
       cropY: rect.cropY,
       cropWidth: rect.cropWidth,
@@ -348,160 +369,195 @@ class _MangaPanelCropperSheetState extends State<MangaPanelCropperSheet> {
 
     return SafeArea(
       child: Container(
-        margin: const EdgeInsets.fromLTRB(12, 24, 12, 12),
+        margin: const EdgeInsets.fromLTRB(10, 16, 10, 10),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF141821),
+          color: const Color(0xFF0E1117),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0x14FFFFFF)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.crop_rounded,
-                  color: AppColors.primary,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Кадрирование для витрины (16:7)',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.crop_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Кадрирование для витрины (16:7)',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white54),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${widget.mangaTitle} • ${widget.chapterLabel}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white60,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 14),
-            AspectRatio(
-              aspectRatio: 16 / 7,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0E1118),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x26FFFFFF)),
+              const SizedBox(height: 4),
+              Text(
+                '${widget.mangaTitle} • ${widget.chapterLabel}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    _lastViewportSize = constraints.biggest;
-                    final contentWidth = constraints.maxWidth;
-                    final contentHeight = (contentWidth / _imageAspectRatio)
-                        .clamp(constraints.maxHeight, 2000.0);
+              ),
+              const SizedBox(height: 12),
+              AspectRatio(
+                aspectRatio: 16 / 7,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        color: const Color(0xFF090B10),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            _lastViewportSize = constraints.biggest;
+                            final contentWidth = constraints.maxWidth;
+                            final contentHeight =
+                                (contentWidth / _imageAspectRatio)
+                                    .clamp(constraints.maxHeight, 2000.0);
 
-                    return InteractiveViewer(
-                      transformationController: _transformController,
-                      minScale: 1.0,
-                      maxScale: 4.0,
-                      constrained: false,
-                      boundaryMargin: EdgeInsets.zero,
-                      child: SizedBox(
-                        width: contentWidth,
-                        height: contentHeight,
-                        child: CachedNetworkImage(
-                          imageUrl: wrapCorsSafeUrl(widget.pageUrl),
-                          httpHeaders: headers.isEmpty ? null : headers,
-                          fit: BoxFit.fill,
-                          placeholder: (_, __) => const Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          errorWidget: (_, __, ___) => const Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.white38,
-                              size: 32,
-                            ),
+                            return InteractiveViewer(
+                              transformationController: _transformController,
+                              minScale: 1.0,
+                              maxScale: 5.0,
+                              constrained: false,
+                              boundaryMargin: const EdgeInsets.all(80),
+                              child: SizedBox(
+                                width: contentWidth,
+                                height: contentHeight,
+                                child: CachedNetworkImage(
+                                  imageUrl: wrapCorsSafeUrl(widget.pageUrl),
+                                  httpHeaders:
+                                      headers.isEmpty ? null : headers,
+                                  fit: BoxFit.fill,
+                                  placeholder: (_, __) => const Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  errorWidget: (_, __, ___) => const Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white38,
+                                      size: 32,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.75),
+                            width: 1,
                           ),
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Приблизьте и переместите страницу, чтобы выбрать нужный фрейм.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 11.5,
+              const SizedBox(height: 10),
+              TextField(
+                controller: _captionController,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                maxLength: 80,
+                decoration: InputDecoration(
+                  hintText: 'Подпись / цитата (необязательно)',
+                  hintStyle:
+                      const TextStyle(color: Colors.white38, fontSize: 12.5),
+                  counterText: '',
+                  filled: true,
+                  fillColor: const Color(0xFF141821),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0x14FFFFFF)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0x14FFFFFF)),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      _transformController.value = Matrix4.identity();
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Color(0x1FFFFFFF)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        _transformController.value = Matrix4.identity();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Color(0x1FFFFFFF)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                    ),
-                    child: const Text('Сбросить'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
-                    onPressed: _isSaving ? null : _saveCrop,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    icon: _isSaving
-                        ? const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.check_rounded, size: 17),
-                    label: const Text(
-                      'Сохранить в витрину',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      child: const Text('Сбросить'),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveCrop,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.check_rounded, size: 17),
+                      label: const Text(
+                        'Поставить в витрину',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -845,8 +901,12 @@ class _MangaPanelPickerSheetState extends State<MangaPanelPickerSheet>
   }
 
   Widget _buildMangaSelector() {
-    final historyEntries = context.watch<MangaReadHistoryCubit>().state.entries;
-    final favEntries = context.watch<UserMangaListCubit>().state.entries;
+    final historyEntries = getIt.isRegistered<MangaReadHistoryCubit>()
+        ? getIt<MangaReadHistoryCubit>().state.entries
+        : const <MangaHistoryEntry>[];
+    final favEntries = getIt.isRegistered<UserMangaListCubit>()
+        ? getIt<UserMangaListCubit>().state.entries
+        : const <UserMangaEntry>[];
 
     final quickItems = <MangaDexManga>[];
     final seen = <String>{};

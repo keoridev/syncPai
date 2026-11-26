@@ -1681,51 +1681,61 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildSecondaryActionButton(
-              icon: watchTogetherIcon,
-              iconColor: hasActiveRoom ? AppColors.syncActive : AppColors.textPrimary,
-              label: hasActiveRoom ? 'В комнату' : 'Вместе',
-              onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
-            ),
-            _buildSecondaryActionButton(
-              icon: Icons.movie_outlined,
-              label: 'Трейлеры',
-              onTap: () {
-                context.pushNamed('anime-videos', extra: {
-                  'title': _currentTitle.displayTitle,
-                  'backdrop': backdropUrl,
-                  'videos': _videos,
-                });
-              },
-            ),
-            if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
-              _buildSecondaryActionButton(
-                icon: Icons.menu_book_rounded,
-                iconColor: AppColors.primaryLight,
-                isLoading: _isOpeningManga,
-                label: _mangaBridge?.continueFromChapter != null
-                    ? '${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
-                    : 'Читать мангу',
-                onTap: () => _handleReadMangaTap(title),
+            Expanded(
+              child: _buildSecondaryActionButton(
+                icon: watchTogetherIcon,
+                iconColor: hasActiveRoom ? AppColors.syncActive : AppColors.textPrimary,
+                label: hasActiveRoom ? 'В комнату' : 'Вместе',
+                onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
               ),
-            if (getIt.isRegistered<AnimeListCubit>())
-              BlocBuilder<AnimeListCubit, AnimeListState>(
-                bloc: getIt<AnimeListCubit>(),
-                builder: (context, listState) {
-                  final entry = listState.getEntryFor(title.id);
-                  final isInList = entry != null;
-                  return _buildSecondaryActionButton(
-                    icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                    iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
-                    label: isInList ? entry.status.labelRu : 'В закладки',
-                    onTap: () => _showAnimeStatusSheet(context, title, entry),
-                  );
+            ),
+            Expanded(
+              child: _buildSecondaryActionButton(
+                icon: Icons.movie_outlined,
+                label: 'Трейлеры',
+                onTap: () {
+                  context.pushNamed('anime-videos', extra: {
+                    'title': _currentTitle.displayTitle,
+                    'backdrop': backdropUrl,
+                    'videos': _videos,
+                  });
                 },
               ),
-            _buildSecondaryActionButton(
-              icon: Icons.cloud_download_outlined,
-              label: 'Скачать',
-              onTap: () => _openTorrentsSheet(context),
+            ),
+            if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
+              Expanded(
+                child: _buildSecondaryActionButton(
+                  icon: Icons.menu_book_rounded,
+                  iconColor: AppColors.primaryLight,
+                  isLoading: _isOpeningManga,
+                  label: _mangaBridge?.continueFromChapter != null
+                      ? '${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
+                      : 'Читать мангу',
+                  onTap: () => _handleReadMangaTap(title),
+                ),
+              ),
+            if (getIt.isRegistered<AnimeListCubit>())
+              Expanded(
+                child: BlocBuilder<AnimeListCubit, AnimeListState>(
+                  bloc: getIt<AnimeListCubit>(),
+                  builder: (context, listState) {
+                    final entry = listState.getEntryFor(title.id);
+                    final isInList = entry != null;
+                    return _buildSecondaryActionButton(
+                      icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
+                      label: isInList ? entry.status.labelRu : 'В закладки',
+                      onTap: () => _showAnimeStatusSheet(context, title, entry),
+                    );
+                  },
+                ),
+              ),
+            Expanded(
+              child: _buildSecondaryActionButton(
+                icon: Icons.cloud_download_outlined,
+                label: 'Скачать',
+                onTap: () => _openTorrentsSheet(context),
+              ),
             ),
           ],
         );

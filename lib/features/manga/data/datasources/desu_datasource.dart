@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import '../../domain/entities/manga_bridge.dart';
 
@@ -14,11 +15,13 @@ class DesuDataSource {
             Dio(
               BaseOptions(
                 baseUrl: _baseUrl,
-                connectTimeout: const Duration(seconds: 5),
-                receiveTimeout: const Duration(seconds: 7),
+                connectTimeout: const Duration(seconds: 6),
+                receiveTimeout: const Duration(seconds: 8),
                 headers: const {
                   'Accept': 'application/json',
-                  'User-Agent': 'SyncPai/1.0',
+                  'Referer': 'https://desu.uno/',
+                  'User-Agent':
+                      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
               ),
             );
@@ -91,7 +94,10 @@ class DesuDataSource {
         );
       }
       return results;
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Desu] browseCatalog error ($search): $e');
+      }
       return const [];
     }
   }
@@ -140,7 +146,10 @@ class DesuDataSource {
         return na.compareTo(nb);
       });
       return out;
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Desu] getChapters($cleanId) error: $e');
+      }
       return const [];
     }
   }

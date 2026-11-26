@@ -108,13 +108,45 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     return const [];
   }
 
+  static final RegExp _placeholderTitleRegex = RegExp(r'^Аниме #\d+$');
+  static final Map<int, int> _shikimoriToAnilibriaIdCache = {};
+  static final Map<int, Future<AnimeTitleDto>> _inFlightReleaseRequests = {};
+  static final Map<int, AnimeTitleDto> _releaseCache = {};
+  static final Set<int> _missingReleaseIds = {};
+  static final Map<String, Future<List<AnimeTitleDto>>> _inFlightSearchRequests = {};
+  static final Map<String, List<AnimeTitleDto>> _searchCache = {};
+
   @override
   Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty || _placeholderTitleRegex.hasMatch(trimmed)) {
+      return const [];
+    }
+    final cacheKey = trimmed.toLowerCase();
+    final cached = _searchCache[cacheKey];
+    if (cached != null) return cached;
+    final inFlight = _inFlightSearchRequests[cacheKey];
+    if (inFlight != null) return inFlight;
+
+    final future = _executeSearchTitles(trimmed);
+    _inFlightSearchRequests[cacheKey] = future;
+    try {
+      final result = await future;
+      if (result.isNotEmpty) {
+        _searchCache[cacheKey] = result;
+      }
+      return result;
+    } finally {
+      _inFlightSearchRequests.remove(cacheKey);
+    }
+  }
+
+  Future<List<AnimeTitleDto>> _executeSearchTitles(String trimmed) async {
     try {
       final response = await _getWithMirrorFailover(
         ApiConstants.searchReleases,
         queryParameters: {
-          'query': query,
+          'query': trimmed,
         },
       );
 
@@ -133,10 +165,33 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     }
   }
 
-  static final Map<int, int> _shikimoriToAnilibriaIdCache = {};
-
   @override
   Future<AnimeTitleDto> getTitleDetails({int? id, String? code}) async {
+    if (id != null && id > 0) {
+      final cached = _releaseCache[id];
+      if (cached != null) return cached;
+      if (_missingReleaseIds.contains(id)) {
+        return _buildFallbackShikimoriDto(id: id, code: code);
+      }
+      final inFlight = _inFlightReleaseRequests[id];
+      if (inFlight != null) return inFlight;
+
+      final future = _getTitleDetailsInternal(id: id, code: code);
+      _inFlightReleaseRequests[id] = future;
+      try {
+        final result = await future;
+        if (result.id > 0 && !_placeholderTitleRegex.hasMatch(result.russianTitle)) {
+          _releaseCache[id] = result;
+        }
+        return result;
+      } finally {
+        _inFlightReleaseRequests.remove(id);
+      }
+    }
+    return _getTitleDetailsInternal(id: id, code: code);
+  }
+
+  Future<AnimeTitleDto> _getTitleDetailsInternal({int? id, String? code}) async {
     try {
       final rawCode = code?.trim() ?? '';
       // 1. Если передан search:-токен — сразу снимаем префикс и идём в поиск без 404 по /releases/search:...
@@ -174,7 +229,9 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
       try {
         response = await _getWithMirrorFailover(path);
       } catch (err) {
-        if (hasValidCode && target != rawCode) {
+        if (hasValidCode &&
+            target != rawCode &&
+            !_placeholderTitleRegex.hasMatch(rawCode)) {
           try {
             response = await _getWithMirrorFailover(
               '${ApiConstants.releaseDetails}/$rawCode',
@@ -193,6 +250,9 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         }
 
         if (response == null) {
+          if (id != null && id > 0) {
+            _missingReleaseIds.add(id);
+          }
           return _buildFallbackShikimoriDto(id: id, code: rawCode);
         }
       }

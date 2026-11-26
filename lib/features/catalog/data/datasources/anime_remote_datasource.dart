@@ -687,16 +687,69 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }
 
   static final Map<int, String> _externalIdToReleaseIdCache = {};
+  static final RegExp _placeholderTitleRegex = RegExp(r'^Аниме #\d+$');
   static final Map<String, String> _titleToReleaseIdCache = {};
+  static final Map<int, Future<AnimePlayerDataModel>> _inFlightPlayerLinks = {};
+  static final Map<String, Future<AnimePlayerDataModel>> _inFlightPlayerLinksByKey = {};
+  static final Map<int, AnimePlayerDataModel> _playerLinksCache = {};
+  static final Map<String, AnimePlayerDataModel> _playerLinksCacheByKey = {};
+  static final Set<int> _missingReleaseIds = {};
 
   @override
   Future<AnimePlayerDataModel> getPlayerLinks(int releaseId, {String? title}) async {
+    if (releaseId > 0) {
+      final cached = _playerLinksCache[releaseId];
+      if (cached != null) return cached;
+      final inFlight = _inFlightPlayerLinks[releaseId];
+      if (inFlight != null) return inFlight;
+
+      final future = _fetchPlayerLinksInternal(releaseId, title: title);
+      _inFlightPlayerLinks[releaseId] = future;
+      try {
+        final result = await future;
+        if (result.episodes.isNotEmpty) {
+          _playerLinksCache[releaseId] = result;
+        }
+        return result;
+      } finally {
+        _inFlightPlayerLinks.remove(releaseId);
+      }
+    }
+
+    final key = (title ?? '').trim().toLowerCase();
+    if (key.isNotEmpty) {
+      final cached = _playerLinksCacheByKey[key];
+      if (cached != null) return cached;
+      final inFlight = _inFlightPlayerLinksByKey[key];
+      if (inFlight != null) return inFlight;
+      final future = _fetchPlayerLinksInternal(releaseId, title: title);
+      _inFlightPlayerLinksByKey[key] = future;
+      try {
+        final result = await future;
+        if (result.episodes.isNotEmpty) {
+          _playerLinksCacheByKey[key] = result;
+        }
+        return result;
+      } finally {
+        _inFlightPlayerLinksByKey.remove(key);
+      }
+    }
+
+    return _fetchPlayerLinksInternal(releaseId, title: title);
+  }
+
+  Future<AnimePlayerDataModel> _fetchPlayerLinksInternal(
+    int releaseId, {
+    String? title,
+  }) async {
     try {
       Response? res;
       final rawTitle = title?.trim() ?? '';
       final cleanTitle = rawTitle.startsWith('search:')
           ? rawTitle.substring('search:'.length).trim()
           : rawTitle;
+      final isSearchableTitle =
+          cleanTitle.isNotEmpty && !_placeholderTitleRegex.hasMatch(cleanTitle);
       final normalizedTitleKey = cleanTitle.toLowerCase();
 
       final mappedId = _externalIdToReleaseIdCache[releaseId] ??
@@ -705,17 +758,24 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       // Если есть закэшированный маппинг или обычный AniLibria ID (> 0 и без search:), пробуем прямой запрос
       final effectiveId = mappedId ?? '$releaseId';
       final skipDirectIdLookup =
-          (mappedId == null && releaseId <= 0) || rawTitle.startsWith('search:');
+          (mappedId == null && releaseId <= 0) ||
+          rawTitle.startsWith('search:') ||
+          (mappedId == null && _missingReleaseIds.contains(releaseId));
 
       if (!skipDirectIdLookup) {
         try {
           res = await _dio.get('$_releaseUrl/$effectiveId');
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 404 && releaseId > 0 && mappedId == null) {
+            _missingReleaseIds.add(releaseId);
+          }
+          res = null;
         } catch (_) {
           res = null;
         }
       }
 
-      if (res == null && cleanTitle.isNotEmpty) {
+      if (res == null && isSearchableTitle) {
         try {
           final sRes = await _dio.get(
             _searchUrl,
@@ -733,7 +793,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
         } catch (_) {}
       }
 
-      if (res == null && cleanTitle.isNotEmpty) {
+      if (res == null && isSearchableTitle) {
         try {
           final fallbackSRes = await _dio.get(
             _fallbackSearchUrl,

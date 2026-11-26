@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import '../../domain/entities/manga_bridge.dart';
 
@@ -18,7 +19,9 @@ class RemangaDataSource {
                 headers: const {
                   'Accept': 'application/json',
                   'Referer': 'https://remanga.org/',
-                  'User-Agent': 'SyncPai/1.0',
+                  'Origin': 'https://remanga.org',
+                  'User-Agent':
+                      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
               ),
             );
@@ -102,7 +105,10 @@ class RemangaDataSource {
         if (parsed != null) out.add(parsed);
       }
       return out;
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ReManga] browseCatalog error: $e');
+      }
       return const [];
     }
   }
@@ -129,7 +135,10 @@ class RemangaDataSource {
         if (parsed != null) out.add(parsed);
       }
       return out;
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ReManga] browseCatalog error: $e');
+      }
       return const [];
     }
   }
@@ -180,75 +189,100 @@ class RemangaDataSource {
       final branches = titleContent['branches'];
       if (branches is! List || branches.isEmpty) return const [];
 
-      int? bestBranchId;
-      int bestCount = -1;
+      final branchIds = <int>[];
       for (final b in branches) {
         if (b is! Map) continue;
         final bId = (b['id'] as num?)?.toInt();
-        final count = (b['count_chapters'] as num?)?.toInt() ?? 0;
-        if (bId != null && count > bestCount) {
-          bestCount = count;
-          bestBranchId = bId;
+        if (bId != null) branchIds.add(bId);
+      }
+      if (branchIds.isEmpty) return const [];
+
+      Future<List<MangaDexChapter>> fetchBranch(int branchId) async {
+        try {
+          final chapRes = await _dio.get(
+            '/v2/titles/chapters/',
+            queryParameters: {
+              'branch_id': branchId,
+              'ordering': 'index',
+              'count': 500,
+            },
+          );
+          final chapBody = chapRes.data;
+          final chapContent = chapBody is Map ? chapBody['content'] : null;
+          if (chapContent is! List || chapContent.isEmpty) return const [];
+
+          final list = <MangaDexChapter>[];
+          for (var i = 0; i < chapContent.length; i++) {
+            final item = chapContent[i];
+            if (item is! Map) continue;
+            final id = (item['id'] ?? '').toString().trim();
+            if (id.isEmpty) continue;
+            final isPaid = item['is_paid'] == true;
+
+            final tome = (item['tome'] ?? '').toString().trim();
+            final chapStr = (item['chapter'] ?? '').toString().trim();
+            final chapNum = double.tryParse(chapStr);
+            final name = (item['name'] ?? '').toString().trim();
+            final publishers = item['publishers'];
+            String? groupName;
+            if (publishers is List &&
+                publishers.isNotEmpty &&
+                publishers.first is Map) {
+              groupName = (publishers.first['name'] ?? '').toString().trim();
+            }
+
+            list.add(
+              MangaDexChapter(
+                id: 'remanga:$id',
+                volume: tome.isNotEmpty && tome != '0' ? tome : null,
+                chapterNumber: chapNum,
+                chapterLabel: chapStr.isNotEmpty ? chapStr : '${i + 1}',
+                title: name,
+                translatedLanguage: 'ru',
+                pagesCount: (item['count_pages'] as num?)?.toInt() ?? 0,
+                translatorGroup: (groupName != null && groupName.isNotEmpty)
+                    ? groupName
+                    : 'Remanga',
+                source: 'Remanga',
+                isPaid: isPaid,
+              ),
+            );
+          }
+
+          list.sort((a, b) {
+            final na = a.chapterNumber ?? 999999.0;
+            final nb = b.chapterNumber ?? 999999.0;
+            return na.compareTo(nb);
+          });
+          return list;
+        } catch (_) {
+          return const [];
         }
       }
-      if (bestBranchId == null) return const [];
 
-      final chapRes = await _dio.get(
-        '/v2/titles/chapters/',
-        queryParameters: {
-          'branch_id': bestBranchId,
-          'ordering': 'index',
-          'count': 500,
-        },
-      );
-      final chapBody = chapRes.data;
-      final chapContent = chapBody is Map ? chapBody['content'] : null;
-      if (chapContent is! List || chapContent.isEmpty) return const [];
+      final branchResults = await Future.wait(branchIds.map(fetchBranch));
 
-      final chapters = <MangaDexChapter>[];
-      for (var i = 0; i < chapContent.length; i++) {
-        final item = chapContent[i];
-        if (item is! Map) continue;
-        final id = (item['id'] ?? '').toString().trim();
-        if (id.isEmpty) continue;
-        final isPaid = item['is_paid'] == true;
-
-        final tome = (item['tome'] ?? '').toString().trim();
-        final chapStr = (item['chapter'] ?? '').toString().trim();
-        final chapNum = double.tryParse(chapStr);
-        final name = (item['name'] ?? '').toString().trim();
-        final publishers = item['publishers'];
-        String? groupName;
-        if (publishers is List &&
-            publishers.isNotEmpty &&
-            publishers.first is Map) {
-          groupName = (publishers.first['name'] ?? '').toString().trim();
+      List<MangaDexChapter> bestChapters = const [];
+      int bestFreeCount = 0;
+      for (final branchList in branchResults) {
+        if (branchList.isEmpty) continue;
+        final freeCount = branchList.where((c) => !c.isPaid).length;
+        if (freeCount > bestFreeCount) {
+          bestFreeCount = freeCount;
+          bestChapters = branchList;
         }
-
-        chapters.add(
-          MangaDexChapter(
-            id: 'remanga:$id',
-            volume: tome.isNotEmpty && tome != '0' ? tome : null,
-            chapterNumber: chapNum,
-            chapterLabel: chapStr.isNotEmpty ? chapStr : '${i + 1}',
-            title: name,
-            translatedLanguage: 'ru',
-            pagesCount: (item['count_pages'] as num?)?.toInt() ?? 0,
-            translatorGroup:
-                (groupName != null && groupName.isNotEmpty) ? groupName : 'Remanga',
-            source: 'Remanga',
-            isPaid: isPaid,
-          ),
-        );
       }
 
-      chapters.sort((a, b) {
-        final na = a.chapterNumber ?? 999999.0;
-        final nb = b.chapterNumber ?? 999999.0;
-        return na.compareTo(nb);
-      });
-      return chapters;
-    } catch (_) {
+      if (bestFreeCount == 0) {
+        // Все ветки на ReManga платные/заблокированы — пусть сработает fallback на Desu.uno.
+        return const [];
+      }
+
+      return bestChapters;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ReManga] getChaptersByDir($dir) error: $e');
+      }
       return const [];
     }
   }

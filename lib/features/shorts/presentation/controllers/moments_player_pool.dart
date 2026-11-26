@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
@@ -91,16 +92,24 @@ class MomentsPlayerPool extends ChangeNotifier {
     if (_isDisposed || clips.isEmpty) return;
     _currentIndex = newIndex;
 
-    // Вычисляем необходимые 3 индекса: [newIndex - 1, newIndex, newIndex + 1]
+    // На Android держим только 1 активный VideoOutputManager (текущий newIndex),
+    // чтобы не плодить параллельные MediaCodec/SurfaceView декодеры.
+    final isAndroid = !kIsWeb && Platform.isAndroid;
     final neededIndices = <int>{};
-    if (newIndex - 1 >= 0 && newIndex - 1 < clips.length) {
-      neededIndices.add(newIndex - 1);
-    }
-    if (newIndex >= 0 && newIndex < clips.length) {
-      neededIndices.add(newIndex);
-    }
-    if (newIndex + 1 < clips.length) {
-      neededIndices.add(newIndex + 1);
+    if (isAndroid) {
+      if (newIndex >= 0 && newIndex < clips.length) {
+        neededIndices.add(newIndex);
+      }
+    } else {
+      if (newIndex - 1 >= 0 && newIndex - 1 < clips.length) {
+        neededIndices.add(newIndex - 1);
+      }
+      if (newIndex >= 0 && newIndex < clips.length) {
+        neededIndices.add(newIndex);
+      }
+      if (newIndex + 1 < clips.length) {
+        neededIndices.add(newIndex + 1);
+      }
     }
 
     // 1. Освобождаем (dispose) контроллеры, вышедшие за пределы окна N-1..N+1

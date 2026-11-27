@@ -279,7 +279,7 @@ class _MangaDetailsScreenState extends State<MangaDetailsScreen> {
                         size: 22,
                       ),
                       title: const Text(
-                        'Удалить из списков',
+                        'Убрать из списка',
                         style: TextStyle(
                           color: AppColors.syncError,
                           fontWeight: FontWeight.w600,

@@ -33,40 +33,63 @@ abstract final class AppTheme {
   }) {
     final primary = primaryColor ?? AppColors.primary;
     final onPrimary = isManga
-        ? const Color(0xFF0A0A0C)
+        ? const Color(0xFFFFFFFF)
         : AppColors.onColor(primary);
     final bg = backgroundColor ?? AppColors.background;
     final surf = surfaceColor ?? AppColors.surface;
     final surfElevated = surfaceElevatedColor ?? AppColors.surfaceElevated;
-    final panelBorder = isManga ? const Color(0x38FFFFFF) : AppColors.stroke;
-    final panelBorderWidth = isManga ? 1.5 : 1.0;
+    final panelBorder = isManga ? const Color(0xFF111111) : AppColors.stroke;
+    final panelBorderWidth = isManga ? 2.0 : 1.0;
+    final inkText = isManga ? const Color(0xFF111111) : AppColors.textPrimary;
+    final inkSecondary = isManga ? const Color(0xFF475569) : AppColors.textSecondary;
+    final panelRadius = isManga ? BorderRadius.circular(6) : AppDimensions.borderRadiusCard;
+    final buttonRadius = isManga ? BorderRadius.circular(6) : AppDimensions.borderRadiusMedium;
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: isManga ? Brightness.light : Brightness.dark,
       scaffoldBackgroundColor: bg,
       primaryColor: primary,
       canvasColor: bg,
 
       // ColorScheme
-      colorScheme: ColorScheme.dark(
-        primary: primary,
-        onPrimary: onPrimary,
-        primaryContainer: primary.withValues(alpha: 0.16),
-        onPrimaryContainer: primary,
-        surface: surf,
-        surfaceContainerLowest: bg,
-        surfaceContainerLow: surf,
-        surfaceContainer: surf,
-        surfaceContainerHigh: surfElevated,
-        surfaceContainerHighest: surfElevated,
-        onSurface: AppColors.textPrimary,
-        onSurfaceVariant: AppColors.textSecondary,
-        outline: AppColors.stroke,
-        outlineVariant: AppColors.strokeMedium,
-        error: AppColors.syncError,
-        onError: AppColors.textPrimary,
-      ),
+      colorScheme: isManga
+          ? ColorScheme.light(
+              primary: primary,
+              onPrimary: Colors.white,
+              primaryContainer: const Color(0xFF111111).withValues(alpha: 0.08),
+              onPrimaryContainer: const Color(0xFF111111),
+              surface: surf,
+              surfaceContainerLowest: bg,
+              surfaceContainerLow: surf,
+              surfaceContainer: surf,
+              surfaceContainerHigh: surfElevated,
+              surfaceContainerHighest: surfElevated,
+              onSurface: inkText,
+              onSurfaceVariant: inkSecondary,
+              outline: const Color(0xFF111111),
+              outlineVariant: const Color(0xFF111111),
+              error: AppColors.syncError,
+              onError: Colors.white,
+            )
+          : ColorScheme.dark(
+              primary: primary,
+              onPrimary: onPrimary,
+              primaryContainer: primary.withValues(alpha: 0.16),
+              onPrimaryContainer: primary,
+              surface: surf,
+              surfaceContainerLowest: bg,
+              surfaceContainerLow: surf,
+              surfaceContainer: surf,
+              surfaceContainerHigh: surfElevated,
+              surfaceContainerHighest: surfElevated,
+              onSurface: AppColors.textPrimary,
+              onSurfaceVariant: AppColors.textSecondary,
+              outline: AppColors.stroke,
+              outlineVariant: AppColors.strokeMedium,
+              error: AppColors.syncError,
+              onError: AppColors.textPrimary,
+            ),
 
       // AppBar
       appBarTheme: AppBarTheme(
@@ -74,33 +97,33 @@ abstract final class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: AppTypography.titleLarge,
-        iconTheme: const IconThemeData(color: AppColors.textPrimary, size: 22),
+        titleTextStyle: AppTypography.titleLarge.copyWith(color: inkText),
+        iconTheme: IconThemeData(color: inkText, size: 22),
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.light,
+          statusBarIconBrightness: isManga ? Brightness.dark : Brightness.light,
           systemNavigationBarColor: bg,
-          systemNavigationBarIconBrightness: Brightness.light,
+          systemNavigationBarIconBrightness: isManga ? Brightness.dark : Brightness.light,
         ),
       ),
 
       // SnackBar
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: surfElevated,
+        backgroundColor: isManga ? const Color(0xFF111111) : surfElevated,
         contentTextStyle: const TextStyle(
           color: Colors.white,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: isManga ? BorderRadius.circular(6) : BorderRadius.circular(14),
           side: BorderSide(
-            color: primary.withValues(alpha: 0.35),
-            width: 1.2,
+            color: isManga ? const Color(0xFF111111) : primary.withValues(alpha: 0.35),
+            width: isManga ? 2.0 : 1.2,
           ),
         ),
         behavior: SnackBarBehavior.floating,
-        elevation: 6,
+        elevation: 0,
       ),
 
       // Card
@@ -109,7 +132,7 @@ abstract final class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: AppDimensions.borderRadiusCard,
+          borderRadius: panelRadius,
           side: BorderSide(color: panelBorder, width: panelBorderWidth),
         ),
       ),
@@ -122,8 +145,11 @@ abstract final class AppTheme {
           elevation: 0,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppDimensions.borderRadiusMedium,
+          shape: RoundedRectangleBorder(
+            borderRadius: buttonRadius,
+            side: isManga
+                ? const BorderSide(color: Color(0xFF111111), width: 2.0)
+                : BorderSide.none,
           ),
           textStyle: AppTypography.labelLarge,
         ),
@@ -131,15 +157,15 @@ abstract final class AppTheme {
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
+          foregroundColor: inkText,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
           side: BorderSide(
-            color: isManga ? const Color(0x38FFFFFF) : AppColors.strokeMedium,
+            color: isManga ? const Color(0xFF111111) : AppColors.strokeMedium,
             width: panelBorderWidth,
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppDimensions.borderRadiusMedium,
+          shape: RoundedRectangleBorder(
+            borderRadius: buttonRadius,
           ),
           textStyle: AppTypography.labelLarge,
         ),

@@ -10,7 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
@@ -843,7 +843,16 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return BlocProvider<ProfileCubit>.value(
       value: _profileCubit,
-      child: Scaffold(
+      child: BlocListener<AuthCubit, AuthState>(
+        listenWhen: (prev, next) =>
+            (widget.userId == null || widget.userId!.isEmpty) &&
+            next is Authenticated,
+        listener: (context, authState) {
+          if (authState is Authenticated) {
+            _profileCubit.applyOptimisticProfile(authState.profile);
+          }
+        },
+        child: Scaffold(
         backgroundColor: Colors.transparent,
         body: BlocBuilder<ProfileCubit, ProfileState>(
           bloc: _profileCubit,
@@ -1171,6 +1180,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           );
         },
       ),
+    ),
     ),
     );
   }

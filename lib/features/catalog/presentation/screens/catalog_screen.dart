@@ -33,6 +33,7 @@ import 'package:sync_pai/features/settings/presentation/cubit/settings_cubit.dar
 import 'package:sync_pai/features/watch_history/domain/entities/watch_history_item.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
+import 'package:sync_pai/core/widgets/manga_panel_painter.dart';
 import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../cubit/catalog_cubit.dart';
 import '../cubit/catalog_state.dart';
@@ -560,22 +561,44 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           }
                         }
                       }
+                      final isManga = isMangaPrintTheme(context);
                       return InkWell(
                         onTap: () => handleResumeItem(item),
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(isManga ? 6 : 14),
                         child: Container(
                           height: isDesktop ? 60 : 56,
                           decoration: BoxDecoration(
-                            color: AppColors.surfaceElevated.withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(14),
+                            color: isManga
+                                ? const Color(0xFFFFFFFF)
+                                : AppColors.surfaceElevated.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(isManga ? 6 : 14),
                             border: Border.all(
-                              color: themePrimary.withValues(alpha: 0.3),
-                              width: 1.0,
+                              color: isManga
+                                  ? const Color(0xFF111111)
+                                  : themePrimary.withValues(alpha: 0.3),
+                              width: isManga ? 2.0 : 1.0,
                             ),
+                            boxShadow: isManga
+                                ? const [
+                                    BoxShadow(
+                                      color: Color(0xFF111111),
+                                      offset: Offset(3, 3),
+                                      blurRadius: 0,
+                                    ),
+                                  ]
+                                : null,
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: Stack(
                             children: [
+                              if (isManga)
+                                const Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: MangaPanelPainter(),
+                                    ),
+                                  ),
+                                ),
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 child: Row(

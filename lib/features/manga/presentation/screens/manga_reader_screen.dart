@@ -607,7 +607,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen>
     _currentPageNotifier.value = index;
     _precacheAhead(index);
     _saveCurrentProgress();
-    if (index >= 2 &&
+    if (index >= 3 &&
         getIt.isRegistered<UserMangaListCubit>() &&
         _chapters.isNotEmpty &&
         _currentChapterIndex >= 0 &&

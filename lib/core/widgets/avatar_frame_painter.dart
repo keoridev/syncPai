@@ -9,12 +9,14 @@ class ThematicAvatarFramePainter extends CustomPainter {
   final String frameType;
   final List<Color> colors;
   final double outerSize;
+  final String shape;
 
   ThematicAvatarFramePainter({
     required this.animationValue,
     required this.frameType,
     required this.colors,
     required this.outerSize,
+    this.shape = 'circle',
   });
 
   @override
@@ -766,38 +768,38 @@ class ThematicAvatarFramePainter extends CustomPainter {
   // --- «МОНОЛИТ» (Обсидиановая архитектурная рамка с пульсирующими каналами энергии) ---
   void _paintMonolithFrame(Canvas canvas, Offset center, double radius) {
     final r = radius + 2.5;
-    final outerRect = RRect.fromRectAndRadius(
-      Rect.fromCircle(center: center, radius: r),
-      const Radius.circular(14),
-    );
-    canvas.drawRRect(
-      outerRect,
-      Paint()
-        ..color = const Color(0xFF0F172A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.0,
-    );
-
+    final outerPaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0;
     final pulse = 0.55 + 0.45 * math.sin(animationValue * math.pi * 2);
     final veinColor = Color.lerp(
       const Color(0xFF38BDF8),
       const Color(0xFFF8FAFC),
       pulse * 0.5,
     )!;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCircle(center: center, radius: r - 2.5),
-        const Radius.circular(11),
-      ),
-      Paint()
-        ..color = veinColor.withValues(alpha: 0.75 + 0.25 * pulse)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.4,
-    );
+    final innerPaint = Paint()
+      ..color = veinColor.withValues(alpha: 0.75 + 0.25 * pulse)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
 
-    // 4 энергетических узла по углам
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCircle(center: center, radius: r), const Radius.circular(18)),
+        outerPaint,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCircle(center: center, radius: r - 2.5), const Radius.circular(15)),
+        innerPaint,
+      );
+    } else {
+      canvas.drawCircle(center, r, outerPaint);
+      canvas.drawCircle(center, r - 2.5, innerPaint);
+    }
+
+    // 4 энергетических узла
     final nodePaint = Paint()..color = veinColor;
-    final offset = r - 4.5;
+    final offset = shape == 'square' ? (r - 4.5) : (r - 2.5) * 0.707;
     for (final dx in [-offset, offset]) {
       for (final dy in [-offset, offset]) {
         canvas.drawRect(
@@ -829,10 +831,14 @@ class ThematicAvatarFramePainter extends CustomPainter {
       ).createShader(rect)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(18)),
-      sweepPaint,
-    );
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(18)),
+        sweepPaint,
+      );
+    } else {
+      canvas.drawCircle(center, r, sweepPaint);
+    }
 
     final shardPaint = Paint()..color = const Color(0xFF7DD3FC);
     final edgePaint = Paint()
@@ -861,25 +867,33 @@ class ThematicAvatarFramePainter extends CustomPainter {
   }
 
   void _paintMinimalFrame(Canvas canvas, Offset center, double radius) {
-    canvas.drawCircle(
-      center,
-      radius + 1,
-      Paint()
-        ..color = const Color(0xFF64748B)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
+    final p = Paint()
+      ..color = const Color(0xFF64748B)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCircle(center: center, radius: radius + 1), const Radius.circular(18)),
+        p,
+      );
+    } else {
+      canvas.drawCircle(center, radius + 1, p);
+    }
   }
 
   void _paintCoralContourFrame(Canvas canvas, Offset center, double radius) {
-    canvas.drawCircle(
-      center,
-      radius + 1,
-      Paint()
-        ..color = const Color(0xFFFF6B4A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.4,
-    );
+    final p = Paint()
+      ..color = const Color(0xFFFF6B4A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4;
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCircle(center: center, radius: radius + 1), const Radius.circular(18)),
+        p,
+      );
+    } else {
+      canvas.drawCircle(center, radius + 1, p);
+    }
   }
 
   void _paintRankEmberFrame(Canvas canvas, Offset center, double radius) {
@@ -896,10 +910,14 @@ class ThematicAvatarFramePainter extends CustomPainter {
       ).createShader(rect)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.4;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(18)),
-      ringPaint,
-    );
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(18)),
+        ringPaint,
+      );
+    } else {
+      canvas.drawCircle(center, r, ringPaint);
+    }
 
     // Чёткие языки пламени по контуру
     final flamePaint = Paint()..color = const Color(0xFFFF6B4A);
@@ -948,14 +966,22 @@ class ThematicAvatarFramePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
-    canvas.drawCircle(center, radius, auraPaint);
+    if (shape == 'square') {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCircle(center: center, radius: radius), const Radius.circular(18)),
+        auraPaint,
+      );
+    } else {
+      canvas.drawCircle(center, radius, auraPaint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant ThematicAvatarFramePainter oldDelegate) {
     return oldDelegate.animationValue != animationValue ||
         oldDelegate.frameType != frameType ||
-        oldDelegate.outerSize != outerSize;
+        oldDelegate.outerSize != outerSize ||
+        oldDelegate.shape != shape;
   }
 }
 

@@ -143,6 +143,7 @@ class UserMangaListState extends Equatable {
 class UserMangaListCubit extends Cubit<UserMangaListState> {
   static const String _prefsKey = 'syncpai_user_manga_lists_v1';
   final SharedPreferences? _prefs;
+  final Set<String> _optedOutMangaIds = {};
 
   UserMangaListCubit([this._prefs]) : super(const UserMangaListState()) {
     load();
@@ -186,6 +187,7 @@ class UserMangaListCubit extends Cubit<UserMangaListState> {
     int? chaptersCount,
   }) async {
     if (mangaId.trim().isEmpty) return;
+    _optedOutMangaIds.remove(mangaId);
     final list = List<UserMangaEntry>.from(state.entries);
     final idx = list.indexWhere((e) => e.mangaId == mangaId);
     final now = DateTime.now();
@@ -224,6 +226,7 @@ class UserMangaListCubit extends Cubit<UserMangaListState> {
     int? chaptersCount,
   }) async {
     if (mangaId.trim().isEmpty) return;
+    _optedOutMangaIds.remove(mangaId);
     final list = List<UserMangaEntry>.from(state.entries);
     final idx = list.indexWhere((e) => e.mangaId == mangaId);
     final now = DateTime.now();
@@ -260,6 +263,7 @@ class UserMangaListCubit extends Cubit<UserMangaListState> {
 
   Future<void> removeEntry(String mangaId) async {
     if (mangaId.trim().isEmpty) return;
+    _optedOutMangaIds.add(mangaId);
     final list = entriesWithout(mangaId);
     emit(state.copyWith(entries: list));
     try {

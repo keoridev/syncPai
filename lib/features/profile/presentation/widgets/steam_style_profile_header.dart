@@ -14,6 +14,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/manga_panel_painter.dart';
 import '../../../../core/widgets/steam_avatar_frame.dart';
 import '../../../../core/widgets/vector_country_flag.dart';
 import '../../../auth/domain/entities/user_profile.dart';
@@ -432,21 +433,29 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMangaTheme = Theme.of(context).scaffoldBackgroundColor == const Color(0xFF0A0A0C) &&
-        scheme.primary == const Color(0xFFF8FAFC);
+    final isMangaTheme = isMangaPrintTheme(context);
 
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isMangaTheme
-              ? const Color(0xFF131316)
+              ? const Color(0xFFFFFFFF)
               : (isDark
                   ? const Color(0xFF131720)
                   : scheme.surfaceContainerLowest.withValues(alpha: 0.94)),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(isMangaTheme ? 6 : 18),
           border: isMangaTheme
-              ? Border.all(color: const Color(0x38FFFFFF), width: 1.5)
+              ? Border.all(color: const Color(0xFF111111), width: 2.0)
+              : null,
+          boxShadow: isMangaTheme
+              ? const [
+                  BoxShadow(
+                    color: Color(0xFF111111),
+                    offset: Offset(3, 3),
+                    blurRadius: 0,
+                  ),
+                ]
               : null,
         ),
         clipBehavior: Clip.antiAlias,
@@ -456,7 +465,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
               const Positioned.fill(
                 child: IgnorePointer(
                   child: CustomPaint(
-                    painter: _HalftoneScreentonePainter(),
+                    painter: MangaPanelPainter(),
                   ),
                 ),
               ),
@@ -1661,26 +1670,6 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
       ),
     );
   }
-}
-
-/// Тонкий полутоновый скринтон (4% белой прозрачности) для темы «Манга».
-class _HalftoneScreentonePainter extends CustomPainter {
-  const _HalftoneScreentonePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0x0AFFFFFF);
-    const step = 8.0;
-    for (double y = 4.0; y < size.height; y += step) {
-      final offsetX = ((y ~/ step).isOdd) ? step * 0.5 : 0.0;
-      for (double x = 4.0 + offsetX; x < size.width; x += step) {
-        canvas.drawCircle(Offset(x, y), 1.0, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class SteamArtworkPreset {

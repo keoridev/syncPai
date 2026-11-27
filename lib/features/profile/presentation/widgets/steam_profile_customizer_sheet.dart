@@ -897,12 +897,21 @@ class _SteamProfileCustomizerSheetState
                         SteamAvatarFrameWidget(
                           frameId: _selectedFrameId,
                           size: 56,
+                          shape: _selectedAvatarShape,
                           child: AppAvatar(
                             avatarUrl: effectiveAvatar,
                             username: widget.profile.username,
                             size: 56,
-                            borderColor: accent,
-                            borderWidth: 1.5,
+                            shape: _selectedAvatarShape == 'square'
+                                ? BoxShape.rectangle
+                                : BoxShape.circle,
+                            borderRadius: _selectedAvatarShape == 'square'
+                                ? BorderRadius.circular(18)
+                                : null,
+                            borderColor: _selectedFrameId != 'none'
+                                ? Colors.transparent
+                                : accent,
+                            borderWidth: _selectedFrameId != 'none' ? 0 : 1.5,
                           ),
                         ),
                         const SizedBox(width: 14),

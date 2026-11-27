@@ -156,6 +156,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                             ? frame.colors
                             : [primaryFrameColor],
                         outerSize: frameOuterSize,
+                        shape: 'square',
                       ),
                     ),
                   ),
@@ -170,8 +171,10 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // 1. Сам аватар пользователя (без перекрывающей внутренней рамки)
-                widget.child,
+                // 1. Сам аватар пользователя (строго круглая обрезка)
+                ClipOval(
+                  child: widget.child,
+                ),
 
                 // 2. Тематический слой сюжетной рамки (CustomPainter)
                 IgnorePointer(
@@ -182,6 +185,7 @@ class _SteamAvatarFrameWidgetState extends State<SteamAvatarFrameWidget>
                       frameType: thematicType,
                       colors: frame.colors,
                       outerSize: frameOuterSize,
+                      shape: 'circle',
                     ),
                   ),
                 ),

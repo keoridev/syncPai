@@ -1383,8 +1383,16 @@ class PlayerCubit extends Cubit<PlayerState> {
   /// Переключение студии озвучки Kodik / AniLibria прямо из плеера
   Future<void> switchVoiceoverStudio(KodikTranslation studio) async {
     final int generation = ++_loadGeneration;
-    final currentPos = state.position;
+    final currentPos = player.state.position > Duration.zero
+        ? player.state.position
+        : state.position;
     final wasPlaying = state.isPlaying;
+
+    // Немедленно останавливаем предыдущий поток, чтобы не тратить трафик в фоне
+    try {
+      await player.stop();
+    } catch (_) {}
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
 
     if (getIt.isRegistered<KodikCubit>()) {
       try {
@@ -1425,11 +1433,19 @@ class PlayerCubit extends Cubit<PlayerState> {
   /// Обновляет источник воспроизведения без пересоздания всего экрана и с сохранением позиции
   Future<void> changeTranslation(TranslationEntity newTranslation) async {
     final int generation = ++_loadGeneration;
-    final currentPos = state.position;
+    final currentPos = player.state.position > Duration.zero
+        ? player.state.position
+        : state.position;
     final wasPlaying = state.isPlaying;
     emit(state.copyWith(
       currentTranslation: () => newTranslation,
     ));
+
+    // Немедленно останавливаем старый поток перед загрузкой новой озвучки
+    try {
+      await player.stop();
+    } catch (_) {}
+    if (isClosed || _isDisposing || generation != _loadGeneration) return;
 
     if (newTranslation.isDirectStream) {
       final streamUrl = newTranslation.getStreamForEpisode(state.episode.episode);

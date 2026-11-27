@@ -1460,7 +1460,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.delete_outline_rounded, color: AppColors.syncError, size: 22),
                   title: const Text(
-                    'Удалить из списков',
+                    'Убрать из списка',
                     style: TextStyle(color: AppColors.syncError, fontWeight: FontWeight.w600),
                   ),
                   onTap: () {

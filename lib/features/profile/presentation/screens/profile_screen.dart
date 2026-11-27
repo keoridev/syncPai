@@ -19,6 +19,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/telegram_launcher.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/manga_panel_painter.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../anime_lists/presentation/cubit/anime_list_cubit.dart';
@@ -1271,12 +1272,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     TasteCompatibilityResult compat,
     Color accent,
   ) {
+    final theme = Theme.of(context);
+    final isManga = isMangaPrintTheme(context);
+    final scheme = theme.colorScheme;
     return Container(
       key: const ValueKey('taste_compatibility_card'),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF131720),
-        borderRadius: BorderRadius.circular(18),
+        color: isManga ? const Color(0xFF161920) : const Color(0xFF131720),
+        borderRadius: BorderRadius.circular(isManga ? 10 : 18),
+        border: isManga
+            ? Border.all(color: const Color(0x33F8FAFC), width: 1.5)
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1290,8 +1297,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   compat.hasEnoughData
                       ? 'Совпадение вкусов: ${compat.percentage}%'
                       : 'Мало общих тайтлов (${compat.sharedCount})',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.w700,
                     fontSize: 13.5,
                   ),
@@ -2094,7 +2101,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                               draftFavAnimeTitle != currentProfile.favoriteAnimeTitle ||
                               draftFavAnimeId != currentProfile.favoriteAnimeId ||
                               draftFavAnimePoster != currentProfile.favoriteAnimePoster;
-                          if (animeChanged && draftFavAnimeTitle != null) {
+                          final mangaChanged =
+                              draft.selectedManga?.mangaTitle !=
+                                  currentProfile.favoriteMangaTitle ||
+                              draft.selectedManga?.mangaId !=
+                                  currentProfile.favoriteMangaId ||
+                              draft.selectedManga?.coverUrl !=
+                                  currentProfile.favoriteMangaPoster ||
+                              draft.mode.name != currentProfile.showcaseMode;
+                          if (animeChanged || mangaChanged) {
                             await _profileCubit.applyCustomization(
                               frameId: currentProfile.frameId ?? 'none',
                               backgroundId: currentProfile.backgroundId ?? 'none',
@@ -2102,9 +2117,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                               customStatus: currentProfile.customStatus,
                               bio: currentProfile.bio,
                               badgeId: currentProfile.badgeId,
-                              favoriteAnimeTitle: draftFavAnimeTitle,
-                              favoriteAnimeId: draftFavAnimeId,
-                              favoriteAnimePoster: draftFavAnimePoster,
+                              favoriteAnimeTitle: draftFavAnimeTitle ?? currentProfile.favoriteAnimeTitle,
+                              favoriteAnimeId: draftFavAnimeId ?? currentProfile.favoriteAnimeId,
+                              favoriteAnimePoster: draftFavAnimePoster ?? currentProfile.favoriteAnimePoster,
+                              favoriteMangaTitle: draft.selectedManga?.mangaTitle,
+                              favoriteMangaId: draft.selectedManga?.mangaId,
+                              favoriteMangaPoster: draft.selectedManga?.coverUrl,
+                              showcaseMode: draft.mode.name,
                               artworkUrl: currentProfile.artworkUrl,
                               artworkTitle: currentProfile.artworkTitle,
                               accentColor: currentProfile.accentColor,
@@ -2637,7 +2656,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildBadgesShowcaseCard(BuildContext context, Color accent) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final profileState = _profileCubit.state;
     final profileUnlocked = profileState.profile.unlockedBadges;
 
@@ -2658,17 +2676,29 @@ class _ProfileScreenState extends State<ProfileScreen>
         final previewBadges = sortedBadges.take(4).toList();
         final friendToken = profileState.profile.friendCode ?? profileState.profile.id;
 
-        return _GlassCard(
+        final isManga = isMangaPrintTheme(context);
+        return Container(
           key: const ValueKey('profile_badges_showcase_card'),
-          accentColor: accent,
           margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isManga ? const Color(0xFF161920) : const Color(0xFF131722),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isManga ? const Color(0x2EF8FAFC) : const Color(0x14FFFFFF),
+              width: isManga ? 1.5 : 1.0,
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.military_tech_rounded, size: 16, color: accent),
+                  const Icon(
+                    Icons.military_tech_rounded,
+                    size: 16,
+                    color: Color(0xFFFF6B4A),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -2698,17 +2728,18 @@ class _ProfileScreenState extends State<ProfileScreen>
                     borderRadius: BorderRadius.circular(8),
                     onTap: () => _showAllBadgesSheet(context, unlockedSet, friendToken, accent),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.14),
+                        color: const Color(0xFF1A202E),
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0x1FFFFFFF)),
                       ),
                       child: Text(
                         'Все ${kSyncPaiAchievements.length} →',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: accent,
+                          color: Color(0xFFF8FAFC),
                         ),
                       ),
                     ),
@@ -2724,15 +2755,31 @@ class _ProfileScreenState extends State<ProfileScreen>
                   crossAxisCount: 4,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  mainAxisExtent: 74,
+                  mainAxisExtent: 86,
                 ),
                 itemBuilder: (context, index) {
                   final b = previewBadges[index];
                   final isUnlocked = unlockedSet.contains(b.id);
+                  final ringColor = isUnlocked
+                      ? const Color(0xFFFF6B4A)
+                      : const Color(0xFF475569);
                   return Tooltip(
                     message: isUnlocked
                         ? '${b.title}\n${b.hint}'
                         : 'Закрыто: ${b.hint}',
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B0E14),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0x26FFFFFF)),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(
+                      color: Color(0xFFF8FAFC),
+                      fontSize: 12,
+                    ),
                     child: InkWell(
                       onTap: () => _showBadgeProgressSheet(
                         context,
@@ -2740,42 +2787,62 @@ class _ProfileScreenState extends State<ProfileScreen>
                         isUnlocked,
                         friendToken,
                       ),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isUnlocked
-                              ? b.color.withValues(alpha: isDark ? 0.14 : 0.10)
-                              : (isDark
-                                  ? const Color(0xFF191F2B)
-                                  : Colors.white.withValues(alpha: 0.05)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AchievementBadgeArtwork(
-                              badgeId: b.id,
-                              isUnlocked: isUnlocked,
-                              size: 34,
-                              rarity: b.rarity,
-                              accentColor: b.color,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Opacity(
+                        opacity: isUnlocked ? 1.0 : 0.45,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isUnlocked
+                                ? const Color(0xFF1A202E)
+                                : const Color(0xFF131722),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isUnlocked
+                                  ? const Color(0x1FFFFFFF)
+                                  : const Color(0x0DFFFFFF),
+                              width: 1,
                             ),
-                            const SizedBox(height: 5),
-                            Text(
-                              b.title,
-                              maxLines: 1,
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
-                                color: isUnlocked
-                                    ? scheme.onSurface
-                                    : scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: ringColor,
+                                    width: 1.4,
+                                  ),
+                                ),
+                                child: AchievementBadgeArtwork(
+                                  badgeId: b.id,
+                                  isUnlocked: isUnlocked,
+                                  size: 28,
+                                  rarity: b.rarity,
+                                  accentColor: ringColor,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              Text(
+                                b.title,
+                                maxLines: 1,
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isUnlocked
+                                      ? const Color(0xFFF8FAFC)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -3889,13 +3956,17 @@ class _StatsCardState extends State<_StatsCard> {
     required String value,
     required String label,
   }) {
+    final isManga = isMangaPrintTheme(context);
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B26),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x14FFFFFF), width: 1),
+        color: isManga ? const Color(0xFF1C2029) : const Color(0xFF161B26),
+        borderRadius: BorderRadius.circular(isManga ? 10 : 12),
+        border: Border.all(
+          color: isManga ? const Color(0x33F8FAFC) : const Color(0x14FFFFFF),
+          width: isManga ? 1.5 : 1,
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -4428,7 +4499,6 @@ class _GlassCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _GlassCard({
-    super.key,
     required this.child,
     required this.accentColor,
     this.padding = const EdgeInsets.all(16),

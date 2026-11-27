@@ -13,6 +13,7 @@ import 'package:sync_pai/app/di/injection.dart';
 import 'package:sync_pai/core/network/smart_mirror_interceptor.dart';
 import 'package:sync_pai/core/services/discord_rpc_service.dart';
 import 'package:sync_pai/core/services/mascot_companion_service.dart';
+import 'package:sync_pai/core/services/playback_bandwidth_guard.dart';
 import 'package:sync_pai/core/services/presence_service.dart';
 import 'package:sync_pai/features/profile/domain/services/achievement_service.dart';
 import 'package:sync_pai/core/widgets/sync_badge.dart';
@@ -295,6 +296,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void _initPlayer() {
+    PlaybackBandwidthGuard.isVideoPlaying.value = true;
     if (!kIsWeb) {
       try {
         WakelockPlus.enable();
@@ -318,12 +320,11 @@ class PlayerCubit extends Cubit<PlayerState> {
     // 1. Аппаратное декодирование (GPU) и расширенные сетевые флаги libmpv
     try {
       final dynamic platform = player.platform;
-      final isWindows = !kIsWeb && Platform.isWindows;
-      platform.setProperty('hwdec', isWindows ? 'd3d11va-copy' : 'auto-safe');
+      platform.setProperty('hwdec', 'auto-safe');
       platform.setProperty('cache', 'yes');
-      platform.setProperty('demuxer-max-bytes', '134217728'); // 128 МБ
+      platform.setProperty('demuxer-max-bytes', '67108864'); // 64 МБ
       platform.setProperty('demuxer-max-back-bytes', '33554432'); // 32 МБ назад
-      platform.setProperty('demuxer-readahead-secs', '45'); // 45 секунд вперед
+      platform.setProperty('demuxer-readahead-secs', '20'); // 20 секунд вперед
       platform.setProperty('network-timeout', '15');
       platform.setProperty('tls-verify', 'no');
       platform.setProperty('stream-lavf-o', 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5');
@@ -2051,15 +2052,15 @@ class PlayerCubit extends Cubit<PlayerState> {
     final currentKey = '${state.title.id}_${state.episode.episode}_${nextEp.episode}_${state.selectedQuality.name}';
     if (_prefetchedEpisodeKey == currentKey) return;
 
-    // Условие триггера: ending.start таймкод (или duration - const Duration(seconds: 120), если ending отсутствует)
+    // Условие триггера: ending.start таймкод или остаётся <= 90 секунд при длительности > 3 минут
     final ending = state.effectiveEnding;
     final Duration triggerPoint;
     if (ending != null && ending.start > 0) {
       triggerPoint = Duration(seconds: ending.start);
-    } else if (dur > const Duration(seconds: 120)) {
-      triggerPoint = dur - const Duration(seconds: 120);
+    } else if (dur > const Duration(minutes: 3)) {
+      triggerPoint = dur - const Duration(seconds: 90);
     } else {
-      triggerPoint = dur - const Duration(seconds: 30);
+      return;
     }
 
     if (pos >= triggerPoint) {
@@ -2581,6 +2582,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   Future<void> close() async {
     if (_isDisposing) return;
     _isDisposing = true;
+    PlaybackBandwidthGuard.isVideoPlaying.value = false;
     MascotCompanionService.instance.setPlayerActive(false);
     unawaited(PresenceService.instance.clearWatchingActivity());
     unawaited(DiscordRpcService.instance.setBrowsing());

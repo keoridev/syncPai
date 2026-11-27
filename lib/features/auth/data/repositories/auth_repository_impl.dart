@@ -11,6 +11,7 @@ import '../../../../core/network/api_constants.dart';
 import '../../../anime_lists/domain/repositories/anime_list_repository.dart';
 import '../../../profile/domain/entities/steam_profile_customization.dart';
 import '../../../profile/services/avatar_upload_service.dart';
+import '../../../support/domain/entities/supporter_tier.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../presentation/utils/auth_error_formatter.dart';
@@ -236,7 +237,10 @@ class AuthRepositoryImpl implements AuthRepository {
       effectiveBadge = local.badgeId;
     }
 
-    // 9. Любимый тайтл витрины
+    // 9. Любимый тайтл витрины (Аниме, Манга, Иллюстрация)
+    final cloudCustom = cloudRow?['customization'] is Map
+        ? Map<String, dynamic>.from(cloudRow!['customization'] as Map)
+        : null;
     String? effectiveFavAnimeTitle =
         cloudRow?['favorite_anime_title'] as String? ??
             local.favoriteAnimeTitle;
@@ -245,12 +249,32 @@ class AuthRepositoryImpl implements AuthRepository {
     String? effectiveFavAnimePoster =
         cloudRow?['favorite_anime_poster'] as String? ??
             local.favoriteAnimePoster;
+    String? effectiveFavMangaTitle =
+        cloudRow?['favorite_manga_title'] as String? ??
+            cloudCustom?['favorite_manga_title'] as String? ??
+            local.favoriteMangaTitle;
+    String? effectiveFavMangaId =
+        cloudRow?['favorite_manga_id'] as String? ??
+            cloudCustom?['favorite_manga_id'] as String? ??
+            local.favoriteMangaId;
+    String? effectiveFavMangaPoster =
+        cloudRow?['favorite_manga_poster'] as String? ??
+            cloudCustom?['favorite_manga_poster'] as String? ??
+            local.favoriteMangaPoster;
+    String? effectiveShowcaseMode =
+        cloudRow?['showcase_mode'] as String? ??
+            cloudCustom?['showcase_mode'] as String? ??
+            local.showcaseMode;
     String? effectiveArtworkUrl =
-        cloudRow?['artwork_url'] as String? ?? local.artworkUrl;
+        cloudRow?['artwork_url'] as String? ??
+            cloudCustom?['artwork_url'] as String? ??
+            local.artworkUrl;
     String? effectiveArtworkTitle =
-        cloudRow?['artwork_title'] as String? ?? local.artworkTitle;
+        cloudRow?['artwork_title'] as String? ??
+            cloudCustom?['artwork_title'] as String? ??
+            local.artworkTitle;
 
-    // 10. Акцентный цвет, провайдер, email и тег
+    // 10. Акцентный цвет, провайдер, email, тег и DEV-статус
     String effectiveAccent = (cloudRow?['accent_color'] as String?) ??
         local.accentColor ??
         '#E06C53';
@@ -258,6 +282,19 @@ class AuthRepositoryImpl implements AuthRepository {
     final effectiveTag = (rawTag.isNotEmpty && rawTag != '#0001')
         ? rawTag
         : UserProfile.generateTag(user.id);
+    final bool isDevUser =
+        (cloudRow?['is_developer'] as bool? ?? false) ||
+            (cloudCustom?['is_developer'] as bool? ?? false) ||
+            (cloudRow?['role'] as String?)?.toLowerCase() == 'developer' ||
+            effectiveUsername.trim().toLowerCase() == 'keoribek' ||
+            effectiveTag.replaceAll('#', '').trim() == '5727';
+    final cloudTier =
+        SupporterTier.fromId(cloudRow?['supporter_tier'] as String?);
+    final effectiveTier = isDevUser
+        ? SupporterTier.producer
+        : (cloudTier.index >= local.supporterTier.index
+            ? cloudTier
+            : local.supporterTier);
     final effectiveProvider = user.appMetadata['provider'] as String? ??
         (googleName != null || googleAvatar != null
             ? 'google'
@@ -276,12 +313,21 @@ class AuthRepositoryImpl implements AuthRepository {
       favoriteAnimeTitle: effectiveFavAnimeTitle,
       favoriteAnimeId: effectiveFavAnimeId,
       favoriteAnimePoster: effectiveFavAnimePoster,
+      favoriteMangaTitle: effectiveFavMangaTitle,
+      favoriteMangaId: effectiveFavMangaId,
+      favoriteMangaPoster: effectiveFavMangaPoster,
+      showcaseMode: effectiveShowcaseMode,
       artworkUrl: effectiveArtworkUrl,
       artworkTitle: effectiveArtworkTitle,
       accentColor: effectiveAccent,
       email: emailFromUser ?? local.email,
       provider: effectiveProvider,
       isAnonymous: isAnon,
+      isDeveloper: isDevUser,
+      role: isDevUser
+          ? 'developer'
+          : (cloudRow?['role'] as String? ?? local.role),
+      supporterTier: effectiveTier,
       tag: effectiveTag,
       friendCode: (cloudRow?['friend_code'] as String?) ??
           local.friendCode ??
@@ -352,6 +398,23 @@ class AuthRepositoryImpl implements AuthRepository {
       }
     }
 
+    final customizationPayload = <String, dynamic>{
+      ...profile.customization.toJson(),
+      'artwork_url': profile.artworkUrl,
+      'artwork_title': profile.artworkTitle,
+      'favorite_manga_title': profile.favoriteMangaTitle,
+      'favorite_manga_id': profile.favoriteMangaId,
+      'favorite_manga_poster': profile.favoriteMangaPoster,
+      'showcase_mode': profile.showcaseMode,
+      'unlocked_badges': profile.unlockedBadges,
+      if (profile.isDevAccount) ...{
+        'is_developer': true,
+        'role': 'developer',
+        'is_sponsor': true,
+        'is_plus': true,
+      },
+    };
+
     final payload = <String, dynamic>{
       'username': profile.username,
       if (cloudAvatarUrl != null) 'avatar_url': cloudAvatarUrl,
@@ -367,7 +430,13 @@ class AuthRepositoryImpl implements AuthRepository {
       'artwork_url': profile.artworkUrl,
       'artwork_title': profile.artworkTitle,
       'accent_color': profile.accentColor,
-      'customization': profile.customization.toJson(),
+      if (profile.isDevAccount) ...{
+        'supporter_tier': 'producer',
+        'role': 'developer',
+        'is_sponsor': true,
+        'is_plus': true,
+      },
+      'customization': customizationPayload,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
 
@@ -982,6 +1051,10 @@ class AuthRepositoryImpl implements AuthRepository {
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
+    String? favoriteMangaTitle,
+    String? favoriteMangaId,
+    String? favoriteMangaPoster,
+    String? showcaseMode,
     String? artworkUrl,
     String? artworkTitle,
     String? accentColor,
@@ -1009,6 +1082,16 @@ class AuthRepositoryImpl implements AuthRepository {
       favoriteAnimePoster: favoriteAnimePoster != null
           ? (favoriteAnimePoster.isEmpty ? null : favoriteAnimePoster)
           : current.favoriteAnimePoster,
+      favoriteMangaTitle: favoriteMangaTitle != null
+          ? (favoriteMangaTitle.isEmpty ? null : favoriteMangaTitle)
+          : current.favoriteMangaTitle,
+      favoriteMangaId: favoriteMangaId != null
+          ? (favoriteMangaId.isEmpty ? null : favoriteMangaId)
+          : current.favoriteMangaId,
+      favoriteMangaPoster: favoriteMangaPoster != null
+          ? (favoriteMangaPoster.isEmpty ? null : favoriteMangaPoster)
+          : current.favoriteMangaPoster,
+      showcaseMode: showcaseMode ?? current.showcaseMode,
       artworkUrl: artworkUrl != null
           ? (artworkUrl.isEmpty ? null : artworkUrl)
           : current.artworkUrl,

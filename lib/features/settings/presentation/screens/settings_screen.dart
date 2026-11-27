@@ -913,29 +913,45 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Text(
-        title,
-        style: AppTypography.caption.copyWith(
-          color: AppColors.textSecondary,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.2,
-          fontSize: 11,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+        child: Text(
+          title,
+          style: AppTypography.caption.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            fontSize: 11,
+          ),
         ),
       ),
     );
   }
 
   Widget _buildCard(List<Widget> children) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.05),
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isManga = theme.scaffoldBackgroundColor == const Color(0xFF0D0F12) &&
+            theme.colorScheme.primary == const Color(0xFFF1F5F9);
+        return Material(
+          color: isManga
+              ? theme.cardColor
+              : Colors.white.withValues(alpha: 0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(isManga ? 10 : 16),
+            side: isManga
+                ? const BorderSide(color: Color(0x33F8FAFC), width: 1.5)
+                : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
+        );
+      },
     );
   }
 

@@ -8,8 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/services/device_performance_service.dart';
+import '../../../../core/services/playback_bandwidth_guard.dart';
+import '../../anime_details/data/datasources/shikimori_remote_datasource.dart';
 import '../../winter_theme/domain/services/winter_theme_service.dart';
+import '../data/services/catalog_persistent_store.dart';
 import '../domain/entities/anime_title.dart';
+import '../domain/entities/catalog_filter.dart';
+import '../domain/entities/catalog_filter_query.dart';
 import '../domain/usecases/get_catalog_usecase.dart';
 import '../domain/usecases/get_updates.dart';
 
@@ -32,15 +37,16 @@ class CatalogPrefetchService {
 
   static const Duration freshTTL = Duration(minutes: 15);
   static const Duration staleTTL = Duration(hours: 24);
-  static const Duration startupDelay = Duration(milliseconds: 2500);
+  static const Duration startupDelay = Duration(milliseconds: 1200);
   static const Duration requestSpacing = Duration(milliseconds: 450);
 
   static const List<String> prefetchBuckets = [
+    'anons',
+    'schedule',
     'ongoing',
     'popular',
     'released',
     'movies',
-    'anons',
   ];
 
   final Map<String, _PrefetchEntry> _memoryCache = {};
@@ -196,7 +202,8 @@ class CatalogPrefetchService {
         if (_prefetchCancelToken.isCancelled) break;
 
         // 1. Пауза очереди, если сейчас активен просмотр видео в плеере
-        while (WinterThemeService.instance.isVideoPlayerActive) {
+        while (WinterThemeService.instance.isVideoPlayerActive ||
+            PlaybackBandwidthGuard.isVideoPlaying.value) {
           if (_prefetchCancelToken.isCancelled) return;
           await Future.delayed(const Duration(seconds: 2));
         }
@@ -229,6 +236,41 @@ class CatalogPrefetchService {
 
   Future<List<AnimeTitle>> _fetchBucketData(String bucket) async {
     try {
+      if (bucket == 'anons') {
+        if (getIt.isRegistered<ShikimoriRemoteDataSource>()) {
+          final items = await getIt<ShikimoriRemoteDataSource>()
+              .getUpcomingAnnouncements(page: 1, limit: 40);
+          if (items.isNotEmpty) {
+            CatalogPersistentStore.instance.putBySignature(
+              'tab:announcements',
+              items,
+              page: 1,
+              hasMore: items.length >= 40,
+            );
+            return items;
+          }
+        }
+      }
+
+      if (bucket == 'schedule') {
+        if (getIt.isRegistered<GetCatalogUseCase>()) {
+          final entities = await getIt<GetCatalogUseCase>().getSchedule(
+            cancelToken: _prefetchCancelToken,
+          );
+          final items = entities.map((e) => e.toAnimeTitle()).toList();
+          if (items.isNotEmpty) {
+            CatalogPersistentStore.instance.putBySignature(
+              const AniLibriaScheduleSource().signature,
+              items,
+              page: 1,
+              hasMore: false,
+            );
+            return items;
+          }
+        }
+        return const [];
+      }
+
       GetCatalogUseCase? useCase;
       if (getIt.isRegistered<GetCatalogUseCase>()) {
         useCase = getIt<GetCatalogUseCase>();
@@ -266,6 +308,7 @@ class CatalogPrefetchService {
           page: 1,
           limit: 40,
           genres: genres,
+          year: status == 'ongoing' ? '2025,2026' : null,
           sort: sort,
           status: status,
           types: types,

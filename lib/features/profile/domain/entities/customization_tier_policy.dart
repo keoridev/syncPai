@@ -363,20 +363,16 @@ class CustomizationTierPolicy {
     '#22d3ee',
     '#10b981',
     '#94a3b8',
+    '#a855f7',
+    '#f59e0b',
+    '#f43f5e',
+    '#6366f1',
   };
 
-  static SupporterTier requiredTierForAccent(String? hex) {
-    if (hex == null || hex.trim().isEmpty) return SupporterTier.free;
-    if (freeAccentHexes.contains(hex.trim().toLowerCase())) {
-      return SupporterTier.free;
-    }
-    return SupporterTier.supporter;
-  }
+  static SupporterTier requiredTierForAccent(String? hex) =>
+      SupporterTier.free;
 
-  static bool isAccentUnlocked(SupporterTier userTier, String? hex) {
-    final req = requiredTierForAccent(hex);
-    return hasTier(userTier, req);
-  }
+  static bool isAccentUnlocked(SupporterTier userTier, String? hex) => true;
 
   /// Финальная санитизация кастомизации перед сохранением в Supabase / ProfileState.
   static ({

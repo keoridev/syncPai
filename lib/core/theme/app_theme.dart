@@ -32,64 +32,58 @@ abstract final class AppTheme {
     bool isManga = false,
   }) {
     final primary = primaryColor ?? AppColors.primary;
-    final onPrimary = isManga
-        ? const Color(0xFFFFFFFF)
-        : AppColors.onColor(primary);
+    final Color onPrimary = (isManga || primary.computeLuminance() > 0.5)
+        ? const Color(0xFF0D0F12)
+        : Colors.white;
     final bg = backgroundColor ?? AppColors.background;
     final surf = surfaceColor ?? AppColors.surface;
     final surfElevated = surfaceElevatedColor ?? AppColors.surfaceElevated;
-    final panelBorder = isManga ? const Color(0xFF111111) : AppColors.stroke;
-    final panelBorderWidth = isManga ? 2.0 : 1.0;
-    final inkText = isManga ? const Color(0xFF111111) : AppColors.textPrimary;
-    final inkSecondary = isManga ? const Color(0xFF475569) : AppColors.textSecondary;
-    final panelRadius = isManga ? BorderRadius.circular(6) : AppDimensions.borderRadiusCard;
-    final buttonRadius = isManga ? BorderRadius.circular(6) : AppDimensions.borderRadiusMedium;
+    final panelBorder = isManga ? const Color(0x2EF8FAFC) : AppColors.stroke;
+    final panelBorderWidth = isManga ? 1.5 : 1.0;
+    final inkText = isManga ? const Color(0xFFF8FAFC) : AppColors.textPrimary;
+    final inkSecondary = isManga ? const Color(0xFF94A3B8) : AppColors.textSecondary;
+    final panelRadius = isManga ? BorderRadius.circular(10) : AppDimensions.borderRadiusCard;
+    final buttonRadius = isManga ? BorderRadius.circular(10) : AppDimensions.borderRadiusMedium;
 
     return ThemeData(
       useMaterial3: true,
-      brightness: isManga ? Brightness.light : Brightness.dark,
+      brightness: Brightness.dark,
       scaffoldBackgroundColor: bg,
+      cardColor: surf,
       primaryColor: primary,
       canvasColor: bg,
+      dialogTheme: DialogThemeData(
+        backgroundColor: surfElevated,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: panelRadius,
+          side: BorderSide(color: panelBorder, width: panelBorderWidth),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        textColor: inkText,
+        iconColor: inkSecondary,
+      ),
 
       // ColorScheme
-      colorScheme: isManga
-          ? ColorScheme.light(
-              primary: primary,
-              onPrimary: Colors.white,
-              primaryContainer: const Color(0xFF111111).withValues(alpha: 0.08),
-              onPrimaryContainer: const Color(0xFF111111),
-              surface: surf,
-              surfaceContainerLowest: bg,
-              surfaceContainerLow: surf,
-              surfaceContainer: surf,
-              surfaceContainerHigh: surfElevated,
-              surfaceContainerHighest: surfElevated,
-              onSurface: inkText,
-              onSurfaceVariant: inkSecondary,
-              outline: const Color(0xFF111111),
-              outlineVariant: const Color(0xFF111111),
-              error: AppColors.syncError,
-              onError: Colors.white,
-            )
-          : ColorScheme.dark(
-              primary: primary,
-              onPrimary: onPrimary,
-              primaryContainer: primary.withValues(alpha: 0.16),
-              onPrimaryContainer: primary,
-              surface: surf,
-              surfaceContainerLowest: bg,
-              surfaceContainerLow: surf,
-              surfaceContainer: surf,
-              surfaceContainerHigh: surfElevated,
-              surfaceContainerHighest: surfElevated,
-              onSurface: AppColors.textPrimary,
-              onSurfaceVariant: AppColors.textSecondary,
-              outline: AppColors.stroke,
-              outlineVariant: AppColors.strokeMedium,
-              error: AppColors.syncError,
-              onError: AppColors.textPrimary,
-            ),
+      colorScheme: ColorScheme.dark(
+        primary: primary,
+        onPrimary: onPrimary,
+        primaryContainer: primary.withValues(alpha: 0.14),
+        onPrimaryContainer: primary,
+        surface: surf,
+        surfaceContainerLowest: bg,
+        surfaceContainerLow: surf,
+        surfaceContainer: surf,
+        surfaceContainerHigh: surfElevated,
+        surfaceContainerHighest: surfElevated,
+        onSurface: inkText,
+        onSurfaceVariant: inkSecondary,
+        outline: panelBorder,
+        outlineVariant: isManga ? const Color(0x4DF8FAFC) : AppColors.strokeMedium,
+        error: AppColors.syncError,
+        onError: Colors.white,
+      ),
 
       // AppBar
       appBarTheme: AppBarTheme(
@@ -101,25 +95,25 @@ abstract final class AppTheme {
         iconTheme: IconThemeData(color: inkText, size: 22),
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
-          statusBarIconBrightness: isManga ? Brightness.dark : Brightness.light,
+          statusBarIconBrightness: Brightness.light,
           systemNavigationBarColor: bg,
-          systemNavigationBarIconBrightness: isManga ? Brightness.dark : Brightness.light,
+          systemNavigationBarIconBrightness: Brightness.light,
         ),
       ),
 
       // SnackBar
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: isManga ? const Color(0xFF111111) : surfElevated,
+        backgroundColor: surfElevated,
         contentTextStyle: const TextStyle(
           color: Colors.white,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: isManga ? BorderRadius.circular(6) : BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: isManga ? const Color(0xFF111111) : primary.withValues(alpha: 0.35),
-            width: isManga ? 2.0 : 1.2,
+            color: isManga ? const Color(0x33F8FAFC) : primary.withValues(alpha: 0.35),
+            width: 1.2,
           ),
         ),
         behavior: SnackBarBehavior.floating,
@@ -148,7 +142,24 @@ abstract final class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: buttonRadius,
             side: isManga
-                ? const BorderSide(color: Color(0xFF111111), width: 2.0)
+                ? const BorderSide(color: Color(0xCCF8FAFC), width: 1.2)
+                : BorderSide.none,
+          ),
+          textStyle: AppTypography.labelLarge,
+        ),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: onPrimary,
+          elevation: 0,
+          minimumSize: const Size(0, AppDimensions.buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+          shape: RoundedRectangleBorder(
+            borderRadius: buttonRadius,
+            side: isManga
+                ? const BorderSide(color: Color(0xCCF8FAFC), width: 1.2)
                 : BorderSide.none,
           ),
           textStyle: AppTypography.labelLarge,
@@ -160,7 +171,7 @@ abstract final class AppTheme {
           foregroundColor: inkText,
           minimumSize: const Size(0, AppDimensions.buttonHeight),
           side: BorderSide(
-            color: isManga ? const Color(0xFF111111) : AppColors.strokeMedium,
+            color: isManga ? const Color(0x4DF8FAFC) : AppColors.strokeMedium,
             width: panelBorderWidth,
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
@@ -221,25 +232,25 @@ abstract final class AppTheme {
       ),
 
       // Divider
-      dividerTheme: const DividerThemeData(
-        color: AppColors.stroke,
+      dividerTheme: DividerThemeData(
+        color: isManga ? const Color(0x26F8FAFC) : AppColors.stroke,
         thickness: 1.0,
         space: 1.0,
       ),
 
       // Typography
       textTheme: TextTheme(
-        displayLarge: AppTypography.displayLarge,
-        displayMedium: AppTypography.displayMedium,
-        titleLarge: AppTypography.titleLarge,
-        titleMedium: AppTypography.titleMedium,
-        titleSmall: AppTypography.titleSmall,
-        bodyLarge: AppTypography.bodyLarge,
-        bodyMedium: AppTypography.bodyMedium,
-        bodySmall: AppTypography.bodySmall,
-        labelLarge: AppTypography.labelLarge,
-        labelMedium: AppTypography.labelMedium,
-        labelSmall: AppTypography.labelSmall,
+        displayLarge: AppTypography.displayLarge.copyWith(color: inkText),
+        displayMedium: AppTypography.displayMedium.copyWith(color: inkText),
+        titleLarge: AppTypography.titleLarge.copyWith(color: inkText),
+        titleMedium: AppTypography.titleMedium.copyWith(color: inkText),
+        titleSmall: AppTypography.titleSmall.copyWith(color: inkText),
+        bodyLarge: AppTypography.bodyLarge.copyWith(color: inkText),
+        bodyMedium: AppTypography.bodyMedium.copyWith(color: inkText),
+        bodySmall: AppTypography.bodySmall.copyWith(color: inkSecondary),
+        labelLarge: AppTypography.labelLarge.copyWith(color: inkText),
+        labelMedium: AppTypography.labelMedium.copyWith(color: inkSecondary),
+        labelSmall: AppTypography.labelSmall.copyWith(color: inkSecondary),
       ),
     );
   }

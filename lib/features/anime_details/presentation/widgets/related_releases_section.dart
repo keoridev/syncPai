@@ -1,8 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/shimmer_placeholder.dart';
+import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../domain/entities/related_anime_release.dart';
 
 /// Секция «Связанные релизы» (Сезоны, Фильмы, Предыстории и Продолжения)
@@ -32,9 +31,11 @@ class RelatedReleasesSection extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: kToolbarHeight + 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         // Заголовок раздела «Связанные релизы»
         Text(
           'Связанные релизы',
@@ -106,6 +107,7 @@ class RelatedReleasesSection extends StatelessWidget {
           ],
         ),
       ],
+      ),
     );
   }
 
@@ -138,14 +140,14 @@ class RelatedReleasesSection extends StatelessWidget {
                 child: SizedBox(
                   width: 48,
                   height: 68,
-                  child: _isValidPosterUrl(release.posterUrl)
-                      ? CachedNetworkImage(
-                          imageUrl: release.posterUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => const ShimmerPlaceholder.card(),
-                          errorWidget: (_, __, ___) => _buildMonogramFallback(release.title),
-                        )
-                      : _buildMonogramFallback(release.title),
+                  child: SafeAnimePoster(
+                    imageUrl: release.posterUrl,
+                    title: release.title,
+                    malId: int.tryParse(release.id),
+                    borderRadius: 8,
+                    memCacheWidth: 140,
+                    monogramFontSize: 18,
+                  ),
                 ),
               ),
 
@@ -245,42 +247,6 @@ class RelatedReleasesSection extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  static bool _isValidPosterUrl(String url) {
-    if (url.trim().isEmpty) return false;
-    final lower = url.toLowerCase();
-    return !lower.contains('missing_original') &&
-        !lower.contains('missing_preview') &&
-        !lower.contains('missing_x') &&
-        !lower.contains('missing_') &&
-        !lower.contains('no_image') &&
-        !lower.contains('noimage') &&
-        !lower.contains('/assets/globals/');
-  }
-
-  Widget _buildMonogramFallback(String title) {
-    final initial = RegExp(r'[А-Яа-яЁёA-Za-z]')
-            .firstMatch(title.trim())
-            ?.group(0)
-            ?.toUpperCase() ??
-        'A';
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A202E),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0x14FFFFFF), width: 1),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: const TextStyle(
-          color: Color(0xFFCBD5E1),
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
         ),
       ),
     );

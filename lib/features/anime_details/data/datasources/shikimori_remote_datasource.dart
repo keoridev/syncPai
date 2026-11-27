@@ -51,6 +51,7 @@ abstract class ShikimoriRemoteDataSource {
   Future<AdaptedMangaInfo?> getAdaptedManga(int shikimoriAnimeId);
   Future<int?> resolveShikimoriId(AnimeTitle title);
   Future<List<AnimeTitle>> getUpcomingAnnouncements({int page = 1, int limit = 40});
+  Future<List<AnimeTitle>> getWeeklyTrending({int limit = 15});
   Future<List<AnimeTitle>> getSimilarAnimes(int shikimoriId);
   Future<List<({String russian, String english})>> searchMangas(String query, {int limit = 8});
 }
@@ -257,6 +258,92 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
       return results;
     } catch (e) {
       debugPrint('[Shikimori] getUpcomingAnnouncements error: $e');
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<AnimeTitle>> getWeeklyTrending({int limit = 15}) async {
+    try {
+      final response = await _enqueueShikimoriRequest(
+        () => _dio.get(
+          'https://shikimori.io/api/animes',
+          queryParameters: {
+            'status': 'ongoing',
+            'order': 'popularity',
+            'season': '2025,2026',
+            'limit': limit,
+          },
+          options: Options(
+            headers: {
+              if (!kIsWeb) 'User-Agent': _userAgent,
+              'Accept': 'application/json',
+            },
+          ),
+        ),
+      );
+
+      final raw = response.data;
+      if (raw is! List) return const [];
+
+      String normalizeShikimoriImage(String path) {
+        final clean = path.trim();
+        if (clean.isEmpty || isShikimoriMissingPoster(clean)) return '';
+        if (clean.startsWith('//')) return 'https:$clean';
+        if (clean.startsWith('http')) return clean;
+        return 'https://shikimori.io$clean';
+      }
+
+      final results = <AnimeTitle>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final id = (item['id'] as num?)?.toInt() ??
+            int.tryParse('${item['id'] ?? ''}') ??
+            0;
+        if (id <= 0) continue;
+
+        final airedOn = (item['aired_on'] ?? '').toString().trim();
+        final seasonRaw = (item['season'] ?? '').toString().trim();
+        final yearMatch = RegExp(r'(20\d{2}|19\d{2})')
+            .firstMatch(airedOn.isNotEmpty ? airedOn : seasonRaw);
+        final parsedYear =
+            yearMatch != null ? int.tryParse(yearMatch.group(1)!) : null;
+        if (parsedYear != null && parsedYear < 2025) continue;
+
+        final ru = (item['russian'] ?? '').toString().trim();
+        final en = (item['name'] ?? '').toString().trim();
+        final img = item['image'] is Map ? item['image'] as Map : const {};
+        final orig = normalizeShikimoriImage('${img['original'] ?? ''}');
+        final prev = normalizeShikimoriImage('${img['preview'] ?? orig}');
+        final kind = (item['kind'] ?? '').toString().trim().toUpperCase();
+        final score = double.tryParse('${item['score'] ?? ''}');
+
+        results.add(
+          AnimeTitle(
+            id: id,
+            shikimoriId: id,
+            code: 'shiki_$id',
+            russianTitle: ru.isNotEmpty ? ru : en,
+            englishTitle: en,
+            posterSmall: prev.isNotEmpty ? prev : orig,
+            posterMedium: prev.isNotEmpty ? prev : orig,
+            posterOriginal: orig.isNotEmpty ? orig : prev,
+            kind: kind.isEmpty ? null : kind,
+            year: parsedYear,
+            score: (score != null && score > 0) ? score : null,
+            season: seasonRaw.isNotEmpty ? seasonRaw : airedOn,
+            genres: const [],
+            description: '',
+            status: 'Онгоинг',
+            episodesTotal: (item['episodes'] as num?)?.toInt(),
+            episodes: const [],
+            shikimoriUrl: 'https://shikimori.io/animes/$id',
+          ),
+        );
+      }
+      return results;
+    } catch (e) {
+      debugPrint('[Shikimori] getWeeklyTrending error: $e');
       return const [];
     }
   }
@@ -673,17 +760,14 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
           if (cleanBody.length < 15) continue;
 
           final user = item['user'] as Map<String, dynamic>?;
-          final nickname = user?['nickname'] as String? ?? 'Аниме-критик';
+          final rawNick = (user?['nickname'] as String?)?.trim() ?? '';
+          final nickname =
+              rawNick.isNotEmpty ? rawNick : 'Пользователь Shikimori';
 
           final commentsCount = item['comments_count'] as int? ?? 12;
           final createdAt = item['created_at'] != null
               ? DateTime.tryParse('${item['created_at']}') ?? DateTime.now()
               : DateTime.now();
-
-          // Оценка рецензента вокруг общего балла тайтла
-          final reviewScore = double.parse(
-            (animeScore + ((nickname.hashCode % 5) - 2) * 0.1).clamp(7.0, 10.0).toStringAsFixed(1),
-          );
 
           parsedReviews.add(
             AnimeReview(
@@ -691,8 +775,8 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
               source: ReviewSource.shikimori,
               authorName: nickname,
               authorAvatarUrl: null,
-              score: reviewScore,
-              sentiment: ReviewSentiment.fromScore(reviewScore),
+              score: null,
+              sentiment: ReviewSentiment.neutral,
               content: cleanBody,
               containsSpoiler: cleanBody.contains('[Спойлер:'),
               createdAt: createdAt,

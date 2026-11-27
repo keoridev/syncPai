@@ -1,35 +1,35 @@
 import 'package:flutter/material.dart';
 
-/// Проверяет, активна ли печатная тема «Манга» (бумага #F5F4F0 + тушь #111111).
+/// Проверяет, активна ли тёмная графитовая тема «Манга» (#0D0F12 + #F1F5F9).
 bool isMangaPrintTheme(BuildContext context) {
   final theme = Theme.of(context);
-  return theme.brightness == Brightness.light &&
-      theme.scaffoldBackgroundColor == const Color(0xFFF5F4F0);
+  return theme.scaffoldBackgroundColor == const Color(0xFF0D0F12) &&
+      theme.colorScheme.primary == const Color(0xFFF1F5F9);
 }
 
-/// Декоративный слой печатной манга-панели:
-/// - полутоновый Ben-Day скринтон (`Color(0x14111111)`),
+/// Декоративный слой манга-панели на тёмном графите:
+/// - тонкий полутоновый скринтон (`Color(0x08F8FAFC)` — 3% белой прозрачности),
 /// - диагональные линии скорости (speedlines) в правом верхнем углу,
-/// - чёткие тушевые уголки-акценты (`Color(0xFF111111)`).
+/// - чёткие меловые уголки-акценты (`Color(0x4DF8FAFC)`).
 class MangaPanelPainter extends CustomPainter {
   const MangaPanelPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Полутоновый Ben-Day скринтон
-    final dotPaint = Paint()..color = const Color(0x14111111);
+    // 1. Полутоновый скринтон (3% белой прозрачности)
+    final dotPaint = Paint()..color = const Color(0x08F8FAFC);
     const step = 9.0;
     for (double y = 4.5; y < size.height; y += step) {
       final shiftX = ((y ~/ step).isOdd) ? step * 0.5 : 0.0;
       for (double x = 4.5 + shiftX; x < size.width; x += step) {
-        canvas.drawCircle(Offset(x, y), 1.05, dotPaint);
+        canvas.drawCircle(Offset(x, y), 1.0, dotPaint);
       }
     }
 
     // 2. Диагональные манга-линии скорости в правом верхнем углу
     final speedPaint = Paint()
-      ..color = const Color(0x12111111)
-      ..strokeWidth = 1.2
+      ..color = const Color(0x0AF8FAFC)
+      ..strokeWidth = 1.1
       ..style = PaintingStyle.stroke;
     for (int i = 0; i < 6; i++) {
       final offset = i * 14.0;
@@ -40,10 +40,10 @@ class MangaPanelPainter extends CustomPainter {
       );
     }
 
-    // 3. Тушевые уголки-акценты (corner ink accents)
+    // 3. Меловые уголки-акценты
     final cornerPaint = Paint()
-      ..color = const Color(0xFF111111)
-      ..strokeWidth = 2.5
+      ..color = const Color(0x4DF8FAFC)
+      ..strokeWidth = 1.8
       ..style = PaintingStyle.stroke;
     const len = 12.0;
     // Левый верхний

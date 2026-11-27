@@ -175,18 +175,13 @@ class ThemeSelectorSheet extends StatelessWidget {
                                     color: Colors.white.withValues(alpha: 0.3),
                                     width: 1.5,
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: preset.primaryColor.withValues(alpha: 0.35),
-                                      blurRadius: 10,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
                                 ),
                                 child: isSelected
-                                    ? const Icon(
+                                    ? Icon(
                                         Icons.check_rounded,
-                                        color: Colors.black,
+                                        color: AppColors.foregroundForBackground(
+                                          preset.primaryColor,
+                                        ),
                                         size: 20,
                                       )
                                     : null,
@@ -245,7 +240,9 @@ class ThemeSelectorSheet extends StatelessWidget {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: current.primaryColor,
-                    foregroundColor: Colors.white,
+                    foregroundColor:
+                        AppColors.foregroundForBackground(current.primaryColor),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -257,7 +254,8 @@ class ThemeSelectorSheet extends StatelessWidget {
                   child: Text(
                     'Применить ${current.name}',
                     style: AppTypography.labelLarge.copyWith(
-                      color: Colors.white,
+                      color:
+                          AppColors.foregroundForBackground(current.primaryColor),
                       fontWeight: FontWeight.w700,
                     ),
                   ),

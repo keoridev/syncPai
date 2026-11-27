@@ -77,6 +77,7 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   // Режимы экрана
   bool _isFullScreen = false;
   bool _isTheaterMode = false; // Скрывает сайдбар серий, расширяя видео
+  int _rightPanelTab = 0; // 0: Эпизоды, 1: Моменты, 2: Чат
 
   // Оверлеи визуальной обратной связи клавиатурных шорткатов
   IconData? _flashIcon;
@@ -970,23 +971,66 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
               ),
             ),
 
-          // 3. Индикатор буферизации
+          // 3. Индикатор буферизации с быстрым переключением качества
           if (widget.state.isBuffering && widget.state.errorMessage == null)
             Center(
               child: Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  color: const Color(0xE60B0E14),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x26FFFFFF)),
                 ),
-                child: SizedBox(
-                  width: 38,
-                  height: 38,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.8,
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B4A)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Буферизация (${_qualityLabel(widget.state.selectedQuality)})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (widget.state.selectedQuality != PlayerQuality.sd) ...[
+                      const SizedBox(width: 10),
+                      InkWell(
+                        onTap: () {
+                          final nextQ = widget.state.selectedQuality == PlayerQuality.fhd
+                              ? PlayerQuality.hd
+                              : PlayerQuality.sd;
+                          widget.cubit.changeQuality(nextQ);
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF6B4A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            widget.state.selectedQuality == PlayerQuality.fhd
+                                ? '720p'
+                                : '480p',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -2319,56 +2363,159 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
   Widget _buildEpisodesSidebar() {
     final allEpisodes = widget.state.title.episodes;
     final curEp = widget.state.episode.episode;
+    final ep = widget.state.episode;
 
     return Container(
       color: const Color(0xFF0F1117),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Шапка сайдбара
+          // Переключатель вкладок правой панели: Эпизоды | Моменты | Чат
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
-            child: Row(
-              children: [
-                Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 18),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Эпизоды',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
+            padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF161B26),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0x14FFFFFF)),
+              ),
+              child: Row(
+                children: [
+                  for (final tab in const [
+                    (0, 'Эпизоды'),
+                    (1, 'Моменты'),
+                    (2, 'Чат'),
+                  ])
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _rightPanelTab = tab.$1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            color: _rightPanelTab == tab.$1
+                                ? const Color(0xFFFF6B4A)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            tab.$2,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _rightPanelTab == tab.$1
+                                  ? Colors.white
+                                  : const Color(0xFF94A3B8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${allEpisodes.length} серий',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
           const Divider(color: Colors.white12, height: 1),
 
-          // Список серий с превью и номерами
-          Expanded(
-            child: ListView.separated(
+          if (_rightPanelTab == 1)
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  const Text(
+                    'ТАЙМКОДЫ СЕРИИ',
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (ep.opening != null)
+                    _buildMomentTile(
+                      label: 'Опенинг',
+                      time: ep.opening!.formattedRange,
+                      target: Duration(seconds: ep.opening!.start),
+                    ),
+                  if (ep.ending != null)
+                    _buildMomentTile(
+                      label: 'Эндинг',
+                      time: ep.ending!.formattedRange,
+                      target: Duration(seconds: ep.ending!.start),
+                    ),
+                  _buildMomentTile(
+                    label: 'Начало серии',
+                    time: '00:00',
+                    target: Duration.zero,
+                  ),
+                  _buildMomentTile(
+                    label: 'Середина серии',
+                    time: '12:00',
+                    target: const Duration(minutes: 12),
+                  ),
+                ],
+              ),
+            )
+          else if (_rightPanelTab == 2)
+            Expanded(
+              child: widget.state.isSyncRoom
+                  ? _buildRoomSidebar()
+                  : Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.forum_outlined,
+                              color: Color(0xFF94A3B8),
+                              size: 32,
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Чат доступен в комнате совместного просмотра',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: () {
+                                SyncRoomLobbySheet.show(
+                                  context,
+                                  title: widget.state.title,
+                                  episode: ep,
+                                  initialQuality: widget.state.selectedQuality,
+                                  onStartPlayback: (room, isHost) {
+                                    widget.cubit.attachRoomSession(room, isHost: isHost);
+                                  },
+                                );
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFFF6B4A),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text('Смотреть вместе'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+            )
+          else
+            // Список серий с превью и номерами
+            Expanded(
+              child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               itemCount: allEpisodes.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -2508,6 +2655,52 @@ class _DesktopPlayerLayoutState extends State<DesktopPlayerLayout> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMomentTile({
+    required String label,
+    required String time,
+    required Duration target,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () => widget.cubit.seek(target),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B26),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0x14FFFFFF)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.play_arrow_rounded, color: Color(0xFFFF6B4A), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                time,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

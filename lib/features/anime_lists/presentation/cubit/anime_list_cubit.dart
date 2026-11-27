@@ -8,6 +8,7 @@ import '../../domain/entities/user_anime_entry.dart';
 import '../../domain/repositories/anime_list_repository.dart';
 import '../../services/import_poster_enricher.dart';
 import '../../../profile/domain/services/achievement_service.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/services/mascot_companion_service.dart';
 import 'anime_list_state.dart';
 
@@ -136,6 +137,7 @@ class AnimeListCubit extends Cubit<AnimeListState> {
         stats: stats,
         isLoading: false,
       ));
+      unawaited(_hydrateMissingPostersInBackground(entries));
     } catch (e) {
       emit(state.copyWith(
         isLoading: false,
@@ -425,6 +427,47 @@ class AnimeListCubit extends Cubit<AnimeListState> {
       return e;
     }).toList();
     emit(state.copyWith(allEntries: updatedList));
+  }
+
+  Future<void> _hydrateMissingPostersInBackground(
+    List<UserAnimeEntry> entries,
+  ) async {
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+    final candidates = entries.where((e) {
+      return AnimePosterResolver.isMissingOrPlaceholder(e.posterUrl) ||
+          AnimePosterResolver.isAniLibriaWatermarkedUrl(e.posterUrl);
+    }).toList();
+    if (candidates.isEmpty) return;
+
+    final ids = candidates
+        .map((e) => e.animeId)
+        .where((id) => id > 0)
+        .toList();
+    final batchHits = await AnimePosterResolver.instance.resolveBatchIds(ids);
+    if (isClosed) return;
+
+    for (final entry in candidates) {
+      final hit = batchHits[entry.animeId];
+      if (hit != null && hit != entry.posterUrl) {
+        await updatePosterUrl(entry.animeId, hit);
+      }
+    }
+
+    final remaining = candidates
+        .where((e) => !batchHits.containsKey(e.animeId))
+        .take(20);
+    await Future.wait(
+      remaining.map((entry) async {
+        if (isClosed) return;
+        final resolved = await AnimePosterResolver.instance.resolvePoster(
+          malId: entry.animeId > 0 ? entry.animeId : null,
+          title: entry.titleRu,
+        );
+        if (!isClosed && resolved != null && resolved != entry.posterUrl) {
+          await updatePosterUrl(entry.animeId, resolved);
+        }
+      }),
+    );
   }
 
   /// Пакетное перемещение тайтлов в другой статус (Массовое управление)

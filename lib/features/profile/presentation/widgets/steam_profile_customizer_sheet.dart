@@ -683,26 +683,27 @@ class _SteamProfileCustomizerSheetState
         ? _customUrlController.text.trim()
         : _selectedBgId;
 
+    final tier = widget.profile.effectiveSupporterTier;
     final isFrameLocked = !CustomizationTierPolicy.isFrameUnlocked(
-      widget.profile.supporterTier,
+      tier,
       _selectedFrameId,
       unlockedBadges: widget.profile.unlockedBadges,
     );
     final isBgLocked = !CustomizationTierPolicy.isBannerUnlocked(
-      widget.profile.supporterTier,
+      tier,
       effectiveBg,
       unlockedBadges: widget.profile.unlockedBadges,
     );
     final isTitleLocked = _titleController.text.trim().isNotEmpty &&
-        !CustomizationTierPolicy.canEditCustomTitle(widget.profile.supporterTier);
+        !CustomizationTierPolicy.canEditCustomTitle(tier);
     final isAccentLocked = !CustomizationTierPolicy.isAccentUnlocked(
-      widget.profile.supporterTier,
+      tier,
       _selectedAccentHex,
     );
     final isArtworkLocked = _selectedArtworkUrl != null &&
         _selectedArtworkUrl!.isNotEmpty &&
         !CustomizationTierPolicy.isArtworkUnlocked(
-          widget.profile.supporterTier,
+          tier,
           _selectedArtworkUrl,
           unlockedBadges: widget.profile.unlockedBadges,
         );
@@ -1069,7 +1070,9 @@ class _SteamProfileCustomizerSheetState
                   ? ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: requiredTier.accentColor,
-                        foregroundColor: Colors.black,
+                        foregroundColor: AppColors.foregroundForBackground(
+                          requiredTier.accentColor,
+                        ),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                         elevation: 0,
@@ -1106,7 +1109,9 @@ class _SteamProfileCustomizerSheetState
                   : ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFF6B4A),
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppColors.foregroundForBackground(
+                          const Color(0xFFFF6B4A),
+                        ),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                         elevation: 0,

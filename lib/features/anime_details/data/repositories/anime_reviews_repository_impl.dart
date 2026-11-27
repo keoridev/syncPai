@@ -135,6 +135,7 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
     int negCount = 0;
 
     for (final rev in allReviews) {
+      if (rev.score == null) continue;
       switch (rev.sentiment) {
         case ReviewSentiment.positive:
           posCount++;
@@ -239,7 +240,9 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
             if (sanitized.text.length < 15) continue;
 
             final user = c['user'] as Map?;
-            final nickname = user?['nickname'] as String? ?? 'Аниме-критик';
+            final rawNick = (user?['nickname'] as String?)?.trim() ?? '';
+            final nickname =
+                rawNick.isNotEmpty ? rawNick : 'Пользователь Shikimori';
             var avatarUrl = user?['avatar'] as String?;
             if (avatarUrl != null && !avatarUrl.startsWith('http')) {
               avatarUrl = 'https://shikimori.io$avatarUrl';
@@ -250,19 +253,14 @@ class AnimeReviewsRepositoryImpl implements AnimeReviewsRepository {
                 ? DateTime.tryParse(createdAtStr) ?? DateTime.now()
                 : DateTime.now();
 
-            // Нормализованная оценка рецензента вокруг среднего балла тайтла
-            final baseScore = score ?? 8.5;
-            final variance = ((nickname.hashCode % 5) - 2) * 0.2;
-            final itemScore = double.parse((baseScore + variance).clamp(5.0, 10.0).toStringAsFixed(1));
-
             reviews.add(
               AnimeReview(
                 id: 'shiki_${c['id'] ?? DateTime.now().millisecondsSinceEpoch}',
                 source: ReviewSource.shikimori,
                 authorName: nickname,
                 authorAvatarUrl: avatarUrl,
-                score: itemScore,
-                sentiment: ReviewSentiment.fromScore(itemScore),
+                score: null,
+                sentiment: ReviewSentiment.neutral,
                 content: sanitized.text,
                 containsSpoiler: sanitized.containsSpoiler,
                 createdAt: createdAt,

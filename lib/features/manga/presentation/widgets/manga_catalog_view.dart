@@ -343,18 +343,32 @@ class MangaCatalogView extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 16),
                 sliver: SliverGrid(
                   gridDelegate: screenWidth >= 900
-                      ? const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 215,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.56,
-                        )
-                      : SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: screenWidth >= 600 ? 3 : mobileCols,
-                          crossAxisSpacing: mobileCols == 3 ? 8.0 : 12.0,
-                          mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
-                          childAspectRatio: mobileCols == 3 ? 0.52 : 0.56,
-                        ),
+                      ? () {
+                          final approxW = (screenWidth - 230 - horizontalPad * 2)
+                              .clamp(360.0, 2400.0);
+                          final cols = (approxW / 231).ceil().clamp(2, 8);
+                          final cardW = ((approxW - 16 * (cols - 1)) / cols)
+                              .clamp(150.0, 215.0);
+                          return SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 215,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: cardW / (cardW * 1.5 + 68),
+                          );
+                        }()
+                      : () {
+                          final cols = screenWidth >= 600 ? 3 : mobileCols;
+                          final spacing = mobileCols == 3 ? 8.0 : 12.0;
+                          final cardW =
+                              (screenWidth - horizontalPad * 2 - spacing * (cols - 1)) /
+                                  cols;
+                          return SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cols,
+                            crossAxisSpacing: spacing,
+                            mainAxisSpacing: mobileCols == 3 ? 12.0 : 14.0,
+                            childAspectRatio: cardW / (cardW * 1.5 + 68),
+                          );
+                        }(),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) => _buildGridCard(
                       context,
@@ -401,16 +415,20 @@ class MangaCatalogView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: _surfaceCard,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _tonalBorder),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Stack(
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox.expand(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _surfaceCard,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _tonalBorder),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
                     fit: StackFit.expand,
                     children: [
                       if (manga.coverUrl.isNotEmpty)
@@ -489,19 +507,27 @@ class MangaCatalogView extends StatelessWidget {
                 ),
               ),
             ),
+            ),
+            ),
             const SizedBox(height: 6),
-            Text(
-              manga.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: isCompact ? 11.5 : 12.5,
-                height: 1.2,
+            SizedBox(
+              height: 36,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Text(
+                  manga.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: isCompact ? 11.5 : 13.0,
+                    height: 1.35,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               _metaLine(manga),
               maxLines: 1,

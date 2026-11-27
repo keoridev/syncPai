@@ -18,8 +18,26 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<List<AnimeTitle>> getUpdates({int page = 1, int limit = 20}) async {
     if (animeCatalogRepository != null) {
       try {
-        final list = await animeCatalogRepository!.getCatalog(page: page, limit: limit);
-        return list.map((e) => e.toAnimeTitle()).toList();
+        final list = await animeCatalogRepository!.getCatalog(
+          page: page,
+          limit: limit,
+          year: '2025,2026',
+        );
+        return list
+            .map((e) => e.toAnimeTitle())
+            .where((t) {
+              final titleLower =
+                  '${t.russianTitle} ${t.englishTitle} ${t.displayTitle}'
+                      .toLowerCase();
+              if (titleLower.contains('новая озвучка') ||
+                  titleLower.contains('переозвучка') ||
+                  titleLower.contains('небеса у берегов красной реки') ||
+                  titleLower.contains('sora wa akai kawa no hotori')) {
+                return false;
+              }
+              return t.year != null && t.year! >= 2025;
+            })
+            .toList();
       } on NetworkException catch (e) {
         throw NetworkFailure(e.message);
       } on ServerException catch (e) {

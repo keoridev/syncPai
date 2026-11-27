@@ -58,6 +58,8 @@ class CatalogLoaded extends CatalogState {
   final bool isMangaLoadingMore;
   final bool hasMoreManga;
   final String mangaSearchQuery;
+  final List<AnimeTitle> seasonOngoingTitles;
+  final List<AnimeTitle> topWeekTitles;
 
   const CatalogLoaded({
     required this.titles,
@@ -85,6 +87,8 @@ class CatalogLoaded extends CatalogState {
     this.isMangaLoadingMore = false,
     this.hasMoreManga = true,
     this.mangaSearchQuery = '',
+    this.seasonOngoingTitles = const [],
+    this.topWeekTitles = const [],
   });
 
   /// Геттер для обратной совместимости с существующим кодом
@@ -121,6 +125,8 @@ class CatalogLoaded extends CatalogState {
     bool? isMangaLoadingMore,
     bool? hasMoreManga,
     String? mangaSearchQuery,
+    List<AnimeTitle>? seasonOngoingTitles,
+    List<AnimeTitle>? topWeekTitles,
   }) {
     Set<String> nextGenres;
     if (clearGenre) {
@@ -159,6 +165,8 @@ class CatalogLoaded extends CatalogState {
       isMangaLoadingMore: isMangaLoadingMore ?? this.isMangaLoadingMore,
       hasMoreManga: hasMoreManga ?? this.hasMoreManga,
       mangaSearchQuery: mangaSearchQuery ?? this.mangaSearchQuery,
+      seasonOngoingTitles: seasonOngoingTitles ?? this.seasonOngoingTitles,
+      topWeekTitles: topWeekTitles ?? this.topWeekTitles,
     );
   }
 
@@ -189,6 +197,8 @@ class CatalogLoaded extends CatalogState {
         isMangaLoadingMore,
         hasMoreManga,
         mangaSearchQuery,
+        seasonOngoingTitles,
+        topWeekTitles,
       ];
 }
 

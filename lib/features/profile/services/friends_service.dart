@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../app/di/injection.dart';
@@ -292,7 +293,15 @@ class FriendsService {
             }
           }
           if (list.isNotEmpty) {
-            friendsNotifier.value = List<Map<String, dynamic>>.from(list);
+            final next = List<Map<String, dynamic>>.from(list);
+            if (SchedulerBinding.instance.schedulerPhase ==
+                SchedulerPhase.persistentCallbacks) {
+              SchedulerBinding.instance.addPostFrameCallback((_) {
+                friendsNotifier.value = next;
+              });
+            } else {
+              friendsNotifier.value = next;
+            }
             return list;
           }
         }

@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/catalog/domain/entities/anime_title.dart';
+import 'playback_bandwidth_guard.dart';
 
 /// Автоматический многоисточниковый резолвер постеров аниме:
 /// 1. Отбрасывает заглушки Shikimori (`missing_original`, `missing_preview`, `missing_x`).
@@ -19,6 +22,24 @@ class AnimePosterResolver {
   static final Map<int, String> _memoryCache = {};
   static final Set<int> _emptyCache = {};
   static final Map<int, Future<String?>> _inFlightSingle = {};
+  static final Map<String, String> _titleMemoryCache = {};
+  static final Set<String> _titleEmptyCache = {};
+  static final Map<String, Future<String?>> _inFlightTitle = {};
+  static const String _prefsKey = 'anime_poster_title_cache_v1';
+  static bool _prefsLoaded = false;
+  static Future<void>? _prefsLoadFuture;
+  static const int _maxConcurrentResolves = 4;
+  static int _activeResolves = 0;
+  static final List<Completer<void>> _resolveWaiters = [];
+
+  static Future<void> _anilistQueueTail = Future<void>.value();
+  static DateTime? _lastAnilistAt;
+  static DateTime? _anilistRateLimitedUntil;
+  static const Duration _anilistMinInterval = Duration(milliseconds: 1200);
+  static final Set<int> _pendingAnilistIds = {};
+  static final Map<int, Completer<String?>> _pendingAnilistCompleters = {};
+  static Timer? _anilistCoalesceTimer;
+
   static final Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 6),
@@ -43,7 +64,109 @@ class AnimePosterResolver {
     return url!.trim();
   }
 
+  static bool isAniLibriaWatermarkedUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return false;
+    final lower = url.toLowerCase();
+    return lower.contains('anilibria.top') ||
+        lower.contains('anilibria.tv') ||
+        lower.contains('anilibria.app') ||
+        lower.contains('anilibria') ||
+        lower.contains('libria') ||
+        lower.contains('weekstorm');
+  }
+
+  static String? extractFranchiseParentTitle(String raw) {
+    var parent = raw.trim();
+    if (parent.isEmpty) return null;
+    parent = parent.replaceAll(
+      RegExp(r'\s*[—–-]\s*(новая озвучка|переозвучка).*', caseSensitive: false),
+      '',
+    );
+    parent = parent.replaceAll(
+      RegExp(
+        r'\s*(?:сезон|season|part|часть|tv)\s*\d+$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    parent = parent.replaceAll(
+      RegExp(r'\s+\d+(?:\s*(?:nd|rd|th))?$', caseSensitive: false),
+      '',
+    );
+    parent = parent.replaceAll(
+      RegExp(r'\s+(?:II|III|IV|V)$'),
+      '',
+    );
+    if (parent.contains(':')) {
+      parent = parent.split(':').first.trim();
+    }
+    parent = parent.trim();
+    if (parent.isEmpty || parent.toLowerCase() == raw.trim().toLowerCase()) {
+      return null;
+    }
+    return parent;
+  }
+
+  Future<void> _ensurePrefsLoaded() {
+    if (_prefsLoaded) return Future.value();
+    return _prefsLoadFuture ??= () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(_prefsKey);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) {
+            for (final entry in decoded.entries) {
+              final k = entry.key.toString();
+              final v = sanitizeUrl(entry.value?.toString());
+              if (k.isNotEmpty && v != null) {
+                _titleMemoryCache.putIfAbsent(k, () => v);
+              }
+            }
+          }
+        }
+      } catch (_) {
+      } finally {
+        _prefsLoaded = true;
+      }
+    }();
+  }
+
+  Future<void> _saveTitleCacheToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final entries = _titleMemoryCache.entries.toList();
+      final capped = entries.length > 400
+          ? Map.fromEntries(entries.sublist(entries.length - 400))
+          : Map.fromEntries(entries);
+      await prefs.setString(_prefsKey, jsonEncode(capped));
+    } catch (_) {}
+  }
+
+  static String normalizeTitleKey(String raw) {
+    var clean = raw.toLowerCase();
+    clean = clean.replaceAll(
+      RegExp(r'\s*[—–-]\s*(новая озвучка|переозвучка).*'),
+      '',
+    );
+    clean = clean.replaceAll(RegExp(r'\([^)]*\)'), ' ');
+    clean = clean.replaceAll(RegExp(r'[^a-z0-9а-яё\s]'), ' ');
+    return clean.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
   String? getCachedPoster(int malId) => _memoryCache[malId];
+
+  String? getCachedCleanPoster({int? malId, String? title}) {
+    if (malId != null && malId > 0) {
+      final byId = _memoryCache[malId];
+      if (byId != null) return byId;
+    }
+    if (title != null && title.trim().isNotEmpty) {
+      final key = normalizeTitleKey(title);
+      if (key.isNotEmpty) return _titleMemoryCache[key];
+    }
+    return null;
+  }
 
   Future<Map<int, String>> resolveBatchPosters(List<AnimeTitle> titles) async {
     final resolved = <int, String>{};
@@ -63,7 +186,9 @@ class AnimePosterResolver {
       }
     }
 
-    if (missingIds.isEmpty) return resolved;
+    if (missingIds.isEmpty || PlaybackBandwidthGuard.isVideoPlaying.value) {
+      return resolved;
+    }
 
     // Step A: Supabase anime_meta_cache lookup
     final remainingAfterDb = <int>[];
@@ -95,13 +220,38 @@ class AnimePosterResolver {
 
     if (remainingAfterDb.isEmpty) return resolved;
 
-    // Step B: AniList GraphQL batch lookup (chunks of 25)
-    final remainingAfterAnilist = <int>[];
+    // Step A2: Shikimori bulk ID lookup (/api/animes?ids=...)
+    final remainingAfterShiki = <int>[];
     final newlyFound = <int, String>{};
-    for (var i = 0; i < remainingAfterDb.length; i += 25) {
+    for (var i = 0; i < remainingAfterDb.length; i += 50) {
       final chunk = remainingAfterDb.sublist(
         i,
-        (i + 25).clamp(0, remainingAfterDb.length),
+        (i + 50).clamp(0, remainingAfterDb.length),
+      );
+      final shikiHits = await _fetchShikimoriBulkByIds(chunk);
+      for (final id in chunk) {
+        final url = shikiHits[id];
+        if (url != null) {
+          _memoryCache[id] = url;
+          resolved[id] = url;
+          newlyFound[id] = url;
+        } else {
+          remainingAfterShiki.add(id);
+        }
+      }
+    }
+
+    if (remainingAfterShiki.isEmpty) {
+      if (newlyFound.isNotEmpty) unawaited(_persistToSupabase(newlyFound));
+      return resolved;
+    }
+
+    // Step B: AniList GraphQL multi-alias batch lookup (chunks of 20, rate-limited)
+    final remainingAfterAnilist = <int>[];
+    for (var i = 0; i < remainingAfterShiki.length; i += 20) {
+      final chunk = remainingAfterShiki.sublist(
+        i,
+        (i + 20).clamp(0, remainingAfterShiki.length),
       );
       final chunkHits = await _fetchAnilistBatch(chunk);
       for (final id in chunk) {
@@ -147,6 +297,63 @@ class AnimePosterResolver {
     return resolved;
   }
 
+  Future<Map<int, String>> resolveBatchIds(List<int> malIds) async {
+    await _ensurePrefsLoaded();
+    final resolved = <int, String>{};
+    final missingIds = <int>[];
+
+    for (final id in malIds) {
+      if (id <= 0) continue;
+      final mem = _memoryCache[id];
+      if (mem != null) {
+        resolved[id] = mem;
+      } else if (!_emptyCache.contains(id) && !missingIds.contains(id)) {
+        missingIds.add(id);
+      }
+    }
+    if (missingIds.isEmpty || PlaybackBandwidthGuard.isVideoPlaying.value) {
+      return resolved;
+    }
+
+    final remainingAfterShiki = <int>[];
+    final newlyFound = <int, String>{};
+    for (var i = 0; i < missingIds.length; i += 50) {
+      final chunk = missingIds.sublist(i, (i + 50).clamp(0, missingIds.length));
+      final shikiHits = await _fetchShikimoriBulkByIds(chunk);
+      for (final id in chunk) {
+        final url = shikiHits[id];
+        if (url != null) {
+          _memoryCache[id] = url;
+          resolved[id] = url;
+          newlyFound[id] = url;
+        } else {
+          remainingAfterShiki.add(id);
+        }
+      }
+    }
+
+    for (var i = 0; i < remainingAfterShiki.length; i += 20) {
+      final chunk = remainingAfterShiki.sublist(
+        i,
+        (i + 20).clamp(0, remainingAfterShiki.length),
+      );
+      final anilistHits = await _fetchAnilistBatch(chunk);
+      for (final id in chunk) {
+        final url = anilistHits[id];
+        if (url != null) {
+          _memoryCache[id] = url;
+          resolved[id] = url;
+          newlyFound[id] = url;
+        }
+      }
+    }
+
+    if (newlyFound.isNotEmpty) {
+      unawaited(_persistToSupabase(newlyFound));
+    }
+    return resolved;
+  }
+
   Future<String?> resolveSinglePoster({required int malId}) {
     if (malId <= 0) return Future.value(null);
     final mem = _memoryCache[malId];
@@ -156,62 +363,498 @@ class AnimePosterResolver {
     final existing = _inFlightSingle[malId];
     if (existing != null) return existing;
 
-    final future = () async {
+    final completer = Completer<String?>();
+    _pendingAnilistCompleters[malId] = completer;
+    _pendingAnilistIds.add(malId);
+    _inFlightSingle[malId] = completer.future;
+
+    if (_pendingAnilistIds.length >= 20) {
+      _anilistCoalesceTimer?.cancel();
+      _flushPendingAnilistBatch();
+    } else {
+      _anilistCoalesceTimer ??= Timer(
+        const Duration(milliseconds: 60),
+        _flushPendingAnilistBatch,
+      );
+    }
+
+    return completer.future;
+  }
+
+  void _flushPendingAnilistBatch() {
+    _anilistCoalesceTimer = null;
+    if (_pendingAnilistIds.isEmpty) return;
+    final batch = _pendingAnilistIds.take(20).toList();
+    _pendingAnilistIds.removeAll(batch);
+    if (_pendingAnilistIds.isNotEmpty) {
+      _anilistCoalesceTimer = Timer(
+        const Duration(milliseconds: 60),
+        _flushPendingAnilistBatch,
+      );
+    }
+
+    unawaited(() async {
       try {
-        final batchHits = await _fetchAnilistBatch([malId]);
-        var url = batchHits[malId];
-        url ??= await _fetchJikanSingle(malId);
+        final shikiHits = await _fetchShikimoriBulkByIds(batch);
+        final missingForAnilist =
+            batch.where((id) => !shikiHits.containsKey(id)).toList();
+        final anilistHits = missingForAnilist.isNotEmpty
+            ? await _fetchAnilistBatch(missingForAnilist)
+            : const <int, String>{};
+
+        final newlyFound = <int, String>{};
+        for (final id in batch) {
+          var url = shikiHits[id] ?? anilistHits[id];
+          if (url == null && missingForAnilist.length <= 3) {
+            url = await _fetchJikanSingle(id);
+          }
+          if (url != null) {
+            _memoryCache[id] = url;
+            newlyFound[id] = url;
+          } else {
+            _emptyCache.add(id);
+          }
+          _pendingAnilistCompleters.remove(id)?.complete(url);
+          _inFlightSingle.remove(id);
+        }
+        if (newlyFound.isNotEmpty) {
+          unawaited(_persistToSupabase(newlyFound));
+        }
+      } catch (_) {
+        for (final id in batch) {
+          _pendingAnilistCompleters.remove(id)?.complete(null);
+          _inFlightSingle.remove(id);
+        }
+      }
+    }());
+  }
+
+  Future<String?> resolveCleanPoster({
+    int? malId,
+    required String title,
+    String? fallbackTitle,
+  }) =>
+      resolvePoster(
+        malId: malId,
+        title: title,
+        fallbackTitle: fallbackTitle,
+      );
+
+  Future<void> _acquireResolveSlot() async {
+    if (_activeResolves < _maxConcurrentResolves) {
+      _activeResolves++;
+      return;
+    }
+    final completer = Completer<void>();
+    _resolveWaiters.add(completer);
+    await completer.future;
+  }
+
+  void _releaseResolveSlot() {
+    if (_resolveWaiters.isNotEmpty) {
+      final next = _resolveWaiters.removeAt(0);
+      if (!next.isCompleted) next.complete();
+    } else if (_activeResolves > 0) {
+      _activeResolves--;
+    }
+  }
+
+  Future<String?> resolvePoster({
+    int? malId,
+    required String title,
+    String? fallbackTitle,
+  }) async {
+    await _ensurePrefsLoaded();
+    final cached = getCachedCleanPoster(malId: malId, title: title) ??
+        (fallbackTitle != null
+            ? getCachedCleanPoster(title: fallbackTitle)
+            : null);
+    if (cached != null) return cached;
+    if (PlaybackBandwidthGuard.isVideoPlaying.value) return null;
+
+    final key = normalizeTitleKey(title);
+    if (key.isEmpty && (malId == null || malId <= 0)) return null;
+    if (key.isNotEmpty && _titleMemoryCache.containsKey(key)) {
+      return _titleMemoryCache[key];
+    }
+    if (key.isNotEmpty && _titleEmptyCache.contains(key)) return null;
+
+    if (key.isNotEmpty) {
+      final existing = _inFlightTitle[key];
+      if (existing != null) return existing;
+    }
+
+    final future = () async {
+      await _acquireResolveSlot();
+      try {
+        if (malId != null && malId > 0) {
+          final byId = await resolveSinglePoster(malId: malId);
+          if (byId != null) {
+            if (key.isNotEmpty) {
+              _titleMemoryCache[key] = byId;
+              unawaited(_saveTitleCacheToPrefs());
+            }
+            return byId;
+          }
+        }
+
+        if (key.isEmpty) return null;
+
+        final parentRu = extractFranchiseParentTitle(title);
+        final parentEn = fallbackTitle != null
+            ? extractFranchiseParentTitle(fallbackTitle)
+            : null;
+        final queries = <String>[
+          if (fallbackTitle != null && fallbackTitle.trim().isNotEmpty)
+            normalizeTitleKey(fallbackTitle),
+          key,
+          if (parentEn != null) normalizeTitleKey(parentEn),
+          if (parentRu != null) normalizeTitleKey(parentRu),
+        ].where((q) => q.isNotEmpty).toSet().toList();
+
+        String? url;
+        for (final q in queries) {
+          url = await _fetchShikimoriBySearch(q);
+          if (url != null) break;
+        }
+        if (url == null) {
+          for (final q in queries) {
+            url = await _fetchAnilistBySearch(q);
+            if (url != null) break;
+          }
+        }
+        if (url == null) {
+          for (final q in queries) {
+            url = await _fetchJikanBySearch(q);
+            if (url != null) break;
+          }
+        }
         if (url != null) {
-          _memoryCache[malId] = url;
-          unawaited(_persistToSupabase({malId: url}));
+          _titleMemoryCache[key] = url;
+          unawaited(_saveTitleCacheToPrefs());
           return url;
         }
-        _emptyCache.add(malId);
+        _titleEmptyCache.add(key);
         return null;
       } finally {
-        _inFlightSingle.remove(malId);
+        _releaseResolveSlot();
+        if (key.isNotEmpty) _inFlightTitle.remove(key);
       }
     }();
 
-    _inFlightSingle[malId] = future;
+    if (key.isNotEmpty) {
+      _inFlightTitle[key] = future;
+    }
     return future;
   }
 
-  Future<Map<int, String>> _fetchAnilistBatch(List<int> malIds) async {
-    if (malIds.isEmpty) return const {};
-    const query = r'''
-query ($ids: [Int]) {
-  Page(perPage: 25) {
-    media(idMal_in: $ids, type: ANIME) {
-      idMal
-      coverImage {
-        extraLarge
-        large
+  static int? _extractSequelNumber(String raw) {
+    final lower = raw.toLowerCase();
+    final mSeason = RegExp(
+      r'(?:сезон|season|part|часть)\s*(\d+)',
+      caseSensitive: false,
+    ).firstMatch(lower);
+    if (mSeason != null) return int.tryParse(mSeason.group(1)!);
+    final mTrailing = RegExp(r'\b(\d+)\s*$').firstMatch(lower.trim());
+    if (mTrailing != null) return int.tryParse(mTrailing.group(1)!);
+    final mRoman = RegExp(r'\b(II|III|IV|V)\s*$').firstMatch(raw.trim());
+    if (mRoman != null) {
+      switch (mRoman.group(1)) {
+        case 'II':
+          return 2;
+        case 'III':
+          return 3;
+        case 'IV':
+          return 4;
+        case 'V':
+          return 5;
       }
+    }
+    return null;
+  }
+
+  static bool isTitleMatchStrict(String query, List<String?> candidates) {
+    final qNorm = normalizeTitleKey(query);
+    if (qNorm.isEmpty) return false;
+    final qTokens = qNorm.split(' ').where((t) => t.isNotEmpty).toSet();
+    if (qTokens.isEmpty) return false;
+    final qSeq = _extractSequelNumber(query);
+
+    for (final cand in candidates) {
+      if (cand == null || cand.trim().isEmpty) continue;
+      final cNorm = normalizeTitleKey(cand);
+      if (cNorm.isEmpty) continue;
+      final cTokens = cNorm.split(' ').where((t) => t.isNotEmpty).toSet();
+      if (cTokens.isEmpty) continue;
+      final maxLen =
+          qTokens.length > cTokens.length ? qTokens.length : cTokens.length;
+      final overlap = qTokens.intersection(cTokens).length / maxLen;
+      final cSeq = _extractSequelNumber(cand);
+      final seqMatches = (qSeq == null && cSeq == null) || (qSeq == cSeq);
+      if (overlap >= 0.75 && seqMatches) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<String?> _fetchJikanBySearch(String search) async {
+    try {
+      final res = await _dio.get(
+        'https://api.jikan.moe/v4/anime',
+        queryParameters: {'q': search, 'limit': 3},
+      );
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data['data'];
+        if (data is List) {
+          for (final item in data) {
+            if (item is! Map) continue;
+            if (!isTitleMatchStrict(search, [
+              item['title']?.toString(),
+              item['title_english']?.toString(),
+            ])) {
+              continue;
+            }
+            final images = item['images'];
+            if (images is Map) {
+              final webp = images['webp'] is Map ? images['webp'] as Map : null;
+              final jpg = images['jpg'] is Map ? images['jpg'] as Map : null;
+              final url = sanitizeUrl(
+                (webp?['large_image_url'] ??
+                        jpg?['large_image_url'] ??
+                        webp?['image_url'] ??
+                        jpg?['image_url'])
+                    ?.toString(),
+              );
+              if (url != null) return url;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String?> _fetchAnilistBySearch(String search) async {
+    const query = r'''
+query ($search: String) {
+  Media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+    idMal
+    title {
+      romaji
+      english
+      native
+    }
+    coverImage {
+      extraLarge
+      large
     }
   }
 }
 ''';
     try {
-      final res = await _dio.post(
-        'https://graphql.anilist.co',
-        data: {
-          'query': query,
-          'variables': {'ids': malIds},
-        },
+      final blockedUntil = _anilistRateLimitedUntil;
+      if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
+        return null;
+      }
+      final res = await _enqueueAnilistRequest(
+        () => _dio.post(
+          'https://graphql.anilist.co',
+          data: {
+            'query': query,
+            'variables': {'search': search},
+          },
+          options: Options(
+            validateStatus: (status) => status != null && status < 500,
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          ),
+        ),
+      );
+      if ((res.statusCode == 200 || res.statusCode == 404) && res.data is Map) {
+        final media = res.data['data']?['Media'];
+        if (media is Map) {
+          final titleObj = media['title'] is Map ? media['title'] as Map : null;
+          if (!isTitleMatchStrict(search, [
+            titleObj?['romaji']?.toString(),
+            titleObj?['english']?.toString(),
+            titleObj?['native']?.toString(),
+          ])) {
+            return null;
+          }
+          final cover =
+              media['coverImage'] is Map ? media['coverImage'] as Map : null;
+          final url = sanitizeUrl(
+            (cover?['extraLarge'] ?? cover?['large'])?.toString(),
+          );
+          final idMal = (media['idMal'] as num?)?.toInt();
+          if (url != null) {
+            if (idMal != null && idMal > 0) {
+              _memoryCache[idMal] = url;
+            }
+            return url;
+          }
+        }
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 429) {
+        final retryAfterRaw = e.response?.headers.value('retry-after');
+        final retrySecs =
+            (int.tryParse(retryAfterRaw ?? '') ?? 30).clamp(30, 60);
+        _anilistRateLimitedUntil =
+            DateTime.now().add(Duration(seconds: retrySecs));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String?> _fetchShikimoriBySearch(String search) async {
+    try {
+      final res = await _dio.get(
+        'https://shikimori.io/api/animes',
+        queryParameters: {'search': search, 'limit': 3},
         options: Options(
           headers: const {
-            'Content-Type': 'application/json',
+            'User-Agent': 'SyncPai-App/1.0',
             'Accept': 'application/json',
           },
         ),
       );
-      if (res.statusCode == 200 && res.data is Map) {
-        final page = res.data['data']?['Page'];
-        final media = page is Map ? page['media'] : null;
-        if (media is List) {
+      if (res.statusCode == 200 && res.data is List) {
+        for (final item in res.data as List) {
+          if (item is! Map || item['image'] is! Map) continue;
+          if (!isTitleMatchStrict(search, [
+            item['russian']?.toString(),
+            item['name']?.toString(),
+          ])) {
+            continue;
+          }
+          final img = item['image'] as Map;
+          final raw =
+              (img['original'] ?? img['preview'])?.toString().trim() ?? '';
+          if (raw.isNotEmpty && !isMissingOrPlaceholder(raw)) {
+            if (raw.startsWith('//')) return 'https:$raw';
+            if (raw.startsWith('http')) return raw;
+            return 'https://shikimori.io$raw';
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<T> _enqueueAnilistRequest<T>(Future<T> Function() action) {
+    final next = _anilistQueueTail.then((_) async {
+      final blockedUntil = _anilistRateLimitedUntil;
+      if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
+        throw DioException(
+          requestOptions: RequestOptions(path: 'https://graphql.anilist.co'),
+          type: DioExceptionType.badResponse,
+          response: Response(
+            requestOptions: RequestOptions(path: 'https://graphql.anilist.co'),
+            statusCode: 429,
+          ),
+        );
+      }
+      final last = _lastAnilistAt;
+      if (last != null) {
+        final elapsed = DateTime.now().difference(last);
+        if (elapsed < _anilistMinInterval) {
+          await Future<void>.delayed(_anilistMinInterval - elapsed);
+        }
+      }
+      _lastAnilistAt = DateTime.now();
+      try {
+        return await action();
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 429) {
+          final retryAfterRaw = e.response?.headers.value('retry-after');
+          final retrySecs =
+              (int.tryParse(retryAfterRaw ?? '') ?? 30).clamp(30, 60);
+          _anilistRateLimitedUntil =
+              DateTime.now().add(Duration(seconds: retrySecs));
+        }
+        rethrow;
+      }
+    });
+    _anilistQueueTail = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  Future<Map<int, String>> _fetchShikimoriBulkByIds(List<int> ids) async {
+    if (ids.isEmpty) return const {};
+    try {
+      final res = await _dio.get(
+        'https://shikimori.one/api/animes',
+        queryParameters: {
+          'ids': ids.join(','),
+          'limit': ids.length.clamp(1, 50),
+        },
+        options: Options(
+          headers: const {
+            'User-Agent': 'SyncPai-App/1.0',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      if (res.statusCode == 200 && res.data is List) {
+        final out = <int, String>{};
+        for (final item in res.data as List) {
+          if (item is! Map) continue;
+          final id = (item['id'] as num?)?.toInt();
+          final img = item['image'] is Map ? item['image'] as Map : null;
+          final raw =
+              (img?['original'] ?? img?['preview'])?.toString().trim() ?? '';
+          if (id != null && raw.isNotEmpty && !isMissingOrPlaceholder(raw)) {
+            final full = raw.startsWith('//')
+                ? 'https:$raw'
+                : (raw.startsWith('http') ? raw : 'https://shikimori.io$raw');
+            out[id] = full;
+          }
+        }
+        return out;
+      }
+    } catch (_) {}
+    return const {};
+  }
+
+  Future<Map<int, String>> _fetchAnilistBatch(List<int> malIds) async {
+    if (malIds.isEmpty) return const {};
+    final batch = malIds.take(20).toList();
+    final blockedUntil = _anilistRateLimitedUntil;
+    if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
+      return _fetchShikimoriBulkByIds(batch);
+    }
+    final buf = StringBuffer('query { ');
+    for (var i = 0; i < batch.length; i++) {
+      buf.write(
+        'q$i: Media(idMal: ${batch[i]}, type: ANIME) { idMal coverImage { extraLarge large } } ',
+      );
+    }
+    buf.write('}');
+
+    try {
+      final res = await _enqueueAnilistRequest(
+        () => _dio.post(
+          'https://graphql.anilist.co',
+          data: {'query': buf.toString()},
+          options: Options(
+            validateStatus: (status) => status != null && status < 500,
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          ),
+        ),
+      );
+      if ((res.statusCode == 200 || res.statusCode == 404) && res.data is Map) {
+        final data = res.data['data'];
+        if (data is Map) {
           final out = <int, String>{};
-          for (final item in media) {
+          for (final entry in data.entries) {
+            final item = entry.value;
             if (item is! Map) continue;
             final idMal = (item['idMal'] as num?)?.toInt();
             final cover = item['coverImage'] is Map
@@ -226,6 +869,17 @@ query ($ids: [Int]) {
           }
           return out;
         }
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 429) {
+        final retryAfterRaw = e.response?.headers.value('retry-after');
+        final retrySecs = (int.tryParse(retryAfterRaw ?? '') ?? 30).clamp(30, 60);
+        _anilistRateLimitedUntil =
+            DateTime.now().add(Duration(seconds: retrySecs));
+        return _fetchShikimoriBulkByIds(batch);
+      }
+      if (kDebugMode) {
+        debugPrint('[AnimePosterResolver] AniList batch error: $e');
       }
     } catch (e) {
       if (kDebugMode) {

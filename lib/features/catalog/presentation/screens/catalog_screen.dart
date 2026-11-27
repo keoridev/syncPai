@@ -34,6 +34,7 @@ import 'package:sync_pai/features/watch_history/domain/entities/watch_history_it
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_cubit.dart';
 import 'package:sync_pai/features/watch_history/presentation/cubit/watch_history_state.dart';
 import 'package:sync_pai/core/widgets/manga_panel_painter.dart';
+import 'package:sync_pai/features/catalog/presentation/widgets/desktop_catalog_widgets.dart';
 import 'package:sync_pai/features/wrapped/presentation/widgets/wrapped_promo_banner.dart';
 import '../cubit/catalog_cubit.dart';
 import '../cubit/catalog_state.dart';
@@ -256,13 +257,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: isDesktop ? 1440 : double.infinity,
+                maxWidth: isDesktop ? 1600 : double.infinity,
               ),
-              child: RefreshIndicator(
-                color: themePrimary,
-                backgroundColor: AppColors.surfaceElevated,
-                onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
-                child: CustomScrollView(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: RefreshIndicator(
+                      color: themePrimary,
+                      backgroundColor: AppColors.surfaceElevated,
+                      onRefresh: () => context.read<CatalogCubit>().loadUpdates(refresh: true),
+                      child: CustomScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               slivers: [
@@ -564,29 +569,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       final isManga = isMangaPrintTheme(context);
                       return InkWell(
                         onTap: () => handleResumeItem(item),
-                        borderRadius: BorderRadius.circular(isManga ? 6 : 14),
+                        borderRadius: BorderRadius.circular(isManga ? 10 : 14),
                         child: Container(
                           height: isDesktop ? 60 : 56,
                           decoration: BoxDecoration(
                             color: isManga
-                                ? const Color(0xFFFFFFFF)
+                                ? const Color(0xFF161920)
                                 : AppColors.surfaceElevated.withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(isManga ? 6 : 14),
+                            borderRadius: BorderRadius.circular(isManga ? 10 : 14),
                             border: Border.all(
                               color: isManga
-                                  ? const Color(0xFF111111)
+                                  ? const Color(0x33F8FAFC)
                                   : themePrimary.withValues(alpha: 0.3),
-                              width: isManga ? 2.0 : 1.0,
+                              width: isManga ? 1.5 : 1.0,
                             ),
-                            boxShadow: isManga
-                                ? const [
-                                    BoxShadow(
-                                      color: Color(0xFF111111),
-                                      offset: Offset(3, 3),
-                                      blurRadius: 0,
-                                    ),
-                                  ]
-                                : null,
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: Stack(
@@ -635,6 +631,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: AppTypography.titleSmall.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurface,
                                               fontSize: 12.5,
                                               fontWeight: FontWeight.w700,
                                             ),
@@ -645,7 +642,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: AppTypography.caption.copyWith(
-                                              color: AppColors.textSecondary,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               fontSize: 10.5,
                                             ),
                                           ),
@@ -668,7 +665,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
-                                                  color: AppColors.textSecondary,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.w600,
                                                 ),
@@ -679,8 +676,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                                 child: LinearProgressIndicator(
                                                   value: item.progress,
                                                   minHeight: 4,
-                                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                                  valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                                  backgroundColor: isManga
+                                                      ? const Color(0x26F8FAFC)
+                                                      : Colors.white.withValues(alpha: 0.08),
+                                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                                    isManga ? const Color(0xFFF1F5F9) : themePrimary,
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -777,6 +778,74 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 8),
                     child: const WrappedPromoBanner(),
+                  ),
+                ),
+
+              // 2.2 Широкоформатный Hero Spotlight + курированные ряды на десктопе (width >= 1100)
+              if (screenWidth >= 1100 && !_isMangaMode && !_isSearchOpen && !_isForYouTabSelected)
+                SliverToBoxAdapter(
+                  child: BlocBuilder<CatalogCubit, CatalogState>(
+                    builder: (context, state) {
+                      if (state is! CatalogLoaded || state.titles.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      final freshCandidates = state.titles
+                          .where(CatalogCubit.isModernNonRedubRelease)
+                          .toList();
+                      final heroTitle = freshCandidates.isNotEmpty
+                          ? freshCandidates.first
+                          : state.titles.first;
+                      final freshReleases = freshCandidates.length > 1
+                          ? freshCandidates.skip(1).take(12).toList()
+                          : freshCandidates.take(12).toList();
+                      final excludedIds = <int>{
+                        heroTitle.id,
+                        ...freshReleases.map((t) => t.id),
+                      };
+                      final excludedNames = <String>{
+                        heroTitle.displayTitle.toLowerCase().trim(),
+                        ...freshReleases
+                            .map((t) => t.displayTitle.toLowerCase().trim()),
+                      };
+                      final ongoingSource = state.seasonOngoingTitles.isNotEmpty
+                          ? state.seasonOngoingTitles
+                          : freshCandidates;
+                      final ongoing = ongoingSource
+                          .where((t) =>
+                              CatalogCubit.isModernNonRedubRelease(t) &&
+                              !excludedIds.contains(t.id) &&
+                              !excludedNames.contains(
+                                  t.displayTitle.toLowerCase().trim()))
+                          .take(12)
+                          .toList();
+                      return Padding(
+                        padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DesktopCatalogHeroBanner(
+                              title: heroTitle,
+                              onWatchTap: () => _openAnimeDetails(heroTitle),
+                              onWatchTogetherTap: () => _openAnimeDetails(heroTitle),
+                            ),
+                            const SizedBox(height: 18),
+                            DesktopCuratedRow(
+                              heading: 'Свежие релизы',
+                              titles: freshReleases,
+                              onTitleTap: _openAnimeDetails,
+                            ),
+                            if (ongoing.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              DesktopCuratedRow(
+                                heading: 'Онгоинги сезона',
+                                titles: ongoing,
+                                onTitleTap: _openAnimeDetails,
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
 
@@ -1085,6 +1154,36 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         ),
       ),
+      if (screenWidth >= 1100 && !_isMangaMode) ...[
+        Container(
+          width: 1,
+          color: isMangaPrintTheme(context)
+              ? const Color(0x33F8FAFC)
+              : const Color(0x14FFFFFF),
+        ),
+        SizedBox(
+          width: 320,
+          child: BlocBuilder<CatalogCubit, CatalogState>(
+            builder: (context, state) {
+              if (state is! CatalogLoaded || state.titles.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              final topWeek = state.topWeekTitles.isNotEmpty
+                  ? state.topWeekTitles
+                  : state.titles
+                      .where(CatalogCubit.isModernNonRedubRelease)
+                      .toList();
+              return DesktopTopWeekSidebar(
+                titles: topWeek,
+                onTitleTap: _openAnimeDetails,
+              );
+            },
+          ),
+        ),
+      ],
+    ],
+  ),
+),
     ),
   ),
 ),
@@ -1139,7 +1238,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected ? Colors.white : AppColors.textSecondary,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.onPrimary
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
             ),
@@ -1154,26 +1255,37 @@ class _CatalogScreenState extends State<CatalogScreen> {
     required int mobileCols,
   }) {
     if (screenWidth >= 900) {
-      return const SliverGridDelegateWithMaxCrossAxisExtent(
+      final approxGridW = (screenWidth >= 1100
+              ? screenWidth - 230 - 320 - 48
+              : screenWidth - 48)
+          .clamp(360.0, 2400.0);
+      final cols = (approxGridW / 231).ceil().clamp(2, 8);
+      final cardW = ((approxGridW - 16 * (cols - 1)) / cols).clamp(150.0, 215.0);
+      return SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 215,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 0.62,
+        childAspectRatio: cardW / (cardW * 1.5 + 68),
       );
     }
     if (screenWidth >= 600) {
-      return const SliverGridDelegateWithFixedCrossAxisCount(
+      final cardW = (screenWidth - 48 - 24) / 3;
+      return SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        childAspectRatio: 0.52,
+        childAspectRatio: cardW / (cardW * 1.5 + 68),
         crossAxisSpacing: 12,
         mainAxisSpacing: 14,
       );
     }
     final effectiveMobileCols = screenWidth < 390 ? 2 : mobileCols;
+    final spacing = effectiveMobileCols == 3 ? 8.0 : 12.0;
+    final cardW =
+        (screenWidth - 28 - spacing * (effectiveMobileCols - 1)) /
+            effectiveMobileCols;
     return SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: effectiveMobileCols,
-      childAspectRatio: effectiveMobileCols == 3 ? 0.52 : 0.58,
-      crossAxisSpacing: effectiveMobileCols == 3 ? 8.0 : 12.0,
+      childAspectRatio: cardW / (cardW * 1.5 + 68),
+      crossAxisSpacing: spacing,
       mainAxisSpacing: effectiveMobileCols == 3 ? 12.0 : 14.0,
     );
   }
@@ -1394,19 +1506,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
 
     final gridHorizontalPad = screenWidth < 600 ? 14.0 : horizontalPad;
-    final SliverGridDelegate gridDelegate = isDesktop
-        ? const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 215,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 0.62,
-          )
-        : SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: screenWidth >= 600 ? 3 : 2,
-            childAspectRatio: screenWidth >= 600 ? 0.64 : 0.56,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 14,
-          );
+    final SliverGridDelegate gridDelegate = _resolveCatalogGridDelegate(
+      screenWidth: screenWidth,
+      mobileCols: 2,
+    );
 
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: gridHorizontalPad),

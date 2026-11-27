@@ -33,6 +33,14 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
     final totalVotes = widget.totalVotes ??
         widget.distribution.fold<int>(0, (sum, item) => sum + item.votes);
 
+    final weightedSum = widget.distribution.fold<double>(
+      0,
+      (sum, item) => sum + (item.score * item.votes),
+    );
+    final effectiveAverage = widget.averageScore > 0
+        ? widget.averageScore
+        : (totalVotes > 0 ? weightedSum / totalVotes : 0.0);
+
     // Сортировка от 10 к 1
     final sortedItems = List<ScoreDistributionItem>.from(widget.distribution)
       ..sort((a, b) => b.score.compareTo(a.score));
@@ -41,7 +49,8 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
     final positiveVotes = sortedItems
         .where((i) => i.score >= 7)
         .fold<int>(0, (sum, item) => sum + item.votes);
-    final recommendPct = totalVotes > 0 ? (positiveVotes / totalVotes * 100).round() : 92;
+    final recommendPct =
+        totalVotes > 0 ? (positiveVotes / totalVotes * 100).round() : 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -96,7 +105,9 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.averageScore.toStringAsFixed(1),
+                      effectiveAverage > 0
+                          ? effectiveAverage.toStringAsFixed(1)
+                          : '—',
                       style: TextStyle(
                         fontSize: 38,
                         fontWeight: FontWeight.w900,
@@ -110,7 +121,7 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(5, (index) {
                         final starValue = (index + 1) * 2;
-                        final filled = widget.averageScore >= starValue - 0.5;
+                        final filled = effectiveAverage >= starValue - 0.5;
                         return Icon(
                           filled ? Icons.star_rounded : Icons.star_outline_rounded,
                           size: 14,
@@ -130,7 +141,9 @@ class _ScoreDistributionChartState extends State<ScoreDistributionChart> {
                         ),
                       ),
                       child: Text(
-                        '$recommendPct% советуют',
+                        totalVotes > 0
+                            ? '$recommendPct% советуют'
+                            : 'Нет оценок',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 9.5,

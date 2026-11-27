@@ -457,11 +457,28 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     bool withShadows = false,
   }) {
     final typeLabel = _formatTitleType(title.kind);
-    final scoreValue = (title.score != null && title.score! > 0)
-        ? title.score!
-        : (_aggregate?.shikimoriScore ??
-            _aggregate?.syncpaiScore ??
-            _aggregate?.malScore);
+    double? scoreValue;
+    if (title.score != null && title.score! > 0) {
+      scoreValue = title.score!;
+    } else if (_aggregate?.shikimoriScore != null &&
+        _aggregate!.shikimoriScore! > 0) {
+      scoreValue = _aggregate!.shikimoriScore!;
+    } else if (_scoreDistribution.isNotEmpty) {
+      final totalVotes =
+          _scoreDistribution.fold<int>(0, (s, e) => s + e.votes);
+      if (totalVotes > 0) {
+        final weighted = _scoreDistribution.fold<double>(
+          0,
+          (s, e) => s + (e.score * e.votes),
+        );
+        scoreValue = double.parse((weighted / totalVotes).toStringAsFixed(1));
+      }
+    } else if (_aggregate?.syncpaiScore != null &&
+        _aggregate!.syncpaiScore! > 0) {
+      scoreValue = _aggregate!.syncpaiScore!;
+    } else if (_aggregate?.malScore != null && _aggregate!.malScore! > 0) {
+      scoreValue = _aggregate!.malScore!;
+    }
 
     final shadows = withShadows
         ? const [
@@ -516,7 +533,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       parts.add(Text(textTokens[i], style: metaStyle));
     }
 
-    if (scoreValue != null) {
+    if (scoreValue != null && scoreValue > 0) {
       if (parts.isNotEmpty) parts.add(dot);
       parts.add(
         Row(
@@ -949,6 +966,8 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     required VoidCallback? onTap,
     Color iconColor = AppColors.textPrimary,
     bool isLoading = false,
+    double height = 42,
+    bool expand = false,
   }) {
     return Tooltip(
       message: label,
@@ -956,15 +975,18 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 46,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          width: expand ? double.infinity : null,
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment:
+                expand ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
               if (isLoading)
                 const SizedBox(
@@ -973,14 +995,18 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
-                Icon(icon, size: 20, color: iconColor),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                Icon(icon, size: 18, color: iconColor),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -1707,56 +1733,47 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
             : Icons.group_outlined;
 
         if (isDesktop) {
-          return Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          final hasBookmarkBtn = getIt.isRegistered<AnimeListCubit>();
+          return Row(
             children: [
-              _buildDesktopActionButton(
-                icon: watchTogetherIcon,
-                iconColor: hasActiveRoom ? AppColors.syncActive : AppColors.textPrimary,
-                label: watchTogetherLabel,
-                onTap: () => _handleWatchTogetherTap(context, title, currentEpisode),
-              ),
-              _buildDesktopActionButton(
-                icon: Icons.movie_outlined,
-                label: 'Трейлеры',
-                onTap: () {
-                  context.pushNamed('anime-videos', extra: {
-                    'title': _currentTitle.displayTitle,
-                    'backdrop': backdropUrl,
-                    'videos': _videos,
-                  });
-                },
-              ),
-              if (getIt.isRegistered<AnimeListCubit>())
-                BlocBuilder<AnimeListCubit, AnimeListState>(
-                  bloc: getIt<AnimeListCubit>(),
-                  builder: (context, listState) {
-                    final entry = listState.getEntryFor(title.id);
-                    final isInList = entry != null;
-                    return _buildDesktopActionButton(
-                      icon: isInList ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                      iconColor: isInList ? AppColors.primaryLight : AppColors.textPrimary,
-                      label: isInList ? entry.status.labelRu : 'В закладки',
-                      onTap: () => _showAnimeStatusSheet(context, title, entry),
-                    );
-                  },
+              Expanded(
+                child: _buildDesktopActionButton(
+                  icon: watchTogetherIcon,
+                  iconColor: hasActiveRoom
+                      ? AppColors.syncActive
+                      : AppColors.textPrimary,
+                  label: watchTogetherLabel,
+                  expand: true,
+                  height: 40,
+                  onTap: () =>
+                      _handleWatchTogetherTap(context, title, currentEpisode),
                 ),
-              _buildDesktopActionButton(
-                icon: Icons.cloud_download_outlined,
-                label: 'Скачать',
-                onTap: () => _openTorrentsSheet(context),
               ),
-              if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
-                _buildDesktopActionButton(
-                  icon: Icons.menu_book_rounded,
-                  iconColor: AppColors.primaryLight,
-                  isLoading: _isOpeningManga,
-                  label: _mangaBridge?.continueFromChapter != null
-                      ? 'Читать мангу • ${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
-                      : 'Читать мангу',
-                  onTap: () => _handleReadMangaTap(title),
+              if (hasBookmarkBtn) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: BlocBuilder<AnimeListCubit, AnimeListState>(
+                    bloc: getIt<AnimeListCubit>(),
+                    builder: (context, listState) {
+                      final entry = listState.getEntryFor(title.id);
+                      final isInList = entry != null;
+                      return _buildDesktopActionButton(
+                        icon: isInList
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        iconColor: isInList
+                            ? AppColors.primaryLight
+                            : AppColors.textPrimary,
+                        label: isInList ? entry.status.labelRu : 'В планах',
+                        expand: true,
+                        height: 40,
+                        onTap: () =>
+                            _showAnimeStatusSheet(context, title, entry),
+                      );
+                    },
+                  ),
                 ),
+              ],
             ],
           );
         }
@@ -1826,6 +1843,50 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     );
   }
 
+  Widget _buildDesktopToolbarPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    Color iconColor = AppColors.textSecondary,
+    bool isLoading = false,
+  }) {
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161A24),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0x1FFFFFFF), width: 1.0),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isLoading)
+              const SizedBox(
+                width: 15,
+                height: 15,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(icon, size: 16, color: iconColor),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildVoiceoverSelector(BuildContext context, List<EpisodeItem> episodes) {
     if (!getIt.isRegistered<KodikCubit>()) return const SizedBox.shrink();
 
@@ -1834,12 +1895,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       builder: (context, kodikState) {
         final isAniLibria = kodikState.isAniLibriaActive;
         final activeTitle = kodikState.activeVoiceoverTitle;
-        final icon = kodikState.selectedTranslation.displayIcon;
 
         return Align(
           alignment: Alignment.centerLeft,
           child: TvFocusable(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             onPressed: () {
               final epNum = episodes.isNotEmpty
                   ? episodes[_selectedEpisodeIndex.clamp(0, episodes.length - 1)].episode
@@ -1850,13 +1910,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               );
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF161A24),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: isAniLibria
-                      ? AppColors.strokeMedium
+                      ? const Color(0x1FFFFFFF)
                       : AppColors.primary.withValues(alpha: 0.5),
                   width: 1.0,
                 ),
@@ -1864,7 +1925,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(icon, style: const TextStyle(fontSize: 14)),
+                  const Icon(
+                    Icons.mic_none_rounded,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Озвучка: ',
@@ -1916,35 +1981,53 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Слева: четкий постер 2:3 (240x360) со скругленными углами (flat matte)
-          Container(
-            width: 240,
-            height: 360,
-            decoration: BoxDecoration(
-              color: const Color(0xFF161B26),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: const Color(0x14FFFFFF),
-                width: 1,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Hero(
-                tag: 'anime-poster-${title.id}',
-                child: SafeAnimePoster(
-                  imageUrl: posterImage,
-                  fallbackUrl: title.effectiveFallbackPoster,
-                  title: title.displayTitle,
-                  monogramFontSize: 56,
+          // Левая колонка действий в стиле Steam (width: 280px)
+          SizedBox(
+            width: 280,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 280,
+                  height: 390,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B26),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0x14FFFFFF),
+                      width: 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Hero(
+                      tag: 'anime-poster-${title.id}',
+                      child: SafeAnimePoster(
+                        imageUrl: posterImage,
+                        fallbackUrl: title.effectiveFallbackPoster,
+                        title: title.displayTitle,
+                        monogramFontSize: 56,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 14),
+                _buildWatchButton(context, currentEpisode, width: 280, height: 44),
+                const SizedBox(height: 10),
+                _buildSecondaryActionsRow(
+                  context,
+                  title,
+                  currentEpisode,
+                  backdropUrl,
+                  isDesktop: true,
+                ),
+              ],
             ),
           ),
 
           const SizedBox(width: 28),
 
-          // Справа: колонка с метаданными, описанием, озвучкой и действиями
+          // Справа: колонка с метаданными, описанием и озвучкой
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1997,19 +2080,39 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                   const SizedBox(height: 14),
                 ],
 
-                // Выбор озвучки
-                _buildVoiceoverSelector(context, episodes),
-
-                const SizedBox(height: 16),
-
-                // Ряд кнопок действий: компактная «Смотреть» (width: 220) + вторичные кнопки
+                // Единая горизонтальная панель инструментов: Озвучка + Трейлеры + Читать мангу + Скачать
                 Wrap(
-                  spacing: 12,
-                  runSpacing: 10,
+                  spacing: 8,
+                  runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _buildWatchButton(context, currentEpisode, width: 220, height: 46),
-                    _buildSecondaryActionsRow(context, title, currentEpisode, backdropUrl, isDesktop: true),
+                    _buildVoiceoverSelector(context, episodes),
+                    _buildDesktopToolbarPill(
+                      icon: Icons.movie_outlined,
+                      label: 'Трейлеры',
+                      onTap: () {
+                        context.pushNamed('anime-videos', extra: {
+                          'title': _currentTitle.displayTitle,
+                          'backdrop': backdropUrl,
+                          'videos': _videos,
+                        });
+                      },
+                    ),
+                    if (_currentTitle.id > 0 && !_isAnimeOriginalConfirmed)
+                      _buildDesktopToolbarPill(
+                        icon: Icons.menu_book_outlined,
+                        iconColor: AppColors.primaryLight,
+                        isLoading: _isOpeningManga,
+                        label: _mangaBridge?.continueFromChapter != null
+                            ? 'Читать мангу • ${_mangaBridge!.isEstimatedChapter ? '~' : ''}с ${_mangaBridge!.continueFromChapter} гл.'
+                            : 'Читать мангу',
+                        onTap: () => _handleReadMangaTap(title),
+                      ),
+                    _buildDesktopToolbarPill(
+                      icon: Icons.cloud_download_outlined,
+                      label: 'Скачать',
+                      onTap: () => _openTorrentsSheet(context),
+                    ),
                   ],
                 ),
               ],
@@ -2031,14 +2134,17 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         _manualCompactEpisodeGrid ?? (episodes.length > kCompactEpisodeGridThreshold);
 
     if (!isCompactGrid) {
+      final desktopCols = MediaQuery.sizeOf(context).width >= 1360
+          ? 4
+          : (MediaQuery.sizeOf(context).width >= 1024 ? 3 : 2);
       return [
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
           sliver: isDesktop
               ? SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 4.2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: desktopCols,
+                    childAspectRatio: desktopCols >= 3 ? 3.1 : 4.2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 10,
                   ),
@@ -2942,15 +3048,15 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.spacingXl,
+                    horizontal: 24,
                     vertical: AppDimensions.spacingSm,
                   ),
                   child: Container(
-                    height: 44,
+                    height: 42,
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppColors.strokeMedium),
                     ),
                     child: TabBar(
@@ -2961,14 +3067,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                       },
                       indicator: BoxDecoration(
                         color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.35),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       indicatorSize: TabBarIndicatorSize.tab,
                       dividerColor: Colors.transparent,

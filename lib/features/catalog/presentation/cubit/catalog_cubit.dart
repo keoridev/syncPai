@@ -67,6 +67,9 @@ class CatalogCubit extends Cubit<CatalogState> {
   int _requestId = 0;
   int _loadGeneration = 0;
   bool _initialized = false;
+  List<AnimeTitle> _seasonOngoingTitles = [];
+  List<AnimeTitle> _topWeekTitles = [];
+  bool _curatedFeedsLoading = false;
 
   void _cancelForeignInFlight(String activeSignature) {
     final prefix = '${activeSignature}_p';
@@ -81,15 +84,37 @@ class CatalogCubit extends Cubit<CatalogState> {
     }
   }
 
+  /// Фильтрует старые ретро-переозвучки (год < 2025 или суффиксы «новая озвучка» / «переозвучка»).
+  static bool isModernNonRedubRelease(AnimeTitle t) {
+    final titleLower =
+        '${t.russianTitle} ${t.englishTitle} ${t.displayTitle}'.toLowerCase();
+    if (titleLower.contains('новая озвучка') ||
+        titleLower.contains('переозвучка') ||
+        titleLower.contains('небеса у берегов красной реки') ||
+        titleLower.contains('sora wa akai kawa no hotori')) {
+      return false;
+    }
+    if (t.year == null || t.year! < 2025) {
+      return false;
+    }
+    return true;
+  }
+
   /// Единая таблица маппинга быстрых вкладок каталога в источник данных [CatalogTabSource].
   static Map<String, CatalogTabSource> get quickTabSources => {
         'all': const AnilibriaCatalogSource(
-          CatalogFilter(sorting: CatalogSorting.freshAtDesc),
+          CatalogFilter(
+            sorting: CatalogSorting.freshAtDesc,
+            yearFrom: 2025,
+            yearTo: 2026,
+          ),
         ),
         'ongoing': const AnilibriaCatalogSource(
           CatalogFilter(
-            sorting: CatalogSorting.freshAtDesc,
+            sorting: CatalogSorting.ratingDesc,
             publishStatuses: [PublishStatus.isOngoing],
+            yearFrom: 2025,
+            yearTo: 2026,
           ),
         ),
         'released': const AnilibriaCatalogSource(
@@ -229,6 +254,9 @@ class CatalogCubit extends Cubit<CatalogState> {
               cancelToken: cancelToken,
             );
             incoming = pageResult.items.map((e) => e.toAnimeTitle()).toList();
+            if (filter.yearFrom != null && filter.yearFrom! >= 2025) {
+              incoming = incoming.where(isModernNonRedubRelease).toList();
+            }
             hasMore = pageResult.hasMore;
             break;
 
@@ -338,6 +366,8 @@ class CatalogCubit extends Cubit<CatalogState> {
           activeFilterKey: sig,
           isRefreshing: false,
           isLoadingNextPage: false,
+          seasonOngoingTitles: _seasonOngoingTitles,
+          topWeekTitles: _topWeekTitles,
         ));
       } catch (e) {
         if (currentGen != _loadGeneration || cancelToken.isCancelled || isClosed) {
@@ -581,7 +611,11 @@ class CatalogCubit extends Cubit<CatalogState> {
         isMangaLoadingMore: _isMangaLoadingMore,
         hasMoreManga: _hasMoreManga,
         mangaSearchQuery: _mangaSearchQuery,
+        seasonOngoingTitles: _seasonOngoingTitles,
+        topWeekTitles: _topWeekTitles,
       ));
+      unawaited(_loadDesktopCuratedFeeds());
+      CatalogPrefetchService.instance.startPrefetchQueue();
       _scheduleMangaPrefetch();
       _scheduleHdMetaEnrichment(cached);
 
@@ -639,12 +673,15 @@ class CatalogCubit extends Cubit<CatalogState> {
     final useCase = getCatalogUseCase ??
         (getIt.isRegistered<GetCatalogUseCase>() ? getIt<GetCatalogUseCase>() : null);
 
+    final bool enforceModernFilter =
+        sortBy == CatalogSort.updates || statusFilter == 'ongoing';
     if (useCase != null) {
       try {
         final entities = await useCase(
           page: page,
           limit: 40,
           genres: genreParam,
+          year: enforceModernFilter ? '2025,2026' : null,
           sort: sortBy.name,
           status: statusFilter,
           types: typeFilter,
@@ -652,6 +689,10 @@ class CatalogCubit extends Cubit<CatalogState> {
         ).timeout(const Duration(seconds: 10));
         if (entities.isNotEmpty) {
           fetchedTitles = entities.map((e) => e.toAnimeTitle()).toList();
+          if (enforceModernFilter) {
+            fetchedTitles =
+                fetchedTitles.where(isModernNonRedubRelease).toList();
+          }
         }
         return fetchedTitles;
       } catch (e) {
@@ -661,8 +702,92 @@ class CatalogCubit extends Cubit<CatalogState> {
 
     if (fetchedTitles.isEmpty) {
       fetchedTitles = await getUpdates(page: page, limit: 40);
+      if (enforceModernFilter) {
+        fetchedTitles = fetchedTitles.where(isModernNonRedubRelease).toList();
+      }
     }
     return fetchedTitles;
+  }
+
+  Future<void> _loadDesktopCuratedFeeds({bool force = false}) async {
+    if (isClosed || _curatedFeedsLoading) return;
+    if (!force &&
+        _seasonOngoingTitles.isNotEmpty &&
+        _topWeekTitles.isNotEmpty) {
+      return;
+    }
+    _curatedFeedsLoading = true;
+    try {
+      final useCase = getCatalogUseCase ??
+          (getIt.isRegistered<GetCatalogUseCase>()
+              ? getIt<GetCatalogUseCase>()
+              : null);
+      final shikiDs = shikimoriRemoteDataSource ??
+          (getIt.isRegistered<ShikimoriRemoteDataSource>()
+              ? getIt<ShikimoriRemoteDataSource>()
+              : null);
+
+      final ongoingFuture = useCase != null
+          ? useCase
+              .getReleases(
+                filter: const CatalogFilter(
+                  sorting: CatalogSorting.ratingDesc,
+                  publishStatuses: [PublishStatus.isOngoing],
+                  yearFrom: 2025,
+                  yearTo: 2026,
+                ),
+                page: 1,
+                limit: 24,
+              )
+              .then((p) => p.items
+                  .map((e) => e.toAnimeTitle())
+                  .where(isModernNonRedubRelease)
+                  .toList())
+              .catchError((_) => <AnimeTitle>[])
+          : Future.value(<AnimeTitle>[]);
+
+      final topWeekFuture = shikiDs != null
+          ? shikiDs
+              .getWeeklyTrending(limit: 15)
+              .then((items) => items.where(isModernNonRedubRelease).toList())
+              .catchError((_) => <AnimeTitle>[])
+          : Future.value(<AnimeTitle>[]);
+
+      final results = await Future.wait([ongoingFuture, topWeekFuture]);
+      if (isClosed) return;
+
+      if (results[0].isNotEmpty) {
+        _seasonOngoingTitles = results[0];
+      }
+      if (results[1].isNotEmpty) {
+        _topWeekTitles = results[1];
+      } else if (useCase != null && _topWeekTitles.isEmpty) {
+        try {
+          final fallbackPage = await useCase.getReleases(
+            filter: const CatalogFilter(
+              sorting: CatalogSorting.ratingDesc,
+              yearFrom: 2025,
+              yearTo: 2026,
+            ),
+            page: 1,
+            limit: 15,
+          );
+          _topWeekTitles = fallbackPage.items
+              .map((e) => e.toAnimeTitle())
+              .where(isModernNonRedubRelease)
+              .toList();
+        } catch (_) {}
+      }
+
+      if (state is CatalogLoaded && !isClosed) {
+        emit((state as CatalogLoaded).copyWith(
+          seasonOngoingTitles: _seasonOngoingTitles,
+          topWeekTitles: _topWeekTitles,
+        ));
+      }
+    } finally {
+      _curatedFeedsLoading = false;
+    }
   }
 
   /// Загрузка данных каталога для выбранной категории (с авто-догрузкой до >= 12 карточек)
@@ -680,9 +805,12 @@ class CatalogCubit extends Cubit<CatalogState> {
       }
     } else {
       if (state is! CatalogLoaded) {
-        final localSnapshot = CatalogPersistentStore.instance.queryLocal(
-          genre: cleanCategory == 'Все' ? null : cleanCategory,
-        );
+        final localSnapshot = CatalogPersistentStore.instance
+            .queryLocal(
+              genre: cleanCategory == 'Все' ? null : cleanCategory,
+            )
+            .where(isModernNonRedubRelease)
+            .toList();
         if (localSnapshot.isNotEmpty) {
           emit(CatalogLoaded(
             titles: localSnapshot,
@@ -856,7 +984,11 @@ class CatalogCubit extends Cubit<CatalogState> {
         isMangaLoadingMore: _isMangaLoadingMore,
         hasMoreManga: _hasMoreManga,
         mangaSearchQuery: _mangaSearchQuery,
+        seasonOngoingTitles: _seasonOngoingTitles,
+        topWeekTitles: _topWeekTitles,
       ));
+      unawaited(_loadDesktopCuratedFeeds());
+      CatalogPrefetchService.instance.startPrefetchQueue();
       _scheduleMangaPrefetch();
     } catch (e) {
       if (requestId != _requestId ||
@@ -1776,7 +1908,11 @@ class CatalogCubit extends Cubit<CatalogState> {
         isMangaLoadingMore: _isMangaLoadingMore,
         hasMoreManga: _hasMoreManga,
         mangaSearchQuery: _mangaSearchQuery,
+        seasonOngoingTitles: _seasonOngoingTitles,
+        topWeekTitles: _topWeekTitles,
       ));
+      unawaited(_loadDesktopCuratedFeeds());
+      CatalogPrefetchService.instance.startPrefetchQueue();
       _scheduleMangaPrefetch();
     } catch (e) {
       if (requestId != _requestId ||

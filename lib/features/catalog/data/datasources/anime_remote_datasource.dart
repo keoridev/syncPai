@@ -398,8 +398,20 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       }
     }
 
-    final parsedYear =
-        (year != null && year.trim().isNotEmpty) ? int.tryParse(year.trim()) : null;
+    int? parsedYearFrom;
+    int? parsedYearTo;
+    if (year != null && year.trim().isNotEmpty) {
+      final yearValues = year
+          .split(',')
+          .map((e) => int.tryParse(e.trim()))
+          .whereType<int>()
+          .toList()
+        ..sort();
+      if (yearValues.isNotEmpty) {
+        parsedYearFrom = yearValues.first;
+        parsedYearTo = yearValues.last;
+      }
+    }
 
     final CatalogSorting sorting;
     switch ((sort ?? '').trim()) {
@@ -446,8 +458,8 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       types: parsedTypes,
       publishStatuses: publishStatuses,
       productionStatuses: productionStatuses,
-      yearFrom: parsedYear,
-      yearTo: parsedYear,
+      yearFrom: parsedYearFrom,
+      yearTo: parsedYearTo,
     );
 
     return getReleases(
@@ -474,7 +486,10 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
     // Нормализуем стандартные запросы (limit <= 40) к единому пулу limit=40,
     // чтобы дедуплицировать одновременные запросы виджетов и предзагрузки.
-    final int fetchLimit = limit <= 40 ? 40 : limit;
+    final int fetchLimit =
+        (filter.yearFrom != null && filter.yearFrom! >= 2025)
+            ? 50
+            : (limit <= 40 ? 40 : limit);
     final queryParams = filter.toQueryParameters(page: page, limit: fetchLimit);
     final dedupKey = '${filter.signature}|p=$page|l=$fetchLimit';
 
@@ -489,7 +504,8 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     // 2. Дедупликация активного in-flight запроса с изолированной обработкой CancelToken
     final Future<List<AnimeCatalogModel>> inFlightFuture =
         _inFlightRequests.putIfAbsent(dedupKey, () {
-      return _executeCatalogFetch(queryParams).then((items) {
+      return _executeCatalogFetch(queryParams, minYear: filter.yearFrom)
+          .then((items) {
         if (items.isNotEmpty) {
           _catalogCache[dedupKey] = _CachedCatalogPage(
             items: items,
@@ -522,8 +538,9 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   }
 
   Future<List<AnimeCatalogModel>> _executeCatalogFetch(
-    Map<String, dynamic> queryParams,
-  ) async {
+    Map<String, dynamic> queryParams, {
+    int? minYear,
+  }) async {
     Future<List<AnimeCatalogModel>> fetchWithParams(
       Map<String, dynamic> params,
     ) async {
@@ -548,8 +565,25 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
       return await _parseReleasesAsync(fallbackRes.data);
     }
 
+    List<AnimeCatalogModel> applyClientSideModernFilter(
+      List<AnimeCatalogModel> items,
+    ) {
+      if (minYear == null || minYear < 2025) return items;
+      return items.where((m) {
+        final titleLower = '${m.titleRu} ${m.titleEn}'.toLowerCase();
+        if (titleLower.contains('новая озвучка') ||
+            titleLower.contains('переозвучка') ||
+            titleLower.contains('небеса у берегов красной реки') ||
+            titleLower.contains('sora wa akai kawa no hotori')) {
+          return false;
+        }
+        return m.year != null && m.year! >= minYear;
+      }).toList();
+    }
+
     try {
-      return await fetchWithParams(queryParams);
+      final raw = await fetchWithParams(queryParams);
+      return applyClientSideModernFilter(raw);
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
       throw ServerException('Ошибка загрузки каталога AniLiberty: $e');
@@ -867,8 +901,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
 
       // Пропускаем прямой запрос, если это Shikimori ID (> 12000 без маппинга) или ID уже вернул 404
       final effectiveId = mappedId ?? '$releaseId';
-      final isLikelyExternalShikimoriId =
-          mappedId == null && releaseId > 12000 && isSearchableTitle;
+      final isLikelyExternalShikimoriId = mappedId == null && releaseId > 12000;
       final skipDirectIdLookup =
           (mappedId == null && releaseId <= 0) ||
           rawTitle.startsWith('search:') ||

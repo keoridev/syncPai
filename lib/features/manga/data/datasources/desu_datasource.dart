@@ -9,6 +9,7 @@ class DesuDataSource {
   final Dio _dio;
 
   static const String _baseUrl = 'https://desu.uno/manga/api';
+  static bool _isEndpointGone = false;
 
   DesuDataSource({Dio? customDio})
       : _dio = customDio ??
@@ -40,6 +41,7 @@ class DesuDataSource {
     String? kinds,
     String? search,
   }) async {
+    if (_isEndpointGone) return const [];
     try {
       final params = <String, dynamic>{
         'limit': limit,
@@ -94,6 +96,15 @@ class DesuDataSource {
         );
       }
       return results;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 410) {
+        _isEndpointGone = true;
+        return const [];
+      }
+      if (kDebugMode) {
+        debugPrint('[Desu] browseCatalog error ($search): $e');
+      }
+      return const [];
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[Desu] browseCatalog error ($search): $e');
@@ -103,6 +114,7 @@ class DesuDataSource {
   }
 
   Future<List<MangaDexChapter>> getChapters(String mangaId) async {
+    if (_isEndpointGone) return const [];
     final cleanId = mangaId.replaceFirst('desu:', '').trim();
     if (cleanId.isEmpty) return const [];
     try {
@@ -146,6 +158,15 @@ class DesuDataSource {
         return na.compareTo(nb);
       });
       return out;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 410) {
+        _isEndpointGone = true;
+        return const [];
+      }
+      if (kDebugMode) {
+        debugPrint('[Desu] getChapters($cleanId) error: $e');
+      }
+      return const [];
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[Desu] getChapters($cleanId) error: $e');
@@ -155,6 +176,7 @@ class DesuDataSource {
   }
 
   Future<List<String>> getChapterPages(String compositeChapterId) async {
+    if (_isEndpointGone) return const [];
     final clean = compositeChapterId.replaceFirst('desu:', '').trim();
     final parts = clean.split(':');
     if (parts.length < 2) return const [];
@@ -178,6 +200,11 @@ class DesuDataSource {
         }
       }
       return urls;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 410) {
+        _isEndpointGone = true;
+      }
+      return const [];
     } catch (_) {
       return const [];
     }

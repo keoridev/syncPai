@@ -15,6 +15,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/player_navigation_guard.dart';
 import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/glass_container.dart';
+import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../../../core/widgets/shimmer_placeholder.dart';
 import '../../../../core/widgets/view_mode_toggle.dart';
 import '../../../../core/widgets/tv_focusable.dart';
@@ -320,41 +321,23 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
   }) {
     final posterUrl = _resolvePosterUrl(entry);
     final br = borderRadius ?? BorderRadius.circular(12);
-    final hasValidUrl = posterUrl.isNotEmpty &&
-        !posterUrl.contains('placeholder') &&
-        posterUrl.startsWith('http');
-
-    if (!hasValidUrl) {
-      _triggerPosterFetch(entry);
-      return ShimmerPlaceholder(
-        width: width ?? double.infinity,
-        height: height ?? double.infinity,
-        borderRadius: br,
-      );
-    }
-
-    return CachedNetworkImage(
-      imageUrl: wrapCorsSafeUrl(posterUrl),
+    return SizedBox(
       width: width,
       height: height,
-      memCacheWidth: 360,
-      maxWidthDiskCache: 480,
-      fit: BoxFit.cover,
-      alignment: Alignment.topCenter,
-      filterQuality: FilterQuality.high,
-      placeholder: (_, __) => ShimmerPlaceholder(
-        width: width ?? double.infinity,
-        height: height ?? double.infinity,
-        borderRadius: br,
+      child: SafeAnimePoster(
+        key: ValueKey('poster_${entry.animeId}_${entry.cleanTitleRu}'),
+        imageUrl: posterUrl,
+        title: entry.cleanTitleRu,
+        malId: entry.animeId > 0 ? entry.animeId : null,
+        borderRadius: br.topLeft.x,
+        memCacheWidth: 360,
+        monogramFontSize: (width != null && width < 60) ? 18 : 28,
+        onPosterResolved: (url) {
+          if (entry.posterUrl != url) {
+            context.read<AnimeListCubit>().updatePosterUrl(entry.animeId, url);
+          }
+        },
       ),
-      errorWidget: (_, __, ___) {
-        _triggerPosterFetch(entry);
-        return ShimmerPlaceholder(
-          width: width ?? double.infinity,
-          height: height ?? double.infinity,
-          borderRadius: br,
-        );
-      },
     );
   }
 
@@ -1176,18 +1159,31 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                                                 children: [
                                                   ClipRRect(
                                                     borderRadius: BorderRadius.circular(6),
-                                                    child: Container(
+                                                    child: SizedBox(
                                                       width: 38,
                                                       height: 52,
-                                                      color: AppColors.surfaceElevated,
-                                                      child: recent.posterUrl.isNotEmpty
-                                                          ? CachedNetworkImage(
-                                                              imageUrl: wrapCorsSafeUrl(recent.posterUrl),
-                                                              fit: BoxFit.cover,
-                                                              memCacheWidth: 100,
-                                                              errorWidget: (_, __, ___) => const Icon(Icons.movie, size: 16),
-                                                            )
-                                                          : const Icon(Icons.play_arrow_rounded, size: 20),
+                                                      child: SafeAnimePoster(
+                                                        key: ValueKey(
+                                                          'poster_${recent.titleId}_${recent.titleName}',
+                                                        ),
+                                                        imageUrl: recent.posterUrl,
+                                                        title: recent.titleName,
+                                                        malId: recent.titleId > 0
+                                                            ? recent.titleId
+                                                            : null,
+                                                        memCacheWidth: 100,
+                                                        monogramFontSize: 18,
+                                                        onPosterResolved: (url) {
+                                                          if (recent.posterUrl != url) {
+                                                            context
+                                                                .read<AnimeListCubit>()
+                                                                .updatePosterUrl(
+                                                                  recent.titleId,
+                                                                  url,
+                                                                );
+                                                          }
+                                                        },
+                                                      ),
                                                     ),
                                                   ),
                                                   const SizedBox(width: 10),
@@ -1662,17 +1658,33 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
                       sliver: SliverGrid(
                         gridDelegate: isDesktop
-                            ? const SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: 215,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 0.62,
-                              )
+                            ? () {
+                                final approxW =
+                                    (MediaQuery.sizeOf(context).width - 230 - 48)
+                                        .clamp(360.0, 2400.0);
+                                final cols = (approxW / 231).ceil().clamp(2, 8);
+                                final cardW = ((approxW - 16 * (cols - 1)) / cols)
+                                    .clamp(150.0, 215.0);
+                                return SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 215,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio:
+                                      cardW / (cardW * 1.5 + 68),
+                                );
+                              }()
                             : SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: _gridColumns,
                                 childAspectRatio: _gridColumns == 1
                                     ? 2.8
-                                    : (_gridColumns >= 3 ? 0.56 : 0.62),
+                                    : () {
+                                        final w = MediaQuery.sizeOf(context).width -
+                                            AppDimensions.spacingXl * 2;
+                                        final cardW =
+                                            (w - 12.0 * (_gridColumns - 1)) /
+                                                _gridColumns;
+                                        return cardW / (cardW * 1.5 + 68);
+                                      }(),
                                 crossAxisSpacing: _gridColumns == 1 ? 0 : 12.0,
                                 mainAxisSpacing: _gridColumns == 1 ? 8 : 12.0,
                               ),
@@ -1809,6 +1821,13 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               isSelectionMode: _isSelectionMode,
                               isSelected: _selectedAnimeIds.contains(entry.animeId),
                               heroTagPrefix: 'saved-anime-poster',
+                              onPosterResolved: (url) {
+                                if (entry.posterUrl != url) {
+                                  context
+                                      .read<AnimeListCubit>()
+                                      .updatePosterUrl(entry.animeId, url);
+                                }
+                              },
                             );
                           },
                           childCount: entries.length,

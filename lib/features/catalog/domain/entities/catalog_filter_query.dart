@@ -70,13 +70,6 @@ extension CatalogFilterQuery on CatalogFilter {
       params['f[production_statuses]'] = sorted.join(',');
     }
 
-    if (yearFrom != null) {
-      params['f[years][from_year]'] = yearFrom;
-    }
-    if (yearTo != null) {
-      params['f[years][to_year]'] = yearTo;
-    }
-
     final cleanSearch = search?.trim() ?? '';
     if (cleanSearch.isNotEmpty) {
       params['f[search]'] = cleanSearch;

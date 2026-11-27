@@ -440,22 +440,13 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
         margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isMangaTheme
-              ? const Color(0xFFFFFFFF)
+              ? const Color(0xFF161920)
               : (isDark
                   ? const Color(0xFF131720)
                   : scheme.surfaceContainerLowest.withValues(alpha: 0.94)),
-          borderRadius: BorderRadius.circular(isMangaTheme ? 6 : 18),
+          borderRadius: BorderRadius.circular(isMangaTheme ? 12 : 18),
           border: isMangaTheme
-              ? Border.all(color: const Color(0xFF111111), width: 2.0)
-              : null,
-          boxShadow: isMangaTheme
-              ? const [
-                  BoxShadow(
-                    color: Color(0xFF111111),
-                    offset: Offset(3, 3),
-                    blurRadius: 0,
-                  ),
-                ]
+              ? Border.all(color: const Color(0x33F8FAFC), width: 1.5)
               : null,
         ),
         clipBehavior: Clip.antiAlias,
@@ -985,6 +976,32 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                             ),
                           ),
                         ),
+                        if (widget.profile.isDevAccount) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A202E),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0x66FF6B4A),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Text(
+                              'DEV',
+                              style: TextStyle(
+                                color: Color(0xFFFF6B4A),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.all(4),

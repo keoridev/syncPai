@@ -1,11 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/network/image_cors_helper.dart';
-import '../../../../core/network/syncpai_poster_cache_manager.dart';
 import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
 import '../../domain/entities/anime_title.dart';
@@ -31,6 +29,7 @@ class UnifiedAnimeCard extends StatelessWidget {
   final String? heroTagPrefix;
   final bool isCompact;
   final AnimeListStatus? userListStatus;
+  final ValueChanged<String>? onPosterResolved;
 
   const UnifiedAnimeCard({
     super.key,
@@ -48,10 +47,11 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.heroTagPrefix,
     this.isCompact = false,
     this.userListStatus,
+    this.onPosterResolved,
   });
 
-  static const double posterRadius = 16.0;
-  static const double posterAspectRatio = 0.68;
+  static const double posterRadius = 14.0;
+  static const double posterAspectRatio = 2 / 3;
 
   @override
   Widget build(BuildContext context) {
@@ -76,14 +76,13 @@ class UnifiedAnimeCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. Постер с фиксированными пропорциями (0.68 / 2:3) и скруглением 16px
-              Expanded(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: posterAspectRatio,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(posterRadius),
-                      child: Container(
+              // 1. Постер с фиксированными пропорциями (2:3) и скруглением 14px
+              AspectRatio(
+                aspectRatio: posterAspectRatio,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(posterRadius),
+                  child: SizedBox.expand(
+                    child: Container(
                         decoration: BoxDecoration(
                           color: const Color(0xFF161A22),
                           borderRadius: BorderRadius.circular(posterRadius),
@@ -98,47 +97,38 @@ class UnifiedAnimeCard extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (!AnimePosterResolver.isMissingOrPlaceholder(posterUrl))
-                              Hero(
-                                tag: '${heroTagPrefix ?? 'anime-poster'}-${title.id}',
-                                child: CachedNetworkImage(
-                                  imageUrl: wrapCorsSafeUrl(posterUrl),
-                                  cacheKey: posterUrl,
-                                  cacheManager: SyncPaiPosterCacheManager.instance,
-                                  memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(420),
-                                  maxWidthDiskCache: 480,
-                                  fit: BoxFit.cover,
-                                  alignment: Alignment.topCenter,
-                                  httpHeaders: const {
-                                    'User-Agent':
-                                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                                  },
-                                  placeholder: (context, url) => _buildPlaceholder(),
-                                  errorWidget: (context, primaryUrl, error) {
-                                    if (fallbackPoster.isNotEmpty && fallbackPoster != posterUrl) {
-                                      return CachedNetworkImage(
-                                        imageUrl: wrapCorsSafeUrl(fallbackPoster),
-                                        cacheKey: fallbackPoster,
-                                        cacheManager: SyncPaiPosterCacheManager.instance,
-                                        memCacheWidth: DevicePerformanceService.instance.downscaleMemCacheWidth(420),
-                                        maxWidthDiskCache: 480,
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.topCenter,
-                                        httpHeaders: const {
-                                          'User-Agent':
-                                              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                                        },
-                                        placeholder: (context, url) => _buildPlaceholder(),
-                                        errorWidget: (context, fallbackUrl, error) =>
-                                            _buildErrorPlaceholder(),
-                                      );
-                                    }
-                                    return _buildErrorPlaceholder();
-                                  },
+                            if (!AnimePosterResolver.isMissingOrPlaceholder(posterUrl) ||
+                                !AnimePosterResolver.isMissingOrPlaceholder(fallbackPoster) ||
+                                title.displayTitle.trim().isNotEmpty)
+                              Positioned.fill(
+                                child: SizedBox.expand(
+                                  child: Hero(
+                                    tag: '${heroTagPrefix ?? 'anime-poster'}-${title.id}',
+                                    child: SafeAnimePoster(
+                                      key: ValueKey(
+                                        'poster_${title.id}_${title.displayTitle}',
+                                      ),
+                                      imageUrl: posterUrl,
+                                      fallbackUrl: fallbackPoster,
+                                      title: title.displayTitle,
+                                      englishTitle: title.englishTitle,
+                                      malId: title.shikimoriId ??
+                                          (title.id > 0 ? title.id : null),
+                                      yearOrFormat: title.year != null
+                                          ? '${title.year}${title.kind != null ? ' • ${title.kind}' : ''}'
+                                          : title.kind,
+                                      onPosterResolved: onPosterResolved,
+                                      fit: BoxFit.cover,
+                                      alignment: Alignment.center,
+                                      memCacheWidth: DevicePerformanceService.instance
+                                          .downscaleMemCacheWidth(420),
+                                      monogramFontSize: 40,
+                                    ),
+                                  ),
                                 ),
                               )
                             else
-                              _buildPlaceholder(),
+                              Positioned.fill(child: _buildPlaceholder()),
 
                             // Мягкий виньеточный градиент снизу для глубины
                             Positioned.fill(
@@ -262,7 +252,16 @@ class UnifiedAnimeCard extends StatelessWidget {
                               ),
 
                             // Пилл личного статуса пользователя на постере (поиск, каталог, рекомендации)
-                            if (userListStatus != null)
+                            if (userListStatus != null &&
+                                !((title.isAnnounced ||
+                                        title.status
+                                            .toLowerCase()
+                                            .contains('анонс') ||
+                                        title.status
+                                            .toLowerCase()
+                                            .contains('anons')) &&
+                                    userListStatus ==
+                                        AnimeListStatus.completed))
                               Positioned(
                                 left: 8,
                                 bottom: (watchProgress != null &&
@@ -299,35 +298,41 @@ class UnifiedAnimeCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 4),
+              const SizedBox(height: 5),
 
-              // 2. Название тайтла и метаданные без переполнения на 3-колоночной сетке
+              // 2. Фиксированный слот под название (2 строки, height: 35) + 1 строка метаданных
               Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title.displayTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.start,
-                    style: AppTypography.bodySmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      fontSize: isCompact ? 11.5 : (isNarrow ? 11.5 : 12.5),
-                      height: 1.2,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.1,
+                  SizedBox(
+                    height: 35,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        title.displayTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.start,
+                        style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: isCompact ? 11.5 : (isNarrow ? 11.5 : 13.0),
+                          height: 1.3,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.1,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitleOverride ?? _buildMetaSubtitle(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.caption.copyWith(
                       fontSize: isCompact ? 9.5 : 10.5,
+                      height: 1.2,
                       fontWeight: FontWeight.w400,
                       color: AppColors.textMuted,
                       letterSpacing: 0.1,
@@ -352,13 +357,18 @@ class UnifiedAnimeCard extends StatelessWidget {
   }
 
   String _defaultTopLeftBadgeText() {
-    if (title.latestEpisode == null && title.year == null) return '';
-    if (title.status == 'Онгоинг') {
+    final statusLower = title.status.toLowerCase();
+    if (title.isAnnounced ||
+        statusLower.contains('анонс') ||
+        statusLower.contains('anons')) {
+      return 'Анонс';
+    }
+    if (statusLower.contains('онгоинг') || statusLower.contains('ongoing')) {
       return title.latestEpisode != null
           ? 'Онгоинг • ${title.episodesBadgeText}'
           : 'Онгоинг';
     }
-    return title.year != null ? '${title.year}' : title.episodesBadgeText;
+    return title.episodesBadgeText;
   }
 
   /// Стильный тёмный плейсхолдер (#161A22 с иконкой киноленты и деликатным индикатором)
@@ -385,60 +395,6 @@ class UnifiedAnimeCard extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  /// Заглушка при ошибке загрузки обложки: аккуратный тёмный блок (#161A22) с названием тайтла
-  Widget _buildErrorPlaceholder() {
-    return Container(
-      color: const Color(0xFF161A22),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
-            ),
-            child: Icon(
-              Icons.movie_outlined,
-              color: AppColors.textMuted.withValues(alpha: 0.8),
-              size: 18,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title.displayTitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: AppTypography.caption.copyWith(
-              fontWeight: FontWeight.w700,
-              color: AppColors.textSecondary,
-              fontSize: 10.5,
-              height: 1.2,
-            ),
-          ),
-          if (title.year != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              '${title.year}',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textMuted,
-                fontSize: 9.5,
-              ),
-            ),
-          ],
         ],
       ),
     );

@@ -1,16 +1,25 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import '../../../../app/di/injection.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/liquid_glass_nav_bar.dart';
+import '../../../../core/widgets/manga_panel_painter.dart';
+import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../../../core/widgets/sync_pai_logo.dart';
 import '../../../anime_lists/presentation/screens/saved_anime_screen.dart';
 import '../../../catalog/domain/entities/anime_title.dart';
 import '../../../catalog/presentation/screens/catalog_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
+import '../../../profile/services/friends_service.dart';
 import '../../../shorts/presentation/screens/anime_shorts_screen.dart';
 import '../../../sync_room/presentation/screens/watch_together_screen.dart';
 import '../../../sync_room/presentation/widgets/floating_room_overlay.dart';
+import '../../../watch_history/presentation/cubit/watch_history_cubit.dart';
+import '../../../watch_history/presentation/cubit/watch_history_state.dart';
 import '../../../winter_theme/presentation/widgets/background_snow_layer.dart';
 
 /// Главный экран приложения со связкой 5 разделов:
@@ -200,14 +209,18 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Боковой сайдбар на широких экранах (планшеты, десктоп)
   Widget _buildLeftSidebar(BuildContext context, Color themePrimary) {
+    final scheme = Theme.of(context).colorScheme;
+    final isManga = isMangaPrintTheme(context);
+    final showWidgets = MediaQuery.sizeOf(context).height >= 720;
+
     return Container(
       width: 230,
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
+      decoration: BoxDecoration(
+        color: isManga ? const Color(0xFF161920) : scheme.surface,
         border: Border(
           right: BorderSide(
-            color: AppColors.stroke,
-            width: 1.0,
+            color: isManga ? const Color(0x33F8FAFC) : AppColors.stroke,
+            width: isManga ? 1.5 : 1.0,
           ),
         ),
       ),
@@ -226,10 +239,10 @@ class _MainScreenState extends State<MainScreen> {
                     accentColor: themePrimary,
                   ),
                   const SizedBox(width: 12),
-                  const Text(
+                  Text(
                     'SyncPai',
                     style: TextStyle(
-                      color: AppColors.textPrimary,
+                      color: scheme.onSurface,
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,
@@ -238,15 +251,262 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
             _buildSidebarItem(0, Icons.movie_outlined, Icons.movie_rounded, 'Каталог', themePrimary),
             _buildSidebarItem(1, Icons.play_circle_outline_rounded, Icons.play_circle_filled_rounded, 'Моменты', themePrimary),
             _buildSidebarItem(2, Icons.people_outline_rounded, Icons.people_alt_rounded, 'Вместе', themePrimary),
             _buildSidebarItem(3, Icons.bookmark_border_rounded, Icons.bookmark_rounded, 'Списки', themePrimary),
             _buildSidebarItem(4, Icons.person_outline_rounded, Icons.person_rounded, 'Профиль', themePrimary),
+            if (showWidgets)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildSidebarContinueCard(context, themePrimary, isManga),
+                      const SizedBox(height: 12),
+                      _buildSidebarOnlineFriends(context, themePrimary, isManga),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSidebarContinueCard(
+    BuildContext context,
+    Color themePrimary,
+    bool isManga,
+  ) {
+    if (!getIt.isRegistered<WatchHistoryCubit>()) {
+      return const SizedBox.shrink();
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return BlocBuilder<WatchHistoryCubit, WatchHistoryState>(
+      bloc: getIt<WatchHistoryCubit>(),
+      builder: (context, state) {
+        if (state.history.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final item = state.history.firstWhere(
+          (i) => i.progress > 0,
+          orElse: () => state.history.first,
+        );
+        return Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isManga ? const Color(0xFF1C2029) : const Color(0xFF131722),
+            borderRadius: BorderRadius.circular(isManga ? 10 : 12),
+            border: Border.all(
+              color: isManga ? const Color(0x33F8FAFC) : const Color(0x14FFFFFF),
+              width: isManga ? 1.5 : 1.0,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'ПРОДОЛЖИТЬ',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.7,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 34,
+                    height: 48,
+                    child: SafeAnimePoster(
+                      imageUrl: item.posterUrl,
+                      title: item.titleName,
+                      borderRadius: isManga ? 4 : 6,
+                      monogramFontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.titleName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Серия ${item.episode}',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: item.progress.clamp(0.05, 1.0),
+                            minHeight: 3,
+                            backgroundColor: isManga
+                                ? const Color(0x26F8FAFC)
+                                : const Color(0x18FFFFFF),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isManga ? const Color(0xFFF1F5F9) : const Color(0xFFFF6B4A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 30,
+                child: FilledButton(
+                  onPressed: () {
+                    context.pushNamed(
+                      'details',
+                      queryParameters: {'id': '${item.titleId}'},
+                      extra: {
+                        'id': '${item.titleId}',
+                        'russianTitle': item.titleName,
+                        'posterMedium': item.posterUrl,
+                      },
+                    );
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isManga ? const Color(0xFFF1F5F9) : const Color(0xFFFF6B4A),
+                    foregroundColor: isManga ? const Color(0xFF0D0F12) : Colors.white,
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'Продолжить',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSidebarOnlineFriends(
+    BuildContext context,
+    Color themePrimary,
+    bool isManga,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        FriendsService.friendsNotifier,
+        PresenceService.instance,
+      ]),
+      builder: (context, _) {
+        final online = FriendsService.friendsNotifier.value.where((f) {
+          final fid = (f['id'] ?? '').toString();
+          return f['isOnline'] == true ||
+              (fid.isNotEmpty && PresenceService.instance.isUserOnline(fid));
+        }).take(3).toList();
+        if (online.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isManga ? const Color(0xFF1C2029) : const Color(0xFF131722),
+            borderRadius: BorderRadius.circular(isManga ? 10 : 12),
+            border: Border.all(
+              color: isManga ? const Color(0x33F8FAFC) : const Color(0x14FFFFFF),
+              width: isManga ? 1.5 : 1.0,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'ДРУЗЬЯ ОНЛАЙН',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.7,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...online.map((f) {
+                final name = (f['username'] ?? f['name'] ?? 'Друг').toString();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: isManga ? const Color(0xFFF1F5F9) : const Color(0xFFFF6B4A),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () => switchTab(2),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isManga
+                                ? const Color(0xFFF1F5F9)
+                                : const Color(0xFF1A202E),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Войти',
+                            style: TextStyle(
+                              color: isManga ? const Color(0xFF0D0F12) : Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 

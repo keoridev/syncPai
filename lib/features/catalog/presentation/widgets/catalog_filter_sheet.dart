@@ -449,7 +449,7 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: themePrimary,
-                      foregroundColor: AppColors.textPrimary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -495,7 +495,9 @@ class _CatalogFilterSheetState extends State<CatalogFilterSheet> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : AppColors.textPrimary,
+            color: isSelected
+                ? AppColors.onColor(themePrimary)
+                : Theme.of(context).colorScheme.onSurface,
             fontSize: 12.5,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),

@@ -16,6 +16,8 @@ class ProfileCubit extends Cubit<ProfileState> {
   final AuthRepository? authRepository;
   final AnimeListRepository? animeListRepository;
   StreamSubscription<UserProfile?>? _authSubscription;
+  RealtimeChannel? _profileRealtimeChannel;
+  String? _subscribedProfileUserId;
 
   ProfileCubit({
     this.authRepository,
@@ -48,6 +50,10 @@ class ProfileCubit extends Cubit<ProfileState> {
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
+    String? favoriteMangaTitle,
+    String? favoriteMangaId,
+    String? favoriteMangaPoster,
+    String? showcaseMode,
     String? artworkUrl,
     String? artworkTitle,
     String? accentColor,
@@ -59,7 +65,7 @@ class ProfileCubit extends Cubit<ProfileState> {
   }) async {
     final current = state.profile;
     final sanitized = CustomizationTierPolicy.sanitizePayload(
-      tier: current.supporterTier,
+      tier: current.effectiveSupporterTier,
       frameId: frameId,
       backgroundId: backgroundId,
       customTitle: customTitle,
@@ -79,6 +85,10 @@ class ProfileCubit extends Cubit<ProfileState> {
       favoriteAnimeTitle: favoriteAnimeTitle,
       favoriteAnimeId: favoriteAnimeId,
       favoriteAnimePoster: favoriteAnimePoster,
+      favoriteMangaTitle: favoriteMangaTitle,
+      favoriteMangaId: favoriteMangaId,
+      favoriteMangaPoster: favoriteMangaPoster,
+      showcaseMode: showcaseMode,
       artworkUrl: sanitized.artworkUrl,
       artworkTitle: sanitized.artworkTitle,
       accentColor: accentColor,
@@ -104,6 +114,10 @@ class ProfileCubit extends Cubit<ProfileState> {
           favoriteAnimeTitle: favoriteAnimeTitle,
           favoriteAnimeId: favoriteAnimeId,
           favoriteAnimePoster: favoriteAnimePoster,
+          favoriteMangaTitle: favoriteMangaTitle,
+          favoriteMangaId: favoriteMangaId,
+          favoriteMangaPoster: favoriteMangaPoster,
+          showcaseMode: showcaseMode,
           artworkUrl: sanitized.artworkUrl,
           artworkTitle: sanitized.artworkTitle,
           accentColor: accentColor,
@@ -193,6 +207,9 @@ class ProfileCubit extends Cubit<ProfileState> {
             _safeEmit(state.copyWith(profile: updated));
           }
         });
+      }
+      if (currentUserId != null && currentUserId.isNotEmpty) {
+        _subscribeProfileRealtime(currentUserId);
       }
     } else {
       _safeEmit(state.copyWith(status: ProfileStatus.loading));
@@ -403,9 +420,46 @@ class ProfileCubit extends Cubit<ProfileState> {
     );
   }
 
+  void _subscribeProfileRealtime(String userId) {
+    if (_subscribedProfileUserId == userId && _profileRealtimeChannel != null) {
+      return;
+    }
+    _subscribedProfileUserId = userId;
+    try {
+      final client = Supabase.instance.client;
+      _profileRealtimeChannel?.unsubscribe();
+      _profileRealtimeChannel = client
+          .channel('profile_sync_$userId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'profiles',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'id',
+              value: userId,
+            ),
+            callback: (payload) {
+              if (isClosed || !state.isCurrentUser) return;
+              final rec = payload.newRecord;
+              if (rec.isEmpty) return;
+              try {
+                final synced = UserProfile.fromJson(rec);
+                _safeEmit(state.copyWith(
+                  status: ProfileStatus.loaded,
+                  profile: synced,
+                ));
+              } catch (_) {}
+            },
+          )
+          .subscribe();
+    } catch (_) {}
+  }
+
   @override
   Future<void> close() {
     _authSubscription?.cancel();
+    _profileRealtimeChannel?.unsubscribe();
     return super.close();
   }
 }

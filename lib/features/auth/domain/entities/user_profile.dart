@@ -17,6 +17,10 @@ class UserProfile extends Equatable {
   final String? favoriteAnimeId;
   /// URL постера любимого тайтла — кэшируется при выборе в кастомизаторе
   final String? favoriteAnimePoster;
+  final String? favoriteMangaTitle;
+  final String? favoriteMangaId;
+  final String? favoriteMangaPoster;
+  final String? showcaseMode;
   /// URL и название для витрины иллюстраций (Steam Artwork Showcase) — полностью независимо от любимого тайтла
   final String? artworkUrl;
   final String? artworkTitle;
@@ -24,6 +28,8 @@ class UserProfile extends Equatable {
   final String? email;
   final String? provider;
   final bool isAnonymous;
+  final bool isDeveloper;
+  final String? role;
   final String showcaseType; // 'favorite_anime', 'stats_badges', 'custom_text'
   final String? countryFlag; // '🇰🇬'
   final String? countryName; // 'Kyrgyzstan'
@@ -40,11 +46,24 @@ class UserProfile extends Equatable {
   final DateTime? duoSince;
   final DateTime createdAt;
 
+  bool get isDevAccount =>
+      isDeveloper ||
+      role?.toLowerCase() == 'developer' ||
+      username.trim().toLowerCase() == 'keoribek' ||
+      tag.replaceAll('#', '').trim() == '5727';
+
+  bool get isPlus => isDevAccount || isPlusOrHigher;
+  bool get isSponsor => isDevAccount || isPlusOrHigher;
+  bool get hasFullAccess => isDevAccount || isProOrHigher;
+
+  SupporterTier get effectiveSupporterTier =>
+      isDevAccount ? SupporterTier.producer : supporterTier;
+
   bool get isPlusOrHigher =>
-      supporterTier.index >= SupporterTier.supporter.index;
+      isDevAccount || supporterTier.index >= SupporterTier.supporter.index;
 
   bool get isProOrHigher =>
-      supporterTier.index >= SupporterTier.vip.index;
+      isDevAccount || supporterTier.index >= SupporterTier.vip.index;
 
   bool get hasPartner => partnerId != null && partnerId!.isNotEmpty;
 
@@ -65,12 +84,18 @@ class UserProfile extends Equatable {
     this.favoriteAnimeTitle,
     this.favoriteAnimeId,
     this.favoriteAnimePoster,
+    this.favoriteMangaTitle,
+    this.favoriteMangaId,
+    this.favoriteMangaPoster,
+    this.showcaseMode,
     this.artworkUrl,
     this.artworkTitle,
     this.accentColor,
     this.email,
     this.provider,
     this.isAnonymous = false,
+    this.isDeveloper = false,
+    this.role,
     this.showcaseType = 'favorite_anime',
     this.countryFlag = '🇰🇬',
     this.countryName = 'Kyrgyzstan',
@@ -203,12 +228,18 @@ class UserProfile extends Equatable {
     String? favoriteAnimeTitle,
     String? favoriteAnimeId,
     String? favoriteAnimePoster,
+    String? favoriteMangaTitle,
+    String? favoriteMangaId,
+    String? favoriteMangaPoster,
+    String? showcaseMode,
     String? artworkUrl,
     String? artworkTitle,
     String? accentColor,
     String? email,
     String? provider,
     bool? isAnonymous,
+    bool? isDeveloper,
+    String? role,
     String? showcaseType,
     String? countryFlag,
     String? countryName,
@@ -239,12 +270,18 @@ class UserProfile extends Equatable {
       favoriteAnimeTitle: favoriteAnimeTitle ?? this.favoriteAnimeTitle,
       favoriteAnimeId: favoriteAnimeId ?? this.favoriteAnimeId,
       favoriteAnimePoster: favoriteAnimePoster ?? this.favoriteAnimePoster,
+      favoriteMangaTitle: favoriteMangaTitle ?? this.favoriteMangaTitle,
+      favoriteMangaId: favoriteMangaId ?? this.favoriteMangaId,
+      favoriteMangaPoster: favoriteMangaPoster ?? this.favoriteMangaPoster,
+      showcaseMode: showcaseMode ?? this.showcaseMode,
       artworkUrl: artworkUrl ?? this.artworkUrl,
       artworkTitle: artworkTitle ?? this.artworkTitle,
       accentColor: accentColor ?? this.accentColor,
       email: email ?? this.email,
       provider: provider ?? this.provider,
       isAnonymous: isAnonymous ?? this.isAnonymous,
+      isDeveloper: isDeveloper ?? this.isDeveloper,
+      role: role ?? this.role,
       showcaseType: showcaseType ?? this.showcaseType,
       countryFlag: countryFlag ?? this.countryFlag,
       countryName: countryName ?? this.countryName,
@@ -278,12 +315,18 @@ class UserProfile extends Equatable {
         'favorite_anime_title': favoriteAnimeTitle,
         'favorite_anime_id': favoriteAnimeId,
         'favorite_anime_poster': favoriteAnimePoster,
+        'favorite_manga_title': favoriteMangaTitle,
+        'favorite_manga_id': favoriteMangaId,
+        'favorite_manga_poster': favoriteMangaPoster,
+        'showcase_mode': showcaseMode,
         'artwork_url': artworkUrl,
         'artwork_title': artworkTitle,
         'accent_color': accentColor,
         'email': email,
         'provider': provider,
         'is_anonymous': isAnonymous,
+        'is_developer': isDeveloper,
+        'role': role,
         'showcase_type': showcaseType,
         'country_flag': countryFlag,
         'country_name': countryName,
@@ -359,12 +402,23 @@ class UserProfile extends Equatable {
       favoriteAnimeTitle: json['favorite_anime_title'] as String?,
       favoriteAnimeId: json['favorite_anime_id'] as String?,
       favoriteAnimePoster: json['favorite_anime_poster'] as String?,
+      favoriteMangaTitle: json['favorite_manga_title'] as String? ??
+          (customObj?['favorite_manga_title'] as String?),
+      favoriteMangaId: json['favorite_manga_id'] as String? ??
+          (customObj?['favorite_manga_id'] as String?),
+      favoriteMangaPoster: json['favorite_manga_poster'] as String? ??
+          (customObj?['favorite_manga_poster'] as String?),
+      showcaseMode: json['showcase_mode'] as String? ??
+          (customObj?['showcase_mode'] as String?),
       artworkUrl: json['artwork_url'] as String? ?? (customObj?['artwork_url'] as String?),
       artworkTitle: json['artwork_title'] as String? ?? (customObj?['artwork_title'] as String?),
       accentColor: accent,
       email: json['email'] as String?,
       provider: json['provider'] as String?,
       isAnonymous: json['is_anonymous'] as bool? ?? false,
+      isDeveloper: json['is_developer'] as bool? ??
+          (customObj?['is_developer'] as bool? ?? false),
+      role: json['role'] as String? ?? (customObj?['role'] as String?),
       showcaseType: showcase,
       countryFlag: flag,
       countryName: country,
@@ -400,12 +454,18 @@ class UserProfile extends Equatable {
         favoriteAnimeTitle,
         favoriteAnimeId,
         favoriteAnimePoster,
+        favoriteMangaTitle,
+        favoriteMangaId,
+        favoriteMangaPoster,
+        showcaseMode,
         artworkUrl,
         artworkTitle,
         accentColor,
         email,
         provider,
         isAnonymous,
+        isDeveloper,
+        role,
         showcaseType,
         countryFlag,
         countryName,

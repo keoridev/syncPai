@@ -57,7 +57,7 @@ class WinterThemeService extends ChangeNotifier {
   bool get shouldRenderSnowfall =>
       isWinterActive &&
       _isSnowfallEnabled &&
-      (!isVideoPlayerActive || _isSnowInPlayerEnabled);
+      !isVideoPlayerActive;
 
   /// Активна ли зимняя тема прямо сейчас (с учетом сезонного окна или ручного переключателя)
   bool get isWinterActive {

@@ -103,7 +103,7 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
           const SizedBox(height: 16),
           ScoreDistributionChart(
             distribution: widget.scoreDistribution,
-            averageScore: aggregate.shikimoriScore ?? widget.portalScores?['Shikimori'] ?? 8.8,
+            averageScore: _effectiveShikimoriScore(aggregate) ?? 0.0,
           ),
         ],
 
@@ -170,15 +170,35 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
     );
   }
 
+  double? _effectiveShikimoriScore(AnimeRatingAggregate aggregate) {
+    final raw = aggregate.shikimoriScore ?? widget.portalScores?['Shikimori'];
+    if (raw != null && raw > 0) return raw;
+    if (widget.scoreDistribution.isNotEmpty) {
+      final totalVotes =
+          widget.scoreDistribution.fold<int>(0, (s, e) => s + e.votes);
+      if (totalVotes > 0) {
+        final weighted = widget.scoreDistribution.fold<double>(
+          0,
+          (s, e) => s + (e.score * e.votes),
+        );
+        return double.parse((weighted / totalVotes).toStringAsFixed(1));
+      }
+    }
+    return null;
+  }
+
   /// Агрегированная карточка рейтингов (SyncPai, Shikimori, MyAnimeList + Распределение тональности)
   Widget _buildAggregatedRatingHeader(AnimeRatingAggregate aggregate) {
-    final shikiScoreStr = aggregate.shikimoriScore != null
-        ? aggregate.shikimoriScore!.toStringAsFixed(1)
-        : (widget.portalScores?['Shikimori'] ?? 8.9).toStringAsFixed(1);
+    final effectiveShiki = _effectiveShikimoriScore(aggregate);
+    final shikiScoreStr =
+        effectiveShiki != null ? effectiveShiki.toStringAsFixed(1) : '—';
 
-    final malScoreStr = aggregate.malScore != null
+    final malScoreStr = (aggregate.malScore != null && aggregate.malScore! > 0)
         ? aggregate.malScore!.toStringAsFixed(1)
-        : (widget.portalScores?['MyAnimeList'] ?? 8.8).toStringAsFixed(1);
+        : (widget.portalScores?['MyAnimeList'] != null &&
+                widget.portalScores!['MyAnimeList']! > 0
+            ? widget.portalScores!['MyAnimeList']!.toStringAsFixed(1)
+            : '—');
 
     final syncPaiScoreStr = aggregate.syncpaiScore != null && aggregate.syncpaiScore! > 0
         ? aggregate.syncpaiScore!.toStringAsFixed(1)
@@ -338,6 +358,18 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
                 _buildSentimentLegend('★ 5-6', '${aggregate.neutralCount}', const Color(0xFFFFB74D)),
                 _buildSentimentLegend('★ 1-4', '${aggregate.negativeCount}', const Color(0xFFEF5350)),
               ],
+            ),
+          ] else if (widget.reviews.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(color: AppColors.strokeMedium, height: 1),
+            const SizedBox(height: 10),
+            Text(
+              'Комментарии сообщества (${widget.reviews.length})',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 11.5,
+              ),
             ),
           ],
         ],
@@ -591,7 +623,9 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
                   children: [
                     AppAvatar(
                       avatarUrl: rev.authorAvatarUrl,
-                      username: rev.authorName,
+                      username: rev.authorName.trim().isNotEmpty
+                          ? rev.authorName.trim()
+                          : 'Пользователь Shikimori',
                       size: 34,
                     ),
                     const SizedBox(width: 10),
@@ -603,7 +637,9 @@ class _AnimeReviewsSectionState extends State<AnimeReviewsSection> {
                             children: [
                               Flexible(
                                 child: Text(
-                                  rev.authorName,
+                                  rev.authorName.trim().isNotEmpty
+                                      ? rev.authorName.trim()
+                                      : 'Пользователь Shikimori',
                                   style: AppTypography.labelLarge.copyWith(
                                     color: AppColors.textPrimary,
                                     fontWeight: FontWeight.w700,

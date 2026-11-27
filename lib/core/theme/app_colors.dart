@@ -26,7 +26,13 @@ abstract final class AppColors {
 
   /// Автоматический контрастный цвет (черный или белый) в зависимости от яркости цвета
   static Color onColor(Color color) =>
-      color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+      color.computeLuminance() > 0.28 ? const Color(0xFF0D0F12) : Colors.white;
+
+  /// Универсальный контрастный цвет текста/иконки на произвольном фоне кнопки или пилла
+  static Color foregroundForBackground(Color bg) =>
+      bg.computeLuminance() > 0.5
+          ? const Color(0xFF0D0F12)
+          : const Color(0xFFF8FAFC);
 
   /// Контрастный цвет для текущего акцентного цвета (onPrimary)
   static Color get onPrimary => onColor(_primary);

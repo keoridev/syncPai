@@ -12,5 +12,8 @@ abstract class WatchHistoryRepository {
 
   /// Удалить прогресс тайтла
   Future<void> removeProgress(int titleId);
+
+  /// Обновить чистый URL постера в сохранённой истории
+  Future<void> updatePosterUrl(int titleId, String posterUrl);
 }
 

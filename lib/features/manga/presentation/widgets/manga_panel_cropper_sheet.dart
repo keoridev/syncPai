@@ -253,7 +253,7 @@ class _MangaShowcasePanelBannerState extends State<MangaShowcasePanelBanner> {
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  color: const Color(0xFF131720).withValues(alpha: 0.88),
+                  color: const Color(0xE6131720),
                   child: Row(
                     children: [
                       Expanded(
@@ -262,18 +262,12 @@ class _MangaShowcasePanelBannerState extends State<MangaShowcasePanelBanner> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: Color(0xFFF8FAFC),
                             fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.2,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.crop_rounded,
-                        size: 13,
-                        color: Colors.white54,
                       ),
                     ],
                   ),

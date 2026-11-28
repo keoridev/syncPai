@@ -1,13 +1,23 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/catalog/domain/entities/anime_entity.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import 'playback_bandwidth_guard.dart';
+
+class PosterCandidate {
+  final String source;
+  final String url;
+
+  const PosterCandidate(this.source, this.url);
+}
 
 /// Автоматический многоисточниковый резолвер постеров аниме:
 /// 1. Отбрасывает заглушки Shikimori (`missing_original`, `missing_preview`, `missing_x`).
@@ -25,9 +35,12 @@ class AnimePosterResolver {
   static final Map<String, String> _titleMemoryCache = {};
   static final Set<String> _titleEmptyCache = {};
   static final Map<String, Future<String?>> _inFlightTitle = {};
-  static const String _prefsKey = 'anime_poster_title_cache_v1';
+  static final Map<String, bool> _aspectRatioCache = {};
+  static final ValueNotifier<int> overrideRevision = ValueNotifier<int>(0);
+  static const String _v3CacheKey = 'poster_url_cache_v3';
   static bool _prefsLoaded = false;
   static Future<void>? _prefsLoadFuture;
+  static Timer? _saveDebounceTimer;
   static const int _maxConcurrentResolves = 4;
   static int _activeResolves = 0;
   static final List<Completer<void>> _resolveWaiters = [];
@@ -107,19 +120,31 @@ class AnimePosterResolver {
     return parent;
   }
 
-  Future<void> _ensurePrefsLoaded() {
+  /// Ранняя гидрация дискового кэша постеров в память на старте приложения.
+  static Future<void> init({SharedPreferences? prefs}) =>
+      instance._ensurePrefsLoaded(prefsOverride: prefs);
+
+  Future<void> _ensurePrefsLoaded({SharedPreferences? prefsOverride}) {
     if (_prefsLoaded) return Future.value();
     return _prefsLoadFuture ??= () async {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        final raw = prefs.getString(_prefsKey);
-        if (raw != null && raw.isNotEmpty) {
-          final decoded = jsonDecode(raw);
+        final prefs = prefsOverride ?? await SharedPreferences.getInstance();
+        final v3Raw = prefs.getString(_v3CacheKey);
+        if (v3Raw != null && v3Raw.isNotEmpty) {
+          final decoded = jsonDecode(v3Raw);
           if (decoded is Map) {
             for (final entry in decoded.entries) {
               final k = entry.key.toString();
               final v = sanitizeUrl(entry.value?.toString());
-              if (k.isNotEmpty && v != null) {
+              if (k.isEmpty || v == null || isAniLibriaWatermarkedUrl(v)) {
+                continue;
+              }
+              if (k.startsWith('id:')) {
+                final id = int.tryParse(k.substring(3));
+                if (id != null && id > 0) {
+                  _memoryCache.putIfAbsent(id, () => v);
+                }
+              } else {
                 _titleMemoryCache.putIfAbsent(k, () => v);
               }
             }
@@ -133,39 +158,454 @@ class AnimePosterResolver {
   }
 
   Future<void> _saveTitleCacheToPrefs() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final entries = _titleMemoryCache.entries.toList();
-      final capped = entries.length > 400
-          ? Map.fromEntries(entries.sublist(entries.length - 400))
-          : Map.fromEntries(entries);
-      await prefs.setString(_prefsKey, jsonEncode(capped));
-    } catch (_) {}
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final combined = <String, String>{};
+        final idEntries = _memoryCache.entries.toList();
+        final cappedIds = idEntries.length > 600
+            ? idEntries.sublist(idEntries.length - 600)
+            : idEntries;
+        for (final e in cappedIds) {
+          combined['id:${e.key}'] = e.value;
+        }
+        final titleEntries = _titleMemoryCache.entries.toList();
+        final cappedTitles = titleEntries.length > 400
+            ? titleEntries.sublist(titleEntries.length - 400)
+            : titleEntries;
+        for (final e in cappedTitles) {
+          combined[e.key] = e.value;
+        }
+        await prefs.setString(_v3CacheKey, jsonEncode(combined));
+      } catch (_) {}
+    });
+  }
+
+  void _prefetchImageBytes(Iterable<String> urls) {
+    if (PlaybackBandwidthGuard.isVideoPlaying.value) return;
+    final unique = urls.where((u) => u.startsWith('http')).toSet().take(18).toList();
+    if (unique.isEmpty) return;
+    unawaited(() async {
+      for (var i = 0; i < unique.length; i += 6) {
+        if (PlaybackBandwidthGuard.isVideoPlaying.value) return;
+        final chunk = unique.sublist(i, (i + 6).clamp(0, unique.length));
+        await Future.wait(
+          chunk.map(
+            (url) => DefaultCacheManager()
+                .downloadFile(url)
+                .then<void>((_) {}, onError: (_) {}),
+          ),
+        );
+      }
+    }());
   }
 
   static String normalizeTitleKey(String raw) {
     var clean = raw.toLowerCase();
     clean = clean.replaceAll(
+      RegExp(r'^.*?представляют\s*[—–:\-]\s*', caseSensitive: false),
+      '',
+    );
+    clean = clean.replaceAll(
+      RegExp(r'\bpresents\s*[—–:\-]\s*', caseSensitive: false),
+      ' ',
+    );
+    clean = clean.replaceAll(
       RegExp(r'\s*[—–-]\s*(новая озвучка|переозвучка).*'),
       '',
+    );
+    clean = clean.replaceAll(
+      RegExp(r'\b(?:часть|part)\s*\d*\b', caseSensitive: false),
+      ' ',
     );
     clean = clean.replaceAll(RegExp(r'\([^)]*\)'), ' ');
     clean = clean.replaceAll(RegExp(r'[^a-z0-9а-яё\s]'), ' ');
     return clean.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  static bool isShikimoriUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final lower = url.toLowerCase();
+    return lower.contains('shikimori.');
+  }
+
+  /// Проверяет, что постер имеет вертикальные пропорции (`width / height <= 0.82`)
+  /// и не является квадратным/широким тизерным кадром (`制作決定`).
+  Future<bool> isVerticalKeyArt(String url) async {
+    final cached = _aspectRatioCache[url];
+    if (cached != null) return cached;
+    try {
+      final res = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(milliseconds: 2500),
+          headers: const {'User-Agent': 'SyncPai-App/1.0'},
+        ),
+      );
+      final data = res.data;
+      if (data == null || data.isEmpty) {
+        _aspectRatioCache[url] = false;
+        return false;
+      }
+      final codec = await ui.instantiateImageCodec(Uint8List.fromList(data));
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width;
+      final h = frame.image.height;
+      frame.image.dispose();
+      codec.dispose();
+      final ok = h > 0 && (w / h) <= 0.82;
+      _aspectRatioCache[url] = ok;
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   String? getCachedPoster(int malId) => _memoryCache[malId];
+
+  String? getCachedSync({
+    int? malId,
+    String? title,
+    String? englishTitle,
+  }) {
+    final hit = getCachedCleanPoster(malId: malId, title: title) ??
+        (englishTitle != null && englishTitle.trim().isNotEmpty
+            ? getCachedCleanPoster(title: englishTitle)
+            : null);
+    if (hit == null || isAniLibriaWatermarkedUrl(hit)) return null;
+    return hit;
+  }
 
   String? getCachedCleanPoster({int? malId, String? title}) {
     if (malId != null && malId > 0) {
       final byId = _memoryCache[malId];
-      if (byId != null) return byId;
+      if (byId != null && !isAniLibriaWatermarkedUrl(byId)) return byId;
     }
     if (title != null && title.trim().isNotEmpty) {
       final key = normalizeTitleKey(title);
-      if (key.isNotEmpty) return _titleMemoryCache[key];
+      if (key.isNotEmpty) {
+        final byTitle = _titleMemoryCache[key];
+        if (byTitle != null && !isAniLibriaWatermarkedUrl(byTitle)) {
+          return byTitle;
+        }
+      }
     }
     return null;
+  }
+
+  /// Синхронно применяет кэшированные постеры за 0 мс, удаляя watermarked AniLibria URL,
+  /// и запускает фоновое пакетное разрешение недостающих обложек без блокировки UI.
+  List<AnimeEntity> applyCachedPostersSyncEntities(List<AnimeEntity> entities) {
+    if (entities.isEmpty) return entities;
+    final updated = List<AnimeEntity>.from(entities);
+    var hasUnresolved = false;
+
+    for (var i = 0; i < updated.length; i++) {
+      final e = updated[i];
+      final sanitized = sanitizeUrl(e.posterUrl);
+      final isShikiTeaserRisk = isShikimoriUrl(sanitized) &&
+          ((e.year == null || e.year! >= 2025) ||
+              (sanitized?.contains('/preview/') ?? false));
+      final isClean = sanitized != null &&
+          !isAniLibriaWatermarkedUrl(sanitized) &&
+          !isShikiTeaserRisk;
+      if (isClean) continue;
+
+      final preservedFallback = isAniLibriaWatermarkedUrl(e.posterUrl)
+          ? e.posterUrl!
+          : (sanitized ?? e.fallbackPosterUrl);
+      final cached = getCachedSync(
+        malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        title: e.titleRu,
+        englishTitle: e.titleEn,
+      );
+      if (cached != null) {
+        updated[i] = e.copyWith(
+          posterUrl: cached,
+          fallbackPosterUrl: preservedFallback,
+        );
+      } else {
+        updated[i] = e.copyWith(
+          clearPosterUrl: true,
+          fallbackPosterUrl: preservedFallback,
+        );
+        hasUnresolved = true;
+      }
+    }
+
+    if (hasUnresolved && !PlaybackBandwidthGuard.isVideoPlaying.value) {
+      unawaited(resolveBatchEntities(updated));
+    }
+    return updated;
+  }
+
+  /// Синхронно применяет кэшированные постеры [AnimeTitle] за 0 мс и догружает недостающие в фоне.
+  List<AnimeTitle> applyCachedPostersSync(List<AnimeTitle> titles) {
+    if (titles.isEmpty) return titles;
+    final updated = List<AnimeTitle>.from(titles);
+    var hasUnresolved = false;
+
+    for (var i = 0; i < updated.length; i++) {
+      final t = updated[i];
+      final sanitized = sanitizeUrl(t.posterUrl);
+      final isShikiTeaserRisk = isShikimoriUrl(sanitized) &&
+          ((t.year == null || t.year! >= 2025) ||
+              (sanitized?.contains('/preview/') ?? false));
+      final isClean = sanitized != null &&
+          !isAniLibriaWatermarkedUrl(sanitized) &&
+          !isShikiTeaserRisk;
+      if (isClean) continue;
+
+      final preservedFallback = isAniLibriaWatermarkedUrl(t.posterUrl)
+          ? t.posterUrl
+          : (sanitized ?? t.fallbackPosterUrl);
+      final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
+          ? t.shikimoriId!
+          : t.id;
+      final cached = getCachedSync(
+        malId: malId > 0 ? malId : null,
+        title: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
+        englishTitle: t.englishTitle,
+      );
+      if (cached != null) {
+        updated[i] = t.copyWith(
+          posterSmall: cached,
+          posterMedium: cached,
+          posterOriginal: cached,
+          fallbackPosterUrl: preservedFallback,
+        );
+      } else {
+        updated[i] = t.copyWith(
+          posterSmall: '',
+          posterMedium: '',
+          posterOriginal: '',
+          fallbackPosterUrl: preservedFallback,
+        );
+        hasUnresolved = true;
+      }
+    }
+
+    if (hasUnresolved && !PlaybackBandwidthGuard.isVideoPlaying.value) {
+      unawaited(resolveBatch(updated));
+    }
+    return updated;
+  }
+
+  /// Батч-резолв чистых обложек для [AnimeEntity] до эмита в UI.
+  /// Удаляет временные watermarked URL AniLibria из [posterUrl] (сохраняя их в [fallbackPosterUrl]).
+  Future<List<AnimeEntity>> resolveBatchEntities(
+    List<AnimeEntity> entities,
+  ) async {
+    if (entities.isEmpty) return entities;
+    await _ensurePrefsLoaded();
+
+    final updated = List<AnimeEntity>.from(entities);
+    final unresolvedIndices = <int>[];
+    final missingMalIds = <int>[];
+
+    for (var i = 0; i < updated.length; i++) {
+      final e = updated[i];
+      final sanitized = sanitizeUrl(e.posterUrl);
+      final isShikiTeaserRisk = isShikimoriUrl(sanitized) &&
+          ((e.year == null || e.year! >= 2025) ||
+              (sanitized?.contains('/preview/') ?? false));
+      final isClean = sanitized != null &&
+          !isAniLibriaWatermarkedUrl(sanitized) &&
+          !isShikiTeaserRisk;
+      if (isClean) continue;
+
+      final preservedFallback = isAniLibriaWatermarkedUrl(e.posterUrl)
+          ? e.posterUrl!
+          : (sanitized ?? e.fallbackPosterUrl);
+      final cached = getCachedSync(
+        malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        title: e.titleRu,
+        englishTitle: e.titleEn,
+      );
+      if (cached != null) {
+        updated[i] = e.copyWith(
+          posterUrl: cached,
+          fallbackPosterUrl: preservedFallback,
+        );
+      } else {
+        updated[i] = e.copyWith(
+          clearPosterUrl: true,
+          fallbackPosterUrl: preservedFallback,
+        );
+        unresolvedIndices.add(i);
+        if (e.shikimoriId > 0 && !missingMalIds.contains(e.shikimoriId)) {
+          missingMalIds.add(e.shikimoriId);
+        }
+      }
+    }
+
+    if (unresolvedIndices.isEmpty || PlaybackBandwidthGuard.isVideoPlaying.value) {
+      return updated;
+    }
+
+    final idHits = missingMalIds.isNotEmpty
+        ? await resolveBatchIds(missingMalIds).timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => const <int, String>{},
+          )
+        : const <int, String>{};
+
+    final stillMissing = <int>[];
+    for (final idx in unresolvedIndices) {
+      final e = updated[idx];
+      final hit = e.shikimoriId > 0 ? idHits[e.shikimoriId] : null;
+      if (hit != null) {
+        updated[idx] = e.copyWith(posterUrl: hit);
+      } else if (e.displayTitle.trim().isNotEmpty) {
+        stillMissing.add(idx);
+      }
+    }
+
+    if (stillMissing.isNotEmpty) {
+      final resolvedList = await Future.wait(
+        stillMissing.take(16).map((idx) async {
+          final e = updated[idx];
+          final url = await resolvePoster(
+            malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+            title: e.displayTitle,
+            fallbackTitle: e.titleEn.isNotEmpty ? e.titleEn : null,
+          );
+          return MapEntry(idx, url);
+        }),
+      ).timeout(
+        const Duration(milliseconds: 2500),
+        onTimeout: () => const <MapEntry<int, String?>>[],
+      );
+      final prefetched = <String>[];
+      for (final entry in resolvedList) {
+        final url = entry.value;
+        if (url != null && !isAniLibriaWatermarkedUrl(url)) {
+          updated[entry.key] = updated[entry.key].copyWith(posterUrl: url);
+          prefetched.add(url);
+        }
+      }
+      if (prefetched.isNotEmpty) {
+        _prefetchImageBytes(prefetched);
+      }
+    }
+
+    return updated;
+  }
+
+  /// Батч-резолв чистых обложек для [AnimeTitle] до эмита в UI.
+  Future<List<AnimeTitle>> resolveBatch(List<AnimeTitle> titles) async {
+    if (titles.isEmpty) return titles;
+    await _ensurePrefsLoaded();
+
+    final updated = List<AnimeTitle>.from(titles);
+    final unresolvedIndices = <int>[];
+    final missingMalIds = <int>[];
+
+    for (var i = 0; i < updated.length; i++) {
+      final t = updated[i];
+      final sanitized = sanitizeUrl(t.posterUrl);
+      final isShikiTeaserRisk = isShikimoriUrl(sanitized) &&
+          ((t.year == null || t.year! >= 2025) ||
+              (sanitized?.contains('/preview/') ?? false));
+      final isClean = sanitized != null &&
+          !isAniLibriaWatermarkedUrl(sanitized) &&
+          !isShikiTeaserRisk;
+      if (isClean) continue;
+
+      final preservedFallback = isAniLibriaWatermarkedUrl(t.posterUrl)
+          ? t.posterUrl
+          : (sanitized ?? t.fallbackPosterUrl);
+      final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
+          ? t.shikimoriId!
+          : t.id;
+      final cached = getCachedSync(
+        malId: malId > 0 ? malId : null,
+        title: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
+        englishTitle: t.englishTitle,
+      );
+      if (cached != null) {
+        updated[i] = t.copyWith(
+          posterSmall: cached,
+          posterMedium: cached,
+          posterOriginal: cached,
+          fallbackPosterUrl: preservedFallback,
+        );
+      } else {
+        updated[i] = t.copyWith(
+          posterSmall: '',
+          posterMedium: '',
+          posterOriginal: '',
+          fallbackPosterUrl: preservedFallback,
+        );
+        unresolvedIndices.add(i);
+        if (malId > 0 && !missingMalIds.contains(malId)) {
+          missingMalIds.add(malId);
+        }
+      }
+    }
+
+    if (unresolvedIndices.isEmpty || PlaybackBandwidthGuard.isVideoPlaying.value) {
+      return updated;
+    }
+
+    final idHits = missingMalIds.isNotEmpty
+        ? await resolveBatchIds(missingMalIds).timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => const <int, String>{},
+          )
+        : const <int, String>{};
+
+    final stillMissing = <int>[];
+    for (final idx in unresolvedIndices) {
+      final t = updated[idx];
+      final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
+          ? t.shikimoriId!
+          : t.id;
+      final hit = malId > 0 ? idHits[malId] : null;
+      if (hit != null) {
+        updated[idx] = t.copyWith(
+          posterSmall: hit,
+          posterMedium: hit,
+          posterOriginal: hit,
+        );
+      } else if (t.displayTitle.trim().isNotEmpty) {
+        stillMissing.add(idx);
+      }
+    }
+
+    if (stillMissing.isNotEmpty) {
+      final resolvedList = await Future.wait(
+        stillMissing.take(16).map((idx) async {
+          final t = updated[idx];
+          final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
+              ? t.shikimoriId
+              : t.id;
+          final url = await resolvePoster(
+            malId: malId,
+            title: t.displayTitle,
+            fallbackTitle: t.englishTitle.isNotEmpty ? t.englishTitle : null,
+          );
+          return MapEntry(idx, url);
+        }),
+      ).timeout(
+        const Duration(milliseconds: 2500),
+        onTimeout: () => const <MapEntry<int, String?>>[],
+      );
+      for (final entry in resolvedList) {
+        final url = entry.value;
+        if (url != null && !isAniLibriaWatermarkedUrl(url)) {
+          updated[entry.key] = updated[entry.key].copyWith(
+            posterSmall: url,
+            posterMedium: url,
+            posterOriginal: url,
+          );
+        }
+      }
+    }
+
+    return updated;
   }
 
   Future<Map<int, String>> resolveBatchPosters(List<AnimeTitle> titles) async {
@@ -315,14 +755,36 @@ class AnimePosterResolver {
       return resolved;
     }
 
-    final remainingAfterShiki = <int>[];
+    final remainingAfterAnilist = <int>[];
     final newlyFound = <int, String>{};
-    for (var i = 0; i < missingIds.length; i += 50) {
-      final chunk = missingIds.sublist(i, (i + 50).clamp(0, missingIds.length));
+    for (var i = 0; i < missingIds.length; i += 25) {
+      final chunk = missingIds.sublist(
+        i,
+        (i + 25).clamp(0, missingIds.length),
+      );
+      final anilistHits = await _fetchAnilistBatch(chunk);
+      for (final id in chunk) {
+        final url = anilistHits[id];
+        if (url != null) {
+          _memoryCache[id] = url;
+          resolved[id] = url;
+          newlyFound[id] = url;
+        } else {
+          remainingAfterAnilist.add(id);
+        }
+      }
+    }
+
+    final remainingAfterShiki = <int>[];
+    for (var i = 0; i < remainingAfterAnilist.length; i += 50) {
+      final chunk = remainingAfterAnilist.sublist(
+        i,
+        (i + 50).clamp(0, remainingAfterAnilist.length),
+      );
       final shikiHits = await _fetchShikimoriBulkByIds(chunk);
       for (final id in chunk) {
         final url = shikiHits[id];
-        if (url != null) {
+        if (url != null && await isVerticalKeyArt(url)) {
           _memoryCache[id] = url;
           resolved[id] = url;
           newlyFound[id] = url;
@@ -332,23 +794,20 @@ class AnimePosterResolver {
       }
     }
 
-    for (var i = 0; i < remainingAfterShiki.length; i += 20) {
-      final chunk = remainingAfterShiki.sublist(
-        i,
-        (i + 20).clamp(0, remainingAfterShiki.length),
-      );
-      final anilistHits = await _fetchAnilistBatch(chunk);
-      for (final id in chunk) {
-        final url = anilistHits[id];
-        if (url != null) {
-          _memoryCache[id] = url;
-          resolved[id] = url;
-          newlyFound[id] = url;
+    if (remainingAfterShiki.isNotEmpty) {
+      for (final id in remainingAfterShiki.take(6)) {
+        final jikanUrl = await _fetchJikanSingle(id);
+        if (jikanUrl != null) {
+          _memoryCache[id] = jikanUrl;
+          resolved[id] = jikanUrl;
+          newlyFound[id] = jikanUrl;
         }
       }
     }
 
     if (newlyFound.isNotEmpty) {
+      unawaited(_saveTitleCacheToPrefs());
+      _prefetchImageBytes(newlyFound.values);
       unawaited(_persistToSupabase(newlyFound));
     }
     return resolved;
@@ -368,12 +827,12 @@ class AnimePosterResolver {
     _pendingAnilistIds.add(malId);
     _inFlightSingle[malId] = completer.future;
 
-    if (_pendingAnilistIds.length >= 20) {
+    if (_pendingAnilistIds.length >= 25) {
       _anilistCoalesceTimer?.cancel();
       _flushPendingAnilistBatch();
     } else {
       _anilistCoalesceTimer ??= Timer(
-        const Duration(milliseconds: 60),
+        const Duration(milliseconds: 50),
         _flushPendingAnilistBatch,
       );
     }
@@ -384,29 +843,34 @@ class AnimePosterResolver {
   void _flushPendingAnilistBatch() {
     _anilistCoalesceTimer = null;
     if (_pendingAnilistIds.isEmpty) return;
-    final batch = _pendingAnilistIds.take(20).toList();
+    final batch = _pendingAnilistIds.take(25).toList();
     _pendingAnilistIds.removeAll(batch);
     if (_pendingAnilistIds.isNotEmpty) {
       _anilistCoalesceTimer = Timer(
-        const Duration(milliseconds: 60),
+        const Duration(milliseconds: 50),
         _flushPendingAnilistBatch,
       );
     }
 
     unawaited(() async {
       try {
-        final shikiHits = await _fetchShikimoriBulkByIds(batch);
-        final missingForAnilist =
-            batch.where((id) => !shikiHits.containsKey(id)).toList();
-        final anilistHits = missingForAnilist.isNotEmpty
-            ? await _fetchAnilistBatch(missingForAnilist)
+        final anilistHits = await _fetchAnilistBatch(batch);
+        final missingAfterAnilist =
+            batch.where((id) => !anilistHits.containsKey(id)).toList();
+        final shikiHits = missingAfterAnilist.isNotEmpty
+            ? await _fetchShikimoriBulkByIds(missingAfterAnilist)
             : const <int, String>{};
 
         final newlyFound = <int, String>{};
         for (final id in batch) {
-          var url = shikiHits[id] ?? anilistHits[id];
-          if (url == null && missingForAnilist.length <= 3) {
-            url = await _fetchJikanSingle(id);
+          var url = anilistHits[id];
+          if (url == null) {
+            final shikiUrl = shikiHits[id];
+            if (shikiUrl != null && await isVerticalKeyArt(shikiUrl)) {
+              url = shikiUrl;
+            } else {
+              url = await _fetchJikanSingle(id);
+            }
           }
           if (url != null) {
             _memoryCache[id] = url;
@@ -418,6 +882,8 @@ class AnimePosterResolver {
           _inFlightSingle.remove(id);
         }
         if (newlyFound.isNotEmpty) {
+          unawaited(_saveTitleCacheToPrefs());
+          _prefetchImageBytes(newlyFound.values);
           unawaited(_persistToSupabase(newlyFound));
         }
       } catch (_) {
@@ -463,6 +929,7 @@ class AnimePosterResolver {
     int? malId,
     required String title,
     String? fallbackTitle,
+    String? mediaType,
   }) async {
     await _ensurePrefsLoaded();
     final cached = getCachedCleanPoster(malId: malId, title: title) ??
@@ -513,9 +980,15 @@ class AnimePosterResolver {
         ].where((q) => q.isNotEmpty).toSet().toList();
 
         String? url;
-        for (final q in queries) {
-          url = await _fetchShikimoriBySearch(q);
-          if (url != null) break;
+        final isMangaOrRanobe = mediaType == 'manga' || mediaType == 'ranobe';
+        if (isMangaOrRanobe) {
+          for (final q in queries) {
+            url = await _fetchShikimoriMangaOrRanobeBySearch(
+              q,
+              ranobeFirst: mediaType == 'ranobe',
+            );
+            if (url != null) break;
+          }
         }
         if (url == null) {
           for (final q in queries) {
@@ -526,6 +999,21 @@ class AnimePosterResolver {
         if (url == null) {
           for (final q in queries) {
             url = await _fetchJikanBySearch(q);
+            if (url != null) break;
+          }
+        }
+        if (url == null) {
+          for (final q in queries) {
+            final shikiUrl = await _fetchShikimoriBySearch(q);
+            if (shikiUrl != null && await isVerticalKeyArt(shikiUrl)) {
+              url = shikiUrl;
+              break;
+            }
+          }
+        }
+        if (url == null && !isMangaOrRanobe) {
+          for (final q in queries) {
+            url = await _fetchShikimoriMangaOrRanobeBySearch(q);
             if (url != null) break;
           }
         }
@@ -710,6 +1198,55 @@ query ($search: String) {
     return null;
   }
 
+  Future<String?> _fetchShikimoriMangaOrRanobeBySearch(
+    String search, {
+    bool ranobeFirst = false,
+  }) async {
+    final endpoints = ranobeFirst
+        ? const [
+            'https://shikimori.io/api/ranobe',
+            'https://shikimori.io/api/mangas',
+          ]
+        : const [
+            'https://shikimori.io/api/mangas',
+            'https://shikimori.io/api/ranobe',
+          ];
+    for (final endpoint in endpoints) {
+      try {
+        final res = await _dio.get(
+          endpoint,
+          queryParameters: {'search': search, 'limit': 3},
+          options: Options(
+            headers: const {
+              'User-Agent': 'SyncPai-App/1.0',
+              'Accept': 'application/json',
+            },
+          ),
+        );
+        if (res.statusCode == 200 && res.data is List) {
+          for (final item in res.data as List) {
+            if (item is! Map || item['image'] is! Map) continue;
+            if (!isTitleMatchStrict(search, [
+              item['russian']?.toString(),
+              item['name']?.toString(),
+            ])) {
+              continue;
+            }
+            final img = item['image'] as Map;
+            final raw =
+                (img['original'] ?? img['preview'])?.toString().trim() ?? '';
+            if (raw.isNotEmpty && !isMissingOrPlaceholder(raw)) {
+              if (raw.startsWith('//')) return 'https:$raw';
+              if (raw.startsWith('http')) return raw;
+              return 'https://shikimori.io$raw';
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<String?> _fetchShikimoriBySearch(String search) async {
     try {
       final res = await _dio.get(
@@ -806,7 +1343,7 @@ query ($search: String) {
           final id = (item['id'] as num?)?.toInt();
           final img = item['image'] is Map ? item['image'] as Map : null;
           final raw =
-              (img?['original'] ?? img?['preview'])?.toString().trim() ?? '';
+              (img?['preview'] ?? img?['original'])?.toString().trim() ?? '';
           if (id != null && raw.isNotEmpty && !isMissingOrPlaceholder(raw)) {
             final full = raw.startsWith('//')
                 ? 'https:$raw'
@@ -822,7 +1359,7 @@ query ($search: String) {
 
   Future<Map<int, String>> _fetchAnilistBatch(List<int> malIds) async {
     if (malIds.isEmpty) return const {};
-    final batch = malIds.take(20).toList();
+    final batch = malIds.take(25).toList();
     final blockedUntil = _anilistRateLimitedUntil;
     if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
       return _fetchShikimoriBulkByIds(batch);
@@ -898,16 +1435,118 @@ query ($search: String) {
           final webp = images['webp'] is Map ? images['webp'] as Map : null;
           final jpg = images['jpg'] is Map ? images['jpg'] as Map : null;
           return sanitizeUrl(
-            (webp?['large_image_url'] ??
-                    jpg?['large_image_url'] ??
-                    webp?['image_url'] ??
-                    jpg?['image_url'])
+            (jpg?['large_image_url'] ??
+                    webp?['large_image_url'] ??
+                    jpg?['image_url'] ??
+                    webp?['image_url'])
                 ?.toString(),
           );
         }
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<void> setManualPosterOverride({
+    int? malId,
+    required String title,
+    String? englishTitle,
+    required String url,
+  }) async {
+    await _ensurePrefsLoaded();
+    final clean = sanitizeUrl(url);
+    if (clean == null) return;
+    if (malId != null && malId > 0) {
+      _memoryCache[malId] = clean;
+      _emptyCache.remove(malId);
+    }
+    final keyRu = normalizeTitleKey(title);
+    if (keyRu.isNotEmpty) {
+      _titleMemoryCache[keyRu] = clean;
+      _titleEmptyCache.remove(keyRu);
+    }
+    if (englishTitle != null && englishTitle.trim().isNotEmpty) {
+      final keyEn = normalizeTitleKey(englishTitle);
+      if (keyEn.isNotEmpty) {
+        _titleMemoryCache[keyEn] = clean;
+        _titleEmptyCache.remove(keyEn);
+      }
+    }
+    unawaited(_saveTitleCacheToPrefs());
+    _prefetchImageBytes([clean]);
+    overrideRevision.value++;
+    if (malId != null && malId > 0) {
+      unawaited(_persistToSupabase({malId: clean}));
+    }
+  }
+
+  /// Загружает до 4 вариантов обложек из AniList, MAL (Jikan) и Shikimori для ручного выбора.
+  Future<List<PosterCandidate>> fetchPosterCandidates({
+    int? malId,
+    required String title,
+    String? englishTitle,
+  }) async {
+    final searchQuery = (englishTitle != null && englishTitle.trim().isNotEmpty)
+        ? normalizeTitleKey(englishTitle)
+        : normalizeTitleKey(title);
+    final ruQuery = normalizeTitleKey(title);
+    final effectiveQuery = searchQuery.isNotEmpty ? searchQuery : ruQuery;
+
+    final results = await Future.wait<PosterCandidate?>([
+      () async {
+        if (malId != null && malId > 0) {
+          final hit = await _fetchAnilistBatch([malId]);
+          final url = hit[malId];
+          if (url != null) return PosterCandidate('AniList', url);
+        }
+        if (effectiveQuery.isNotEmpty) {
+          final url = await _fetchAnilistBySearch(effectiveQuery);
+          if (url != null) return PosterCandidate('AniList', url);
+        }
+        return null;
+      }(),
+      () async {
+        if (malId != null && malId > 0) {
+          final url = await _fetchJikanSingle(malId);
+          if (url != null) return PosterCandidate('MAL', url);
+        }
+        if (effectiveQuery.isNotEmpty) {
+          final url = await _fetchJikanBySearch(effectiveQuery);
+          if (url != null) return PosterCandidate('MAL', url);
+        }
+        return null;
+      }(),
+      () async {
+        if (malId != null && malId > 0) {
+          final hit = await _fetchShikimoriBulkByIds([malId]);
+          final url = hit[malId];
+          if (url != null) return PosterCandidate('Shikimori', url);
+        }
+        if (effectiveQuery.isNotEmpty) {
+          final url = await _fetchShikimoriBySearch(effectiveQuery);
+          if (url != null) return PosterCandidate('Shikimori', url);
+        }
+        return null;
+      }(),
+      () async {
+        if (ruQuery.isNotEmpty && ruQuery != effectiveQuery) {
+          final url = await _fetchAnilistBySearch(ruQuery) ??
+              await _fetchShikimoriBySearch(ruQuery);
+          if (url != null) return PosterCandidate('Alt', url);
+        }
+        return null;
+      }(),
+    ]);
+
+    final seen = <String>{};
+    final out = <PosterCandidate>[];
+    for (final c in results) {
+      if (c != null && seen.add(c.url)) {
+        out.add(c);
+        if (out.length >= 4) break;
+      }
+    }
+    return out;
   }
 
   Future<void> _persistToSupabase(Map<int, String> posters) async {

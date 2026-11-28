@@ -31,6 +31,21 @@ class WatchHistoryItem extends Equatable {
   /// Форматированная длительность: 24:00
   String get formattedDuration => _formatMs(durationMs);
 
+  WatchHistoryItem copyWith({
+    String? posterUrl,
+  }) {
+    return WatchHistoryItem(
+      titleId: titleId,
+      titleName: titleName,
+      posterUrl: posterUrl ?? this.posterUrl,
+      episode: episode,
+      episodeName: episodeName,
+      positionMs: positionMs,
+      durationMs: durationMs,
+      updatedAt: updatedAt,
+    );
+  }
+
   static String _formatMs(int ms) {
     final d = Duration(milliseconds: ms);
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');

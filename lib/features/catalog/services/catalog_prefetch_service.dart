@@ -41,12 +41,8 @@ class CatalogPrefetchService {
   static const Duration requestSpacing = Duration(milliseconds: 450);
 
   static const List<String> prefetchBuckets = [
-    'anons',
     'schedule',
-    'ongoing',
-    'popular',
-    'released',
-    'movies',
+    'anons',
   ];
 
   final Map<String, _PrefetchEntry> _memoryCache = {};

@@ -410,8 +410,6 @@ class AuthRepositoryImpl implements AuthRepository {
       if (profile.isDevAccount) ...{
         'is_developer': true,
         'role': 'developer',
-        'is_sponsor': true,
-        'is_plus': true,
       },
     };
 
@@ -430,31 +428,56 @@ class AuthRepositoryImpl implements AuthRepository {
       'artwork_url': profile.artworkUrl,
       'artwork_title': profile.artworkTitle,
       'accent_color': profile.accentColor,
-      if (profile.isDevAccount) ...{
-        'supporter_tier': 'producer',
-        'role': 'developer',
-        'is_sponsor': true,
-        'is_plus': true,
-      },
+      if (profile.isDevAccount) 'supporter_tier': 'producer',
       'customization': customizationPayload,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
 
-    try {
-      await client.from('profiles').update(payload).eq('id', cloudUserId);
-    } catch (e) {
-      debugPrint('[Auth] Error updating profile: $e');
+    await _updateProfilesResilient(client, cloudUserId, payload,
+        cloudAvatarUrl: cloudAvatarUrl, profile: profile);
+  }
+
+  Future<void> _updateProfilesResilient(
+    SupabaseClient client,
+    String cloudUserId,
+    Map<String, dynamic> initialPayload, {
+    String? cloudAvatarUrl,
+    required UserProfile profile,
+  }) async {
+    final payload = Map<String, dynamic>.from(initialPayload);
+    final maxAttempts = payload.length + 1;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      if (payload.isEmpty) return;
       try {
-        await client.from('profiles').update({
-          'username': profile.username,
-          if (cloudAvatarUrl != null) 'avatar_url': cloudAvatarUrl,
-          'avatar_frame_id': profile.frameId ?? 'none',
-          'background_url': profile.backgroundId ?? 'none',
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }).eq('id', cloudUserId);
-      } catch (e2) {
-        debugPrint('[Auth] Error in fallback profile update: $e2');
+        await client.from('profiles').update(payload).eq('id', cloudUserId);
+        return;
+      } on PostgrestException catch (e) {
+        if (e.code == 'PGRST204') {
+          final match = RegExp(r"Could not find the '([^']+)' column")
+              .firstMatch(e.message);
+          final missingCol = match?.group(1);
+          if (missingCol != null && payload.containsKey(missingCol)) {
+            payload.remove(missingCol);
+            continue;
+          }
+        }
+        debugPrint('[Auth] Error updating profile: $e');
+        break;
+      } catch (e) {
+        debugPrint('[Auth] Error updating profile: $e');
+        break;
       }
+    }
+    try {
+      await client.from('profiles').update({
+        'username': profile.username,
+        if (cloudAvatarUrl != null) 'avatar_url': cloudAvatarUrl,
+        'avatar_frame_id': profile.frameId ?? 'none',
+        'background_url': profile.backgroundId ?? 'none',
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', cloudUserId);
+    } catch (e2) {
+      debugPrint('[Auth] Error in fallback profile update: $e2');
     }
   }
 

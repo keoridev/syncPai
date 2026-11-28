@@ -45,33 +45,65 @@ class SafeAnimePoster extends StatefulWidget {
 
 class _SafeAnimePosterState extends State<SafeAnimePoster> {
   String? _cleanPosterUrl;
+  String? _lockedUrl;
   bool _primaryFailed = false;
   bool _timedOut = false;
   bool _resolveTriggered = false;
-  bool _lockedCleanInitial = false;
+  bool _resolveFinishedNull = false;
   int _resolveGeneration = 0;
   Timer? _loadTimeoutTimer;
 
   @override
   void initState() {
     super.initState();
+    AnimePosterResolver.overrideRevision.addListener(_onOverrideRevision);
     _resolveGeneration++;
     _resolveCleanIfNeeded();
     _armLoadTimeout();
   }
 
+  void _onOverrideRevision() {
+    if (!mounted) return;
+    final cached = AnimePosterResolver.instance.getCachedSync(
+      malId: widget.malId,
+      title: widget.title,
+      englishTitle: widget.englishTitle,
+    );
+    if (cached != null && cached != _lockedUrl) {
+      _loadTimeoutTimer?.cancel();
+      setState(() {
+        _cleanPosterUrl = cached;
+        _lockedUrl = cached;
+        _timedOut = false;
+        _primaryFailed = false;
+      });
+    }
+  }
+
   @override
   void didUpdateWidget(covariant SafeAnimePoster oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageUrl != widget.imageUrl ||
-        oldWidget.title != widget.title ||
-        oldWidget.malId != widget.malId) {
+    final itemChanged = oldWidget.malId != widget.malId ||
+        oldWidget.title != widget.title;
+    if (itemChanged) {
+      _resolveGeneration++;
+      _cleanPosterUrl = null;
+      _lockedUrl = null;
+      _primaryFailed = false;
+      _timedOut = false;
+      _resolveTriggered = false;
+      _resolveFinishedNull = false;
+      _resolveCleanIfNeeded();
+      _armLoadTimeout();
+      return;
+    }
+    if (oldWidget.imageUrl != widget.imageUrl && _lockedUrl == null) {
       _resolveGeneration++;
       _cleanPosterUrl = null;
       _primaryFailed = false;
       _timedOut = false;
       _resolveTriggered = false;
-      _lockedCleanInitial = false;
+      _resolveFinishedNull = false;
       _resolveCleanIfNeeded();
       _armLoadTimeout();
     }
@@ -79,19 +111,41 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
 
   @override
   void dispose() {
+    AnimePosterResolver.overrideRevision.removeListener(_onOverrideRevision);
     _loadTimeoutTimer?.cancel();
     super.dispose();
   }
 
   String? _effectiveUrl() {
-    if (_timedOut && _cleanPosterUrl == null) return null;
-    final primary =
+    if (_lockedUrl != null) return _lockedUrl;
+    if (_timedOut && _cleanPosterUrl == null) {
+      return _resolveFinishedNull ? _anilibriaFallbackUrl() : null;
+    }
+    final rawPrimary =
         _primaryFailed ? null : AnimePosterResolver.sanitizeUrl(widget.imageUrl);
-    final secondary = AnimePosterResolver.sanitizeUrl(widget.fallbackUrl);
-    final effectivePrimary = _cleanPosterUrl ?? primary;
-    final effectiveFallback =
-        _cleanPosterUrl != null ? (primary ?? secondary) : secondary;
-    return effectivePrimary ?? effectiveFallback;
+    final primaryIsWatermarked =
+        AnimePosterResolver.isAniLibriaWatermarkedUrl(rawPrimary);
+    final cleanPrimary =
+        (rawPrimary != null && !primaryIsWatermarked) ? rawPrimary : null;
+
+    final rawSecondary = AnimePosterResolver.sanitizeUrl(widget.fallbackUrl);
+    final cleanSecondary = (rawSecondary != null &&
+            !AnimePosterResolver.isAniLibriaWatermarkedUrl(rawSecondary))
+        ? rawSecondary
+        : null;
+
+    final clean = _cleanPosterUrl ?? cleanPrimary ?? cleanSecondary;
+    if (clean != null) return clean;
+    return _resolveFinishedNull ? _anilibriaFallbackUrl() : null;
+  }
+
+  String? _anilibriaFallbackUrl() {
+    final rawSecondary = AnimePosterResolver.sanitizeUrl(widget.fallbackUrl);
+    if (rawSecondary != null && rawSecondary.isNotEmpty) return rawSecondary;
+    final rawPrimary =
+        _primaryFailed ? null : AnimePosterResolver.sanitizeUrl(widget.imageUrl);
+    if (rawPrimary != null && rawPrimary.isNotEmpty) return rawPrimary;
+    return null;
   }
 
   void _armLoadTimeout() {
@@ -106,25 +160,29 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
   }
 
   void _resolveCleanIfNeeded() {
+    if (_lockedUrl != null) return;
     final primary = AnimePosterResolver.sanitizeUrl(widget.imageUrl);
-    if (widget.title.trim().isEmpty) return;
     if (primary != null &&
         primary.startsWith('http') &&
         !AnimePosterResolver.isAniLibriaWatermarkedUrl(primary)) {
-      _lockedCleanInitial = true;
+      _lockedUrl = primary;
       return;
     }
 
-    final cached = AnimePosterResolver.instance.getCachedCleanPoster(
-          malId: widget.malId,
-          title: widget.title,
-        ) ??
-        (widget.englishTitle != null
-            ? AnimePosterResolver.instance
-                .getCachedCleanPoster(title: widget.englishTitle)
-            : null);
+    final cached = AnimePosterResolver.instance.getCachedSync(
+      malId: widget.malId,
+      title: widget.title,
+      englishTitle: widget.englishTitle,
+    );
     if (cached != null) {
       _cleanPosterUrl = cached;
+      _lockedUrl = cached;
+      return;
+    }
+
+    if (widget.title.trim().isEmpty &&
+        (widget.malId == null || widget.malId! <= 0)) {
+      _resolveFinishedNull = true;
       return;
     }
 
@@ -132,7 +190,9 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
   }
 
   void _triggerFallbackResolve() {
-    if (_resolveTriggered || _lockedCleanInitial || widget.title.trim().isEmpty) {
+    if (_resolveTriggered || _lockedUrl != null) return;
+    if (widget.title.trim().isEmpty &&
+        (widget.malId == null || widget.malId! <= 0)) {
       return;
     }
     _resolveTriggered = true;
@@ -144,34 +204,29 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
           fallbackTitle: widget.englishTitle,
         )
         .then((resolved) {
-      if (!mounted ||
-          gen != _resolveGeneration ||
-          _lockedCleanInitial ||
-          resolved == null) {
+      if (!mounted || gen != _resolveGeneration || _lockedUrl != null) {
         return;
       }
-      if (_cleanPosterUrl != resolved) {
+      if (resolved != null && resolved.isNotEmpty) {
         _loadTimeoutTimer?.cancel();
         setState(() {
           _cleanPosterUrl = resolved;
+          _lockedUrl = resolved;
           _timedOut = false;
           _primaryFailed = false;
         });
         widget.onPosterResolved?.call(resolved);
+      } else {
+        setState(() => _resolveFinishedNull = true);
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final primary =
-        _primaryFailed ? null : AnimePosterResolver.sanitizeUrl(widget.imageUrl);
-    final secondary = AnimePosterResolver.sanitizeUrl(widget.fallbackUrl);
-    final effectivePrimary = _cleanPosterUrl ?? primary;
+    final effectiveUrl = _effectiveUrl();
     final effectiveFallback =
-        _cleanPosterUrl != null ? (primary ?? secondary) : secondary;
-    final effectiveUrl =
-        (_timedOut && _cleanPosterUrl == null) ? null : (effectivePrimary ?? effectiveFallback);
+        _resolveFinishedNull ? _anilibriaFallbackUrl() : null;
 
     final Widget inner;
     if (effectiveUrl == null || effectiveUrl.isEmpty) {
@@ -187,9 +242,7 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
         memCacheWidth: widget.memCacheWidth,
         imageBuilder: (context, imageProvider) {
           _loadTimeoutTimer?.cancel();
-          if (!AnimePosterResolver.isAniLibriaWatermarkedUrl(effectiveUrl)) {
-            _lockedCleanInitial = true;
-          }
+          _lockedUrl ??= effectiveUrl;
           return Image(
             image: imageProvider,
             width: double.infinity,
@@ -205,7 +258,9 @@ class _SafeAnimePosterState extends State<SafeAnimePoster> {
           _loadTimeoutTimer?.cancel();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _lockedCleanInitial = false;
+            if (_lockedUrl == effectiveUrl) {
+              _lockedUrl = null;
+            }
             if (!_primaryFailed) {
               setState(() => _primaryFailed = true);
             }

@@ -22,6 +22,7 @@ import 'features/kodik/presentation/cubit/kodik_cubit.dart';
 import 'features/player/services/global_mini_player_service.dart';
 import 'features/support/presentation/widgets/support_prompt_overlay.dart';
 import 'features/watch_history/presentation/cubit/watch_history_cubit.dart';
+import 'core/services/anime_poster_resolver.dart';
 import 'core/services/app_updater_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/device_performance_service.dart';
@@ -95,6 +96,7 @@ void main() async {
     DevicePerformanceService.instance.init(),
     CatalogPersistentStore.instance.init(),
     MascotCompanionService.instance.init(),
+    AnimePosterResolver.init(),
   ]);
   if (getIt.isRegistered<AnimeRemoteDataSource>()) {
     unawaited(getIt<AnimeRemoteDataSource>().syncGenreReferences());

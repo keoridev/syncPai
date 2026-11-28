@@ -524,42 +524,73 @@ class _DuoProfileSheetState extends State<DuoProfileSheet> {
                     spacing: 8,
                     runSpacing: 6,
                     children: [
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: pendingCode));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Код скопирован'),
-                              behavior: SnackBarBehavior.floating,
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A202E),
+                            foregroundColor: const Color(0xFFF8FAFC),
+                            side: const BorderSide(
+                              color: Color(0x1FFFFFFF),
+                              width: 1,
                             ),
-                          );
-                        },
-                        child: const Text('Скопировать код'),
-                      ),
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 0,
                           ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: pendingCode));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Код скопирован'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy_rounded, size: 15),
+                          label: const Text(
+                            'Скопировать код',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                        onPressed: () {
-                          final url = Uri.parse(
-                            'https://t.me/syncpai_bot?start=duo_$pendingCode',
-                          );
-                          launchUrl(url, mode: LaunchMode.externalApplication);
-                        },
-                        child: const Text('Поделиться ссылкой'),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A202E),
+                            foregroundColor: const Color(0xFFF8FAFC),
+                            side: const BorderSide(
+                              color: Color(0x1FFFFFFF),
+                              width: 1,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 0,
+                          ),
+                          onPressed: () {
+                            final url = Uri.parse(
+                              'https://t.me/syncpai_bot?start=duo_$pendingCode',
+                            );
+                            launchUrl(url, mode: LaunchMode.externalApplication);
+                          },
+                          icon: const Icon(Icons.share_rounded, size: 15),
+                          label: const Text(
+                            'Поделиться ссылкой',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),

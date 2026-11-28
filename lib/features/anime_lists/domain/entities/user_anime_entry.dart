@@ -83,6 +83,7 @@ class UserAnimeEntry extends Equatable {
   final int positionMs;
   final int? episodesTotal;
   final double? score;
+  final String? mediaType;
   final DateTime updatedAt;
 
   const UserAnimeEntry({
@@ -96,8 +97,21 @@ class UserAnimeEntry extends Equatable {
     this.positionMs = 0,
     this.episodesTotal,
     this.score,
+    this.mediaType,
     required this.updatedAt,
   });
+
+  bool get isMangaOrRanobe {
+    final mt = mediaType?.toLowerCase().trim() ?? '';
+    return mt == 'manga' ||
+        mt == 'ranobe' ||
+        mt == 'manhwa' ||
+        mt == 'manhua' ||
+        mt == 'one_shot' ||
+        mt == 'doujin' ||
+        id.startsWith('manga_') ||
+        id.startsWith('ranobe_');
+  }
 
   UserAnimeEntry copyWith({
     String? id,
@@ -110,6 +124,7 @@ class UserAnimeEntry extends Equatable {
     int? positionMs,
     int? episodesTotal,
     double? score,
+    String? mediaType,
     DateTime? updatedAt,
   }) {
     return UserAnimeEntry(
@@ -123,6 +138,7 @@ class UserAnimeEntry extends Equatable {
       positionMs: positionMs ?? this.positionMs,
       episodesTotal: episodesTotal ?? this.episodesTotal,
       score: score ?? this.score,
+      mediaType: mediaType ?? this.mediaType,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -168,6 +184,7 @@ class UserAnimeEntry extends Equatable {
         'position_ms': positionMs,
         'episodes_total': episodesTotal,
         if (score != null) 'score': score,
+        if (mediaType != null) 'media_type': mediaType,
         'updated_at': updatedAt.toIso8601String(),
       };
 
@@ -197,6 +214,7 @@ class UserAnimeEntry extends Equatable {
       positionMs: (json['position_ms'] as num?)?.toInt() ?? 0,
       episodesTotal: ((json['total_episodes'] ?? json['episodes_total']) as num?)?.toInt(),
       score: (json['score'] as num?)?.toDouble(),
+      mediaType: (json['media_type'] ?? json['kind'])?.toString(),
       updatedAt:
           DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
     );

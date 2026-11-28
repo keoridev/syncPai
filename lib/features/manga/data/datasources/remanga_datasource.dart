@@ -8,6 +8,7 @@ class RemangaDataSource {
   final Dio _dio;
 
   static const String _baseUrl = 'https://api.remanga.org/api';
+  static bool _isCatalogEndpointUnavailable = false;
 
   RemangaDataSource({Dio? customDio})
       : _dio = customDio ??
@@ -84,6 +85,7 @@ class RemangaDataSource {
     String ordering = '-rating',
     int? type,
   }) async {
+    if (_isCatalogEndpointUnavailable) return const [];
     try {
       final params = <String, dynamic>{
         'page': page,
@@ -93,7 +95,17 @@ class RemangaDataSource {
       if (type != null) {
         params['types'] = type;
       }
-      final res = await _dio.get('/search/catalog/', queryParameters: params);
+      final res = await _dio.get(
+        'https://api.remanga.org/api/v2/search/catalog/',
+        queryParameters: params,
+        options: Options(
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+      if (res.statusCode == 404 || res.statusCode == 410) {
+        _isCatalogEndpointUnavailable = true;
+        return const [];
+      }
       final body = res.data;
       final content = body is Map ? body['content'] : null;
       if (content is! List) return const [];

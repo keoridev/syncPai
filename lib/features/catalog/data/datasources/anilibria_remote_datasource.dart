@@ -138,15 +138,47 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
     caseSensitive: false,
   );
 
+  static String _sanitizeSearchQuery(String raw) {
+    var q = raw.trim();
+    if (q.length > 80) {
+      q = q.split(',').first.trim();
+      if (q.length > 80) {
+        final cut = q.substring(0, 80);
+        final lastSpace = cut.lastIndexOf(' ');
+        q = (lastSpace > 24 ? cut.substring(0, lastSpace) : cut).trim();
+      }
+    }
+    return q;
+  }
+
+  static double _titleSimilarity(String a, String b) {
+    final t1 = a
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2)
+        .toSet();
+    final t2 = b
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2)
+        .toSet();
+    if (t1.isEmpty || t2.isEmpty) return 0.0;
+    return t1.intersection(t2).length / t1.union(t2).length;
+  }
+
   @override
   Future<List<AnimeTitleDto>> searchTitles(String query, {int limit = 30}) async {
-    final trimmed = query.trim();
+    final trimmed = _sanitizeSearchQuery(query);
     if (trimmed.isEmpty ||
         _slugQueryRegex.hasMatch(trimmed) ||
         _placeholderTitleRegex.hasMatch(trimmed)) {
       return const [];
     }
-    final cacheKey = trimmed.toLowerCase();
+    final cacheKey = '${ApiConstants.searchReleases}?query=${trimmed.toLowerCase()}';
     if (_emptySearchCache.contains(cacheKey)) return const [];
     final cached = _searchCache[cacheKey];
     if (cached != null) return cached;
@@ -246,11 +278,15 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
         final cleanQuery = rawCode.substring('search:'.length).trim();
         if (cleanQuery.isNotEmpty) {
           final searchResults = await searchTitles(cleanQuery);
-          if (searchResults.isNotEmpty) {
-            if (id != null && id > 0) {
-              _shikimoriToAnilibriaIdCache[id] = searchResults.first.id;
+          for (final dto in searchResults) {
+            final simRu = _titleSimilarity(cleanQuery, dto.russianTitle);
+            final simEn = _titleSimilarity(cleanQuery, dto.englishTitle);
+            if (simRu >= 0.55 || simEn >= 0.55) {
+              if (id != null && id > 0) {
+                _shikimoriToAnilibriaIdCache[id] = dto.id;
+              }
+              return dto;
             }
-            return searchResults.first;
           }
         }
         return _buildFallbackShikimoriDto(id: id, code: cleanQuery);
@@ -291,11 +327,15 @@ class AnilibriaRemoteDataSourceImpl implements AnilibriaRemoteDataSource {
           } catch (_) {
             try {
               final searchResults = await searchTitles(rawCode);
-              if (searchResults.isNotEmpty) {
-                if (id != null && id > 0) {
-                  _shikimoriToAnilibriaIdCache[id] = searchResults.first.id;
+              for (final dto in searchResults) {
+                final simRu = _titleSimilarity(rawCode, dto.russianTitle);
+                final simEn = _titleSimilarity(rawCode, dto.englishTitle);
+                if (simRu >= 0.55 || simEn >= 0.55) {
+                  if (id != null && id > 0) {
+                    _shikimoriToAnilibriaIdCache[id] = dto.id;
+                  }
+                  return dto;
                 }
-                return searchResults.first;
               }
             } catch (_) {}
           }

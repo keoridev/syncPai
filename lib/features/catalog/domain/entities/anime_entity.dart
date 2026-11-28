@@ -39,6 +39,30 @@ class AnimeEntity extends Equatable {
 
   String get displayTitle => titleRu.isNotEmpty ? titleRu : titleEn;
 
+  AnimeEntity copyWith({
+    String? posterUrl,
+    String? fallbackPosterUrl,
+    bool clearPosterUrl = false,
+  }) {
+    return AnimeEntity(
+      id: id,
+      shikimoriId: shikimoriId,
+      titleRu: titleRu,
+      titleEn: titleEn,
+      posterUrl: clearPosterUrl ? null : (posterUrl ?? this.posterUrl),
+      fallbackPosterUrl: fallbackPosterUrl ?? this.fallbackPosterUrl,
+      kind: kind,
+      status: status,
+      score: score,
+      episodesTotal: episodesTotal,
+      externalPlayer: externalPlayer,
+      updatedAt: updatedAt,
+      year: year,
+      description: description,
+      genres: genres,
+    );
+  }
+
   /// Преобразование в AnimeTitle для совместимости со всеми существующими UI-виджетами
   AnimeTitle toAnimeTitle() {
     var cleanPoster = (posterUrl ?? '').trim();

@@ -85,7 +85,9 @@ class _ClipSideActionsState extends State<ClipSideActions>
             iconColor: widget.clip.isLiked
                 ? const Color(0xFFFF2E63)
                 : Colors.white,
-            label: _formatCount(widget.clip.likesCount),
+            label: widget.clip.likesCount > 0
+                ? _formatCount(widget.clip.likesCount)
+                : '',
             onTap: _handleLikeTap,
           ),
         ),
@@ -156,20 +158,6 @@ class _ClipSideActionsState extends State<ClipSideActions>
             ],
           ),
         ),
-
-        // 4. Кнопка «YouTube»
-        if (widget.clip.youtubeUrl != null && widget.clip.youtubeUrl!.isNotEmpty) ...[
-          const SizedBox(height: 18),
-          _CleanActionButton(
-            icon: Icons.play_arrow_rounded,
-            iconColor: const Color(0xFFFF2A2A),
-            label: 'YouTube',
-            onTap: () {
-              HapticFeedback.lightImpact();
-              widget.onOpenYouTube?.call();
-            },
-          ),
-        ],
       ],
     );
   }

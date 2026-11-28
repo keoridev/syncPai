@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../features/winter_theme/domain/services/winter_theme_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_dimensions.dart';
@@ -119,6 +120,9 @@ class SyncPaiMascot extends StatefulWidget {
 
 class _SyncPaiMascotState extends State<SyncPaiMascot>
     with SingleTickerProviderStateMixin {
+  static Set<String>? _registeredAssets;
+  static Future<void>? _manifestLoadFuture;
+
   AnimationController? _floatController;
   Animation<double>? _floatAnimation;
 
@@ -126,7 +130,23 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
   void initState() {
     super.initState();
     _initAnimation();
+    _ensureAssetManifestLoaded();
     WinterThemeService.instance.addListener(_onWinterThemeChanged);
+  }
+
+  void _ensureAssetManifestLoaded() {
+    if (_registeredAssets != null) return;
+    _manifestLoadFuture ??= () async {
+      try {
+        final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+        _registeredAssets = manifest.listAssets().toSet();
+      } catch (_) {
+        _registeredAssets = const <String>{};
+      }
+    }();
+    _manifestLoadFuture!.then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onWinterThemeChanged() {
@@ -191,12 +211,17 @@ class _SyncPaiMascotState extends State<SyncPaiMascot>
     final displayMessage = widget.message ?? '';
     final displayDesc = widget.description ?? '';
 
+    final useWinterAsset = effectiveState.category == MascotCategory.winter &&
+        (_registeredAssets?.contains(effectiveState.assetPath) ?? false);
+    final resolvedAssetPath =
+        useWinterAsset ? effectiveState.assetPath : widget.state.assetPath;
+
     Widget imageContent = Semantics(
       label: '${effectiveState.title}: ${effectiveState.description}',
       image: true,
       child: Image.asset(
-        effectiveState.assetPath,
-        key: ValueKey<String>(effectiveState.assetPath),
+        resolvedAssetPath,
+        key: ValueKey<String>(resolvedAssetPath),
         width: targetWidth,
         height: targetHeight,
         fit: BoxFit.contain,

@@ -7,6 +7,7 @@ import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../../catalog/presentation/cubit/catalog_cubit.dart';
 import '../../../main/presentation/screens/main_screen.dart';
 import '../../domain/entities/manga_bridge.dart';
@@ -15,7 +16,14 @@ import '../cubit/user_manga_list_cubit.dart';
 
 /// Вкладка «Манга» внутри единого экрана «Мои списки & Закладки».
 class UserMangaListView extends StatefulWidget {
-  const UserMangaListView({super.key});
+  final bool isGridView;
+  final int gridColumns;
+
+  const UserMangaListView({
+    super.key,
+    this.isGridView = true,
+    this.gridColumns = 3,
+  });
 
   @override
   State<UserMangaListView> createState() => _UserMangaListViewState();
@@ -359,6 +367,20 @@ class _UserMangaListViewState extends State<UserMangaListView> {
                   ),
                 ),
               )
+            else if (widget.isGridView)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                sliver: SliverGrid(
+                  gridDelegate: _buildGridDelegate(context),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final entry = items[index];
+                      return _buildMangaGridCard(context, entry);
+                    },
+                    childCount: items.length,
+                  ),
+                ),
+              )
             else
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
@@ -371,82 +393,88 @@ class _UserMangaListViewState extends State<UserMangaListView> {
                         ? 'Глава ${entry.lastReadChapter} / ${entry.chaptersCount}'
                         : 'Глава ${entry.lastReadChapter}';
 
-                    return Material(
-                      color: const Color(0xFF151923),
-                      borderRadius: BorderRadius.circular(14),
-                      child: InkWell(
+                    return MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Material(
+                        color: const Color(0xFF151923),
                         borderRadius: BorderRadius.circular(14),
-                        onTap: () => _openReader(context, entry),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: SizedBox(
-                                  width: 54,
-                                  height: 78,
-                                  child: entry.coverUrl.isNotEmpty
-                                      ? CachedNetworkImage(
-                                          imageUrl: wrapCorsSafeUrl(entry.coverUrl),
-                                          fit: BoxFit.cover,
-                                          errorWidget: (_, __, ___) => const ColoredBox(
-                                            color: Color(0xFF1A2030),
-                                            child: Icon(Icons.menu_book_rounded, color: Colors.white38),
-                                          ),
-                                        )
-                                      : const ColoredBox(
-                                          color: Color(0xFF1A2030),
-                                          child: Icon(Icons.menu_book_rounded, color: Colors.white38),
-                                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => _openDetails(context, entry),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: SizedBox(
+                                    width: 54,
+                                    height: 78,
+                                    child: SafeAnimePoster(
+                                      key: ValueKey(
+                                        'manga_list_${entry.mangaId}_${entry.mangaTitle}',
+                                      ),
+                                      imageUrl: entry.coverUrl,
+                                      title: entry.mangaTitle,
+                                      borderRadius: 10,
+                                      memCacheWidth: 160,
+                                      monogramFontSize: 20,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      entry.mangaTitle,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.mangaTitle,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        chapterProgress,
+                                        style: const TextStyle(
+                                          color: Color(0xFF35D9D5),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (entry.status == MangaListStatus.reading)
+                                  ElevatedButton(
+                                    key: ValueKey('manga_resume_${entry.mangaId}'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: primary,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onPressed: () => _openReader(context, entry),
+                                    child: const Text(
+                                      'Продолжить',
+                                      style: TextStyle(
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      chapterProgress,
-                                      style: const TextStyle(
-                                        color: Color(0xFF35D9D5),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (entry.status == MangaListStatus.reading)
-                                ElevatedButton(
-                                  key: ValueKey('manga_resume_${entry.mangaId}'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: primary,
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
                                   ),
-                                  onPressed: () => _openReader(context, entry),
-                                  child: const Text(
-                                    'Продолжить',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -460,7 +488,156 @@ class _UserMangaListViewState extends State<UserMangaListView> {
     );
   }
 
+  SliverGridDelegate _buildGridDelegate(BuildContext context) {
+    final screenW = MediaQuery.sizeOf(context).width;
+    if (screenW >= 900) {
+      final approxW = (screenW - 230 - 48).clamp(360.0, 2400.0);
+      final cols = (approxW / 231).ceil().clamp(2, 8);
+      final cardW = ((approxW - 16 * (cols - 1)) / cols).clamp(150.0, 215.0);
+      return SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 215,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: cardW / (cardW * 1.5 + 68),
+      );
+    }
+    final cols = widget.gridColumns.clamp(1, 4);
+    if (cols == 1) {
+      return const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 1,
+        childAspectRatio: 2.8,
+        mainAxisSpacing: 8,
+      );
+    }
+    final cardW = (screenW - 40 - 12.0 * (cols - 1)) / cols;
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: cols,
+      childAspectRatio: cardW / (cardW * 1.5 + 68),
+      crossAxisSpacing: 12.0,
+      mainAxisSpacing: 12.0,
+    );
+  }
+
+  Widget _buildMangaGridCard(BuildContext context, UserMangaEntry entry) {
+    final progressPill = entry.chaptersCount != null
+        ? 'Гл. ${entry.lastReadChapter} / ${entry.chaptersCount}'
+        : 'Гл. ${entry.lastReadChapter}';
+    final subtitle = '${entry.status.labelRu} • $progressPill';
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openDetails(context, entry),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF161A22),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0x18FFFFFF)),
+                      ),
+                      child: SafeAnimePoster(
+                        key: ValueKey(
+                          'manga_grid_${entry.mangaId}_${entry.mangaTitle}',
+                        ),
+                        imageUrl: entry.coverUrl,
+                        title: entry.mangaTitle,
+                        borderRadius: 13,
+                        memCacheWidth: 360,
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE60D0F12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0x33FFFFFF)),
+                        ),
+                        child: Text(
+                          progressPill,
+                          style: const TextStyle(
+                            color: Color(0xFFF8FAFC),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 36,
+              child: Text(
+                entry.mangaTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openDetails(BuildContext context, UserMangaEntry entry) {
+    final effectiveId = entry.mangaId.trim().isNotEmpty
+        ? entry.mangaId.trim()
+        : entry.mangaTitle.trim();
+    if (effectiveId.isEmpty) return;
+    final initialManga = MangaDexManga(
+      id: effectiveId,
+      title: entry.mangaTitle,
+      coverUrl: entry.coverUrl,
+      chaptersCount: entry.chaptersCount,
+      source: 'shikimori',
+    );
+    context.pushNamed(
+      'manga_details',
+      pathParameters: {'id': effectiveId},
+      extra: initialManga,
+    );
+  }
+
   void _openReader(BuildContext context, UserMangaEntry entry) {
+    if (entry.mangaId.trim().isEmpty) {
+      _openDetails(context, entry);
+      return;
+    }
     final bridge = AnimeMangaBridge(
       anilibriaId: 0,
       mangaDexId: entry.mangaId,
@@ -472,7 +649,7 @@ class _UserMangaListViewState extends State<UserMangaListView> {
       'manga_reader',
       extra: {
         'bridge': bridge,
-        'initialChapter': double.tryParse(entry.lastReadChapter)?.floor(),
+        'initialChapter': double.tryParse(entry.lastReadChapter)?.floor() ?? 1,
       },
     );
   }

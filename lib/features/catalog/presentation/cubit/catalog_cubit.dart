@@ -571,6 +571,20 @@ class CatalogCubit extends Cubit<CatalogState> {
       _cache[cleanCategory] = prefetched;
     }
 
+    // 0ms: мгновенно подтягиваем кэш курируемых лент из SharedPreferences
+    if (_seasonOngoingTitles.isEmpty) {
+      final cachedOngoing = CatalogPrefetchService.instance.getCached('ongoing');
+      if (cachedOngoing != null && cachedOngoing.isNotEmpty) {
+        _seasonOngoingTitles = cachedOngoing;
+      }
+    }
+    if (_topWeekTitles.isEmpty) {
+      final cachedTop = CatalogPrefetchService.instance.getCached('top_week');
+      if (cachedTop != null && cachedTop.isNotEmpty) {
+        _topWeekTitles = cachedTop;
+      }
+    }
+
     // Если данные для этого жанра уже есть в кэше — отдаем их моментально (0ms)!
     if (_cache.containsKey(cleanCategory) && _cache[cleanCategory]!.isNotEmpty) {
       final cached = _cache[cleanCategory]!;
@@ -758,9 +772,21 @@ class CatalogCubit extends Cubit<CatalogState> {
 
       if (results[0].isNotEmpty) {
         _seasonOngoingTitles = results[0];
+        unawaited(
+          CatalogPrefetchService.instance.putCache(
+            'ongoing',
+            _seasonOngoingTitles,
+          ),
+        );
       }
       if (results[1].isNotEmpty) {
         _topWeekTitles = results[1];
+        unawaited(
+          CatalogPrefetchService.instance.putCache(
+            'top_week',
+            _topWeekTitles,
+          ),
+        );
       } else if (useCase != null && _topWeekTitles.isEmpty) {
         try {
           final fallbackPage = await useCase.getReleases(

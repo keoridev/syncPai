@@ -39,31 +39,39 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
       final deduplicated = <WatchHistoryItem>[];
       final seenIds = <int>{};
       final seenNames = <String>{};
+      var dirty = false;
 
       for (final item in list) {
         final normName = item.titleName.trim().toLowerCase();
         if (seenIds.contains(item.titleId) ||
             (normName.isNotEmpty && seenNames.contains(normName))) {
+          dirty = true;
           continue;
         }
         seenIds.add(item.titleId);
         if (normName.isNotEmpty) {
           seenNames.add(normName);
         }
-        final sanitizedItem =
-            AnimePosterResolver.isMissingOrPlaceholder(item.posterUrl)
-                ? WatchHistoryItem(
-                    titleId: item.titleId,
-                    titleName: item.titleName,
-                    posterUrl: '',
-                    episode: item.episode,
-                    episodeName: item.episodeName,
-                    positionMs: item.positionMs,
-                    durationMs: item.durationMs,
-                    updatedAt: item.updatedAt,
-                  )
-                : item;
-        deduplicated.add(sanitizedItem);
+
+        final isBadPoster =
+            AnimePosterResolver.isMissingOrPlaceholder(item.posterUrl) ||
+                AnimePosterResolver.isAniLibriaWatermarkedUrl(item.posterUrl);
+        if (isBadPoster) {
+          final cachedClean = AnimePosterResolver.instance.getCachedSync(
+            malId: item.titleId > 0 ? item.titleId : null,
+            title: item.titleName,
+          );
+          final nextPoster = cachedClean ?? '';
+          if (nextPoster != item.posterUrl) dirty = true;
+          deduplicated.add(item.copyWith(posterUrl: nextPoster));
+        } else {
+          deduplicated.add(item);
+        }
+      }
+      if (dirty) {
+        final encoded =
+            jsonEncode(deduplicated.map((e) => e.toJson()).toList());
+        await prefs.setString(_historyKey, encoded);
       }
       return deduplicated;
     } catch (_) {
@@ -74,12 +82,24 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
   @override
   Future<void> saveProgress(WatchHistoryItem item) async {
     final list = await getAllHistory();
-    final normName = item.titleName.trim().toLowerCase();
+    final isBadPoster =
+        AnimePosterResolver.isMissingOrPlaceholder(item.posterUrl) ||
+            AnimePosterResolver.isAniLibriaWatermarkedUrl(item.posterUrl);
+    final sanitizedItem = isBadPoster
+        ? item.copyWith(
+            posterUrl: AnimePosterResolver.instance.getCachedSync(
+                  malId: item.titleId > 0 ? item.titleId : null,
+                  title: item.titleName,
+                ) ??
+                '',
+          )
+        : item;
+    final normName = sanitizedItem.titleName.trim().toLowerCase();
     final updated = List<WatchHistoryItem>.from(list)
       ..removeWhere((e) =>
-          e.titleId == item.titleId ||
+          e.titleId == sanitizedItem.titleId ||
           (normName.isNotEmpty && e.titleName.trim().toLowerCase() == normName))
-      ..insert(0, item);
+      ..insert(0, sanitizedItem);
 
     // Храним последние 100 тайтлов
     if (updated.length > 100) {
@@ -114,6 +134,28 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
 
     final encoded = jsonEncode(updated.map((e) => e.toJson()).toList());
     await prefs.setString(_historyKey, encoded);
+  }
+
+  @override
+  Future<void> updatePosterUrl(int titleId, String posterUrl) async {
+    if (titleId <= 0 ||
+        AnimePosterResolver.isMissingOrPlaceholder(posterUrl) ||
+        AnimePosterResolver.isAniLibriaWatermarkedUrl(posterUrl)) {
+      return;
+    }
+    final list = await getAllHistory();
+    var changed = false;
+    final updated = list.map((item) {
+      if (item.titleId == titleId && item.posterUrl != posterUrl) {
+        changed = true;
+        return item.copyWith(posterUrl: posterUrl);
+      }
+      return item;
+    }).toList();
+    if (changed) {
+      final encoded = jsonEncode(updated.map((e) => e.toJson()).toList());
+      await prefs.setString(_historyKey, encoded);
+    }
   }
 }
 

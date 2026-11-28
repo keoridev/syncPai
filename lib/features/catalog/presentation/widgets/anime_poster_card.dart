@@ -3,6 +3,7 @@ import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/services/device_performance_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/poster_picker_dialog.dart';
 import '../../../../core/widgets/safe_anime_poster.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../anime_lists/domain/entities/user_anime_entry.dart';
@@ -67,7 +68,17 @@ class UnifiedAnimeCard extends StatelessWidget {
 
     return RepaintBoundary(
       child: GestureDetector(
-        onLongPress: onLongPress,
+        onSecondaryTap: () => PosterPickerDialog.show(
+          context,
+          title: title,
+          onPosterSelected: onPosterResolved,
+        ),
+        onLongPress: onLongPress ??
+            () => PosterPickerDialog.show(
+                  context,
+                  title: title,
+                  onPosterSelected: onPosterResolved,
+                ),
         child: TvFocusable(
           onPressed: onTap,
           borderRadius: BorderRadius.circular(posterRadius),
@@ -121,7 +132,7 @@ class UnifiedAnimeCard extends StatelessWidget {
                                       fit: BoxFit.cover,
                                       alignment: Alignment.center,
                                       memCacheWidth: DevicePerformanceService.instance
-                                          .downscaleMemCacheWidth(420),
+                                          .downscaleMemCacheWidth(380),
                                       monogramFontSize: 40,
                                     ),
                                   ),

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../domain/entities/anime_entity.dart';
 import '../../domain/entities/catalog_filter.dart';
 import '../../domain/entities/translation_entity.dart';
@@ -26,7 +27,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
         limit: limit,
         cancelToken: cancelToken,
       );
-      final items = models.map((m) => m.toDomain()).toList();
+      final rawItems = models.map((m) => m.toDomain()).toList();
+      final items =
+          AnimePosterResolver.instance.applyCachedPostersSyncEntities(rawItems);
       return CatalogPage(
         items: items,
         page: page,
@@ -65,7 +68,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
         types: types,
         cancelToken: cancelToken,
       );
-      return models.map((m) => m.toDomain()).toList();
+      return AnimePosterResolver.instance.applyCachedPostersSyncEntities(
+        models.map((m) => m.toDomain()).toList(),
+      );
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);
     } on ServerException catch (e) {
@@ -85,7 +90,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
       final models = await remoteDataSource.getScheduleWeek(
         cancelToken: cancelToken,
       );
-      return models.map((m) => m.toDomain()).toList();
+      return AnimePosterResolver.instance.applyCachedPostersSyncEntities(
+        models.map((m) => m.toDomain()).toList(),
+      );
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);
     } on ServerException catch (e) {
@@ -109,7 +116,9 @@ class AnimeCatalogRepositoryImpl implements AnimeCatalogRepository {
         limit: limit,
         cancelToken: cancelToken,
       );
-      return models.map((m) => m.toDomain()).toList();
+      return AnimePosterResolver.instance.applyCachedPostersSyncEntities(
+        models.map((m) => m.toDomain()).toList(),
+      );
     } on NetworkException catch (e) {
       throw NetworkFailure(e.message);
     } on ServerException catch (e) {

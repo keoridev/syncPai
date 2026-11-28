@@ -619,22 +619,26 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B26),
+                    color: const Color(0xFF15222E),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: const Color(0x26FFFFFF),
+                      color: const Color(0x4D38BDF8),
                       width: 1.0,
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(badge.icon, size: 12, color: accent),
+                      Icon(
+                        badge.icon,
+                        size: 12,
+                        color: const Color(0xFF7DD3FC),
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Ур. ${badge.level}',
-                        style: TextStyle(
-                          color: accent,
+                        style: const TextStyle(
+                          color: Color(0xFF7DD3FC),
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                         ),
@@ -952,6 +956,17 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
                 message: widget.isCurrentUser
                     ? 'Изменить никнейм и статус'
                     : 'Скопировать Ник#Тег',
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A202E),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0x26FFFFFF)),
+                ),
+                textStyle: const TextStyle(
+                  color: Color(0xFFCBD5E1),
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
                 child: InkWell(
                   onTap: () => _showQuickNicknameAndStatusDialog(context, accent),
                   borderRadius: BorderRadius.circular(8),
@@ -1681,7 +1696,7 @@ class _SteamStyleProfileHeaderState extends State<SteamStyleProfileHeader>
             )
           else
             const Spacer(),
-          const Spacer(),
+          const SizedBox(width: 8),
           Icon(Icons.open_in_new_rounded, size: 13, color: scheme.onSurfaceVariant),
         ],
       ),

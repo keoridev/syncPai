@@ -1,5 +1,6 @@
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../domain/entities/anime_title.dart';
 import '../../domain/repositories/anime_catalog_repository.dart';
 import '../../domain/repositories/catalog_repository.dart';
@@ -49,7 +50,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
 
     try {
       final dtos = await remoteDataSource.getUpdates(page: page, limit: limit);
-      return dtos.map((dto) => dto.toDomain()).toList();
+      return AnimePosterResolver.instance.applyCachedPostersSync(
+        dtos.map((dto) => dto.toDomain()).toList(),
+      );
     } catch (_) {
       return [];
     }
@@ -72,7 +75,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
 
     try {
       final dtos = await remoteDataSource.searchTitles(query, limit: limit);
-      return dtos.map((dto) => dto.toDomain()).toList();
+      return AnimePosterResolver.instance.applyCachedPostersSync(
+        dtos.map((dto) => dto.toDomain()).toList(),
+      );
     } catch (_) {
       return [];
     }

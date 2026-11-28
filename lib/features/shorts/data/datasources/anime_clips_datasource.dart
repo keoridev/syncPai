@@ -103,7 +103,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
                 caption: caption,
                 videoUrl: streamUrl,
                 youtubeUrl: title.trailerUrl,
-                likesCount: 1400 + (title.id * 19) % 24000,
+                likesCount: 0,
                 authorName: 'AniLibria Stream',
                 tags: title.genres.take(4).map((g) => '#${g.replaceAll(' ', '_')}').toList(),
               ));
@@ -121,64 +121,64 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
           !rawClips.any((rc) => rc.animeId == c.animeId)),
     ];
 
-    // Резолвим реальные .m3u8 потоки AniLibria для моментов с пустым/плейсхолдерным/YouTube URL
-    if (repo != null) {
-      for (var i = 0; i < allClips.length; i++) {
-        final clip = allClips[i];
-        final lowerUrl = clip.videoUrl.toLowerCase();
-        final needsResolve = clip.videoUrl.isEmpty ||
-            clip.videoUrl.contains('_ep1_720') ||
-            lowerUrl.contains('youtube.com') ||
-            lowerUrl.contains('youtu.be');
-        if (!needsResolve) continue;
-
-        final cacheKey = clip.animeId;
-        String? realUrl = _resolvedStreamCache[cacheKey];
-        if (realUrl == null) {
-          try {
-            AnimeTitle? details;
-            if (clip.animeId > 0 && clip.animeId <= 12000) {
-              try {
-                final direct = await repo.getTitleDetails(id: clip.animeId);
-                if (direct.russianTitle.toLowerCase().contains(
-                      clip.animeTitle.split(' ').first.toLowerCase(),
-                    ) ||
-                    direct.englishTitle.toLowerCase().contains(
-                      clip.englishTitle.split(' ').first.toLowerCase(),
-                    )) {
-                  details = direct;
-                }
-              } catch (_) {}
-            }
-            if (details == null && clip.animeTitle.trim().isNotEmpty) {
-              final found = await repo.searchTitles(clip.animeTitle);
-              if (found.isNotEmpty) {
-                details = found.first;
-              }
-            }
-            if (details != null && details.episodes.isNotEmpty) {
-              final ep = details.episodes.firstWhere(
-                (e) => e.episode == clip.episodeNumber,
-                orElse: () => details!.episodes.first,
-              );
-              realUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
-              if (realUrl != null && realUrl.isNotEmpty) {
-                _resolvedStreamCache[cacheKey] = realUrl;
-              }
-            }
-          } catch (_) {}
-        }
-
-        if (realUrl != null && realUrl.isNotEmpty) {
-          allClips[i] = clip.copyWith(videoUrl: realUrl);
-        } else {
-          // Не передаём YouTube/битый URL в media_kit — покажется карточка с кнопками
-          allClips[i] = clip.copyWith(videoUrl: '');
-        }
+    // Резолвим реальные .m3u8 потоки AniLibria со строгой проверкой названия, сезона и серии
+    final verifiedClips = <AnimeClip>[];
+    for (final clip in allClips) {
+      final lowerUrl = clip.videoUrl.toLowerCase();
+      final needsResolve = clip.videoUrl.isEmpty ||
+          clip.videoUrl.contains('_ep1_720') ||
+          lowerUrl.contains('youtube.com') ||
+          lowerUrl.contains('youtu.be');
+      if (!needsResolve) {
+        verifiedClips.add(clip);
+        continue;
       }
+
+      if (repo == null) continue;
+      final cacheKey = clip.animeId;
+      String? realUrl = _resolvedStreamCache[cacheKey];
+      if (realUrl == null) {
+        try {
+          AnimeTitle? details;
+          if (clip.animeId > 0 && clip.animeId <= 12000) {
+            try {
+              final direct = await repo.getTitleDetails(id: clip.animeId);
+              if (_isExactMomentTitleMatch(clip, direct) &&
+                  direct.episodes.any((e) => e.episode == clip.episodeNumber)) {
+                details = direct;
+              }
+            } catch (_) {}
+          }
+          if (details == null && clip.animeTitle.trim().isNotEmpty) {
+            final found = await repo.searchTitles(clip.animeTitle);
+            for (final cand in found) {
+              if (_isExactMomentTitleMatch(clip, cand) &&
+                  cand.episodes.any((e) => e.episode == clip.episodeNumber)) {
+                details = cand;
+                break;
+              }
+            }
+          }
+          if (details != null) {
+            final ep = details.episodes.firstWhere(
+              (e) => e.episode == clip.episodeNumber,
+            );
+            realUrl = ep.fhdUrl ?? ep.hdUrl ?? ep.sdUrl;
+            if (realUrl != null && realUrl.isNotEmpty) {
+              _resolvedStreamCache[cacheKey] = realUrl;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (realUrl != null && realUrl.isNotEmpty) {
+        verifiedClips.add(clip.copyWith(videoUrl: realUrl));
+      }
+      // Если точное совпадение тайтла/сезона/серии не найдено — пропускаем карточку,
+      // чтобы не воспроизводить чужое аниме.
     }
 
-    return allClips.map((clip) {
+    return verifiedClips.map((clip) {
       final isLiked = likedIds.contains(clip.id);
       final isBookmarked = bookmarkedIds.contains(clip.id);
       return clip.copyWith(
@@ -235,7 +235,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Кульминация сезона! Сон Джин-ву произносит заветное «Восстань» и подчиняет тень Игриса.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10344/1/720/0b3818c221192a39044eb9156d648f1a.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=9g0H2gKqQ5Y',
-        likesCount: 28420,
+        likesCount: 0,
         authorName: 'SyncPai Moments',
         tags: ['#sololeveling', '#arise', '#сон_джин_ву', '#эпик', '#бой'],
       ),
@@ -250,7 +250,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Битва титанов в Сибуе: Король проклятий Сукуна раскрывает истинное пламя против генерала Махораги.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/8789/1/720/8789_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=0kFhyjHhQ9g',
-        likesCount: 35190,
+        likesCount: 0,
         authorName: 'Shibuya Arc',
         tags: ['#jjk', '#сукуна', '#махорага', '#сибуя', '#магия'],
       ),
@@ -265,7 +265,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Легендарная 19-я серия: Тандзиро впервые вспоминает Танец Бога Огня в битве с Руи.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/8246/1/720/8246_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=7aMOurgDB-o',
-        likesCount: 42800,
+        likesCount: 0,
         authorName: 'Ufotable Magic',
         tags: ['#demonslayer', '#клинок', '#тандзиро', '#хиноками'],
       ),
@@ -280,7 +280,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: '«Аура, подчинись мне». Фрирен демонстрирует истинную бездонную ауру маны, скрываемую веками.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10338/1/720/10338_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=qgQunxD0qVU',
-        likesCount: 19830,
+        likesCount: 0,
         authorName: 'Frieren Lore',
         tags: ['#фрирен', '#магия', '#зольтраак', '#аура', '#шедевр'],
       ),
@@ -295,7 +295,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Гул Земли начался. Тысячи Колоссальных титанов под командованием Эрена пересекают океан.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9283/1/720/9283_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=E7WytQM244o',
-        likesCount: 31400,
+        likesCount: 0,
         authorName: 'Scouting Legion',
         tags: ['#атакатитанов', '#эрен', '#гулземли', '#rumbling'],
       ),
@@ -307,10 +307,10 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/44511/main-3fe71946dc4ea361ca395a1278ffbc16.jpg',
         episodeNumber: 1,
         targetTimestampSeconds: 945, // 15:45
-        caption: '🩸 Первое появление Человека-бензопилы! Дэндзи дергает шнур и разносит толпу зомби-демонов.',
+        caption: 'Первое появление Человека-бензопилы! Дэндзи дергает шнур и разносит толпу зомби-демонов.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9811/1/720/9811_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=v4yLeNt-kCU',
-        likesCount: 26500,
+        likesCount: 0,
         authorName: 'Public Safety',
         tags: ['#человекбензопила', '#дэндзи', '#почита', '#мясорубка'],
       ),
@@ -325,7 +325,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Банкай Занка но Тачи: Главнокомандующий Ямамото высвобождает жар в 15 000 000 градусов.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9780/1/720/9780_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=e8YBesRKq_U',
-        likesCount: 22100,
+        likesCount: 0,
         authorName: 'Gotei 13',
         tags: ['#блич', '#ямамото', '#банкай', '#занпакто', '#занконотачи'],
       ),
@@ -340,10 +340,62 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         caption: 'Невероятная динамика боевых искусств: Заместитель министра Ли Бин берется за расследование.',
         videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/10420/1/720/10420_ep1_720.m3u8',
         youtubeUrl: 'https://www.youtube.com/watch?v=wXqM1gI34w8',
-        likesCount: 15320,
+        likesCount: 0,
         authorName: 'White Cat Studio',
         tags: ['#легендаобеломкоте', '#либин', '#кунгфу', '#детектив'],
       ),
     ];
+  }
+
+  static int? _extractSeasonNumber(String raw) {
+    final s = raw.toLowerCase().trim();
+    if (s.isEmpty) return null;
+    final explicit = RegExp(
+      r'(?:сезон|season|часть|part)\s*(\d+)|(\d+)\s*(?:сезон|season)',
+    ).firstMatch(s);
+    if (explicit != null) {
+      return int.tryParse(explicit.group(1) ?? explicit.group(2) ?? '');
+    }
+    final trailing = RegExp(r'(?:^|\s)([2-9]|1\d)(?:\s|$)').firstMatch(s);
+    if (trailing != null) return int.tryParse(trailing.group(1)!);
+    return null;
+  }
+
+  static double _tokenSimilarity(String a, String b) {
+    final t1 = a
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2)
+        .toSet();
+    final t2 = b
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^a-zа-я0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2)
+        .toSet();
+    if (t1.isEmpty || t2.isEmpty) return 0.0;
+    return t1.intersection(t2).length / t1.union(t2).length;
+  }
+
+  static bool _isExactMomentTitleMatch(AnimeClip clip, AnimeTitle candidate) {
+    final targetSeason = _extractSeasonNumber(clip.animeTitle) ??
+        _extractSeasonNumber(clip.englishTitle);
+    final candSeason = _extractSeasonNumber(candidate.russianTitle) ??
+        _extractSeasonNumber(candidate.englishTitle);
+    if (targetSeason != null) {
+      if (candSeason != targetSeason) return false;
+    } else if (candSeason != null && candSeason > 1) {
+      return false;
+    }
+
+    final simRu = _tokenSimilarity(clip.animeTitle, candidate.russianTitle);
+    final simEn = clip.englishTitle.trim().isNotEmpty &&
+            candidate.englishTitle.trim().isNotEmpty
+        ? _tokenSimilarity(clip.englishTitle, candidate.englishTitle)
+        : 0.0;
+    return simRu >= 0.80 || simEn >= 0.80;
   }
 }

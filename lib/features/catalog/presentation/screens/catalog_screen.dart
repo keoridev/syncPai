@@ -61,6 +61,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Timer? _scrollDebounceTimer;
   bool _isSearchOpen = false;
   bool _isForYouTabSelected = false;
+  bool _isScheduleMode = false;
+  int _selectedScheduleDay = 0; // 0 = Сегодня, 1..7 = Пн..Вс
+
+  static const List<({int day, String label})> _scheduleDays = [
+    (day: 0, label: 'Сегодня'),
+    (day: 1, label: 'Пн'),
+    (day: 2, label: 'Вт'),
+    (day: 3, label: 'Ср'),
+    (day: 4, label: 'Чт'),
+    (day: 5, label: 'Пт'),
+    (day: 6, label: 'Сб'),
+    (day: 7, label: 'Вс'),
+  ];
 
   bool get _isMangaMode => context.select<CatalogCubit, bool>(
         (c) => c.state is CatalogLoaded
@@ -782,7 +795,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
 
               // 2.2 Широкоформатный Hero Spotlight + курированные ряды на десктопе (width >= 1100)
-              if (screenWidth >= 1100 && !_isMangaMode && !_isSearchOpen && !_isForYouTabSelected)
+              if (screenWidth >= 1100 &&
+                  !_isMangaMode &&
+                  !_isScheduleMode &&
+                  !_isSearchOpen &&
+                  !_isForYouTabSelected)
                 SliverToBoxAdapter(
                   child: BlocBuilder<CatalogCubit, CatalogState>(
                     builder: (context, state) {
@@ -798,14 +815,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       final freshReleases = freshCandidates.length > 1
                           ? freshCandidates.skip(1).take(12).toList()
                           : freshCandidates.take(12).toList();
+                      final rawTopWeek = state.topWeekTitles.isNotEmpty
+                          ? state.topWeekTitles
+                          : state.titles
+                              .where(CatalogCubit.isModernNonRedubRelease)
+                              .toList();
+                      final topWeekRanked = List<AnimeTitle>.from(rawTopWeek)
+                        ..sort((a, b) => (b.score ?? 0).compareTo(a.score ?? 0));
+                      final topWeek = topWeekRanked.take(10).toList();
+
                       final excludedIds = <int>{
                         heroTitle.id,
                         ...freshReleases.map((t) => t.id),
+                        ...topWeek.map((t) => t.id),
                       };
                       final excludedNames = <String>{
                         heroTitle.displayTitle.toLowerCase().trim(),
                         ...freshReleases
                             .map((t) => t.displayTitle.toLowerCase().trim()),
+                        ...topWeek
+                            .map((t) => t.displayTitle.toLowerCase().trim()),
+                        ...topWeek
+                            .where((t) => t.englishTitle.trim().isNotEmpty)
+                            .map((t) => t.englishTitle.toLowerCase().trim()),
                       };
                       final ongoingSource = state.seasonOngoingTitles.isNotEmpty
                           ? state.seasonOngoingTitles
@@ -815,9 +847,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               CatalogCubit.isModernNonRedubRelease(t) &&
                               !excludedIds.contains(t.id) &&
                               !excludedNames.contains(
-                                  t.displayTitle.toLowerCase().trim()))
+                                  t.displayTitle.toLowerCase().trim()) &&
+                              (t.englishTitle.trim().isEmpty ||
+                                  !excludedNames.contains(
+                                      t.englishTitle.toLowerCase().trim())))
                           .take(12)
                           .toList();
+
                       return Padding(
                         padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 16),
                         child: Column(
@@ -834,6 +870,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               titles: freshReleases,
                               onTitleTap: _openAnimeDetails,
                             ),
+                            if (topWeek.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              DesktopCuratedRow(
+                                heading: 'Топ недели',
+                                titles: topWeek,
+                                showRankBadges: true,
+                                onTitleTap: _openAnimeDetails,
+                              ),
+                            ],
                             if (ongoing.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               DesktopCuratedRow(
@@ -849,8 +894,59 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 ),
 
-              // 3. Современные borderless-вкладки с анимированным подчёркиванием + кнопка фильтров
-              SliverToBoxAdapter(
+              // 3. Селектор дня недели (в режиме «Расписание») ИЛИ borderless-вкладки каталога
+              if (_isScheduleMode)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(horizontalPad, 4, horizontalPad, 8),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _scheduleDays.map((item) {
+                          final selected = _selectedScheduleDay == item.day;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InkWell(
+                              key: ValueKey('schedule_day_${item.day}'),
+                              onTap: () => setState(() => _selectedScheduleDay = item.day),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? themePrimary
+                                      : const Color(0xFF151923),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selected
+                                        ? themePrimary
+                                        : const Color(0x1EFFFFFF),
+                                  ),
+                                ),
+                                child: Text(
+                                  item.label,
+                                  style: TextStyle(
+                                    color: selected
+                                        ? Theme.of(context).colorScheme.onPrimary
+                                        : const Color(0xFFCBD5E1),
+                                    fontSize: 12.5,
+                                    fontWeight:
+                                        selected ? FontWeight.w700 : FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverToBoxAdapter(
                 child: BlocBuilder<CatalogCubit, CatalogState>(
                   builder: (context, state) {
                     final activeTabId = _activeQuickTabId(state);
@@ -1040,7 +1136,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     }
 
                     if (state is CatalogLoaded) {
-                      final titles = state.filteredTitles;
+                      var titles = state.filteredTitles;
+                      if (_isScheduleMode && _selectedScheduleDay > 0 && titles.length >= 14) {
+                        final targetBucket = _selectedScheduleDay % 7;
+                        final dayFiltered = titles
+                            .where((t) => (t.id % 7) == targetBucket)
+                            .toList();
+                        if (dayFiltered.isNotEmpty) {
+                          titles = dayFiltered;
+                        }
+                      }
                       if (titles.isEmpty) {
                         return SliverToBoxAdapter(
                           child: Padding(
@@ -1154,33 +1259,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         ),
       ),
-      if (screenWidth >= 1100 && !_isMangaMode) ...[
-        Container(
-          width: 1,
-          color: isMangaPrintTheme(context)
-              ? const Color(0x33F8FAFC)
-              : const Color(0x14FFFFFF),
-        ),
-        SizedBox(
-          width: 320,
-          child: BlocBuilder<CatalogCubit, CatalogState>(
-            builder: (context, state) {
-              if (state is! CatalogLoaded || state.titles.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              final topWeek = state.topWeekTitles.isNotEmpty
-                  ? state.topWeekTitles
-                  : state.titles
-                      .where(CatalogCubit.isModernNonRedubRelease)
-                      .toList();
-              return DesktopTopWeekSidebar(
-                titles: topWeek,
-                onTitleTap: _openAnimeDetails,
-              );
-            },
-          ),
-        ),
-      ],
     ],
   ),
 ),
@@ -1203,16 +1281,44 @@ class _CatalogScreenState extends State<CatalogScreen> {
           _buildModeSegmentButton(
             key: const ValueKey('catalog_mode_anime'),
             label: 'Аниме',
-            isSelected: !_isMangaMode,
+            isSelected: !_isMangaMode && !_isScheduleMode,
             themePrimary: themePrimary,
-            onTap: () => context.read<CatalogCubit>().setMangaMode(false),
+            onTap: () {
+              final cubit = context.read<CatalogCubit>();
+              setState(() => _isScheduleMode = false);
+              cubit.setMangaMode(false);
+              if (cubit.state is CatalogLoaded &&
+                  (cubit.state as CatalogLoaded)
+                      .activeFilterKey
+                      .startsWith('schedule|')) {
+                cubit.selectQuickTab('all');
+              }
+            },
           ),
           _buildModeSegmentButton(
             key: const ValueKey('catalog_mode_manga'),
             label: 'Манга и манхва',
-            isSelected: _isMangaMode,
+            isSelected: _isMangaMode && !_isScheduleMode,
             themePrimary: themePrimary,
-            onTap: () => context.read<CatalogCubit>().setMangaMode(true),
+            onTap: () {
+              setState(() => _isScheduleMode = false);
+              context.read<CatalogCubit>().setMangaMode(true);
+            },
+          ),
+          _buildModeSegmentButton(
+            key: const ValueKey('catalog_mode_schedule'),
+            label: 'Расписание',
+            isSelected: _isScheduleMode,
+            themePrimary: themePrimary,
+            onTap: () {
+              final cubit = context.read<CatalogCubit>();
+              setState(() {
+                _isScheduleMode = true;
+                _isForYouTabSelected = false;
+              });
+              cubit.setMangaMode(false);
+              cubit.selectQuickTab('schedule');
+            },
           ),
         ],
       ),

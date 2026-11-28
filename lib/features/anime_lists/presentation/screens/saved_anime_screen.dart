@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/image_cors_helper.dart';
+import '../../../../core/services/anime_poster_resolver.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -31,6 +32,7 @@ import '../../../catalog/presentation/widgets/anime_poster_card.dart';
 import '../../../downloads/domain/entities/download_task.dart';
 import '../../../downloads/presentation/cubit/download_cubit.dart';
 import '../../../downloads/presentation/cubit/download_state.dart';
+import '../../../manga/domain/entities/manga_bridge.dart';
 import '../../../manga/presentation/widgets/user_manga_list_view.dart';
 import '../../../player/domain/entities/player_quality.dart';
 import '../../../watch_history/domain/entities/watch_history_item.dart';
@@ -339,6 +341,36 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
         },
       ),
     );
+  }
+
+  final Set<String> _bulkHydratedTabs = {};
+
+  void _scheduleBulkTabHydration(String tabKey, List<UserAnimeEntry> entries) {
+    if (_bulkHydratedTabs.contains(tabKey) || entries.isEmpty) return;
+    _bulkHydratedTabs.add(tabKey);
+
+    final missingIds = entries
+        .where((e) =>
+            e.animeId > 0 &&
+            (AnimePosterResolver.isMissingOrPlaceholder(e.posterUrl) ||
+                AnimePosterResolver.isAniLibriaWatermarkedUrl(e.posterUrl)))
+        .map((e) => e.animeId)
+        .take(50)
+        .toList();
+    if (missingIds.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final cubit = context.read<AnimeListCubit>();
+      unawaited(
+        AnimePosterResolver.instance.resolveBatchIds(missingIds).then((hits) {
+          if (!mounted || hits.isEmpty) return;
+          for (final entry in hits.entries) {
+            unawaited(cubit.updatePosterUrl(entry.key, entry.value));
+          }
+        }),
+      );
+    });
   }
 
   @override
@@ -707,6 +739,14 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
     );
   }
 
+  static String _shortenMangaQuery(String raw) {
+    final beforeComma = raw.split(',').first.trim();
+    if (beforeComma.length <= 60) return beforeComma;
+    final cut = beforeComma.substring(0, 60);
+    final lastSpace = cut.lastIndexOf(' ');
+    return (lastSpace > 20 ? cut.substring(0, lastSpace) : cut).trim();
+  }
+
   void _openDetailsForEntry(BuildContext context, UserAnimeEntry entry) {
     try {
       final catalogState = context.read<CatalogCubit>().state;
@@ -725,6 +765,37 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
       }
 
       final poster = _resolvePosterUrl(entry);
+      final matchedKind = matched?.kind?.toLowerCase().trim() ?? '';
+      final isMangaKind = const {
+        'manga',
+        'ranobe',
+        'manhwa',
+        'manhua',
+        'one_shot',
+        'doujin',
+      }.contains(matchedKind);
+
+      if (entry.isMangaOrRanobe || isMangaKind) {
+        final cleanQuery = _shortenMangaQuery(entry.cleanTitleRu);
+        final mangaId =
+            entry.animeId > 0 ? '${entry.animeId}' : cleanQuery;
+        final initialManga = MangaDexManga(
+          id: mangaId,
+          title: cleanQuery.isNotEmpty ? cleanQuery : entry.cleanTitleRu,
+          originalTitle: entry.cleanTitleRu,
+          coverUrl: poster,
+          rating: entry.score,
+          chaptersCount: entry.episodesTotal,
+          source: 'shikimori',
+        );
+        context.pushNamed(
+          'manga_details',
+          pathParameters: {'id': mangaId},
+          extra: initialManga,
+        );
+        return;
+      }
+
       final targetTitle = matched ??
           AnimeTitle(
             id: entry.animeId,
@@ -881,6 +952,7 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
           builder: (context, listState) {
         final activeTab = listState.selectedTab;
         var entries = List<UserAnimeEntry>.from(listState.entriesFor(activeTab));
+        _scheduleBulkTabHydration(activeTab.name, entries);
 
         if (_searchQuery.isNotEmpty) {
           final query = _searchQuery.trim().toLowerCase();
@@ -1098,7 +1170,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
                   if (_isMangaMode)
-                    const UserMangaListView()
+                    UserMangaListView(
+                      isGridView: _viewMode != SavedAnimeViewMode.list,
+                      gridColumns: _gridColumns,
+                    )
                   else ...[
                   // БЛОК 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Продолжить просмотр» из WatchHistory
                   if (!_isHistoryTab && historyState.lastWatched != null)
@@ -2134,26 +2209,28 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             child: SizedBox(
                               width: double.infinity,
                               height: double.infinity,
-                              child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
-                                  ? CachedNetworkImage(
-                                      imageUrl: item.posterUrl,
-                                      memCacheWidth: 360,
-                                      maxWidthDiskCache: 480,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => ShimmerPlaceholder(
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      errorWidget: (_, __, ___) => Container(
-                                        color: AppColors.surfaceElevated,
-                                        child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
-                                      ),
-                                    )
-                                  : Container(
-                                      color: AppColors.surfaceElevated,
-                                      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
-                                    ),
+                              child: SafeAnimePoster(
+                                key: ValueKey(
+                                  'history_${item.titleId}_${item.titleName}',
+                                ),
+                                imageUrl: AnimePosterResolver
+                                        .isAniLibriaWatermarkedUrl(item.posterUrl)
+                                    ? null
+                                    : item.posterUrl,
+                                fallbackUrl: AnimePosterResolver
+                                        .isAniLibriaWatermarkedUrl(item.posterUrl)
+                                    ? item.posterUrl
+                                    : null,
+                                title: item.titleName,
+                                malId: item.titleId > 0 ? item.titleId : null,
+                                borderRadius: 12,
+                                memCacheWidth: 360,
+                                onPosterResolved: (url) {
+                                  context
+                                      .read<WatchHistoryCubit>()
+                                      .updatePosterUrl(item.titleId, url);
+                                },
+                              ),
                             ),
                           ),
                           Positioned(
@@ -2184,8 +2261,10 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               child: LinearProgressIndicator(
                                 value: item.progress,
                                 minHeight: 3,
-                                backgroundColor: Colors.black.withValues(alpha: 0.55),
-                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                backgroundColor: const Color(0x66000000),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Theme.of(context).colorScheme.primary,
+                                ),
                               ),
                             ),
                           ),
@@ -2242,8 +2321,9 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                     Text(
                       '${item.formattedPosition} / ${item.formattedDuration}',
                       style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 10,
+                        color: Color(0xFF94A3B8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -2279,26 +2359,29 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             SizedBox(
                               width: 72,
                               height: 100,
-                              child: item.posterUrl.isNotEmpty && item.posterUrl.startsWith('http')
-                                  ? CachedNetworkImage(
-                                      imageUrl: item.posterUrl,
-                                      memCacheWidth: 360,
-                                      maxWidthDiskCache: 480,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => ShimmerPlaceholder(
-                                        width: 72,
-                                        height: 100,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      errorWidget: (_, __, ___) => Container(
-                                        color: AppColors.surfaceElevated,
-                                        child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
-                                      ),
-                                    )
-                                  : Container(
-                                      color: AppColors.surfaceElevated,
-                                      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted),
-                                    ),
+                              child: SafeAnimePoster(
+                                key: ValueKey(
+                                  'history_card_${item.titleId}_${item.titleName}',
+                                ),
+                                imageUrl: AnimePosterResolver
+                                        .isAniLibriaWatermarkedUrl(item.posterUrl)
+                                    ? null
+                                    : item.posterUrl,
+                                fallbackUrl: AnimePosterResolver
+                                        .isAniLibriaWatermarkedUrl(item.posterUrl)
+                                    ? item.posterUrl
+                                    : null,
+                                title: item.titleName,
+                                malId: item.titleId > 0 ? item.titleId : null,
+                                borderRadius: 12,
+                                memCacheWidth: 220,
+                                monogramFontSize: 22,
+                                onPosterResolved: (url) {
+                                  context
+                                      .read<WatchHistoryCubit>()
+                                      .updatePosterUrl(item.titleId, url);
+                                },
+                              ),
                             ),
                             Positioned(
                               bottom: 0,
@@ -2306,9 +2389,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                               right: 0,
                               child: LinearProgressIndicator(
                                 value: item.progress,
-                                minHeight: 3.5,
-                                backgroundColor: Colors.black.withValues(alpha: 0.5),
-                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                                minHeight: 3,
+                                backgroundColor: const Color(0x66000000),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Theme.of(context).colorScheme.primary,
+                                ),
                               ),
                             ),
                           ],
@@ -2340,7 +2425,11 @@ class _SavedAnimeScreenState extends State<SavedAnimeScreen> {
                             const SizedBox(height: 2),
                             Text(
                               '${item.formattedPosition} / ${item.formattedDuration}',
-                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                              style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),

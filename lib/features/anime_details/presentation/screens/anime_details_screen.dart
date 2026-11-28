@@ -1132,114 +1132,118 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         statusLower.contains('anons') ||
         statusLower.contains('анонс');
 
-    // 1. Независимая быстрая загрузка серий/потоков AniLibria (не ждёт метаданные)
-    // Для анонсов без вышедших серий не подтягиваем эпизоды из предыдущих сезонов.
-    if (!isUpcomingAnons && getIt.isRegistered<GetPlayerLinksUseCase>()) {
-      unawaited(Future<void>(() async {
-        try {
-          final translations = await getIt<GetPlayerLinksUseCase>().call(
-            playerReleaseId,
-            title: displayTitle,
-          );
-          if (translations.isNotEmpty) {
-            final direct = translations.where((t) => t.isDirectStream && t.episodes.isNotEmpty);
-            if (direct.isNotEmpty) {
-              final eps = direct.first.episodes.map((e) => e.toEpisodeItem()).toList();
-              if (eps.isNotEmpty) {
-                final updated = _currentTitle.copyWith(
-                  episodes: eps,
-                  episodesTotal: eps.length,
-                );
-                AnimeDetailsCache.putTitle(updated);
-                if (mounted) {
-                  setState(() {
-                    _currentTitle = updated;
-                    _isLoadingDetails = false;
-                  });
-                }
-                return;
-              }
-            }
-          }
-        } catch (_) {}
-        if (mounted && _isLoadingDetails) {
-          setState(() => _isLoadingDetails = false);
-        }
-      }));
-    }
-
-    // 2. Независимая подгрузка метаданных/запасного списка серий (не блокирует AniLibria)
+    // 1 и 2: Параллельная загрузка серий AniLibria и метаданных через Future.wait
     final needsMetadata = _currentTitle.description.isEmpty ||
         _currentTitle.genres.isEmpty ||
         _currentTitle.episodes.length <= 1;
-    if (needsMetadata && getIt.isRegistered<CatalogRepository>()) {
-      unawaited(Future<void>(() async {
-        try {
-          var fetchedDetails = await getIt<CatalogRepository>().getTitleDetails(
-            id: releaseId,
-            code: _currentTitle.code,
-          );
-          if (fetchedDetails.genres.isEmpty &&
-              _currentTitle.genres.isEmpty &&
-              displayTitle.isNotEmpty) {
-            try {
-              final hits = await getIt<CatalogRepository>().searchTitles(
-                displayTitle,
-                limit: 3,
-              );
-              if (hits.isNotEmpty) {
-                final best = hits.firstWhere(
-                  (h) => h.genres.isNotEmpty,
-                  orElse: () => hits.first,
-                );
-                if (best.genres.isNotEmpty) {
-                  fetchedDetails = fetchedDetails.copyWith(
-                    genres: best.genres,
-                    description: fetchedDetails.description.isNotEmpty
-                        ? fetchedDetails.description
-                        : best.description,
+
+    await Future.wait([
+      if (!isUpcomingAnons && getIt.isRegistered<GetPlayerLinksUseCase>())
+        Future<void>(() async {
+          try {
+            final translations = await getIt<GetPlayerLinksUseCase>().call(
+              playerReleaseId,
+              title: displayTitle,
+            );
+            if (translations.isNotEmpty) {
+              final direct = translations
+                  .where((t) => t.isDirectStream && t.episodes.isNotEmpty);
+              if (direct.isNotEmpty) {
+                final eps =
+                    direct.first.episodes.map((e) => e.toEpisodeItem()).toList();
+                if (eps.isNotEmpty) {
+                  final updated = _currentTitle.copyWith(
+                    episodes: eps,
+                    episodesTotal: eps.length,
                   );
+                  AnimeDetailsCache.putTitle(updated);
+                  if (mounted) {
+                    setState(() {
+                      _currentTitle = updated;
+                      _isLoadingDetails = false;
+                    });
+                  }
+                  return;
                 }
               }
-            } catch (_) {}
-          }
-          final resolvedEpisodes = isUpcomingAnons
-              ? _currentTitle.episodes
-              : (_currentTitle.episodes.length > 1
-                  ? _currentTitle.episodes
-                  : (fetchedDetails.episodes.isNotEmpty
-                      ? fetchedDetails.episodes
-                      : _currentTitle.episodes));
-          final updatedTitle = _currentTitle.copyWith(
-            episodes: resolvedEpisodes,
-            episodesTotal: isUpcomingAnons
-                ? _currentTitle.episodesTotal
-                : (resolvedEpisodes.isNotEmpty
-                    ? resolvedEpisodes.length
-                    : (_currentTitle.episodesTotal ??
-                        fetchedDetails.episodesTotal)),
-            description: _currentTitle.description.isNotEmpty
-                ? _currentTitle.description
-                : fetchedDetails.description,
-            genres: _currentTitle.genres.isNotEmpty
-                ? _currentTitle.genres
-                : fetchedDetails.genres,
-            year: _currentTitle.year ?? fetchedDetails.year,
-          );
-          AnimeDetailsCache.putTitle(updatedTitle);
-          if (mounted) {
-            setState(() {
-              _isLoadingDetails = false;
-              _currentTitle = updatedTitle;
-            });
-          }
-        } catch (_) {
+            }
+          } catch (_) {}
           if (mounted && _isLoadingDetails) {
             setState(() => _isLoadingDetails = false);
           }
-        }
-      }));
-    } else if (!getIt.isRegistered<GetPlayerLinksUseCase>() && mounted && _isLoadingDetails) {
+        }),
+      if (needsMetadata && getIt.isRegistered<CatalogRepository>())
+        Future<void>(() async {
+          try {
+            var fetchedDetails =
+                await getIt<CatalogRepository>().getTitleDetails(
+              id: releaseId,
+              code: _currentTitle.code,
+            );
+            if (fetchedDetails.genres.isEmpty &&
+                _currentTitle.genres.isEmpty &&
+                displayTitle.isNotEmpty) {
+              try {
+                final hits = await getIt<CatalogRepository>().searchTitles(
+                  displayTitle,
+                  limit: 3,
+                );
+                if (hits.isNotEmpty) {
+                  final best = hits.firstWhere(
+                    (h) => h.genres.isNotEmpty,
+                    orElse: () => hits.first,
+                  );
+                  if (best.genres.isNotEmpty) {
+                    fetchedDetails = fetchedDetails.copyWith(
+                      genres: best.genres,
+                      description: fetchedDetails.description.isNotEmpty
+                          ? fetchedDetails.description
+                          : best.description,
+                    );
+                  }
+                }
+              } catch (_) {}
+            }
+            final resolvedEpisodes = isUpcomingAnons
+                ? _currentTitle.episodes
+                : (_currentTitle.episodes.length > 1
+                    ? _currentTitle.episodes
+                    : (fetchedDetails.episodes.isNotEmpty
+                        ? fetchedDetails.episodes
+                        : _currentTitle.episodes));
+            final updatedTitle = _currentTitle.copyWith(
+              episodes: resolvedEpisodes,
+              episodesTotal: isUpcomingAnons
+                  ? _currentTitle.episodesTotal
+                  : (resolvedEpisodes.isNotEmpty
+                      ? resolvedEpisodes.length
+                      : (_currentTitle.episodesTotal ??
+                          fetchedDetails.episodesTotal)),
+              description: _currentTitle.description.isNotEmpty
+                  ? _currentTitle.description
+                  : fetchedDetails.description,
+              genres: _currentTitle.genres.isNotEmpty
+                  ? _currentTitle.genres
+                  : fetchedDetails.genres,
+              year: _currentTitle.year ?? fetchedDetails.year,
+            );
+            AnimeDetailsCache.putTitle(updatedTitle);
+            if (mounted) {
+              setState(() {
+                _isLoadingDetails = false;
+                _currentTitle = updatedTitle;
+              });
+            }
+          } catch (_) {
+            if (mounted && _isLoadingDetails) {
+              setState(() => _isLoadingDetails = false);
+            }
+          }
+        }),
+    ]);
+    if (!getIt.isRegistered<GetPlayerLinksUseCase>() &&
+        mounted &&
+        _isLoadingDetails) {
       setState(() => _isLoadingDetails = false);
     }
   }
@@ -2695,11 +2699,10 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1440),
-          child: Stack(
-            children: [
+      body: SizedBox(
+        width: double.infinity,
+        child: Stack(
+          children: [
               CustomScrollView(
                 controller: _scrollController,
                 physics: const BouncingScrollPhysics(),
@@ -3663,8 +3666,7 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
         ],
       ),
     ),
-  ),
-);
+  );
   }
 
   Widget _buildEpisodePlaceholder(int episodeNum) {

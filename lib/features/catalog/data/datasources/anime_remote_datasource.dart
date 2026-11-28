@@ -687,18 +687,37 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
   static final Map<String, Future<List<AnimeCatalogModel>>> _inFlightSearches = {};
   static final Set<String> _emptySearchCache = {};
 
+  static String _sanitizeSearchQuery(String raw) {
+    var q = raw.trim();
+    if (q.length > 80) {
+      q = q.split(',').first.trim();
+      if (q.length > 80) {
+        final cut = q.substring(0, 80);
+        final lastSpace = cut.lastIndexOf(' ');
+        q = (lastSpace > 24 ? cut.substring(0, lastSpace) : cut).trim();
+      }
+    }
+    return q;
+  }
+
   static String _stripSubtitle(String title) {
-    final trimmed = title.trim();
+    final trimmed = _sanitizeSearchQuery(title);
     if (trimmed.isEmpty) return '';
 
     final bangIdx = trimmed.indexOf('!');
     if (bangIdx != -1 && bangIdx < trimmed.length - 1) {
-      return trimmed.substring(0, bangIdx + 1).trim();
+      final cand = trimmed.substring(0, bangIdx + 1).trim();
+      if (cand.split(RegExp(r'\s+')).length >= 2 && cand.length >= 10) {
+        return cand;
+      }
     }
     for (final sep in [':', '~', '(']) {
       final idx = trimmed.indexOf(sep);
       if (idx > 2) {
-        return trimmed.substring(0, idx).trim();
+        final cand = trimmed.substring(0, idx).trim();
+        if (cand.split(RegExp(r'\s+')).length >= 2 && cand.length >= 10) {
+          return cand;
+        }
       }
     }
     return trimmed;
@@ -708,7 +727,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     String query, {
     CancelToken? cancelToken,
   }) {
-    final clean = query.trim();
+    final clean = _sanitizeSearchQuery(query);
     final key = clean.toLowerCase();
     if (clean.isEmpty ||
         _placeholderTitleRegex.hasMatch(clean) ||
@@ -749,41 +768,56 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
     return future;
   }
 
+  static final Map<String, Future<List<AnimeCatalogModel>>>
+      _inFlightSingleSearchCache = {};
+
   Future<List<AnimeCatalogModel>> _executeSingleSearch(
     String clean, {
     CancelToken? cancelToken,
   }) async {
-    try {
-      final response = await _dio.get(
-        _searchUrl,
-        queryParameters: {'query': clean},
-        cancelToken: cancelToken,
-      );
-      return await _parseReleasesAsync(response.data);
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) rethrow;
+    final sanitized = _sanitizeSearchQuery(clean);
+    final key = '$_searchUrl?query=${sanitized.toLowerCase()}';
+    final existing = _inFlightSingleSearchCache[key];
+    if (existing != null) return existing;
+
+    final future = () async {
       try {
-        final fallbackRes = await _dio.get(
-          _fallbackSearchUrl,
-          queryParameters: {'query': clean},
+        final response = await _dio.get(
+          _searchUrl,
+          queryParameters: {'query': sanitized},
           cancelToken: cancelToken,
         );
-        return await _parseReleasesAsync(fallbackRes.data);
-      } catch (e2) {
-        throw ServerException('Ошибка поиска AniLiberty: $e2');
+        return await _parseReleasesAsync(response.data);
+      } on DioException catch (e) {
+        if (CancelToken.isCancel(e)) rethrow;
+        try {
+          final fallbackRes = await _dio.get(
+            _fallbackSearchUrl,
+            queryParameters: {'query': sanitized},
+            cancelToken: cancelToken,
+          );
+          return await _parseReleasesAsync(fallbackRes.data);
+        } catch (e2) {
+          throw ServerException('Ошибка поиска AniLiberty: $e2');
+        }
+      } catch (_) {
+        try {
+          final fallbackRes = await _dio.get(
+            _fallbackSearchUrl,
+            queryParameters: {'query': sanitized},
+            cancelToken: cancelToken,
+          );
+          return await _parseReleasesAsync(fallbackRes.data);
+        } catch (e) {
+          throw ServerException('Ошибка поиска AniLiberty: $e');
+        }
+      } finally {
+        _inFlightSingleSearchCache.remove(key);
       }
-    } catch (_) {
-      try {
-        final fallbackRes = await _dio.get(
-          _fallbackSearchUrl,
-          queryParameters: {'query': clean},
-          cancelToken: cancelToken,
-        );
-        return await _parseReleasesAsync(fallbackRes.data);
-      } catch (e) {
-        throw ServerException('Ошибка поиска AniLiberty: $e');
-      }
-    }
+    }();
+
+    _inFlightSingleSearchCache[key] = future;
+    return future;
   }
 
   static final Map<int, String> _externalIdToReleaseIdCache = {};
@@ -971,7 +1005,7 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
               bestMatch = item;
             }
           }
-          if (bestMatch != null && bestScore >= 0.45) {
+          if (bestMatch != null && bestScore >= 0.55) {
             final relId = bestMatch.id.toString();
             if (releaseId > 0) _externalIdToReleaseIdCache[releaseId] = relId;
             if (normalizedTitleKey.isNotEmpty) {

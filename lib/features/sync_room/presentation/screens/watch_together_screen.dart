@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../app/di/injection.dart';
 import '../../../../core/network/network_status_helper.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -47,6 +48,7 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
   bool _isJoiningRoom = false;
 
   List<Map<String, dynamic>> _friends = [];
+  List<Map<String, dynamic>> _activeLiveRooms = [];
 
   @override
   void initState() {
@@ -54,6 +56,87 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
     _friends = FriendsService.getCachedFriends();
     FriendsService.friendsNotifier.addListener(_onFriendsNotifierChanged);
     _loadFriends();
+    _loadActiveLiveRooms();
+  }
+
+  Future<void> _loadActiveLiveRooms() async {
+    try {
+      final client = Supabase.instance.client;
+      final currentUid = client.auth.currentUser?.id;
+      final cutoffIso = DateTime.now()
+          .toUtc()
+          .subtract(const Duration(hours: 2))
+          .toIso8601String();
+      final rows = await client
+          .from('rooms')
+          .select('id, anime_title, host_id, updated_at, is_playing')
+          .gte('updated_at', cutoffIso)
+          .order('updated_at', ascending: false)
+          .limit(5);
+
+      final parsed = <Map<String, dynamic>>[];
+      final missingHostIds = <String>[];
+      final friendNameById = <String, String>{};
+      for (final f in _friends) {
+        final fid = (f['id'] ?? f['friend_id'] ?? f['user_id'])?.toString();
+        final fname = (f['username'] ?? f['name'])?.toString();
+        if (fid != null && fname != null && fname.isNotEmpty) {
+          friendNameById[fid] = fname;
+        }
+      }
+
+      for (final row in rows as List) {
+        if (row is! Map) continue;
+        final roomId = row['id']?.toString().trim() ?? '';
+        final animeTitle = row['anime_title']?.toString().trim() ?? '';
+        final hostId = row['host_id']?.toString().trim();
+        if (roomId.isEmpty || animeTitle.isEmpty) continue;
+        if (currentUid != null && hostId == currentUid) continue;
+        if (hostId != null &&
+            hostId.isNotEmpty &&
+            !friendNameById.containsKey(hostId)) {
+          missingHostIds.add(hostId);
+        }
+        parsed.add({
+          'id': roomId,
+          'anime_title': animeTitle,
+          'host_id': hostId,
+          'host_name': hostId != null ? friendNameById[hostId] : null,
+        });
+      }
+
+      if (missingHostIds.isNotEmpty && parsed.isNotEmpty) {
+        try {
+          final profiles = await client
+              .from('profiles')
+              .select('id, username')
+              .inFilter('id', missingHostIds.toSet().toList());
+          final byId = <String, String>{};
+          for (final p in profiles as List) {
+            if (p is! Map) continue;
+            final pid = p['id']?.toString();
+            final uname = p['username']?.toString();
+            if (pid != null && uname != null && uname.isNotEmpty) {
+              byId[pid] = uname;
+            }
+          }
+          for (final room in parsed) {
+            final hid = room['host_id']?.toString();
+            if (room['host_name'] == null && hid != null && byId.containsKey(hid)) {
+              room['host_name'] = byId[hid];
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() => _activeLiveRooms = parsed);
+      }
+    } catch (_) {
+      if (mounted && _activeLiveRooms.isNotEmpty) {
+        setState(() => _activeLiveRooms = []);
+      }
+    }
   }
 
   void _onFriendsNotifierChanged() {
@@ -122,6 +205,246 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
         ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildJoinRoomCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151923),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x18FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Присоединиться к комнате',
+                  style: AppTypography.titleMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Введите 6-значный пин-код, полученный от друга',
+            style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          ListenableBuilder(
+            listenable: _pinFocusNode,
+            builder: (context, _) {
+              final hasFocus = _pinFocusNode.hasFocus;
+              final scheme = Theme.of(context).colorScheme;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.surface.withValues(alpha: hasFocus ? 0.85 : 0.7),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: hasFocus
+                        ? scheme.primary
+                        : scheme.outlineVariant.withValues(alpha: 0.3),
+                    width: hasFocus ? 1.4 : 1.0,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: TextField(
+                  controller: _pinController,
+                  focusNode: _pinFocusNode,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    letterSpacing: 2.0,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'PIN-код комнаты (напр. SP-4821)',
+                    hintStyle: TextStyle(
+                      color: AppColors.textMuted.withValues(alpha: 0.6),
+                      letterSpacing: 0,
+                      fontSize: 13,
+                      fontWeight: FontWeight.normal,
+                    ),
+                    filled: false,
+                    isDense: true,
+                    hoverColor: Colors.transparent,
+                    focusColor: Colors.transparent,
+                    prefixIcon: Icon(
+                      Icons.key_rounded,
+                      color: hasFocus ? scheme.primary : AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                          tooltip: 'Сканировать QR камерой',
+                          color: AppColors.syncActive,
+                          onPressed: () {
+                            QrScannerSheet.show(
+                              context,
+                              onCodeScanned: (code) {
+                                final trimmed = code.trim();
+                                final isFriendInvite = trimmed.contains('/f/') ||
+                                    trimmed.contains('/friend/') ||
+                                    (trimmed.toUpperCase().startsWith('SP-') &&
+                                        !RegExp(r'^SP-?\d{4,6}$').hasMatch(trimmed.toUpperCase()));
+                                if (isFriendInvite) {
+                                  FriendInviteConfirmationDialog.show(
+                                    context,
+                                    inviteCode: trimmed,
+                                    onAccepted: _loadFriends,
+                                  );
+                                  return;
+                                }
+                                _pinController.text = trimmed;
+                                _handleJoinRoom();
+                              },
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.content_paste_rounded, size: 20),
+                          tooltip: 'Вставить из буфера',
+                          color: AppColors.primaryLight,
+                          onPressed: () async {
+                            final data = await Clipboard.getData('text/plain');
+                            if (data?.text != null && data!.text!.isNotEmpty) {
+                              _pinController.text = data.text!.trim();
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                  ),
+                  onSubmitted: (_) => _handleJoinRoom(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: AppColors.textPrimary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: _isJoiningRoom ? null : _handleJoinRoom,
+              child: _isJoiningRoom
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.login_rounded, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Войти',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          if (_pinError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _pinError!,
+              style: const TextStyle(color: AppColors.syncError, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreateRoomCard(BuildContext context) {
+    return Material(
+      color: const Color(0xFF151923),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: () => _showCreateRoomSheet(context),
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0x18FFFFFF)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.add_to_queue_rounded, color: AppColors.primaryLight, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Создать свою комнату',
+                      style: AppTypography.titleMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Настройте комнату, число мест, чат и пригласите друзей',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 16),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -835,292 +1158,129 @@ class _WatchTogetherScreenState extends State<WatchTogetherScreen> {
 
             const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
-            // БАННЕР СИНДРОМА УПУЩЕННОЙ ВЫГОДЫ (FOMO)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0x33FF2A68), Color(0x227C83FD)],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x66FF2A68)),
+            // РЕАЛЬНЫЕ АКТИВНЫЕ КОМНАТЫ SUPABASE (скрыто, если активных комнат нет)
+            if (_activeLiveRooms.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.spacingXl,
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFFFF2A68),
-                        ),
-                        child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 14),
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'NekoChan_99 и Senpai_Kun сейчас в эфире!',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-                            ),
-                            SizedBox(height: 1),
-                            Text(
-                              'Смотрят «Магическая битва». Присоединяйтесь, чтобы не отстать!',
-                              style: TextStyle(color: Colors.white70, fontSize: 10.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 12)),
-
-            // КАРТОЧКА 1 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Подключиться по PIN»
-            SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 860),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                    child: GlassContainer(
-                      borderRadius: BorderRadius.circular(22),
-                      blurSigma: 16,
-                      backgroundOpacity: 0.08,
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                  child: Builder(
+                    builder: (context) {
+                      final room = _activeLiveRooms.first;
+                      final hostName =
+                          (room['host_name'] as String?)?.trim().isNotEmpty ==
+                                  true
+                              ? room['host_name'] as String
+                              : 'Друг';
+                      final animeTitle = room['anime_title'] as String? ?? '';
+                      final roomId = room['id'] as String? ?? '';
+                      return InkWell(
+                        onTap: roomId.isEmpty
+                            ? null
+                            : () {
+                                _pinController.text = roomId;
+                                _handleJoinRoom();
+                              },
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1C1624),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0x66FF2A68)),
+                          ),
+                          child: Row(
                             children: [
-                              Icon(Icons.vpn_key_rounded, color: AppColors.primaryLight, size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Присоединиться к комнате',
-                                style: AppTypography.titleMedium.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w700,
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFFFF2A68),
                                 ),
+                                child: const Icon(
+                                  Icons.bolt_rounded,
+                                  color: Colors.white,
+                                  size: 14,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '$hostName сейчас в эфире!',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      'Смотрит «$animeTitle». Нажмите, чтобы присоединиться',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 10.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                color: Colors.white70,
+                                size: 14,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Введите 6-значный пин-код, полученный от друга',
-                            style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-                          ),
-                          const SizedBox(height: 14),
-                          ListenableBuilder(
-                            listenable: _pinFocusNode,
-                            builder: (context, _) {
-                              final hasFocus = _pinFocusNode.hasFocus;
-                              final scheme = Theme.of(context).colorScheme;
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOutCubic,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: AppColors.surface.withValues(alpha: hasFocus ? 0.85 : 0.7),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: hasFocus
-                                        ? scheme.primary
-                                        : scheme.outlineVariant.withValues(alpha: 0.3),
-                                    width: hasFocus ? 1.4 : 1.0,
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: TextField(
-                                  controller: _pinController,
-                                  focusNode: _pinFocusNode,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 18,
-                                    letterSpacing: 2.0,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: 'PIN-код комнаты (напр. SP-4821)',
-                                    hintStyle: TextStyle(
-                                      color: AppColors.textMuted.withValues(alpha: 0.6),
-                                      letterSpacing: 0,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.normal,
-                                    ),
-                                    filled: false,
-                                    isDense: true,
-                                    hoverColor: Colors.transparent,
-                                    focusColor: Colors.transparent,
-                                    prefixIcon: Icon(
-                                      Icons.key_rounded,
-                                      color: hasFocus ? scheme.primary : AppColors.textSecondary,
-                                      size: 20,
-                                    ),
-                                    suffixIcon: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                                          tooltip: 'Сканировать QR камерой',
-                                          color: AppColors.syncActive,
-                                          onPressed: () {
-                                            QrScannerSheet.show(
-                                              context,
-                                              onCodeScanned: (code) {
-                                                final trimmed = code.trim();
-                                                final isFriendInvite = trimmed.contains('/f/') ||
-                                                    trimmed.contains('/friend/') ||
-                                                    (trimmed.toUpperCase().startsWith('SP-') &&
-                                                        !RegExp(r'^SP-?\d{4,6}$').hasMatch(trimmed.toUpperCase()));
-                                                if (isFriendInvite) {
-                                                  FriendInviteConfirmationDialog.show(
-                                                    context,
-                                                    inviteCode: trimmed,
-                                                    onAccepted: _loadFriends,
-                                                  );
-                                                  return;
-                                                }
-                                                _pinController.text = trimmed;
-                                                _handleJoinRoom();
-                                              },
-                                            );
-                                          },
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.content_paste_rounded, size: 20),
-                                          tooltip: 'Вставить из буфера',
-                                          color: AppColors.primaryLight,
-                                          onPressed: () async {
-                                            final data = await Clipboard.getData('text/plain');
-                                            if (data?.text != null && data!.text!.isNotEmpty) {
-                                              _pinController.text = data.text!.trim();
-                                            }
-                                          },
-                                        ),
-                                        const SizedBox(width: 4),
-                                      ],
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                                    border: InputBorder.none,
-                                    enabledBorder: InputBorder.none,
-                                    focusedBorder: InputBorder.none,
-                                    disabledBorder: InputBorder.none,
-                                    errorBorder: InputBorder.none,
-                                    focusedErrorBorder: InputBorder.none,
-                                  ),
-                                  onSubmitted: (_) => _handleJoinRoom(),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 46,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                foregroundColor: AppColors.textPrimary,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                elevation: 0,
-                              ),
-                              onPressed: _isJoiningRoom ? null : _handleJoinRoom,
-                              child: _isJoiningRoom
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  : const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.login_rounded, size: 20),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          'Войти',
-                                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                                        ),
-                                      ],
-                                    ),
-                            ),
-                          ),
-                          if (_pinError != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              _pinError!,
-                              style: const TextStyle(color: AppColors.syncError, fontSize: 12),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
-            ),
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            ],
 
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-            // КАРТОЧКА 2 В СТИЛЕ ЖИДКОГО СТЕКЛА: «Создать комнату»
+            // ДЕЙСТВИЯ: «Присоединиться к комнате» + «Создать свою комнату»
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
-                child: GlassContainer(
-                  borderRadius: BorderRadius.circular(22),
-                  blurSigma: 16,
-                  backgroundOpacity: 0.08,
-                  padding: const EdgeInsets.all(18),
-                  onTap: () => _showCreateRoomSheet(context),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.18),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(Icons.add_to_queue_rounded, color: AppColors.primaryLight, size: 24),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.spacingXl,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWideDesktop =
+                        MediaQuery.sizeOf(context).width >= 900;
+                    if (isWideDesktop) {
+                      return IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(
-                              'Создать свою комнату',
-                              style: AppTypography.titleMedium.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Настройте комнату, число мест, чат и пригласите друзей',
-                              style: AppTypography.caption.copyWith(
-                                color: AppColors.textSecondary,
-                                height: 1.3,
-                              ),
-                            ),
+                            Expanded(child: _buildJoinRoomCard(context)),
+                            const SizedBox(width: 16),
+                            Expanded(child: _buildCreateRoomCard(context)),
                           ],
                         ),
-                      ),
-                      Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 16),
-                    ],
-                  ),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        _buildJoinRoomCard(context),
+                        const SizedBox(height: 16),
+                        _buildCreateRoomCard(context),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

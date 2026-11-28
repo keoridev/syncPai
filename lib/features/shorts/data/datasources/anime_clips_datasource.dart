@@ -17,14 +17,45 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
   final CatalogRepository? _catalogRepository;
   static const _likesKey = 'syncpai_shorts_likes';
   static const _bookmarksKey = 'syncpai_shorts_bookmarks';
+  static const _deadReleaseIdsKey = 'syncpai_dead_anilibria_release_ids';
 
   static final Map<int, String> _resolvedStreamCache = {};
+  static final Set<int> _deadReleaseIds = {9811};
+  static Future<List<AnimeClip>>? _inFlightClips;
 
   AnimeClipsDataSourceImpl(this._prefs, {CatalogRepository? catalogRepository})
-      : _catalogRepository = catalogRepository;
+      : _catalogRepository = catalogRepository {
+    final savedDead = _prefs.getStringList(_deadReleaseIdsKey);
+    if (savedDead != null) {
+      for (final s in savedDead) {
+        final id = int.tryParse(s);
+        if (id != null && id > 0) _deadReleaseIds.add(id);
+      }
+    }
+  }
+
+  void _markDeadReleaseId(int id) {
+    if (id <= 0) return;
+    if (_deadReleaseIds.add(id)) {
+      _prefs.setStringList(
+        _deadReleaseIdsKey,
+        _deadReleaseIds.map((e) => '$e').toList(),
+      );
+    }
+  }
 
   @override
-  Future<List<AnimeClip>> getClips() async {
+  Future<List<AnimeClip>> getClips() {
+    final existing = _inFlightClips;
+    if (existing != null) return existing;
+    final future = _loadClipsInternal().whenComplete(() {
+      _inFlightClips = null;
+    });
+    _inFlightClips = future;
+    return future;
+  }
+
+  Future<List<AnimeClip>> _loadClipsInternal() async {
     final likedIds = _prefs.getStringList(_likesKey) ?? [];
     final bookmarkedIds = _prefs.getStringList(_bookmarksKey) ?? [];
 
@@ -134,7 +165,7 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         continue;
       }
 
-      if (repo == null) continue;
+      if (repo == null || _deadReleaseIds.contains(clip.animeId)) continue;
       final cacheKey = clip.animeId;
       String? realUrl = _resolvedStreamCache[cacheKey];
       if (realUrl == null) {
@@ -146,8 +177,12 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
               if (_isExactMomentTitleMatch(clip, direct) &&
                   direct.episodes.any((e) => e.episode == clip.episodeNumber)) {
                 details = direct;
+              } else if (direct.episodes.isEmpty) {
+                _markDeadReleaseId(clip.animeId);
               }
-            } catch (_) {}
+            } catch (_) {
+              _markDeadReleaseId(clip.animeId);
+            }
           }
           if (details == null && clip.animeTitle.trim().isNotEmpty) {
             final found = await repo.searchTitles(clip.animeTitle);
@@ -298,21 +333,6 @@ class AnimeClipsDataSourceImpl implements AnimeClipsDataSource {
         likesCount: 0,
         authorName: 'Scouting Legion',
         tags: ['#атакатитанов', '#эрен', '#гулземли', '#rumbling'],
-      ),
-      AnimeClip(
-        id: 'clip_chainsaw_man_kickback',
-        animeId: 9811,
-        animeTitle: 'Человек-бензопила',
-        englishTitle: 'Chainsaw Man',
-        posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/44511/main-3fe71946dc4ea361ca395a1278ffbc16.jpg',
-        episodeNumber: 1,
-        targetTimestampSeconds: 945, // 15:45
-        caption: 'Первое появление Человека-бензопилы! Дэндзи дергает шнур и разносит толпу зомби-демонов.',
-        videoUrl: 'https://cache-rfn.libria.fun/videos/media/ts/9811/1/720/9811_ep1_720.m3u8',
-        youtubeUrl: 'https://www.youtube.com/watch?v=v4yLeNt-kCU',
-        likesCount: 0,
-        authorName: 'Public Safety',
-        tags: ['#человекбензопила', '#дэндзи', '#почита', '#мясорубка'],
       ),
       AnimeClip(
         id: 'clip_bleach_tybw_yamamoto',

@@ -623,7 +623,27 @@ class AniLibertyAnimeRemoteDataSourceImpl implements AnimeRemoteDataSource {
           items.add(entry);
         }
       }
-      return items.map((j) => AnimeCatalogModel.fromJson(j)).toList();
+      final parsed = items.map((j) => AnimeCatalogModel.fromJson(j)).where((m) {
+        final y = m.year ?? 0;
+        if (y < 2025) return false;
+        final statusLower = m.status.toLowerCase();
+        final isOngoing = statusLower.contains('ongoing') ||
+            statusLower.contains('онгоинг') ||
+            statusLower.contains('процесс');
+        if (!isOngoing) return false;
+        final titleLower = '${m.titleRu} ${m.titleEn}'.toLowerCase();
+        if (titleLower.contains('новая озвучка') ||
+            titleLower.contains('переозвучка')) {
+          return false;
+        }
+        return true;
+      }).toList()
+        ..sort((a, b) {
+          final scoreCmp = b.score.compareTo(a.score);
+          if (scoreCmp != 0) return scoreCmp;
+          return b.episodesTotal.compareTo(a.episodesTotal);
+        });
+      return parsed;
     }
 
     final inFlightFuture = _inFlightRequests.putIfAbsent(dedupKey, () {

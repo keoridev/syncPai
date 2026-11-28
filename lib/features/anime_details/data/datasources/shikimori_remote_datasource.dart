@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../app/di/injection.dart';
 import '../../../../core/network/api_constants.dart';
 import '../../../../core/network/image_cors_helper.dart';
 import '../../../anime_lists/services/lists_sync_service.dart';
@@ -159,11 +162,34 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
     }
   }
 
+  static const String _anonsCacheKey = 'catalog_anons_cache_v1';
+
   @override
   Future<List<AnimeTitle>> getUpcomingAnnouncements({
     int page = 1,
-    int limit = 40,
+    int limit = 36,
   }) async {
+    if (page == 1 && getIt.isRegistered<SharedPreferences>()) {
+      try {
+        final raw = getIt<SharedPreferences>().getString(_anonsCacheKey);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw);
+          if (decoded is List && decoded.isNotEmpty) {
+            final cached = decoded
+                .whereType<Map>()
+                .map((m) => AnimeTitle.fromJson(Map<String, dynamic>.from(m)))
+                .toList();
+            if (cached.isNotEmpty) {
+              unawaited(
+                _executeGetUpcomingAnnouncements(page: page, limit: limit),
+              );
+              return cached;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     final dedupKey = '$page|$limit';
     final existing = _inFlightAnnouncements[dedupKey];
     if (existing != null) return existing;
@@ -190,6 +216,7 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             'order': 'popularity',
             'page': page,
             'limit': limit,
+            'censored': 'true',
           },
           options: Options(
             headers: {
@@ -252,6 +279,14 @@ class ShikimoriRemoteDataSourceImpl implements ShikimoriRemoteDataSource {
             episodes: const [],
             isAnnounced: true,
             shikimoriUrl: 'https://shikimori.io/animes/$id',
+          ),
+        );
+      }
+      if (page == 1 && results.isNotEmpty && getIt.isRegistered<SharedPreferences>()) {
+        unawaited(
+          getIt<SharedPreferences>().setString(
+            _anonsCacheKey,
+            jsonEncode(results.map((e) => e.toJson()).toList()),
           ),
         );
       }

@@ -263,8 +263,8 @@ class CatalogCubit extends Cubit<CatalogState> {
           case ShikimoriAnnouncedSource(:final season):
             if (getIt.isRegistered<ShikimoriRemoteDataSource>()) {
               incoming = await getIt<ShikimoriRemoteDataSource>()
-                  .getUpcomingAnnouncements(page: effectivePage, limit: 40);
-              hasMore = incoming.length >= 40;
+                  .getUpcomingAnnouncements(page: effectivePage, limit: 36);
+              hasMore = incoming.length >= 36;
             } else {
               final shikiDs = shikimoriAnnouncedDataSource ??
                   (getIt.isRegistered<ShikimoriAnnouncedDataSource>()
@@ -281,28 +281,9 @@ class CatalogCubit extends Cubit<CatalogState> {
               hasMore = false;
             }
             if (incoming.isNotEmpty) {
-              try {
-                final resolvedPosters = await AnimePosterResolver.instance
-                    .resolveBatchPosters(incoming)
-                    .timeout(const Duration(seconds: 4));
-                if (resolvedPosters.isNotEmpty) {
-                  incoming = incoming.map((t) {
-                    final malId = (t.shikimoriId != null && t.shikimoriId! > 0)
-                        ? t.shikimoriId!
-                        : t.id;
-                    final enrichedUrl = resolvedPosters[malId];
-                    if (enrichedUrl != null &&
-                        AnimePosterResolver.isMissingOrPlaceholder(t.posterUrl)) {
-                      return t.copyWith(
-                        posterSmall: enrichedUrl,
-                        posterMedium: enrichedUrl,
-                        posterOriginal: enrichedUrl,
-                      );
-                    }
-                    return t;
-                  }).toList();
-                }
-              } catch (_) {}
+              incoming = AnimePosterResolver.instance.applyCachedPostersSync(
+                incoming,
+              );
             }
             break;
 
@@ -317,7 +298,10 @@ class CatalogCubit extends Cubit<CatalogState> {
               final entities = await useCase.getSchedule(
                 cancelToken: cancelToken,
               );
-              incoming = entities.map((e) => e.toAnimeTitle()).toList();
+              incoming = entities
+                  .map((e) => e.toAnimeTitle())
+                  .where(isModernNonRedubRelease)
+                  .toList();
             }
             hasMore = false;
             break;

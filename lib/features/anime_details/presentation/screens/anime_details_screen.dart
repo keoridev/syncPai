@@ -308,7 +308,14 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
     }
     _resolveMangaBridge();
     _loadShikimoriSimilar();
-    _tabController = TabController(length: 3, vsync: this);
+    final isUpcomingAnonsInit = _currentTitle.isAnnounced ||
+        _currentTitle.status.toLowerCase().contains('анонс') ||
+        _currentTitle.status.toLowerCase().contains('anons');
+    final initialTab =
+        (isUpcomingAnonsInit && _currentTitle.episodes.isEmpty) ? 1 : 0;
+    _currentTabIndex = initialTab;
+    _tabController =
+        TabController(length: 3, vsync: this, initialIndex: initialTab);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging && _tabController.index != _currentTabIndex) {
         setState(() => _currentTabIndex = _tabController.index);
@@ -522,10 +529,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
       );
     }
 
+    final epBadge = title.episodesBadgeText;
+    final showEpBadge = epBadge.isNotEmpty &&
+        epBadge.toLowerCase().trim() != title.status.toLowerCase().trim();
     final textTokens = <String>[
       if (title.year != null) '${title.year}',
       if (typeLabel != null) typeLabel,
-      if (title.episodesBadgeText.isNotEmpty) title.episodesBadgeText,
+      if (showEpBadge) epBadge,
     ];
 
     for (var i = 0; i < textTokens.length; i++) {
@@ -1892,6 +1902,12 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
   }
 
   Widget _buildVoiceoverSelector(BuildContext context, List<EpisodeItem> episodes) {
+    final isAnons = _currentTitle.isAnnounced ||
+        _currentTitle.status.toLowerCase().contains('анонс') ||
+        _currentTitle.status.toLowerCase().contains('anons');
+    if (isAnons && episodes.isEmpty) {
+      return const SizedBox.shrink();
+    }
     if (!getIt.isRegistered<KodikCubit>()) return const SizedBox.shrink();
 
     return BlocBuilder<KodikCubit, KodikState>(
@@ -2112,11 +2128,13 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                             : 'Читать мангу',
                         onTap: () => _handleReadMangaTap(title),
                       ),
-                    _buildDesktopToolbarPill(
-                      icon: Icons.cloud_download_outlined,
-                      label: 'Скачать',
-                      onTap: () => _openTorrentsSheet(context),
-                    ),
+                    if (!(_currentTitle.isAnnounced && episodes.isEmpty) &&
+                        !_currentTitle.status.toLowerCase().contains('анонс'))
+                      _buildDesktopToolbarPill(
+                        icon: Icons.cloud_download_outlined,
+                        label: 'Скачать',
+                        onTap: () => _openTorrentsSheet(context),
+                      ),
                   ],
                 ),
               ],
@@ -2854,12 +2872,11 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> with SingleTick
                                       gradient: LinearGradient(
                                         begin: Alignment.topCenter,
                                         end: Alignment.bottomCenter,
-                                        stops: const [0.0, 0.25, 0.55, 0.80, 1.0],
+                                        stops: const [0.0, 0.45, 0.65, 1.0],
                                         colors: [
                                           Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.30),
-                                          AppColors.background.withValues(alpha: 0.75),
-                                          AppColors.background.withValues(alpha: 0.95),
+                                          Colors.transparent,
+                                          AppColors.background.withValues(alpha: 0.62),
                                           AppColors.background,
                                         ],
                                       ),

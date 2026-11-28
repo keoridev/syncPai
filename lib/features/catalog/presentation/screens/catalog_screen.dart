@@ -16,6 +16,7 @@ import 'package:sync_pai/core/theme/app_typography.dart';
 import 'package:sync_pai/core/widgets/app_avatar.dart';
 import 'package:sync_pai/core/widgets/app_search_bar.dart';
 import 'package:sync_pai/core/widgets/pai_chan_offline_view.dart';
+import 'package:sync_pai/core/widgets/safe_anime_poster.dart';
 import 'package:sync_pai/core/widgets/shimmer_placeholder.dart';
 import 'package:sync_pai/core/widgets/view_mode_toggle.dart';
 import 'package:sync_pai/core/widgets/sync_pai_logo.dart';
@@ -527,9 +528,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         MediaQuery.sizeOf(context).width > 800;
                     final seenTitleIds = <int>{};
                     final resumableItems = historyState.history.where((item) {
-                      if (item.positionMs < 15000 || item.progress >= 0.95) return false;
+                      if (item.positionMs < 5000 || item.progress >= 0.95) return false;
                       return seenTitleIds.add(item.titleId);
-                    }).take(isDesktop ? 3 : 1).toList();
+                    }).take(isDesktop ? 3 : 10).toList();
 
                     if (resumableItems.isEmpty) {
                       return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -555,6 +556,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           status: '',
                         ),
                       );
+                      final resumePos = Duration(milliseconds: item.positionMs);
+                      if (matched.episodes.isNotEmpty) {
+                        final targetEp = matched.episodes.firstWhere(
+                          (e) => e.episode == item.episode,
+                          orElse: () => matched.episodes.first,
+                        );
+                        if (targetEp.bestAvailableUrl != null) {
+                          context.pushNamed(
+                            'player',
+                            extra: {
+                              'title': matched,
+                              'episode': targetEp,
+                              'initialPosition': resumePos,
+                            },
+                          );
+                          return;
+                        }
+                      }
                       widget.onTitleSelected?.call(matched);
                     }
 
@@ -751,6 +770,124 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   minHeight: 2.5,
                                   backgroundColor: Colors.white.withValues(alpha: 0.08),
                                   valueColor: AlwaysStoppedAnimation<Color>(themePrimary),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (!isDesktop) {
+                      return SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            horizontalPad,
+                            4,
+                            horizontalPad,
+                            14,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Продолжить просмотр',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                height: 222,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: resumableItems.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 12),
+                                  itemBuilder: (context, index) {
+                                    final item = resumableItems[index];
+                                    return SizedBox(
+                                      width: 112,
+                                      child: InkWell(
+                                        onTap: () => handleResumeItem(item),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            AspectRatio(
+                                              aspectRatio: 2 / 3,
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                child: Stack(
+                                                  fit: StackFit.expand,
+                                                  children: [
+                                                    SafeAnimePoster(
+                                                      key: ValueKey(
+                                                        'mobile_resume_${item.titleId}_${item.titleName}',
+                                                      ),
+                                                      imageUrl: item.posterUrl,
+                                                      title: item.titleName,
+                                                      malId: item.titleId > 0
+                                                          ? item.titleId
+                                                          : null,
+                                                      borderRadius: 12,
+                                                      memCacheWidth: 260,
+                                                    ),
+                                                    Positioned(
+                                                      left: 0,
+                                                      right: 0,
+                                                      bottom: 0,
+                                                      child:
+                                                          LinearProgressIndicator(
+                                                        value: item.progress,
+                                                        minHeight: 3,
+                                                        backgroundColor:
+                                                            const Color(
+                                                                0x66000000),
+                                                        valueColor:
+                                                            AlwaysStoppedAnimation<
+                                                                Color>(
+                                                          themePrimary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              item.titleName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Серия ${item.episode} • ${item.formattedPosition} / ${item.formattedDuration}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFF94A3B8),
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ],

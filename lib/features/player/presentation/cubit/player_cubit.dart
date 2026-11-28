@@ -137,8 +137,13 @@ class PlayerCubit extends Cubit<PlayerState> {
     return 'Не удалось воспроизвести видеопоток. Попробуйте переключить качество или повторить.';
   }
 
+  bool get hasPendingInitialSeek => _pendingInitialSeek != null;
+
+  DateTime? _lastHistorySyncedAt;
+
   void _savePlaybackPosition(Duration pos, Duration dur) {
-    if (pos.inSeconds < 2) return;
+    // Защита от перезаписи сохранённого таймкода нулём до завершения initial seek
+    if (_pendingInitialSeek != null || pos.inSeconds < 5) return;
 
     if (getIt.isRegistered<SharedPreferences>()) {
       final prefs = getIt<SharedPreferences>();
@@ -158,7 +163,13 @@ class PlayerCubit extends Cubit<PlayerState> {
       }
     }
 
-    if (dur.inSeconds > 0 && getIt.isRegistered<WatchHistoryCubit>()) {
+    final now = DateTime.now();
+    final shouldSyncHistory = _lastHistorySyncedAt == null ||
+        now.difference(_lastHistorySyncedAt!).inSeconds >= 10;
+    if (shouldSyncHistory &&
+        dur.inSeconds > 0 &&
+        getIt.isRegistered<WatchHistoryCubit>()) {
+      _lastHistorySyncedAt = now;
       try {
         final hist = getIt<WatchHistoryCubit>();
         hist.saveProgress(
@@ -174,6 +185,18 @@ class PlayerCubit extends Cubit<PlayerState> {
         );
       } catch (_) {}
     }
+  }
+
+  Future<void> _executePendingInitialSeek(Duration seekTarget) async {
+    try {
+      await player.seek(seekTarget);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!isClosed &&
+          !_isDisposing &&
+          player.state.position < seekTarget - const Duration(seconds: 5)) {
+        await player.seek(seekTarget);
+      }
+    } catch (_) {}
   }
 
   static Duration? loadSavedPosition(AnimeTitle title, int epNum) {
@@ -407,18 +430,13 @@ class PlayerCubit extends Cubit<PlayerState> {
         if (isClosed || _isDisposing) return;
         emit(state.copyWith(duration: dur));
         _updateDiscordPresence();
-        if (dur > Duration.zero && _pendingInitialSeek != null && _pendingInitialSeek! > Duration.zero) {
-          final seekTarget = _pendingInitialSeek!;
+        final seekTarget = _pendingInitialSeek;
+        if (dur > Duration.zero &&
+            seekTarget != null &&
+            seekTarget.inSeconds >= 5 &&
+            dur > seekTarget + const Duration(seconds: 3)) {
           _pendingInitialSeek = null;
-          // восстанавливаем сохраненную позицию
-          if (seekTarget.inSeconds >= 3 && (dur - seekTarget).inSeconds >= 3) {
-            player.seek(seekTarget);
-            Future.delayed(const Duration(milliseconds: 400), () {
-              if (!isClosed && !_isDisposing && (player.state.position < const Duration(seconds: 2) && seekTarget > const Duration(seconds: 3))) {
-                player.seek(seekTarget);
-              }
-            });
-          }
+          unawaited(_executePendingInitialSeek(seekTarget));
         }
       }),
       player.stream.buffer.listen((buffer) {

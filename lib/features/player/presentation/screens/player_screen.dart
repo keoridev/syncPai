@@ -509,6 +509,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       try {
         final hist = getIt<WatchHistoryCubit>();
         final existing = hist.state.historyMap[widget.title.id];
+        if (existing != null &&
+            existing.episode == widget.initialEpisode.episode &&
+            existing.positionMs >= 10000 &&
+            widget.initialPosition == null) {
+          return;
+        }
         final initialPos = widget.initialPosition ??
             (existing != null && existing.episode == widget.initialEpisode.episode
                 ? Duration(milliseconds: existing.positionMs)
@@ -635,34 +641,36 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final dur = duration;
     final ep = episodeNum;
 
-    if (pos.inSeconds >= 5 && dur.inSeconds > 0) {
-      if (getIt.isRegistered<SharedPreferences>()) {
-        final prefs = getIt<SharedPreferences>();
-        final key = '${title.id}_$ep';
-        if ((dur - pos).inSeconds <= 30) {
-          prefs.remove(key);
-        } else {
-          prefs.setInt(key, pos.inMilliseconds);
-        }
+    if (_cubit.hasPendingInitialSeek || pos.inSeconds < 5 || dur.inSeconds <= 0) {
+      return;
+    }
+
+    if (getIt.isRegistered<SharedPreferences>()) {
+      final prefs = getIt<SharedPreferences>();
+      final key = '${title.id}_$ep';
+      if ((dur - pos).inSeconds <= 30) {
+        prefs.remove(key);
+      } else {
+        prefs.setInt(key, pos.inMilliseconds);
       }
-      if (getIt.isRegistered<WatchHistoryCubit>()) {
-        Future.microtask(() {
-          try {
-            final hist = getIt<WatchHistoryCubit>();
-            hist.saveProgress(
-              titleId: title.id,
-              titleName: title.displayTitle,
-              posterUrl: title.posterMedium.isNotEmpty
-                  ? title.posterMedium
-                  : title.posterSmall,
-              episode: ep,
-              episodeName: episodeName,
-              position: pos,
-              duration: dur,
-            );
-          } catch (_) {}
-        });
-      }
+    }
+    if (getIt.isRegistered<WatchHistoryCubit>()) {
+      Future.microtask(() {
+        try {
+          final hist = getIt<WatchHistoryCubit>();
+          hist.saveProgress(
+            titleId: title.id,
+            titleName: title.displayTitle,
+            posterUrl: title.posterMedium.isNotEmpty
+                ? title.posterMedium
+                : title.posterSmall,
+            episode: ep,
+            episodeName: episodeName,
+            position: pos,
+            duration: dur,
+          );
+        } catch (_) {}
+      });
     }
 
     if (getIt.isRegistered<AnimeListCubit>()) {

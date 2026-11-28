@@ -12,6 +12,15 @@ import '../../features/catalog/domain/entities/anime_entity.dart';
 import '../../features/catalog/domain/entities/anime_title.dart';
 import 'playback_bandwidth_guard.dart';
 
+typedef PosterResolvedCallback = void Function({
+  required String url,
+  int? malId,
+  int? shikimoriId,
+  int? anilibriaId,
+  String? ruTitle,
+  String? enTitle,
+});
+
 class PosterCandidate {
   final String source;
   final String url;
@@ -36,8 +45,42 @@ class AnimePosterResolver {
   static final Set<String> _titleEmptyCache = {};
   static final Map<String, Future<String?>> _inFlightTitle = {};
   static final Map<String, bool> _aspectRatioCache = {};
+  static final Map<String, String> _aliasCache = {};
+  static final List<PosterResolvedCallback> _posterListeners = [];
   static final ValueNotifier<int> overrideRevision = ValueNotifier<int>(0);
   static const String _v3CacheKey = 'poster_url_cache_v3';
+
+  static void addPosterResolvedListener(PosterResolvedCallback cb) {
+    if (!_posterListeners.contains(cb)) {
+      _posterListeners.add(cb);
+    }
+  }
+
+  static void removePosterResolvedListener(PosterResolvedCallback cb) {
+    _posterListeners.remove(cb);
+  }
+
+  static void _notifyPosterResolved({
+    required String url,
+    int? malId,
+    int? shikimoriId,
+    int? anilibriaId,
+    String? ruTitle,
+    String? enTitle,
+  }) {
+    for (final cb in List<PosterResolvedCallback>.from(_posterListeners)) {
+      try {
+        cb(
+          url: url,
+          malId: malId,
+          shikimoriId: shikimoriId,
+          anilibriaId: anilibriaId,
+          ruTitle: ruTitle,
+          enTitle: enTitle,
+        );
+      } catch (_) {}
+    }
+  }
   static bool _prefsLoaded = false;
   static Future<void>? _prefsLoadFuture;
   static Timer? _saveDebounceTimer;
@@ -144,6 +187,22 @@ class AnimePosterResolver {
                 if (id != null && id > 0) {
                   _memoryCache.putIfAbsent(id, () => v);
                 }
+              } else if (k.startsWith('mal:') ||
+                  k.startsWith('shiki:') ||
+                  k.startsWith('al:') ||
+                  k.startsWith('title:')) {
+                _aliasCache.putIfAbsent(k, () => v);
+                if (k.startsWith('mal:') || k.startsWith('shiki:')) {
+                  final id = int.tryParse(k.split(':').last);
+                  if (id != null && id > 0) {
+                    _memoryCache.putIfAbsent(id, () => v);
+                  }
+                } else if (k.startsWith('title:')) {
+                  final titleKey = k.substring(6);
+                  if (titleKey.isNotEmpty) {
+                    _titleMemoryCache.putIfAbsent(titleKey, () => v);
+                  }
+                }
               } else {
                 _titleMemoryCache.putIfAbsent(k, () => v);
               }
@@ -175,6 +234,13 @@ class AnimePosterResolver {
             ? titleEntries.sublist(titleEntries.length - 400)
             : titleEntries;
         for (final e in cappedTitles) {
+          combined[e.key] = e.value;
+        }
+        final aliasEntries = _aliasCache.entries.toList();
+        final cappedAliases = aliasEntries.length > 800
+            ? aliasEntries.sublist(aliasEntries.length - 800)
+            : aliasEntries;
+        for (final e in cappedAliases) {
           combined[e.key] = e.value;
         }
         await prefs.setString(_v3CacheKey, jsonEncode(combined));
@@ -263,19 +329,84 @@ class AnimePosterResolver {
     }
   }
 
+  void storeAliases({
+    required String url,
+    int? malId,
+    int? shikimoriId,
+    int? anilibriaId,
+    String? ruTitle,
+    String? enTitle,
+    bool notify = true,
+  }) {
+    final clean = sanitizeUrl(url);
+    if (clean == null || isAniLibriaWatermarkedUrl(clean)) return;
+    if (malId != null && malId > 0) {
+      _memoryCache[malId] = clean;
+      _aliasCache['mal:$malId'] = clean;
+    }
+    if (shikimoriId != null && shikimoriId > 0) {
+      _memoryCache[shikimoriId] = clean;
+      _aliasCache['shiki:$shikimoriId'] = clean;
+    }
+    if (anilibriaId != null && anilibriaId > 0) {
+      _aliasCache['al:$anilibriaId'] = clean;
+    }
+    if (ruTitle != null && ruTitle.trim().isNotEmpty) {
+      final k = normalizeTitleKey(ruTitle);
+      if (k.isNotEmpty) {
+        _titleMemoryCache[k] = clean;
+        _aliasCache['title:$k'] = clean;
+      }
+    }
+    if (enTitle != null && enTitle.trim().isNotEmpty) {
+      final k = normalizeTitleKey(enTitle);
+      if (k.isNotEmpty) {
+        _titleMemoryCache[k] = clean;
+        _aliasCache['title:$k'] = clean;
+      }
+    }
+    if (notify) {
+      _notifyPosterResolved(
+        url: clean,
+        malId: malId,
+        shikimoriId: shikimoriId,
+        anilibriaId: anilibriaId,
+        ruTitle: ruTitle,
+        enTitle: enTitle,
+      );
+    }
+  }
+
   String? getCachedPoster(int malId) => _memoryCache[malId];
 
   String? getCachedSync({
     int? malId,
+    int? shikimoriId,
+    int? anilibriaId,
     String? title,
     String? englishTitle,
   }) {
-    final hit = getCachedCleanPoster(malId: malId, title: title) ??
-        (englishTitle != null && englishTitle.trim().isNotEmpty
-            ? getCachedCleanPoster(title: englishTitle)
-            : null);
-    if (hit == null || isAniLibriaWatermarkedUrl(hit)) return null;
-    return hit;
+    final candidates = <String?>[
+      if (malId != null && malId > 0) _aliasCache['mal:$malId'] ?? _memoryCache[malId],
+      if (shikimoriId != null && shikimoriId > 0)
+        _aliasCache['shiki:$shikimoriId'] ?? _memoryCache[shikimoriId],
+      if (anilibriaId != null && anilibriaId > 0) _aliasCache['al:$anilibriaId'],
+      if (title != null && title.trim().isNotEmpty)
+        _aliasCache['title:${normalizeTitleKey(title)}'] ??
+            _titleMemoryCache[normalizeTitleKey(title)],
+      if (englishTitle != null && englishTitle.trim().isNotEmpty)
+        _aliasCache['title:${normalizeTitleKey(englishTitle)}'] ??
+            _titleMemoryCache[normalizeTitleKey(englishTitle)],
+    ];
+    for (final hit in candidates) {
+      if (hit != null &&
+          hit.isNotEmpty &&
+          !isMissingOrPlaceholder(hit) &&
+          !isAniLibriaWatermarkedUrl(hit)) {
+        return hit;
+      }
+    }
+    return null;
   }
 
   String? getCachedCleanPoster({int? malId, String? title}) {
@@ -311,13 +442,25 @@ class AnimePosterResolver {
       final isClean = sanitized != null &&
           !isAniLibriaWatermarkedUrl(sanitized) &&
           !isShikiTeaserRisk;
-      if (isClean) continue;
+      if (isClean) {
+        storeAliases(
+          url: sanitized,
+          malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+          shikimoriId: e.shikimoriId > 0 ? e.shikimoriId : null,
+          anilibriaId: int.tryParse(e.id),
+          ruTitle: e.titleRu,
+          enTitle: e.titleEn,
+        );
+        continue;
+      }
 
       final preservedFallback = isAniLibriaWatermarkedUrl(e.posterUrl)
           ? e.posterUrl!
           : (sanitized ?? e.fallbackPosterUrl);
       final cached = getCachedSync(
         malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        shikimoriId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        anilibriaId: int.tryParse(e.id),
         title: e.titleRu,
         englishTitle: e.titleEn,
       );
@@ -356,7 +499,17 @@ class AnimePosterResolver {
       final isClean = sanitized != null &&
           !isAniLibriaWatermarkedUrl(sanitized) &&
           !isShikiTeaserRisk;
-      if (isClean) continue;
+      if (isClean) {
+        storeAliases(
+          url: sanitized,
+          malId: t.shikimoriId ?? (t.id > 0 ? t.id : null),
+          shikimoriId: t.shikimoriId,
+          anilibriaId: t.id > 0 ? t.id : null,
+          ruTitle: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
+          enTitle: t.englishTitle,
+        );
+        continue;
+      }
 
       final preservedFallback = isAniLibriaWatermarkedUrl(t.posterUrl)
           ? t.posterUrl
@@ -366,6 +519,8 @@ class AnimePosterResolver {
           : t.id;
       final cached = getCachedSync(
         malId: malId > 0 ? malId : null,
+        shikimoriId: t.shikimoriId,
+        anilibriaId: t.id > 0 ? t.id : null,
         title: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
         englishTitle: t.englishTitle,
       );
@@ -414,13 +569,25 @@ class AnimePosterResolver {
       final isClean = sanitized != null &&
           !isAniLibriaWatermarkedUrl(sanitized) &&
           !isShikiTeaserRisk;
-      if (isClean) continue;
+      if (isClean) {
+        storeAliases(
+          url: sanitized,
+          malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+          shikimoriId: e.shikimoriId > 0 ? e.shikimoriId : null,
+          anilibriaId: int.tryParse(e.id),
+          ruTitle: e.titleRu,
+          enTitle: e.titleEn,
+        );
+        continue;
+      }
 
       final preservedFallback = isAniLibriaWatermarkedUrl(e.posterUrl)
           ? e.posterUrl!
           : (sanitized ?? e.fallbackPosterUrl);
       final cached = getCachedSync(
         malId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        shikimoriId: e.shikimoriId > 0 ? e.shikimoriId : null,
+        anilibriaId: int.tryParse(e.id),
         title: e.titleRu,
         englishTitle: e.titleEn,
       );
@@ -512,7 +679,17 @@ class AnimePosterResolver {
       final isClean = sanitized != null &&
           !isAniLibriaWatermarkedUrl(sanitized) &&
           !isShikiTeaserRisk;
-      if (isClean) continue;
+      if (isClean) {
+        storeAliases(
+          url: sanitized,
+          malId: t.shikimoriId ?? (t.id > 0 ? t.id : null),
+          shikimoriId: t.shikimoriId,
+          anilibriaId: t.id > 0 ? t.id : null,
+          ruTitle: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
+          enTitle: t.englishTitle,
+        );
+        continue;
+      }
 
       final preservedFallback = isAniLibriaWatermarkedUrl(t.posterUrl)
           ? t.posterUrl
@@ -522,6 +699,8 @@ class AnimePosterResolver {
           : t.id;
       final cached = getCachedSync(
         malId: malId > 0 ? malId : null,
+        shikimoriId: t.shikimoriId,
+        anilibriaId: t.id > 0 ? t.id : null,
         title: t.russianTitle.isNotEmpty ? t.russianTitle : t.displayTitle,
         englishTitle: t.englishTitle,
       );
@@ -1018,7 +1197,12 @@ class AnimePosterResolver {
           }
         }
         if (url != null) {
-          _titleMemoryCache[key] = url;
+          storeAliases(
+            url: url,
+            malId: malId,
+            ruTitle: title,
+            enTitle: fallbackTitle,
+          );
           unawaited(_saveTitleCacheToPrefs());
           return url;
         }

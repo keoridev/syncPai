@@ -10,7 +10,47 @@ class WatchHistoryCubit extends Cubit<WatchHistoryState> {
   final WatchHistoryRepository repository;
 
   WatchHistoryCubit({required this.repository}) : super(const WatchHistoryState()) {
+    AnimePosterResolver.addPosterResolvedListener(_onPosterResolvedExternally);
     loadHistory();
+  }
+
+  void _onPosterResolvedExternally({
+    required String url,
+    int? malId,
+    int? shikimoriId,
+    int? anilibriaId,
+    String? ruTitle,
+    String? enTitle,
+  }) {
+    if (isClosed) return;
+    final normRu =
+        ruTitle != null ? AnimePosterResolver.normalizeTitleKey(ruTitle) : '';
+    final normEn =
+        enTitle != null ? AnimePosterResolver.normalizeTitleKey(enTitle) : '';
+    for (final item in state.history) {
+      final needsUpdate =
+          AnimePosterResolver.isMissingOrPlaceholder(item.posterUrl) ||
+              AnimePosterResolver.isAniLibriaWatermarkedUrl(item.posterUrl);
+      if (!needsUpdate) continue;
+      final idMatch = (malId != null && item.titleId == malId) ||
+          (shikimoriId != null && item.titleId == shikimoriId) ||
+          (anilibriaId != null && item.titleId == anilibriaId);
+      final normItem = AnimePosterResolver.normalizeTitleKey(item.titleName);
+      final titleMatch = normItem.isNotEmpty &&
+          ((normRu.isNotEmpty && normItem == normRu) ||
+              (normEn.isNotEmpty && normItem == normEn));
+      if (idMatch || titleMatch) {
+        unawaited(updatePosterUrl(item.titleId, url));
+      }
+    }
+  }
+
+  @override
+  Future<void> close() {
+    AnimePosterResolver.removePosterResolvedListener(
+      _onPosterResolvedExternally,
+    );
+    return super.close();
   }
 
   Future<void> loadHistory() async {

@@ -19,7 +19,45 @@ class AnimeListCubit extends Cubit<AnimeListState> {
       : super(AnimeListState(
           stats: UserAnimeStats.compute(const []),
         )) {
+    AnimePosterResolver.addPosterResolvedListener(_onPosterResolvedExternally);
     loadLists();
+  }
+
+  void _onPosterResolvedExternally({
+    required String url,
+    int? malId,
+    int? shikimoriId,
+    int? anilibriaId,
+    String? ruTitle,
+    String? enTitle,
+  }) {
+    if (isClosed) return;
+    final normRu = ruTitle != null ? normalizeTitle(ruTitle) : '';
+    final normEn = enTitle != null ? normalizeTitle(enTitle) : '';
+    for (final entry in state.allEntries) {
+      final needsUpdate =
+          AnimePosterResolver.isMissingOrPlaceholder(entry.posterUrl) ||
+              AnimePosterResolver.isAniLibriaWatermarkedUrl(entry.posterUrl);
+      if (!needsUpdate) continue;
+      final idMatch = (malId != null && entry.animeId == malId) ||
+          (shikimoriId != null && entry.animeId == shikimoriId) ||
+          (anilibriaId != null && entry.animeId == anilibriaId);
+      final normEntry = normalizeTitle(entry.titleRu);
+      final titleMatch = normEntry.isNotEmpty &&
+          ((normRu.isNotEmpty && normEntry == normRu) ||
+              (normEn.isNotEmpty && normEntry == normEn));
+      if (idMatch || titleMatch) {
+        unawaited(updatePosterUrl(entry.animeId, url));
+      }
+    }
+  }
+
+  @override
+  Future<void> close() {
+    AnimePosterResolver.removePosterResolvedListener(
+      _onPosterResolvedExternally,
+    );
+    return super.close();
   }
 
   static String normalizeTitle(String title) {

@@ -779,118 +779,87 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     }
 
                     if (!isDesktop) {
+                      final item = resumableItems.first;
                       return SliverToBoxAdapter(
                         child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPad,
-                            4,
-                            horizontalPad,
-                            14,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Продолжить просмотр',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                          child: InkWell(
+                            onTap: () => handleResumeItem(item),
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF161922),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0x1FFFFFFF),
+                                  width: 1,
                                 ),
                               ),
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                height: 222,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: resumableItems.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(width: 12),
-                                  itemBuilder: (context, index) {
-                                    final item = resumableItems[index];
-                                    return SizedBox(
-                                      width: 112,
-                                      child: InkWell(
-                                        onTap: () => handleResumeItem(item),
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            AspectRatio(
-                                              aspectRatio: 2 / 3,
-                                              child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                child: Stack(
-                                                  fit: StackFit.expand,
-                                                  children: [
-                                                    SafeAnimePoster(
-                                                      key: ValueKey(
-                                                        'mobile_resume_${item.titleId}_${item.titleName}',
-                                                      ),
-                                                      imageUrl: item.posterUrl,
-                                                      title: item.titleName,
-                                                      malId: item.titleId > 0
-                                                          ? item.titleId
-                                                          : null,
-                                                      borderRadius: 12,
-                                                      memCacheWidth: 260,
-                                                    ),
-                                                    Positioned(
-                                                      left: 0,
-                                                      right: 0,
-                                                      bottom: 0,
-                                                      child:
-                                                          LinearProgressIndicator(
-                                                        value: item.progress,
-                                                        minHeight: 3,
-                                                        backgroundColor:
-                                                            const Color(
-                                                                0x66000000),
-                                                        valueColor:
-                                                            AlwaysStoppedAnimation<
-                                                                Color>(
-                                                          themePrimary,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Text(
-                                              item.titleName,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurface,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'Серия ${item.episode} • ${item.formattedPosition} / ${item.formattedDuration}',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF94A3B8),
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: SizedBox(
+                                      width: 36,
+                                      height: 48,
+                                      child: SafeAnimePoster(
+                                        key: ValueKey(
+                                          'mobile_resume_${item.titleId}_${item.titleName}',
                                         ),
+                                        imageUrl: item.posterUrl,
+                                        title: item.titleName,
+                                        malId: item.titleId > 0
+                                            ? item.titleId
+                                            : null,
+                                        borderRadius: 8,
+                                        memCacheWidth: 120,
+                                        monogramFontSize: 16,
                                       ),
-                                    );
-                                  },
-                                ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.titleName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFFF8FAFC),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          'Серия ${item.episode} • ${item.formattedPosition} / ${item.formattedDuration}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF94A3B8),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 20,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       );
